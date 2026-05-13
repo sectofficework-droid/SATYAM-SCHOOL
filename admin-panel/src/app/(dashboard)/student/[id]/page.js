@@ -1,0 +1,439 @@
+"use client";
+
+import { useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import {
+  ArrowLeft, User, Phone, Calendar, MapPin, BookOpen,
+  FileText, IndianRupee, ClipboardCheck, Award, Edit,
+  Download, CheckCircle, XCircle, Clock, GraduationCap,
+} from "lucide-react";
+
+// ── Dummy Student Data ─────────────────────────────────────────
+const studentDB = {
+  "1001": {
+    enrollment: "1001", password: "ARJ1001", session: "2025-26",
+    joinDate: "01 Jun 2025", std: "10th", section: "A", rollNo: "101",
+    studentName: "Arjun Rajesh Patel", fatherName: "Rajesh Patel",
+    motherName: "Meena Patel", dob: "15 Jan 2010", gender: "Male",
+    religion: "Hindu", caste: "General", mobile1: "9876543210", mobile2: "9876500000",
+    roomPlotNo: "12, Block B", address: "Shree Society, Varachha Road, Surat - 395006",
+    placeOfBirth: "Surat", photo: null,
+    lastSchoolName: "St. Xavier's Primary School", lastSchoolClass: "9th",
+    lastSchoolMedium: "English", lastSchoolPlace: "Surat",
+    aadhar: "1234 5678 9012", aadharName: "Arjun Rajesh Patel",
+    udise: "24180100101", pen: "", apaar: "",
+    siblingName: "", siblingClass: "",
+    documents: [
+      { name: "Birth Certificate", uploaded: true, file: "birth_cert.pdf" },
+      { name: "Student Aadhar Card", uploaded: true, file: "aadhar_student.jpg" },
+      { name: "Father's Aadhar Card", uploaded: false, file: "" },
+      { name: "Mother's Aadhar Card", uploaded: false, file: "" },
+      { name: "Leaving Certificate", uploaded: true, file: "leaving_cert.pdf" },
+    ],
+    fees: [
+      { term: "Term 1 - 2025-26", amount: 8500, paid: true, date: "05 Jun 2025", receipt: "RCP001" },
+      { term: "Term 2 - 2025-26", amount: 8500, paid: true, date: "12 Oct 2025", receipt: "RCP042" },
+      { term: "Term 3 - 2025-26", amount: 8500, paid: false, date: "", receipt: "" },
+    ],
+    attendance: [
+      { month: "June 2025",    present: 22, absent: 2, total: 24, pct: 92 },
+      { month: "July 2025",    present: 25, absent: 1, total: 26, pct: 96 },
+      { month: "August 2025",  present: 23, absent: 3, total: 26, pct: 88 },
+      { month: "September 2025", present: 24, absent: 2, total: 26, pct: 92 },
+      { month: "October 2025", present: 20, absent: 4, total: 24, pct: 83 },
+    ],
+    results: [
+      { exam: "Unit Test 1",      math: 45, science: 42, english: 38, gujarati: 47, social: 40, total: 212, max: 250 },
+      { exam: "Mid-Term Exam",    math: 88, science: 82, english: 76, gujarati: 90, social: 78, total: 414, max: 500 },
+      { exam: "Unit Test 2",      math: 44, science: 46, english: 40, gujarati: 48, social: 43, total: 221, max: 250 },
+      { exam: "Final Exam",       math: 86, science: 80, english: 74, gujarati: 88, social: 76, total: 404, max: 500 },
+    ],
+  },
+};
+
+const TABS = [
+  { id: "personal",    label: "Personal Details",  icon: User },
+  { id: "documents",  label: "Documents",          icon: FileText },
+  { id: "fees",       label: "Fees",               icon: IndianRupee },
+  { id: "attendance", label: "Attendance",         icon: ClipboardCheck },
+  { id: "results",    label: "Exam Results",       icon: Award },
+];
+
+function InfoRow({ label, value }) {
+  return (
+    <div className="flex items-start gap-2 py-2.5 border-b border-gray-50 last:border-0">
+      <span className="text-xs text-gray-400 font-medium w-36 flex-shrink-0 pt-0.5">{label}</span>
+      <span className="text-sm text-gray-800 font-medium flex-1">
+        {value || <span className="text-gray-300 font-normal">N/A</span>}
+      </span>
+    </div>
+  );
+}
+
+function Badge({ value, colorClass }) {
+  return (
+    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold ${colorClass}`}>
+      {value}
+    </span>
+  );
+}
+
+// ── Tabs ───────────────────────────────────────────────────────
+
+function PersonalTab({ s }) {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="bg-gray-50 rounded-2xl p-5">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Admission Info</p>
+        <InfoRow label="Enrollment No"    value={s.enrollment} />
+        <InfoRow label="Academic Session" value={s.session} />
+        <InfoRow label="Date of Join"     value={s.joinDate} />
+        <InfoRow label="Standard"         value={`${s.std} - ${s.section}`} />
+        <InfoRow label="Roll Number"      value={s.rollNo} />
+        <InfoRow label="App Password"     value={s.password} />
+      </div>
+      <div className="bg-gray-50 rounded-2xl p-5">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Personal Info</p>
+        <InfoRow label="Full Name"    value={s.studentName} />
+        <InfoRow label="Father's Name" value={s.fatherName} />
+        <InfoRow label="Mother's Name" value={s.motherName} />
+        <InfoRow label="Date of Birth" value={s.dob} />
+        <InfoRow label="Gender"        value={s.gender} />
+        <InfoRow label="Religion"      value={s.religion} />
+        <InfoRow label="Category"      value={s.caste} />
+      </div>
+      <div className="bg-gray-50 rounded-2xl p-5">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Contact & Address</p>
+        <InfoRow label="Mobile 1"      value={s.mobile1} />
+        <InfoRow label="Mobile 2"      value={s.mobile2} />
+        <InfoRow label="Room / Plot"   value={s.roomPlotNo} />
+        <InfoRow label="Address"       value={s.address} />
+        <InfoRow label="Place of Birth" value={s.placeOfBirth} />
+      </div>
+      <div className="bg-gray-50 rounded-2xl p-5">
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Previous School</p>
+        <InfoRow label="School Name"   value={s.lastSchoolName} />
+        <InfoRow label="Last Class"    value={s.lastSchoolClass} />
+        <InfoRow label="Medium"        value={s.lastSchoolMedium} />
+        <InfoRow label="Location"      value={s.lastSchoolPlace} />
+        <div className="mt-4 pt-3 border-t border-gray-200">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Government IDs</p>
+          <InfoRow label="Aadhar No"   value={s.aadhar} />
+          <InfoRow label="Name on Aadhar" value={s.aadharName} />
+          <InfoRow label="UDISE No"    value={s.udise} />
+          <InfoRow label="PEN No"      value={s.pen} />
+          <InfoRow label="APAAR ID"    value={s.apaar} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DocumentsTab({ docs }) {
+  return (
+    <div className="space-y-3">
+      {docs.map((doc) => (
+        <div key={doc.name} className="flex items-center gap-4 bg-gray-50 rounded-xl px-5 py-4">
+          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+            doc.uploaded ? "bg-green-100" : "bg-red-50"
+          }`}>
+            {doc.uploaded
+              ? <CheckCircle className="w-5 h-5 text-green-600" />
+              : <XCircle className="w-5 h-5 text-red-400" />
+            }
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-gray-800">{doc.name}</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {doc.uploaded ? doc.file : "Not uploaded yet"}
+            </p>
+          </div>
+          {doc.uploaded ? (
+            <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
+              <Download className="w-3.5 h-3.5" /> View
+            </button>
+          ) : (
+            <span className="text-xs text-red-400 font-medium">Pending</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FeesTab({ fees }) {
+  const totalPaid = fees.filter((f) => f.paid).reduce((s, f) => s + f.amount, 0);
+  const totalDue  = fees.filter((f) => !f.paid).reduce((s, f) => s + f.amount, 0);
+  return (
+    <div className="space-y-5">
+      {/* Summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+        <div className="bg-green-50 rounded-2xl p-4 text-center">
+          <p className="text-2xl font-bold text-green-700">₹{totalPaid.toLocaleString("en-IN")}</p>
+          <p className="text-xs text-green-600 mt-1 font-medium">Total Paid</p>
+        </div>
+        <div className="bg-red-50 rounded-2xl p-4 text-center">
+          <p className="text-2xl font-bold text-red-600">₹{totalDue.toLocaleString("en-IN")}</p>
+          <p className="text-xs text-red-500 mt-1 font-medium">Total Pending</p>
+        </div>
+        <div className="bg-blue-50 rounded-2xl p-4 text-center col-span-2 sm:col-span-1">
+          <p className="text-2xl font-bold text-blue-700">₹{(totalPaid + totalDue).toLocaleString("en-IN")}</p>
+          <p className="text-xs text-blue-600 mt-1 font-medium">Total Fees</p>
+        </div>
+      </div>
+      {/* Table */}
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50">
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Fee Term</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Paid Date</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Receipt</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {fees.map((fee, i) => (
+              <tr key={i} className="hover:bg-gray-50 transition-colors">
+                <td className="px-5 py-3.5 font-medium text-gray-800">{fee.term}</td>
+                <td className="px-5 py-3.5 font-semibold text-gray-800">₹{fee.amount.toLocaleString("en-IN")}</td>
+                <td className="px-5 py-3.5">
+                  <Badge
+                    value={fee.paid ? "Paid" : "Pending"}
+                    colorClass={fee.paid ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}
+                  />
+                </td>
+                <td className="px-5 py-3.5 text-gray-500">{fee.date || "—"}</td>
+                <td className="px-5 py-3.5">
+                  {fee.receipt
+                    ? <button className="text-school-navy text-xs font-medium hover:text-school-gold transition-colors">{fee.receipt}</button>
+                    : <span className="text-gray-300">—</span>
+                  }
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function AttendanceTab({ attendance }) {
+  const totalPresent = attendance.reduce((s, a) => s + a.present, 0);
+  const totalDays    = attendance.reduce((s, a) => s + a.total, 0);
+  const overallPct   = totalDays ? Math.round((totalPresent / totalDays) * 100) : 0;
+  return (
+    <div className="space-y-5">
+      {/* Overall */}
+      <div className="bg-gradient-to-r from-school-navy to-school-navy-light rounded-2xl p-5 text-white flex items-center justify-between">
+        <div>
+          <p className="text-white/70 text-sm">Overall Attendance</p>
+          <p className="text-4xl font-bold mt-1">{overallPct}%</p>
+          <p className="text-white/60 text-xs mt-1">{totalPresent} present out of {totalDays} working days</p>
+        </div>
+        <div className="w-20 h-20 rounded-full border-4 border-white/20 flex items-center justify-center">
+          <span className="text-xl font-bold">{overallPct}%</span>
+        </div>
+      </div>
+      {/* Month-wise */}
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50">
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Month</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Present</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Absent</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Working Days</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Percentage</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {attendance.map((row, i) => (
+              <tr key={i} className="hover:bg-gray-50 transition-colors">
+                <td className="px-5 py-3.5 font-medium text-gray-800">{row.month}</td>
+                <td className="px-5 py-3.5 text-green-600 font-semibold">{row.present}</td>
+                <td className="px-5 py-3.5 text-red-500 font-semibold">{row.absent}</td>
+                <td className="px-5 py-3.5 text-gray-500">{row.total}</td>
+                <td className="px-5 py-3.5">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden max-w-[80px]">
+                      <div
+                        className={`h-full rounded-full ${row.pct >= 90 ? "bg-green-500" : row.pct >= 75 ? "bg-amber-500" : "bg-red-500"}`}
+                        style={{ width: `${row.pct}%` }}
+                      />
+                    </div>
+                    <span className={`text-xs font-bold ${row.pct >= 90 ? "text-green-600" : row.pct >= 75 ? "text-amber-600" : "text-red-600"}`}>
+                      {row.pct}%
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ResultsTab({ results }) {
+  const subjects = ["math", "science", "english", "gujarati", "social"];
+  const subjectLabels = { math: "Mathematics", science: "Science", english: "English", gujarati: "Gujarati", social: "Social Sci." };
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm min-w-[600px]">
+        <thead>
+          <tr className="bg-gray-50">
+            <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Exam</th>
+            {subjects.map((s) => (
+              <th key={s} className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                {subjectLabels[s]}
+              </th>
+            ))}
+            <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Total</th>
+            <th className="text-center px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Result</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-50">
+          {results.map((row, i) => {
+            const pct = Math.round((row.total / row.max) * 100);
+            return (
+              <tr key={i} className="hover:bg-gray-50 transition-colors">
+                <td className="px-5 py-3.5 font-medium text-gray-800 whitespace-nowrap">{row.exam}</td>
+                {subjects.map((s) => (
+                  <td key={s} className="px-3 py-3.5 text-center font-semibold text-gray-700">{row[s]}</td>
+                ))}
+                <td className="px-5 py-3.5 text-center font-bold text-gray-800">
+                  {row.total}<span className="text-gray-400 font-normal text-xs">/{row.max}</span>
+                </td>
+                <td className="px-5 py-3.5 text-center">
+                  <Badge
+                    value={`${pct}% · ${pct >= 90 ? "A+" : pct >= 75 ? "A" : pct >= 60 ? "B" : pct >= 45 ? "C" : "D"}`}
+                    colorClass={pct >= 75 ? "bg-green-100 text-green-700" : pct >= 45 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-600"}
+                  />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ── Main Component ─────────────────────────────────────────────
+export default function StudentDetailPage() {
+  const { id }  = useParams();
+  const router  = useRouter();
+  const [activeTab, setActiveTab] = useState("personal");
+
+  const student = studentDB[id];
+
+  if (!student) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <GraduationCap className="w-12 h-12 text-gray-200" />
+        <p className="text-gray-500 font-medium">Student not found</p>
+        <button onClick={() => router.back()} className="text-school-navy text-sm font-medium hover:underline">
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5 max-w-screen-xl">
+
+      {/* ── Profile Header ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="h-2 bg-gradient-to-r from-school-navy to-school-navy-light" />
+        <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center gap-5">
+          <button onClick={() => router.back()} className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors self-start">
+            <ArrowLeft className="w-4 h-4 text-gray-600" />
+          </button>
+
+          {/* Photo */}
+          <div className="w-20 h-20 rounded-2xl bg-school-navy/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
+            {student.photo
+              ? <img src={student.photo} alt={student.studentName} className="w-full h-full object-cover" />
+              : <User className="w-9 h-9 text-school-navy/30" />
+            }
+          </div>
+
+          {/* Core Info */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-xl font-bold text-gray-800">{student.studentName}</h2>
+              <Badge value="Active" colorClass="bg-green-100 text-green-700" />
+            </div>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
+              <span className="text-sm text-gray-500 flex items-center gap-1">
+                <GraduationCap className="w-3.5 h-3.5" /> {student.std}-{student.section} · Roll {student.rollNo}
+              </span>
+              <span className="text-sm text-gray-500 flex items-center gap-1">
+                <Phone className="w-3.5 h-3.5" /> {student.mobile1}
+              </span>
+              <span className="text-sm text-gray-500 flex items-center gap-1">
+                <Calendar className="w-3.5 h-3.5" /> {student.dob}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-2">
+              <span className="text-xs bg-blue-50 text-blue-700 font-medium px-2.5 py-1 rounded-lg">
+                Enroll: #{student.enrollment}
+              </span>
+              <span className="text-xs bg-amber-50 text-amber-700 font-medium px-2.5 py-1 rounded-lg">
+                Session: {student.session}
+              </span>
+              <span className="text-xs bg-gray-100 text-gray-600 font-medium px-2.5 py-1 rounded-lg">
+                App Password: {student.password}
+              </span>
+            </div>
+          </div>
+
+          {/* Action */}
+          <button
+            onClick={() => router.push(`/student/${id}/edit`)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-school-navy hover:bg-school-navy-dark text-white rounded-xl text-sm font-semibold transition-colors self-start shadow-sm"
+          >
+            <Edit className="w-4 h-4" /> Edit Profile
+          </button>
+        </div>
+      </div>
+
+      {/* ── Tabs ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {/* Tab Nav */}
+        <div className="flex overflow-x-auto border-b border-gray-100 scrollbar-none">
+          {TABS.map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center gap-2 px-5 py-4 text-sm font-medium whitespace-nowrap border-b-2 transition-all flex-shrink-0 ${
+                  activeTab === tab.id
+                    ? "border-school-navy text-school-navy bg-blue-50/50"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <Icon className="w-4 h-4" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tab Content */}
+        <div className="p-5 lg:p-6">
+          {activeTab === "personal"    && <PersonalTab    s={student} />}
+          {activeTab === "documents"   && <DocumentsTab   docs={student.documents} />}
+          {activeTab === "fees"        && <FeesTab        fees={student.fees} />}
+          {activeTab === "attendance"  && <AttendanceTab  attendance={student.attendance} />}
+          {activeTab === "results"     && <ResultsTab     results={student.results} />}
+        </div>
+      </div>
+    </div>
+  );
+}
