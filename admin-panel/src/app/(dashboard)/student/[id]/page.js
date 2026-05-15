@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
-  ArrowLeft, User, Phone, Calendar, MapPin, BookOpen,
+  ArrowLeft, User, Phone, Calendar, BookOpen,
   FileText, IndianRupee, ClipboardCheck, Award, Edit,
-  Download, CheckCircle, XCircle, Clock, GraduationCap,
+  Download, CheckCircle, XCircle, GraduationCap, Shield,
+  Package, Clock,
 } from "lucide-react";
 
 // ── Dummy Student Data ─────────────────────────────────────────
@@ -31,9 +32,20 @@ const studentDB = {
       { name: "Leaving Certificate", uploaded: true, file: "leaving_cert.pdf" },
     ],
     fees: [
-      { term: "Term 1 - 2025-26", amount: 8500, paid: true, date: "05 Jun 2025", receipt: "RCP001" },
-      { term: "Term 2 - 2025-26", amount: 8500, paid: true, date: "12 Oct 2025", receipt: "RCP042" },
-      { term: "Term 3 - 2025-26", amount: 8500, paid: false, date: "", receipt: "" },
+      { term: "Term 1 - 2025-26", amount: 8500, paid: true,  date: "05 Jun 2025", receipt: "RCP001" },
+      { term: "Term 2 - 2025-26", amount: 8500, paid: true,  date: "12 Oct 2025", receipt: "RCP042" },
+      { term: "Term 3 - 2025-26", amount: 8500, paid: false, date: "",            receipt: "" },
+    ],
+    inventory: [
+      { item: "School Bag",    givenDate: "05 Jun 2025", given: true  },
+      { item: "Uniform",       givenDate: "05 Jun 2025", given: true  },
+      { item: "Textbooks",     givenDate: "10 Jun 2025", given: true  },
+      { item: "Notebooks",     givenDate: "",            given: false },
+      { item: "School Diary",  givenDate: "05 Jun 2025", given: true  },
+      { item: "ID Card",       givenDate: "15 Jun 2025", given: true  },
+      { item: "Assignment - 1", givenDate: "",           given: false },
+      { item: "Assignment - 2", givenDate: "",           given: false },
+      { item: "Assignment - 3", givenDate: "",           given: false },
     ],
     attendance: [
       { month: "June 2025",    present: 22, absent: 2, total: 24, pct: 92 },
@@ -52,11 +64,12 @@ const studentDB = {
 };
 
 const TABS = [
-  { id: "personal",    label: "Personal Details",  icon: User },
-  { id: "documents",  label: "Documents",          icon: FileText },
-  { id: "fees",       label: "Fees",               icon: IndianRupee },
-  { id: "attendance", label: "Attendance",         icon: ClipboardCheck },
-  { id: "results",    label: "Exam Results",       icon: Award },
+  { id: "personal",   label: "Personal Details", icon: User },
+  { id: "documents",  label: "Documents",        icon: FileText },
+  { id: "fees",       label: "Fees",             icon: IndianRupee },
+  { id: "attendance", label: "Attendance",       icon: ClipboardCheck },
+  { id: "results",    label: "Exam Results",     icon: Award },
+  { id: "inventory",  label: "Inventory",        icon: Package },
 ];
 
 function InfoRow({ label, value }) {
@@ -162,57 +175,95 @@ function DocumentsTab({ docs }) {
 }
 
 function FeesTab({ fees }) {
-  const totalPaid = fees.filter((f) => f.paid).reduce((s, f) => s + f.amount, 0);
-  const totalDue  = fees.filter((f) => !f.paid).reduce((s, f) => s + f.amount, 0);
+  const totalFees = fees.reduce((s, f) => s + f.amount, 0);
+  const paidFees  = fees.filter((f) => f.paid);
+  const totalPaid = paidFees.reduce((s, f) => s + f.amount, 0);
+  const totalDue  = totalFees - totalPaid;
+  const paidPct   = totalFees > 0 ? Math.round((totalPaid / totalFees) * 100) : 0;
+
   return (
     <div className="space-y-5">
-      {/* Summary */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        <div className="bg-green-50 rounded-2xl p-4 text-center">
+      {/* Summary — 3 cards */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-blue-50 rounded-2xl p-4 text-center border border-blue-100">
+          <p className="text-xs text-blue-500 font-bold uppercase tracking-wide mb-1">Total Fees</p>
+          <p className="text-2xl font-bold text-blue-700">₹{totalFees.toLocaleString("en-IN")}</p>
+          <p className="text-xs text-blue-400 mt-1">{fees.length} term{fees.length !== 1 ? "s" : ""}</p>
+        </div>
+        <div className="bg-green-50 rounded-2xl p-4 text-center border border-green-100">
+          <p className="text-xs text-green-500 font-bold uppercase tracking-wide mb-1">Total Paid</p>
           <p className="text-2xl font-bold text-green-700">₹{totalPaid.toLocaleString("en-IN")}</p>
-          <p className="text-xs text-green-600 mt-1 font-medium">Total Paid</p>
+          <p className="text-xs text-green-400 mt-1">{paidPct}% of total</p>
         </div>
-        <div className="bg-red-50 rounded-2xl p-4 text-center">
-          <p className="text-2xl font-bold text-red-600">₹{totalDue.toLocaleString("en-IN")}</p>
-          <p className="text-xs text-red-500 mt-1 font-medium">Total Pending</p>
-        </div>
-        <div className="bg-blue-50 rounded-2xl p-4 text-center col-span-2 sm:col-span-1">
-          <p className="text-2xl font-bold text-blue-700">₹{(totalPaid + totalDue).toLocaleString("en-IN")}</p>
-          <p className="text-xs text-blue-600 mt-1 font-medium">Total Fees</p>
+        <div className={`rounded-2xl p-4 text-center border ${totalDue === 0 ? "bg-gray-50 border-gray-100" : "bg-red-50 border-red-100"}`}>
+          <p className={`text-xs font-bold uppercase tracking-wide mb-1 ${totalDue === 0 ? "text-gray-400" : "text-red-500"}`}>Balance Due</p>
+          <p className={`text-2xl font-bold ${totalDue === 0 ? "text-gray-500" : "text-red-600"}`}>
+            {totalDue === 0 ? "Cleared" : `₹${totalDue.toLocaleString("en-IN")}`}
+          </p>
+          <p className={`text-xs mt-1 ${totalDue === 0 ? "text-gray-400" : "text-red-400"}`}>
+            {totalDue === 0 ? "Fully paid ✓" : `${fees.length - paidFees.length} term pending`}
+          </p>
         </div>
       </div>
-      {/* Table */}
+
+      {/* Progress bar */}
+      <div className="bg-white rounded-2xl border border-gray-100 px-5 py-4">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-sm font-semibold text-gray-700">Payment Progress</span>
+          <span className="text-sm font-bold text-gray-800">{paidPct}%</span>
+        </div>
+        <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
+          <div
+            className={`h-3 rounded-full transition-all ${paidPct === 100 ? "bg-green-500" : paidPct >= 50 ? "bg-blue-500" : "bg-red-400"}`}
+            style={{ width: `${paidPct}%` }}
+          />
+        </div>
+        <div className="flex justify-between mt-1.5">
+          <span className="text-xs text-gray-400">₹0</span>
+          <span className="text-xs text-gray-400">₹{totalFees.toLocaleString("en-IN")}</span>
+        </div>
+      </div>
+
+      {/* Paid-only Table */}
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+          <p className="text-sm font-semibold text-gray-700">Fee Payment History</p>
+          <span className="text-xs bg-green-100 text-green-700 font-semibold px-2.5 py-1 rounded-full">
+            {paidFees.length} payment{paidFees.length !== 1 ? "s" : ""}
+          </span>
+        </div>
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50">
               <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Fee Term</th>
               <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Paid Date</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Receipt</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Paid On</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Receipt No</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {fees.map((fee, i) => (
-              <tr key={i} className="hover:bg-gray-50 transition-colors">
-                <td className="px-5 py-3.5 font-medium text-gray-800">{fee.term}</td>
-                <td className="px-5 py-3.5 font-semibold text-gray-800">₹{fee.amount.toLocaleString("en-IN")}</td>
-                <td className="px-5 py-3.5">
-                  <Badge
-                    value={fee.paid ? "Paid" : "Pending"}
-                    colorClass={fee.paid ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600"}
-                  />
-                </td>
-                <td className="px-5 py-3.5 text-gray-500">{fee.date || "—"}</td>
-                <td className="px-5 py-3.5">
-                  {fee.receipt
-                    ? <button className="text-school-navy text-xs font-medium hover:text-school-gold transition-colors">{fee.receipt}</button>
-                    : <span className="text-gray-300">—</span>
-                  }
+            {paidFees.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-5 py-10 text-center text-gray-400 text-sm">
+                  No fee payments recorded yet
                 </td>
               </tr>
-            ))}
+            ) : (
+              paidFees.map((fee, i) => (
+                <tr key={i} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-5 py-3.5 font-medium text-gray-800">{fee.term}</td>
+                  <td className="px-5 py-3.5 font-semibold text-green-700">
+                    ₹{fee.amount.toLocaleString("en-IN")}
+                  </td>
+                  <td className="px-5 py-3.5 text-gray-500">{fee.date}</td>
+                  <td className="px-5 py-3.5">
+                    <button className="text-school-navy text-xs font-semibold hover:text-school-gold transition-colors">
+                      {fee.receipt}
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
           </tbody>
         </table>
       </div>
@@ -323,6 +374,83 @@ function ResultsTab({ results }) {
   );
 }
 
+function InventoryTab({ inventory }) {
+  const given   = inventory.filter((i) => i.given);
+  const pending = inventory.filter((i) => !i.given);
+
+  return (
+    <div className="space-y-5">
+
+      {/* Summary */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="bg-blue-50 rounded-2xl p-4 text-center border border-blue-100">
+          <p className="text-xs text-blue-500 font-bold uppercase tracking-wide mb-1">Total Items</p>
+          <p className="text-2xl font-bold text-blue-700">{inventory.length}</p>
+        </div>
+        <div className="bg-green-50 rounded-2xl p-4 text-center border border-green-100">
+          <p className="text-xs text-green-500 font-bold uppercase tracking-wide mb-1">Given</p>
+          <p className="text-2xl font-bold text-green-700">{given.length}</p>
+          <p className="text-xs text-green-400 mt-1">to student</p>
+        </div>
+        <div className="bg-amber-50 rounded-2xl p-4 text-center border border-amber-100">
+          <p className="text-xs text-amber-500 font-bold uppercase tracking-wide mb-1">Pending</p>
+          <p className="text-2xl font-bold text-amber-700">{pending.length}</p>
+          <p className="text-xs text-amber-400 mt-1">with school</p>
+        </div>
+      </div>
+
+      {/* Items list */}
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+          <p className="text-sm font-semibold text-gray-700">School Inventory Items</p>
+          {pending.length > 0 && (
+            <span className="text-xs bg-amber-100 text-amber-700 font-semibold px-2.5 py-1 rounded-full">
+              {pending.length} item{pending.length !== 1 ? "s" : ""} pending
+            </span>
+          )}
+        </div>
+        <div className="divide-y divide-gray-50">
+          {inventory.map((item, i) => (
+            <div key={i} className="flex items-center gap-4 px-5 py-3.5">
+              <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                item.given ? "bg-green-100" : "bg-amber-50 border border-amber-200"
+              }`}>
+                {item.given
+                  ? <CheckCircle className="w-4.5 h-4.5 text-green-600" />
+                  : <Clock className="w-4 h-4 text-amber-500" />
+                }
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-800">{item.item}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {item.given
+                    ? `Given on ${item.givenDate}`
+                    : "Pending — not yet distributed"
+                  }
+                </p>
+              </div>
+              <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${
+                item.given
+                  ? "bg-green-100 text-green-700"
+                  : "bg-amber-100 text-amber-700"
+              }`}>
+                {item.given ? "Given" : "Pending"}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {pending.length === 0 && (
+        <div className="flex items-center gap-3 bg-green-50 border border-green-100 rounded-2xl px-5 py-4">
+          <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
+          <p className="text-sm font-semibold text-green-700">All inventory items have been distributed to this student.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────
 export default function StudentDetailPage() {
   const { id }  = useParams();
@@ -346,59 +474,119 @@ export default function StudentDetailPage() {
   return (
     <div className="space-y-5 max-w-screen-xl">
 
-      {/* ── Profile Header ── */}
+      {/* ── ID Card Header ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="h-2 bg-gradient-to-r from-school-navy to-school-navy-light" />
-        <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center gap-5">
-          <button onClick={() => router.back()} className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors self-start">
-            <ArrowLeft className="w-4 h-4 text-gray-600" />
-          </button>
 
-          {/* Photo */}
-          <div className="w-20 h-20 rounded-2xl bg-school-navy/10 flex items-center justify-center flex-shrink-0 overflow-hidden">
-            {student.photo
-              ? <img src={student.photo} alt={student.studentName} className="w-full h-full object-cover" />
-              : <User className="w-9 h-9 text-school-navy/30" />
-            }
-          </div>
-
-          {/* Core Info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl font-bold text-gray-800">{student.studentName}</h2>
-              <Badge value="Active" colorClass="bg-green-100 text-green-700" />
-            </div>
-            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5">
-              <span className="text-sm text-gray-500 flex items-center gap-1">
-                <GraduationCap className="w-3.5 h-3.5" /> {student.std}-{student.section} · Roll {student.rollNo}
-              </span>
-              <span className="text-sm text-gray-500 flex items-center gap-1">
-                <Phone className="w-3.5 h-3.5" /> {student.mobile1}
-              </span>
-              <span className="text-sm text-gray-500 flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5" /> {student.dob}
-              </span>
-            </div>
-            <div className="flex flex-wrap gap-2 mt-2">
-              <span className="text-xs bg-blue-50 text-blue-700 font-medium px-2.5 py-1 rounded-lg">
-                Enroll: #{student.enrollment}
-              </span>
-              <span className="text-xs bg-amber-50 text-amber-700 font-medium px-2.5 py-1 rounded-lg">
-                Session: {student.session}
-              </span>
-              <span className="text-xs bg-gray-100 text-gray-600 font-medium px-2.5 py-1 rounded-lg">
-                App Password: {student.password}
-              </span>
+        {/* Card Top Bar — navy gradient */}
+        <div className="bg-gradient-to-r from-school-navy via-blue-900 to-school-navy px-5 py-3.5 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => router.back()}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+            </button>
+            <div>
+              <p className="text-white/50 text-[10px] font-medium uppercase tracking-widest">
+                Student Identity Card
+              </p>
+              <p className="text-white text-sm font-semibold leading-tight">
+                Satyam Stars International School
+              </p>
             </div>
           </div>
-
-          {/* Action */}
           <button
             onClick={() => router.push(`/student/${id}/edit`)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-school-navy hover:bg-school-navy-dark text-white rounded-xl text-sm font-semibold transition-colors self-start shadow-sm"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-lg text-xs font-semibold transition-colors"
           >
-            <Edit className="w-4 h-4" /> Edit Profile
+            <Edit className="w-3.5 h-3.5" /> Edit Profile
           </button>
+        </div>
+
+        {/* Card Body */}
+        <div className="p-5 sm:p-6">
+          <div className="flex gap-5 sm:gap-6">
+
+            {/* Photo Column */}
+            <div className="flex-shrink-0 flex flex-col items-center gap-2">
+              <div className="w-24 h-28 sm:w-28 sm:h-32 rounded-xl border-4 border-school-navy/15 bg-gradient-to-b from-school-navy/5 to-school-navy/10 flex items-center justify-center overflow-hidden shadow-inner">
+                {student.photo
+                  ? <img src={student.photo} alt={student.studentName} className="w-full h-full object-cover" />
+                  : <User className="w-10 h-10 text-school-navy/25" />
+                }
+              </div>
+              <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-green-100 text-green-700">
+                Active
+              </span>
+            </div>
+
+            {/* Details Column */}
+            <div className="flex-1 min-w-0">
+
+              {/* Name + Enrollment */}
+              <div className="flex items-start gap-3 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-xl font-bold text-gray-900 leading-tight">{student.studentName}</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    S/o <span className="font-medium text-gray-700">{student.fatherName}</span>
+                    {" · "}
+                    M/o <span className="font-medium text-gray-700">{student.motherName}</span>
+                  </p>
+                </div>
+                <span className="flex-shrink-0 text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200 px-3 py-1 rounded-lg">
+                  #{student.enrollment}
+                </span>
+              </div>
+
+              {/* Info Pills Grid */}
+              <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <div className="bg-gray-50 rounded-xl px-3 py-2">
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide font-semibold">Date of Birth</p>
+                  <p className="text-xs font-bold text-gray-800 mt-0.5 flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-gray-400" /> {student.dob}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-xl px-3 py-2">
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide font-semibold">Mobile</p>
+                  <p className="text-xs font-bold text-gray-800 mt-0.5 flex items-center gap-1">
+                    <Phone className="w-3 h-3 text-gray-400" /> {student.mobile1}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-xl px-3 py-2">
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide font-semibold">Gender</p>
+                  <p className="text-xs font-bold text-gray-800 mt-0.5">{student.gender}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl px-3 py-2">
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide font-semibold">Class</p>
+                  <p className="text-xs font-bold text-gray-800 mt-0.5 flex items-center gap-1">
+                    <GraduationCap className="w-3 h-3 text-gray-400" />
+                    {student.std}-{student.section} · Roll {student.rollNo}
+                  </p>
+                </div>
+                <div className="bg-gray-50 rounded-xl px-3 py-2">
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide font-semibold">Session</p>
+                  <p className="text-xs font-bold text-gray-800 mt-0.5">{student.session}</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl px-3 py-2">
+                  <p className="text-[9px] text-gray-400 uppercase tracking-wide font-semibold">App Password</p>
+                  <p className="text-xs font-bold text-gray-800 mt-0.5 font-mono tracking-wider">
+                    {student.password}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Card Footer Strip */}
+          <div className="mt-4 pt-4 border-t border-dashed border-gray-200 flex items-center gap-2 flex-wrap">
+            <Shield className="w-3.5 h-3.5 text-school-navy/40" />
+            <span className="text-[10px] text-gray-400 font-medium">
+              Issued by School Administration · {student.session} Academic Year
+            </span>
+            <span className="ml-auto text-[10px] font-semibold text-school-navy/60 font-mono">
+              ID: {student.udise || student.enrollment}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -427,11 +615,12 @@ export default function StudentDetailPage() {
 
         {/* Tab Content */}
         <div className="p-5 lg:p-6">
-          {activeTab === "personal"    && <PersonalTab    s={student} />}
-          {activeTab === "documents"   && <DocumentsTab   docs={student.documents} />}
-          {activeTab === "fees"        && <FeesTab        fees={student.fees} />}
-          {activeTab === "attendance"  && <AttendanceTab  attendance={student.attendance} />}
-          {activeTab === "results"     && <ResultsTab     results={student.results} />}
+          {activeTab === "personal"   && <PersonalTab   s={student} />}
+          {activeTab === "documents"  && <DocumentsTab  docs={student.documents} />}
+          {activeTab === "fees"       && <FeesTab       fees={student.fees} />}
+          {activeTab === "attendance" && <AttendanceTab attendance={student.attendance} />}
+          {activeTab === "results"    && <ResultsTab    results={student.results} />}
+          {activeTab === "inventory"  && <InventoryTab  inventory={student.inventory} />}
         </div>
       </div>
     </div>

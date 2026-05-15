@@ -4,32 +4,37 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown, Upload, X, Plus, FileText,
-  User, ArrowLeft, Check, Camera,
+  ArrowLeft, Check, Camera, Lock,
 } from "lucide-react";
 
 // ── Options ────────────────────────────────────────────────────
-const sessions     = ["2025-26", "2026-27", "2024-25"];
-const standards    = [
-  "JR.KG","SR.KG","Balvatika",
-  "1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th",
-  "11th - Science","11th - Commerce","11th - Arts",
-  "12th - Science","12th - Commerce","12th - Arts",
-];
-const genders      = ["Male", "Female", "Other"];
-const religions    = ["Hindu", "Muslim", "Christian", "Jain", "Sikh", "Buddhist", "Parsi", "Other"];
-const castes       = ["General", "OBC", "SC", "ST", "EWS", "SEBC", "Other"];
-const mediums      = ["English", "Gujarati", "Hindi", "Other"];
-const todayStr     = new Date().toISOString().split("T")[0];
-const nextEnrollment = "1006"; // auto-generated (will come from DB later)
+const CURRENT_SESSION = "2025-26"; // controlled from Settings — not editable in form
 
-// Sibling dummy data
+const standards = [
+  "JR.KG", "SR.KG", "Balvatika",
+  "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th",
+  "11th - Commerce",
+  "12th - Commerce",
+];
+
+const prevStandards = [
+  "Nursery / KG", "1st", "2nd", "3rd", "4th", "5th",
+  "6th", "7th", "8th", "9th", "10th", "11th", "12th",
+];
+
+const genders   = ["Male", "Female", "Other"];
+const religions = ["Hindu", "Muslim", "Christian", "Jain", "Sikh", "Buddhist", "Parsi", "Other"];
+const castes    = ["General", "OBC", "SC", "ST", "EWS", "SEBC", "Other"];
+const mediums   = ["English", "Gujarati", "Hindi", "Other"];
+const todayStr  = new Date().toISOString().split("T")[0];
+const nextEnrollment = "1006";
+
 const siblingsByClass = {
   "10th": ["Arjun Patel", "Ravi Kumar"],
   "9th":  ["Priya Shah", "Nisha Mehta"],
   "8th":  ["Sneha Desai", "Pooja Joshi"],
 };
 
-// Default document types
 const defaultDocTypes = [
   "Birth Certificate",
   "Student Aadhar Card",
@@ -72,13 +77,14 @@ function Input({ className = "", ...props }) {
   );
 }
 
-function SelectField({ children, value, onChange, disabled }) {
+function SelectField({ children, value, onChange, disabled, required }) {
   return (
     <div className="relative">
       <select
         value={value}
         onChange={onChange}
         disabled={disabled}
+        required={required}
         className="w-full appearance-none pl-3.5 pr-9 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white cursor-pointer disabled:bg-gray-50 disabled:cursor-not-allowed transition-all"
       >
         {children}
@@ -90,7 +96,7 @@ function SelectField({ children, value, onChange, disabled }) {
 
 function YesNoToggle({ value, onChange }) {
   return (
-    <div className="flex gap-2">
+    <div className="flex gap-2 max-w-xs">
       {["Yes", "No"].map((opt) => (
         <button
           key={opt}
@@ -113,35 +119,34 @@ function YesNoToggle({ value, onChange }) {
 export default function AddStudentPage() {
   const router = useRouter();
 
-  // Section states
-  const [hasSibling, setHasSibling]   = useState(false);
-  const [siblingClass, setSiblingClass] = useState("");
-  const [siblingName, setSiblingName]   = useState("");
-  const [hasAadhar, setHasAadhar]       = useState(false);
-  const [photo, setPhoto]               = useState(null);
-  const [photoPreview, setPhotoPreview] = useState(null);
+  const [hasSibling, setHasSibling]       = useState(false);
+  const [siblingClass, setSiblingClass]   = useState("");
+  const [siblingName, setSiblingName]     = useState("");
+  const [hasAadhar, setHasAadhar]         = useState(true);
+  const [photo, setPhoto]                 = useState(null);
+  const [photoPreview, setPhotoPreview]   = useState(null);
+  const [casteCertFile, setCasteCertFile] = useState(null);
+  const casteCertRef = useRef(null);
   const photoRef = useRef(null);
 
-  // Aadhar display (with spaces) vs saved (no spaces)
   const [aadharDisplay, setAadharDisplay] = useState("");
 
-  // Document section
-  const [checkedDocs, setCheckedDocs]   = useState({});
+  const [checkedDocs, setCheckedDocs]     = useState({});
   const [uploadedFiles, setUploadedFiles] = useState({});
   const [customDocs, setCustomDocs]       = useState([]);
 
-  // Form data
   const [form, setForm] = useState({
-    session: sessions[0],
     joinDate: todayStr,
+    grNo: "",
     std: "",
-    studentName: "",
+    firstName: "",
+    lastName: "",
     fatherName: "",
     motherName: "",
     dob: "",
     gender: "",
-    religion: "",
-    caste: "",
+    religion: "Hindu",   // default
+    caste: "General",    // default
     roomPlotNo: "",
     address: "",
     mobile1: "",
@@ -159,7 +164,7 @@ export default function AddStudentPage() {
 
   const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
 
-  // Aadhar formatting
+  // Aadhar formatting — XXXX XXXX XXXX display, raw digits saved
   const handleAadharInput = (e) => {
     const digits = e.target.value.replace(/\D/g, "").slice(0, 12);
     const formatted = digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim();
@@ -167,7 +172,7 @@ export default function AddStudentPage() {
     setForm((p) => ({ ...p, aadharRaw: digits }));
   };
 
-  // Photo upload
+  // Photo
   const handlePhoto = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -175,19 +180,26 @@ export default function AddStudentPage() {
     setPhotoPreview(URL.createObjectURL(file));
   };
 
-  // Document checkbox toggle
-  const toggleDoc = (name) =>
+  // Toggle document — clears uploaded file when unticked
+  const toggleDoc = (name) => {
+    const wasChecked = checkedDocs[name];
     setCheckedDocs((p) => ({ ...p, [name]: !p[name] }));
+    if (wasChecked) {
+      setUploadedFiles((p) => {
+        const next = { ...p };
+        delete next[name];
+        return next;
+      });
+    }
+  };
 
-  // Document file upload
   const handleDocFile = (name, e) => {
     const file = e.target.files[0];
     if (file) setUploadedFiles((p) => ({ ...p, [name]: file.name }));
   };
 
-  // Add custom doc
   const addCustomDoc = () =>
-    setCustomDocs((p) => [...p, { id: Date.now(), label: "", checked: false }]);
+    setCustomDocs((p) => [...p, { id: Date.now(), label: "" }]);
 
   const updateCustomDocLabel = (id, label) =>
     setCustomDocs((p) => p.map((d) => (d.id === id ? { ...d, label } : d)));
@@ -197,6 +209,11 @@ export default function AddStudentPage() {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    let finalCaste = form.caste;
+    if (form.caste !== "General" && !casteCertFile) {
+      finalCaste = "General";
+      alert("No caste certificate uploaded — category has been set to General automatically.");
+    }
     alert("Student added successfully! (Dummy — will save to Supabase later)");
     router.push("/student");
   };
@@ -207,6 +224,7 @@ export default function AddStudentPage() {
       {/* ── Page Header ── */}
       <div className="flex items-center gap-3">
         <button
+          type="button"
           onClick={() => router.back()}
           className="p-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
         >
@@ -228,23 +246,20 @@ export default function AddStudentPage() {
           <SectionHeader number="1" title="Admission Details" />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
 
-            {/* Session */}
+            {/* Session — read-only */}
             <div>
               <FieldLabel required>Academic Session</FieldLabel>
-              <SelectField value={form.session} onChange={set("session")}>
-                {sessions.map((s) => <option key={s}>Session {s}</option>)}
-              </SelectField>
+              <div className="flex items-center gap-2 px-3.5 py-2.5 border border-gray-200 rounded-xl bg-gray-50">
+                <Lock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                <span className="text-sm font-semibold text-gray-700">{CURRENT_SESSION}</span>
+                <span className="text-xs text-gray-400 ml-auto">Set in Settings</span>
+              </div>
             </div>
 
             {/* Date of Join */}
             <div>
               <FieldLabel required>Date of Join</FieldLabel>
-              <Input
-                type="date"
-                value={form.joinDate}
-                max={todayStr}
-                onChange={set("joinDate")}
-              />
+              <Input type="date" value={form.joinDate} max={todayStr} onChange={set("joinDate")} />
             </div>
 
             {/* Enrollment Number */}
@@ -255,6 +270,17 @@ export default function AddStudentPage() {
                 <span className="text-xs text-gray-400">(Auto-assigned)</span>
               </div>
             </div>
+
+            {/* GR Number */}
+            <div>
+              <FieldLabel>GR Number</FieldLabel>
+              <Input
+                placeholder="e.g. GR-006"
+                value={form.grNo}
+                onChange={set("grNo")}
+              />
+              <p className="text-xs text-gray-400 mt-1">General Register number (optional at admission)</p>
+            </div>
           </div>
         </div>
 
@@ -262,7 +288,6 @@ export default function AddStudentPage() {
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <SectionHeader number="2" title="Student Photo" />
           <div className="flex items-center gap-6">
-            {/* Preview */}
             <div className="w-24 h-24 rounded-2xl bg-gray-100 flex items-center justify-center overflow-hidden flex-shrink-0 border-2 border-dashed border-gray-300">
               {photoPreview
                 ? <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
@@ -270,13 +295,7 @@ export default function AddStudentPage() {
               }
             </div>
             <div>
-              <input
-                ref={photoRef}
-                type="file"
-                accept="image/jpg,image/jpeg,image/png"
-                className="hidden"
-                onChange={handlePhoto}
-              />
+              <input ref={photoRef} type="file" accept="image/jpg,image/jpeg,image/png" className="hidden" onChange={handlePhoto} />
               <button
                 type="button"
                 onClick={() => photoRef.current.click()}
@@ -286,11 +305,8 @@ export default function AddStudentPage() {
                 {photo ? "Change Photo" : "Upload Photo"}
               </button>
               {photo && (
-                <button
-                  type="button"
-                  onClick={() => { setPhoto(null); setPhotoPreview(null); }}
-                  className="ml-2 text-xs text-red-500 hover:text-red-700"
-                >
+                <button type="button" onClick={() => { setPhoto(null); setPhotoPreview(null); }}
+                  className="ml-2 text-xs text-red-500 hover:text-red-700">
                   Remove
                 </button>
               )}
@@ -299,34 +315,34 @@ export default function AddStudentPage() {
           </div>
         </div>
 
-        {/* ══ SECTION 3: Sibling Details ══ */}
+        {/* ══ SECTION 3: Sibling at School ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <SectionHeader number="3" title="Sibling at This School" />
           <div className="space-y-4">
             <div>
               <FieldLabel>Does this student have a sibling already studying here?</FieldLabel>
-              <div className="max-w-xs">
-                <YesNoToggle value={hasSibling} onChange={setHasSibling} />
-              </div>
+              <YesNoToggle value={hasSibling} onChange={(val) => { setHasSibling(val); setSiblingClass(""); setSiblingName(""); }} />
             </div>
             {hasSibling && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                 <div>
-                  <FieldLabel>Sibling's Class</FieldLabel>
+                  <FieldLabel required>Sibling's Class</FieldLabel>
                   <SelectField
                     value={siblingClass}
                     onChange={(e) => { setSiblingClass(e.target.value); setSiblingName(""); }}
+                    required
                   >
                     <option value="">Select Class</option>
                     {standards.map((s) => <option key={s}>{s}</option>)}
                   </SelectField>
                 </div>
                 <div>
-                  <FieldLabel>Sibling's Name</FieldLabel>
+                  <FieldLabel required>Sibling's Name</FieldLabel>
                   <SelectField
                     value={siblingName}
                     onChange={(e) => setSiblingName(e.target.value)}
                     disabled={!siblingClass}
+                    required
                   >
                     <option value="">
                       {siblingClass ? "Select Student" : "Select class first"}
@@ -346,7 +362,7 @@ export default function AddStudentPage() {
           <SectionHeader number="4" title="Class Details" />
           <div className="max-w-xs">
             <FieldLabel required>Standard</FieldLabel>
-            <SelectField value={form.std} onChange={set("std")}>
+            <SelectField value={form.std} onChange={set("std")} required>
               <option value="">Select Standard</option>
               {standards.map((s) => <option key={s}>{s}</option>)}
             </SelectField>
@@ -358,38 +374,36 @@ export default function AddStudentPage() {
           <SectionHeader number="5" title="Personal Information" />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
-            <div className="sm:col-span-2">
-              <FieldLabel required>Student Full Name</FieldLabel>
-              <Input
-                placeholder="e.g. Arjun Rajesh Patel  (First Name · Middle Name · Last Name)"
-                value={form.studentName}
-                onChange={set("studentName")}
-              />
+            <div>
+              <FieldLabel required>First Name</FieldLabel>
+              <Input placeholder="Student's first name" value={form.firstName} onChange={set("firstName")} required />
+            </div>
+
+            <div>
+              <FieldLabel required>Last Name</FieldLabel>
+              <Input placeholder="Student's last name" value={form.lastName} onChange={set("lastName")} required />
             </div>
 
             <div>
               <FieldLabel required>Father's Name</FieldLabel>
-              <Input placeholder="Father's full name" value={form.fatherName} onChange={set("fatherName")} />
+              <Input placeholder="e.g. Rajesh" value={form.fatherName} onChange={set("fatherName")} required />
+              <p className="text-xs text-amber-600 mt-1 font-medium">Note: Write first name only</p>
             </div>
 
             <div>
               <FieldLabel required>Mother's Name</FieldLabel>
-              <Input placeholder="Mother's full name" value={form.motherName} onChange={set("motherName")} />
+              <Input placeholder="e.g. Meena" value={form.motherName} onChange={set("motherName")} required />
+              <p className="text-xs text-amber-600 mt-1 font-medium">Note: Write first name only</p>
             </div>
 
             <div>
               <FieldLabel required>Date of Birth</FieldLabel>
-              <Input
-                type="date"
-                value={form.dob}
-                onChange={set("dob")}
-                max={todayStr}
-              />
+              <Input type="date" value={form.dob} onChange={set("dob")} max={todayStr} required />
             </div>
 
             <div>
               <FieldLabel required>Gender</FieldLabel>
-              <SelectField value={form.gender} onChange={set("gender")}>
+              <SelectField value={form.gender} onChange={set("gender")} required>
                 <option value="">Select Gender</option>
                 {genders.map((g) => <option key={g}>{g}</option>)}
               </SelectField>
@@ -397,20 +411,66 @@ export default function AddStudentPage() {
 
             <div>
               <FieldLabel required>Religion</FieldLabel>
-              <SelectField value={form.religion} onChange={set("religion")}>
-                <option value="">Select Religion</option>
+              <SelectField value={form.religion} onChange={set("religion")} required>
                 {religions.map((r) => <option key={r}>{r}</option>)}
               </SelectField>
             </div>
 
             <div>
               <FieldLabel required>Category / Caste</FieldLabel>
-              <SelectField value={form.caste} onChange={set("caste")}>
-                <option value="">Select Category</option>
+              <SelectField value={form.caste} onChange={(e) => { set("caste")(e); setCasteCertFile(null); }} required>
                 {castes.map((c) => <option key={c}>{c}</option>)}
               </SelectField>
             </div>
           </div>
+
+          {/* Caste certificate — mandatory if non-General */}
+          {form.caste !== "General" && (
+            <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <div className="flex items-start gap-3 mb-3">
+                <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <FileText className="w-4 h-4 text-amber-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-amber-800">
+                    {form.caste} Certificate Required
+                  </p>
+                  <p className="text-xs text-amber-600 mt-0.5">
+                    Upload is mandatory. If not uploaded, the category will be automatically set to <b>General</b> on save.
+                  </p>
+                </div>
+              </div>
+              <input
+                ref={casteCertRef}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png"
+                className="hidden"
+                onChange={(e) => setCasteCertFile(e.target.files[0] || null)}
+              />
+              {casteCertFile ? (
+                <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
+                  <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
+                  <span className="text-sm text-green-700 font-medium flex-1 truncate">{casteCertFile.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setCasteCertFile(null)}
+                    className="text-red-400 hover:text-red-600 transition-colors flex-shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => casteCertRef.current.click()}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-amber-300 rounded-xl text-sm font-semibold text-amber-700 hover:bg-amber-100 transition-colors"
+                >
+                  <Upload className="w-4 h-4" />
+                  Upload {form.caste} Certificate
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ══ SECTION 6: Address & Contact ══ */}
@@ -420,12 +480,7 @@ export default function AddStudentPage() {
 
             <div>
               <FieldLabel required>Room No / Plot No</FieldLabel>
-              <Input placeholder="e.g. 12, Block B" value={form.roomPlotNo} onChange={set("roomPlotNo")} />
-            </div>
-
-            <div>
-              <FieldLabel required>Place of Birth</FieldLabel>
-              <Input placeholder="City / Town of birth" value={form.placeOfBirth} onChange={set("placeOfBirth")} />
+              <Input placeholder="e.g. 12, Block B" value={form.roomPlotNo} onChange={set("roomPlotNo")} required />
             </div>
 
             <div className="sm:col-span-2">
@@ -435,37 +490,35 @@ export default function AddStudentPage() {
                 value={form.address}
                 onChange={set("address")}
                 rows={2}
+                required
                 className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy transition-all bg-white placeholder:text-gray-300 resize-none"
               />
             </div>
 
             <div>
               <FieldLabel required>Mobile Number 1</FieldLabel>
-              <Input
-                type="tel"
-                placeholder="Primary mobile number"
-                maxLength={10}
-                value={form.mobile1}
-                onChange={set("mobile1")}
-              />
+              <Input type="tel" placeholder="Primary mobile number" maxLength={10} value={form.mobile1} onChange={set("mobile1")} required />
             </div>
 
             <div>
               <FieldLabel>Mobile Number 2</FieldLabel>
-              <Input
-                type="tel"
-                placeholder="Alternate mobile number"
-                maxLength={10}
-                value={form.mobile2}
-                onChange={set("mobile2")}
-              />
+              <Input type="tel" placeholder="Alternate mobile number" maxLength={10} value={form.mobile2} onChange={set("mobile2")} />
             </div>
           </div>
         </div>
 
-        {/* ══ SECTION 7: Previous School Details ══ */}
+        {/* ══ SECTION 7: Birth Details ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <SectionHeader number="7" title="Previous School Details" />
+          <SectionHeader number="7" title="Birth Details" />
+          <div className="max-w-sm">
+            <FieldLabel required>Place of Birth</FieldLabel>
+            <Input placeholder="City / Town where student was born" value={form.placeOfBirth} onChange={set("placeOfBirth")} required />
+          </div>
+        </div>
+
+        {/* ══ SECTION 8: Previous School ══ */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+          <SectionHeader number="8" title="Previous School Details" />
           <p className="text-xs text-gray-400 mb-4 -mt-2">Leave blank if this is the student's first school</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
@@ -474,7 +527,10 @@ export default function AddStudentPage() {
             </div>
             <div>
               <FieldLabel>Last Class Attended</FieldLabel>
-              <Input placeholder="e.g. 5th Standard" value={form.lastSchoolClass} onChange={set("lastSchoolClass")} />
+              <SelectField value={form.lastSchoolClass} onChange={set("lastSchoolClass")}>
+                <option value="">Select Standard</option>
+                {prevStandards.map((s) => <option key={s}>{s}</option>)}
+              </SelectField>
             </div>
             <div>
               <FieldLabel>Medium of Instruction</FieldLabel>
@@ -490,35 +546,34 @@ export default function AddStudentPage() {
           </div>
         </div>
 
-        {/* ══ SECTION 8: Aadhar Details ══ */}
+        {/* ══ SECTION 9: Aadhar Details ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <SectionHeader number="8" title="Aadhar Card Details" />
+          <SectionHeader number="9" title="Aadhar Card Details" />
           <div className="space-y-4">
             <div>
               <FieldLabel>Does the student have an Aadhar Card?</FieldLabel>
-              <div className="max-w-xs">
-                <YesNoToggle value={hasAadhar} onChange={setHasAadhar} />
-              </div>
+              <YesNoToggle value={hasAadhar} onChange={(val) => { setHasAadhar(val); setAadharDisplay(""); setForm((p) => ({ ...p, aadharRaw: "", aadharName: "" })); }} />
             </div>
             {hasAadhar && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
                 <div>
-                  <FieldLabel>Aadhar Number</FieldLabel>
+                  <FieldLabel required>Aadhar Number</FieldLabel>
                   <Input
                     placeholder="XXXX XXXX XXXX"
                     value={aadharDisplay}
                     onChange={handleAadharInput}
                     maxLength={14}
                     className="tracking-widest font-mono"
+                    required
                   />
-                  <p className="text-xs text-gray-400 mt-1">Displayed with spaces · Saved without spaces</p>
                 </div>
                 <div>
-                  <FieldLabel>Name as per Aadhar</FieldLabel>
+                  <FieldLabel required>Name as per Aadhar</FieldLabel>
                   <Input
                     placeholder="Exact name on Aadhar card"
                     value={form.aadharName}
                     onChange={set("aadharName")}
+                    required
                   />
                 </div>
               </div>
@@ -526,27 +581,18 @@ export default function AddStudentPage() {
           </div>
         </div>
 
-        {/* ══ SECTION 9: Document Upload ══ */}
+        {/* ══ SECTION 10: Document Upload ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <SectionHeader number="9" title="Document Upload" />
-          <p className="text-xs text-gray-400 mb-4 -mt-2">
-            All documents are optional · Supported formats: PDF, JPG, PNG
-          </p>
+          <SectionHeader number="10" title="Document Upload" />
+          <p className="text-xs text-gray-400 mb-4 -mt-2">All documents are optional · Supported formats: PDF, JPG, PNG</p>
           <div className="space-y-3">
-            {/* Default documents */}
             {defaultDocTypes.map((docName) => (
               <div key={docName} className="border border-gray-100 rounded-xl overflow-hidden">
                 <div
-                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${
-                    checkedDocs[docName] ? "bg-blue-50" : "bg-white"
-                  }`}
+                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${checkedDocs[docName] ? "bg-blue-50" : "bg-white"}`}
                   onClick={() => toggleDoc(docName)}
                 >
-                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                    checkedDocs[docName]
-                      ? "bg-school-navy border-school-navy"
-                      : "border-gray-300"
-                  }`}>
+                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${checkedDocs[docName] ? "bg-school-navy border-school-navy" : "border-gray-300"}`}>
                     {checkedDocs[docName] && <Check className="w-3 h-3 text-white" />}
                   </div>
                   <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -562,19 +608,13 @@ export default function AddStudentPage() {
                     <label className="inline-flex items-center gap-2 px-3 py-2 bg-white border border-blue-200 rounded-lg text-xs font-medium text-school-navy cursor-pointer hover:bg-blue-50 transition-colors">
                       <Upload className="w-3.5 h-3.5" />
                       {uploadedFiles[docName] ? "Change File" : "Upload File"}
-                      <input
-                        type="file"
-                        accept=".pdf,.jpg,.jpeg,.png"
-                        className="hidden"
-                        onChange={(e) => handleDocFile(docName, e)}
-                      />
+                      <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => handleDocFile(docName, e)} />
                     </label>
                   </div>
                 )}
               </div>
             ))}
 
-            {/* Custom documents */}
             {customDocs.map((doc) => (
               <div key={doc.id} className="border border-dashed border-gray-200 rounded-xl p-3 flex items-center gap-3">
                 <FileText className="w-4 h-4 text-gray-300 flex-shrink-0" />
@@ -588,18 +628,15 @@ export default function AddStudentPage() {
                 {doc.label && (
                   <label className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-600 cursor-pointer hover:bg-gray-50">
                     <Upload className="w-3 h-3" /> Upload
-                    <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden"
-                      onChange={(e) => handleDocFile(doc.label, e)} />
+                    <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => handleDocFile(doc.label, e)} />
                   </label>
                 )}
-                <button type="button" onClick={() => removeCustomDoc(doc.id)}
-                  className="text-gray-300 hover:text-red-400 transition-colors">
+                <button type="button" onClick={() => removeCustomDoc(doc.id)} className="text-gray-300 hover:text-red-400 transition-colors">
                   <X className="w-4 h-4" />
                 </button>
               </div>
             ))}
 
-            {/* Add custom doc button */}
             <button
               type="button"
               onClick={addCustomDoc}
@@ -610,22 +647,17 @@ export default function AddStudentPage() {
           </div>
         </div>
 
-        {/* ══ SECTION 10: Government IDs ══ */}
+        {/* ══ SECTION 11: Government IDs ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-          <SectionHeader number="10" title="Government ID Numbers" />
-          <p className="text-xs text-gray-400 mb-4 -mt-2">
-            All fields are optional at admission · Can be updated later
-          </p>
+          <SectionHeader number="11" title="Government ID Numbers" />
+          <p className="text-xs text-gray-400 mb-4 -mt-2">All fields are optional at admission · Can be updated later</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <FieldLabel>UDISE Number</FieldLabel>
               <Input
                 placeholder="18-digit UDISE number"
                 value={form.udise}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/\D/g, "").slice(0, 18);
-                  setForm((p) => ({ ...p, udise: v }));
-                }}
+                onChange={(e) => setForm((p) => ({ ...p, udise: e.target.value.replace(/\D/g, "").slice(0, 18) }))}
                 maxLength={18}
                 className="font-mono tracking-wide"
               />
@@ -636,10 +668,7 @@ export default function AddStudentPage() {
               <Input
                 placeholder="11-digit PEN number"
                 value={form.pen}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/\D/g, "").slice(0, 11);
-                  setForm((p) => ({ ...p, pen: v }));
-                }}
+                onChange={(e) => setForm((p) => ({ ...p, pen: e.target.value.replace(/\D/g, "").slice(0, 11) }))}
                 maxLength={11}
                 className="font-mono tracking-wide"
               />
@@ -650,10 +679,7 @@ export default function AddStudentPage() {
               <Input
                 placeholder="12-digit APAAR ID"
                 value={form.apaar}
-                onChange={(e) => {
-                  const v = e.target.value.replace(/\D/g, "").slice(0, 12);
-                  setForm((p) => ({ ...p, apaar: v }));
-                }}
+                onChange={(e) => setForm((p) => ({ ...p, apaar: e.target.value.replace(/\D/g, "").slice(0, 12) }))}
                 maxLength={12}
                 className="font-mono tracking-wide"
               />
@@ -662,19 +688,14 @@ export default function AddStudentPage() {
           </div>
         </div>
 
-        {/* ══ Submit Buttons ══ */}
+        {/* ══ Submit ══ */}
         <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="px-6 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
-          >
+          <button type="button" onClick={() => router.back()}
+            className="px-6 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
             Cancel
           </button>
-          <button
-            type="submit"
-            className="px-8 py-2.5 rounded-xl bg-school-navy hover:bg-school-navy-dark text-white text-sm font-semibold transition-colors shadow-sm"
-          >
+          <button type="submit"
+            className="px-8 py-2.5 rounded-xl bg-school-navy hover:bg-school-navy-dark text-white text-sm font-semibold transition-colors shadow-sm">
             Add Student
           </button>
         </div>
