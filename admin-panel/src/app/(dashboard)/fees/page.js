@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   IndianRupee, Search, Send, Bell, CheckCircle2,
   Package, Phone, GraduationCap, ChevronDown, ChevronUp,
-  X, MessageSquare, Users, Check, Lock,
+  X, MessageSquare, Users, Check, Lock, Eye,
 } from "lucide-react";
 
 // ── Fees Structure ─────────────────────────────────────────────
@@ -26,11 +26,12 @@ const FEES_STRUCTURE = [
   { std: "12th - Commerce", amount: 19000 },
 ];
 
-const INVENTORY_ITEMS = [
-  "School Bag", "Uniform", "Textbooks", "School Diary", "ID Card", "Water Bottle",
-];
+const ADMINS = ["Sunil Pradhan", "Rajesh Pradhan", "Other"];
 
-const ADMINS = ["Principal", "Vice Principal", "Admin", "Accountant", "Class Teacher"];
+// Inventory items exactly as defined in student profile module
+const SCHOOL_INVENTORY = [
+  "School Bag", "Uniform", "Textbooks", "Notebooks", "School Diary", "ID Card",
+];
 
 const INITIAL_STUDENTS = [
   {
@@ -42,11 +43,12 @@ const INITIAL_STUDENTS = [
       { date: "2026-10-12", amount: 5000, receivedBy: "Admin" },
     ],
     inventory: [
-      { item: "School Bag",   givenDate: "05 Jun 2026" },
-      { item: "Uniform",      givenDate: "05 Jun 2026" },
-      { item: "Textbooks",    givenDate: "10 Jun 2026" },
-      { item: "School Diary", givenDate: "05 Jun 2026" },
-      { item: "ID Card",      givenDate: "15 Jun 2026" },
+      { item: "School Bag",   givenDate: "05 Jun 2026", given: true  },
+      { item: "Uniform",      givenDate: "05 Jun 2026", given: true  },
+      { item: "Textbooks",    givenDate: "10 Jun 2026", given: true  },
+      { item: "Notebooks",    givenDate: "",            given: false },
+      { item: "School Diary", givenDate: "05 Jun 2026", given: true  },
+      { item: "ID Card",      givenDate: "15 Jun 2026", given: true  },
     ],
   },
   {
@@ -57,11 +59,12 @@ const INITIAL_STUDENTS = [
       { date: "2026-06-10", amount: 17500, receivedBy: "Admin" },
     ],
     inventory: [
-      { item: "School Bag",   givenDate: "10 Jun 2026" },
-      { item: "Uniform",      givenDate: "10 Jun 2026" },
-      { item: "Textbooks",    givenDate: "12 Jun 2026" },
-      { item: "School Diary", givenDate: "10 Jun 2026" },
-      { item: "ID Card",      givenDate: "15 Jun 2026" },
+      { item: "School Bag",   givenDate: "10 Jun 2026", given: true },
+      { item: "Uniform",      givenDate: "10 Jun 2026", given: true },
+      { item: "Textbooks",    givenDate: "12 Jun 2026", given: true },
+      { item: "Notebooks",    givenDate: "12 Jun 2026", given: true },
+      { item: "School Diary", givenDate: "10 Jun 2026", given: true },
+      { item: "ID Card",      givenDate: "15 Jun 2026", given: true },
     ],
   },
   {
@@ -72,9 +75,12 @@ const INITIAL_STUDENTS = [
       { date: "2026-06-08", amount: 9000, receivedBy: "Admin" },
     ],
     inventory: [
-      { item: "School Bag", givenDate: "08 Jun 2026" },
-      { item: "Textbooks",  givenDate: "10 Jun 2026" },
-      { item: "ID Card",    givenDate: "15 Jun 2026" },
+      { item: "School Bag",   givenDate: "08 Jun 2026", given: true  },
+      { item: "Uniform",      givenDate: "",            given: false },
+      { item: "Textbooks",    givenDate: "10 Jun 2026", given: true  },
+      { item: "Notebooks",    givenDate: "",            given: false },
+      { item: "School Diary", givenDate: "",            given: false },
+      { item: "ID Card",      givenDate: "15 Jun 2026", given: true  },
     ],
   },
   {
@@ -82,7 +88,14 @@ const INITIAL_STUDENTS = [
     std: "8th", section: "C", rollNo: "418", mobile: "9543210987",
     discount: { amount: 2500, reason: "3 Kids" },
     payments: [],
-    inventory: [],
+    inventory: [
+      { item: "School Bag",   givenDate: "", given: false },
+      { item: "Uniform",      givenDate: "", given: false },
+      { item: "Textbooks",    givenDate: "", given: false },
+      { item: "Notebooks",    givenDate: "", given: false },
+      { item: "School Diary", givenDate: "", given: false },
+      { item: "ID Card",      givenDate: "", given: false },
+    ],
   },
   {
     enrollment: "1005", name: "Dev Joshi", fatherName: "Prakash",
@@ -92,10 +105,12 @@ const INITIAL_STUDENTS = [
       { date: "2026-06-12", amount: 14500, receivedBy: "Admin" },
     ],
     inventory: [
-      { item: "School Bag",   givenDate: "12 Jun 2026" },
-      { item: "Uniform",      givenDate: "12 Jun 2026" },
-      { item: "School Diary", givenDate: "12 Jun 2026" },
-      { item: "ID Card",      givenDate: "20 Jun 2026" },
+      { item: "School Bag",   givenDate: "12 Jun 2026", given: true  },
+      { item: "Uniform",      givenDate: "12 Jun 2026", given: true  },
+      { item: "Textbooks",    givenDate: "",            given: false },
+      { item: "Notebooks",    givenDate: "",            given: false },
+      { item: "School Diary", givenDate: "12 Jun 2026", given: true  },
+      { item: "ID Card",      givenDate: "20 Jun 2026", given: true  },
     ],
   },
 ];
@@ -137,7 +152,37 @@ function todayLong() {
   return new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+// Tri-lingual reminder — short and simple (English + Hindi + Odia)
 function buildReminderMsg(student, lastDate) {
+  const { dueFees } = calcSummary(student);
+  const cls  = `${student.std}${student.section ? "-" + student.section : ""}`;
+  const due  = `₹${dueFees.toLocaleString("en-IN")}`;
+  const last = formatDateLong(lastDate);
+
+  return `— English —
+Dear Parent,
+Your child ${student.name} (Class ${cls}, Roll ${student.rollNo}) has ${due} school fees pending.
+Please pay before ${last}.
+Contact school office for any help.
+Satyam Stars International School, Surat
+
+— हिंदी —
+प्रिय अभिभावक,
+आपके बच्चे ${student.name} (कक्षा ${cls}, रोल ${student.rollNo}) की ${due} स्कूल फीस बाकी है।
+कृपया ${last} से पहले जमा करें।
+किसी भी सहायता के लिए स्कूल कार्यालय से संपर्क करें।
+सत्यम स्टार्स इंटरनेशनल स्कूल, सूरत
+
+— ଓଡ଼ିଆ —
+ପ୍ରିୟ ଅଭିଭାବକ,
+ଆପଣଙ୍କ ପିଲା ${student.name} (ଶ୍ରେଣୀ ${cls}, ରୋଲ ${student.rollNo}) ର ${due} ସ୍କୁଲ ଶୁଳ୍କ ବାକି ଅଛି।
+ଦୟାକରି ${last} ପୂର୍ବରୁ ଦିଅନ୍ତୁ।
+ଆବଶ୍ୟକ ହେଲେ ସ୍କୁଲ କାର୍ଯ୍ୟାଳୟ ସହ ଯୋଗାଯୋଗ କରନ୍ତୁ।
+ସତ୍ୟମ ଷ୍ଟାର୍ସ ଇଣ୍ଟରନ୍ୟାସନାଲ ସ୍କୁଲ, ସୁରାଟ`;
+}
+
+// Single-language for individual Notify modal
+function buildSingleReminder(student, lastDate) {
   const { actualFees, dueFees } = calcSummary(student);
   return `Dear Parent / Guardian,
 
@@ -179,15 +224,23 @@ function SummaryPill({ label, value, subLabel, colorClass }) {
   );
 }
 
-// ── Notification Modal ──────────────────────────────────────────
+function ReadOnlyBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full font-semibold">
+      <Lock className="w-2.5 h-2.5" /> Read only
+    </span>
+  );
+}
+
+// ── Individual Notify Modal ────────────────────────────────────
 function NotificationModal({ student, onClose }) {
   const defaultLast = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
   const [lastDate, setLastDate] = useState(defaultLast);
-  const [message,  setMessage]  = useState(() => buildReminderMsg(student, defaultLast));
+  const [message,  setMessage]  = useState(() => buildSingleReminder(student, defaultLast));
 
   const handleDateChange = (d) => {
     setLastDate(d);
-    setMessage(buildReminderMsg(student, d));
+    setMessage(buildSingleReminder(student, d));
   };
 
   const { dueFees } = calcSummary(student);
@@ -216,9 +269,7 @@ function NotificationModal({ student, onClose }) {
             </div>
           </div>
           <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
-              Last Date for Payment
-            </label>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Last Date for Payment</label>
             <input
               type="date" value={lastDate} min={todayStr}
               onChange={(e) => handleDateChange(e.target.value)}
@@ -230,13 +281,12 @@ function NotificationModal({ student, onClose }) {
               Message <span className="text-gray-400 font-normal normal-case">(Editable)</span>
             </label>
             <textarea
-              value={message} onChange={(e) => setMessage(e.target.value)} rows={12}
+              value={message} onChange={(e) => setMessage(e.target.value)} rows={11}
               className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-xs font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy resize-none"
             />
           </div>
           <div className="flex gap-3">
-            <button onClick={onClose}
-              className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+            <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
               Cancel
             </button>
             <button
@@ -252,22 +302,164 @@ function NotificationModal({ student, onClose }) {
   );
 }
 
+// ── View Modal ─────────────────────────────────────────────────
+function ViewModal({ student, onClose }) {
+  const { totalFees, discount, actualFees, paidFees, dueFees } = calcSummary(student);
+  const status = getPaymentStatus(student);
+  const givenItems   = student.inventory.filter((i) => i.given);
+  const pendingItems = student.inventory.filter((i) => !i.given);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+
+        {/* Header */}
+        <div className="bg-school-navy px-5 py-4 flex items-center gap-3 flex-shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
+            <GraduationCap className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-white font-bold leading-tight">{student.name}</p>
+            <p className="text-white/60 text-xs mt-0.5">
+              Class {student.std}{student.section ? "-" + student.section : ""} · Roll {student.rollNo} · Enr #{student.enrollment}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors flex-shrink-0">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Scrollable content */}
+        <div className="overflow-y-auto p-5 space-y-5">
+
+          {/* Status row */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+              status === "Full Paid"    ? "bg-green-100 text-green-700"
+              : status === "Partial Paid" ? "bg-amber-100 text-amber-700"
+              : "bg-red-100 text-red-600"
+            }`}>{status}</span>
+            <span className="flex items-center gap-1 text-sm text-gray-500">
+              <Phone className="w-3.5 h-3.5 text-gray-400" /> {student.mobile}
+            </span>
+            {student.discount?.amount > 0 && (
+              <span className="text-xs bg-amber-50 border border-amber-200 text-amber-700 px-2.5 py-0.5 rounded-full font-semibold">
+                Discount: ₹{student.discount.amount.toLocaleString("en-IN")} · {student.discount.reason}
+              </span>
+            )}
+          </div>
+
+          {/* Summary pills */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <SummaryPill label="Total Fees"  value={`₹${totalFees.toLocaleString("en-IN")}`}  colorClass="bg-blue-50 border-blue-100 text-blue-800" />
+            <SummaryPill label="Discount"    value={`₹${discount.toLocaleString("en-IN")}`}   colorClass="bg-amber-50 border-amber-100 text-amber-800" subLabel={student.discount?.reason || "—"} />
+            <SummaryPill label="Actual Fees" value={`₹${actualFees.toLocaleString("en-IN")}`} colorClass="bg-purple-50 border-purple-100 text-purple-800" />
+            <SummaryPill label="Paid Fees"   value={`₹${paidFees.toLocaleString("en-IN")}`}   colorClass="bg-green-50 border-green-100 text-green-800" />
+            <SummaryPill
+              label="Due Fees"
+              value={dueFees <= 0 ? "Cleared ✓" : `₹${dueFees.toLocaleString("en-IN")}`}
+              colorClass={dueFees <= 0 ? "bg-gray-50 border-gray-100 text-gray-600" : "bg-red-50 border-red-100 text-red-700"}
+            />
+          </div>
+
+          {/* Payment History */}
+          <div className="border border-gray-100 rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+              <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Payment History</p>
+              <span className="text-[10px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">
+                {student.payments.length} payment{student.payments.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+            {student.payments.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-gray-400">No payments recorded yet</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-50/60">
+                    <th className="text-left px-4 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wide">#</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wide">Date</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wide">Amount</th>
+                    <th className="text-left px-4 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wide">Received By</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {student.payments.map((p, i) => (
+                    <tr key={i}>
+                      <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
+                      <td className="px-4 py-3 font-medium text-gray-700">{formatDateShort(p.date)}</td>
+                      <td className="px-4 py-3 font-bold text-green-700">₹{p.amount.toLocaleString("en-IN")}</td>
+                      <td className="px-4 py-3 text-gray-600">{p.receivedBy}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Inventory */}
+          <div className="border border-gray-100 rounded-2xl overflow-hidden">
+            <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+              <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Inventory</p>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">
+                  {givenItems.length} given
+                </span>
+                {pendingItems.length > 0 && (
+                  <span className="text-[10px] bg-amber-100 text-amber-700 font-semibold px-2 py-0.5 rounded-full">
+                    {pendingItems.length} pending
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="divide-y divide-gray-50">
+              {student.inventory.map((inv, i) => (
+                <div key={i} className={`flex items-center justify-between px-4 py-3 ${inv.given ? "" : "bg-amber-50/40"}`}>
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${inv.given ? "bg-green-50 border border-green-200" : "bg-amber-50 border border-amber-200"}`}>
+                      {inv.given
+                        ? <CheckCircle2 className="w-3.5 h-3.5 text-green-600" />
+                        : <Package className="w-3.5 h-3.5 text-amber-500" />}
+                    </div>
+                    <span className="text-sm font-medium text-gray-800">{inv.item}</span>
+                  </div>
+                  <span className={`text-xs font-medium ${inv.given ? "text-gray-500" : "text-amber-600"}`}>
+                    {inv.given ? inv.givenDate : "Pending"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
+
+        <div className="px-5 py-4 border-t border-gray-100 flex-shrink-0">
+          <button onClick={onClose} className="w-full py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────
 export default function FeesPage() {
   const [students,      setStudents]      = useState(INITIAL_STUDENTS);
   const [notifyStudent, setNotifyStudent] = useState(null);
+  const [viewStudent,   setViewStudent]   = useState(null);
 
   // Top toggle cards
   const [structureOpen, setStructureOpen] = useState(false);
   const [reminderOpen,  setReminderOpen]  = useState(false);
 
   // Fee Entry
-  const [entryStd,        setEntryStd]        = useState("");
-  const [entryRoll,       setEntryRoll]        = useState("");
-  const [newAmt,          setNewAmt]           = useState("");
-  const [newDate,         setNewDate]          = useState(todayStr);
-  const [newAdmin,        setNewAdmin]         = useState("");
-  const [pendingInventory, setPendingInventory] = useState(new Set());
+  const [entryStd,         setEntryStd]         = useState("");
+  const [entryRoll,        setEntryRoll]         = useState("");
+  const [newAmt,           setNewAmt]            = useState("");
+  const [newDate,          setNewDate]           = useState(todayStr);
+  const [newAdmin,         setNewAdmin]          = useState("");
+  const [newAdminCustom,   setNewAdminCustom]    = useState("");
+  const [pendingInventory, setPendingInventory]  = useState(new Set());
 
   const stdOrder    = FEES_STRUCTURE.map((f) => f.std);
   const stdList     = [...new Set(students.map((s) => s.std))].sort(
@@ -278,8 +470,8 @@ export default function FeesPage() {
     ? students.find((s) => s.std === entryStd && s.rollNo === entryRoll)
     : null;
 
-  const pendingItems = entryStudent
-    ? INVENTORY_ITEMS.filter((item) => !entryStudent.inventory.find((i) => i.item === item))
+  const pendingInvItems = entryStudent
+    ? entryStudent.inventory.filter((i) => !i.given)
     : [];
 
   const togglePendingItem = (item) => {
@@ -291,18 +483,19 @@ export default function FeesPage() {
   };
 
   const handleSavePayment = () => {
-    if (!entryStudent || !newAmt || !newAdmin) {
+    const receivedBy = newAdmin === "Other" ? newAdminCustom.trim() : newAdmin;
+    if (!entryStudent || !newAmt || !receivedBy) {
       alert("Please fill amount and received by.");
       return;
     }
     setStudents((prev) =>
       prev.map((s) =>
         s.enrollment === entryStudent.enrollment
-          ? { ...s, payments: [...s.payments, { date: newDate, amount: Number(newAmt), receivedBy: newAdmin }] }
+          ? { ...s, payments: [...s.payments, { date: newDate, amount: Number(newAmt), receivedBy }] }
           : s
       )
     );
-    setNewAmt(""); setNewDate(todayStr); setNewAdmin("");
+    setNewAmt(""); setNewDate(todayStr); setNewAdmin(""); setNewAdminCustom("");
     setEntryStd(""); setEntryRoll("");
     setPendingInventory(new Set());
     alert("Payment recorded successfully!");
@@ -319,10 +512,11 @@ export default function FeesPage() {
         s.enrollment === entryStudent.enrollment
           ? {
               ...s,
-              inventory: [
-                ...s.inventory,
-                ...[...pendingInventory].map((item) => ({ item, givenDate })),
-              ],
+              inventory: s.inventory.map((inv) =>
+                pendingInventory.has(inv.item)
+                  ? { ...inv, given: true, givenDate }
+                  : inv
+              ),
             }
           : s
       )
@@ -351,22 +545,39 @@ export default function FeesPage() {
     );
   });
 
-  // Send Message (reminder)
-  const [msgRecipient,       setMsgRecipient]       = useState("all");
-  const [msgLastDate,        setMsgLastDate]         = useState(new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0]);
-  const [customMsg,          setCustomMsg]           = useState("");
-  const [selectedIncomplete, setSelectedIncomplete]  = useState(
+  // Send Reminder (incomplete first by default)
+  const [msgRecipient,       setMsgRecipient]      = useState("incomplete");
+  const [msgLastDate,        setMsgLastDate]        = useState(
+    () => new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0]
+  );
+  const [customMsg,          setCustomMsg]          = useState("");
+  const [selectedIncomplete, setSelectedIncomplete] = useState(
     () => new Set(INITIAL_STUDENTS.filter((s) => calcSummary(s).dueFees > 0).map((s) => s.enrollment))
   );
+  const [studentListOpen,    setStudentListOpen]    = useState(false);
+  const [reminderMsg,        setReminderMsg]        = useState(() => {
+    const initDate = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
+    const first    = INITIAL_STUDENTS.find((s) => calcSummary(s).dueFees > 0);
+    return first ? buildReminderMsg(first, initDate) : "";
+  });
 
   const incompleteStudents = students.filter((s) => getPaymentStatus(s) !== "Full Paid");
 
-  const toggleIncomplete = (enr) =>
+  const toggleIncomplete = (enr) => {
     setSelectedIncomplete((prev) => {
       const next = new Set(prev);
       next.has(enr) ? next.delete(enr) : next.add(enr);
+      const newFirst = incompleteStudents.find((s) => next.has(s.enrollment));
+      if (newFirst) setReminderMsg(buildReminderMsg(newFirst, msgLastDate));
       return next;
     });
+  };
+
+  const handleReminderDateChange = (d) => {
+    setMsgLastDate(d);
+    const first = incompleteStudents.find((s) => selectedIncomplete.has(s.enrollment));
+    if (first) setReminderMsg(buildReminderMsg(first, d));
+  };
 
   const handleSendMessage = () => {
     if (msgRecipient === "all") {
@@ -384,6 +595,9 @@ export default function FeesPage() {
     <>
       {notifyStudent && (
         <NotificationModal student={notifyStudent} onClose={() => setNotifyStudent(null)} />
+      )}
+      {viewStudent && (
+        <ViewModal student={viewStudent} onClose={() => setViewStudent(null)} />
       )}
 
       <div className="space-y-6">
@@ -414,12 +628,9 @@ export default function FeesPage() {
                 <span className="hidden sm:inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-semibold">
                   <Lock className="w-2.5 h-2.5" /> Edit in Settings
                 </span>
-                {structureOpen
-                  ? <ChevronUp className="w-4 h-4 text-gray-400" />
-                  : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                {structureOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
               </div>
             </button>
-
             {structureOpen && (
               <div className="border-t border-gray-100">
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-gray-100">
@@ -449,21 +660,19 @@ export default function FeesPage() {
                   {incompleteStudents.length} student{incompleteStudents.length !== 1 ? "s" : ""} with pending fees
                 </p>
               </div>
-              {reminderOpen
-                ? <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                : <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />}
+              {reminderOpen ? <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" /> : <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />}
             </button>
 
             {reminderOpen && (
               <div className="border-t border-gray-100 p-5 space-y-4">
 
-                {/* Recipient toggle */}
+                {/* Recipient toggle — Incomplete first */}
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Send To</label>
                   <div className="flex gap-2">
                     {[
-                      { key: "all",        label: "All Students" },
                       { key: "incomplete", label: "Incomplete Fees" },
+                      { key: "all",        label: "All Students" },
                     ].map(({ key, label }) => (
                       <button
                         key={key} onClick={() => setMsgRecipient(key)}
@@ -479,7 +688,98 @@ export default function FeesPage() {
                   </div>
                 </div>
 
-                {/* All — custom message */}
+                {/* Incomplete Fees — tri-lingual auto message */}
+                {msgRecipient === "incomplete" && (
+                  <div className="space-y-4">
+
+                    {/* Last date */}
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Last Date for Payment</label>
+                      <input
+                        type="date" value={msgLastDate} min={todayStr}
+                        onChange={(e) => handleReminderDateChange(e.target.value)}
+                        className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
+                      />
+                    </div>
+
+                    {incompleteStudents.length === 0 ? (
+                      <p className="text-sm text-green-600 font-semibold">All students have cleared their fees!</p>
+                    ) : (
+                      /* Collapsible student list */
+                      <div className="border border-gray-100 rounded-2xl overflow-hidden">
+                        <button
+                          onClick={() => setStudentListOpen((v) => !v)}
+                          className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Users className="w-4 h-4 text-school-navy" />
+                            <span className="text-sm font-semibold text-gray-700">Students</span>
+                            <span className="text-[11px] bg-school-navy text-white px-2 py-0.5 rounded-full font-bold">
+                              {selectedIncomplete.size} of {incompleteStudents.length} selected
+                            </span>
+                          </div>
+                          {studentListOpen
+                            ? <ChevronUp className="w-4 h-4 text-gray-400" />
+                            : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                        </button>
+
+                        {studentListOpen && (
+                          <div className="max-h-52 overflow-y-auto divide-y divide-gray-50">
+                            {incompleteStudents.map((s) => {
+                              const { dueFees } = calcSummary(s);
+                              const checked = selectedIncomplete.has(s.enrollment);
+                              return (
+                                <div
+                                  key={s.enrollment}
+                                  onClick={() => toggleIncomplete(s.enrollment)}
+                                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${checked ? "bg-blue-50/50" : "bg-white"}`}
+                                >
+                                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${checked ? "bg-school-navy border-school-navy" : "border-gray-300"}`}>
+                                    {checked && <Check className="w-3 h-3 text-white" />}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <p className="text-sm font-semibold text-gray-800">{s.name}</p>
+                                    <p className="text-xs text-gray-500">
+                                      Class {s.std}{s.section ? `-${s.section}` : ""} · Roll {s.rollNo}
+                                    </p>
+                                  </div>
+                                  <div className="text-right flex-shrink-0">
+                                    <p className="text-[10px] text-gray-400">Due</p>
+                                    <p className="text-sm font-bold text-red-600">₹{dueFees.toLocaleString("en-IN")}</p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Editable tri-lingual preview */}
+                    {selectedIncomplete.size > 0 && (
+                      <div>
+                        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                          <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Message</label>
+                          <span className="text-[10px] bg-purple-100 text-purple-700 font-semibold px-2 py-0.5 rounded-full">
+                            English · हिंदी · ଓଡ଼ିଆ
+                          </span>
+                          <span className="text-gray-400 text-[10px]">(editable · personalized per student)</span>
+                        </div>
+                        <textarea
+                          value={reminderMsg}
+                          onChange={(e) => setReminderMsg(e.target.value)}
+                          rows={10}
+                          className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-xs font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy resize-y"
+                        />
+                        <p className="text-xs text-gray-400 mt-1">
+                          Each student gets their own due amount · Sent on: {todayDisplay}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* All Students — custom message */}
                 {msgRecipient === "all" && (
                   <div className="space-y-3">
                     <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 flex items-center gap-2">
@@ -495,69 +795,6 @@ export default function FeesPage() {
                       className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy resize-none"
                     />
                     <p className="text-xs text-gray-400">Sent on: {todayDisplay}</p>
-                  </div>
-                )}
-
-                {/* Incomplete — auto message */}
-                {msgRecipient === "incomplete" && (
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Last Date for Payment</label>
-                      <input
-                        type="date" value={msgLastDate} min={todayStr}
-                        onChange={(e) => setMsgLastDate(e.target.value)}
-                        className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
-                      />
-                    </div>
-                    {incompleteStudents.length === 0 ? (
-                      <p className="text-sm text-green-600 font-semibold">All students have cleared their fees!</p>
-                    ) : (
-                      <div className="border border-gray-100 rounded-2xl overflow-hidden">
-                        {incompleteStudents.map((s) => {
-                          const { dueFees } = calcSummary(s);
-                          const checked = selectedIncomplete.has(s.enrollment);
-                          return (
-                            <div
-                              key={s.enrollment}
-                              onClick={() => toggleIncomplete(s.enrollment)}
-                              className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-0 ${checked ? "bg-blue-50/50" : "bg-white"}`}
-                            >
-                              <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${checked ? "bg-school-navy border-school-navy" : "border-gray-300"}`}>
-                                {checked && <Check className="w-3 h-3 text-white" />}
-                              </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-gray-800">{s.name}</p>
-                                <p className="text-xs text-gray-500">
-                                  Class {s.std}{s.section ? `-${s.section}` : ""} · Roll {s.rollNo}
-                                </p>
-                              </div>
-                              <div className="text-right flex-shrink-0">
-                                <p className="text-[10px] text-gray-400">Due</p>
-                                <p className="text-sm font-bold text-red-600">₹{dueFees.toLocaleString("en-IN")}</p>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                    {selectedIncomplete.size > 0 && (() => {
-                      const first = incompleteStudents.find((s) => selectedIncomplete.has(s.enrollment));
-                      if (!first) return null;
-                      return (
-                        <div>
-                          <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
-                            Message Preview
-                            <span className="ml-1 text-gray-400 font-normal normal-case">(personalized per student)</span>
-                          </label>
-                          <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-xs font-mono text-gray-700 leading-relaxed whitespace-pre-wrap">
-                            {buildReminderMsg(first, msgLastDate)}
-                          </div>
-                          <p className="text-xs text-gray-400 mt-1">
-                            Each student gets their own due amount · Sent on: {todayDisplay}
-                          </p>
-                        </div>
-                      );
-                    })()}
                   </div>
                 )}
 
@@ -643,13 +880,16 @@ export default function FeesPage() {
                     />
                   </div>
 
-                  {/* Payment History */}
+                  {/* Payment History — Read only */}
                   <div className="border border-gray-100 rounded-2xl overflow-hidden">
                     <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                       <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Payment History</p>
-                      <span className="text-[10px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">
-                        {entryStudent.payments.length} payment{entryStudent.payments.length !== 1 ? "s" : ""}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <ReadOnlyBadge />
+                        <span className="text-[10px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">
+                          {entryStudent.payments.length} payment{entryStudent.payments.length !== 1 ? "s" : ""}
+                        </span>
+                      </div>
                     </div>
                     {entryStudent.payments.length === 0 ? (
                       <p className="px-4 py-6 text-center text-sm text-gray-400">No payments recorded yet</p>
@@ -677,19 +917,23 @@ export default function FeesPage() {
                     )}
                   </div>
 
-                  {/* Inventory Given */}
+                  {/* Inventory Given — Read only */}
                   <div className="border border-gray-100 rounded-2xl overflow-hidden">
                     <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
                       <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Inventory Given</p>
-                      <span className="text-[10px] bg-amber-100 text-amber-700 font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <Package className="w-2.5 h-2.5" /> {entryStudent.inventory.length} item{entryStudent.inventory.length !== 1 ? "s" : ""}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <ReadOnlyBadge />
+                        <span className="text-[10px] bg-amber-100 text-amber-700 font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Package className="w-2.5 h-2.5" />
+                          {entryStudent.inventory.filter((i) => i.given).length} given
+                        </span>
+                      </div>
                     </div>
-                    {entryStudent.inventory.length === 0 ? (
+                    {entryStudent.inventory.filter((i) => i.given).length === 0 ? (
                       <p className="px-4 py-6 text-center text-sm text-gray-400">No inventory distributed yet</p>
                     ) : (
                       <div className="divide-y divide-gray-50">
-                        {entryStudent.inventory.map((inv, i) => (
+                        {entryStudent.inventory.filter((i) => i.given).map((inv, i) => (
                           <div key={i} className="flex items-center justify-between px-4 py-3">
                             <div className="flex items-center gap-2.5">
                               <div className="w-7 h-7 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0">
@@ -704,8 +948,8 @@ export default function FeesPage() {
                     )}
                   </div>
 
-                  {/* Pending Inventory */}
-                  {pendingItems.length > 0 && (
+                  {/* Pending Inventory — interactive */}
+                  {pendingInvItems.length > 0 && (
                     <div className="border border-amber-200 rounded-2xl overflow-hidden">
                       <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
                         <div>
@@ -713,16 +957,16 @@ export default function FeesPage() {
                           <p className="text-[10px] text-amber-600 mt-0.5">Tick items given today — date auto-assigned</p>
                         </div>
                         <span className="text-[10px] bg-amber-100 text-amber-700 font-semibold px-2 py-0.5 rounded-full">
-                          {pendingItems.length} pending
+                          {pendingInvItems.length} pending
                         </span>
                       </div>
                       <div className="divide-y divide-amber-50/60 bg-white">
-                        {pendingItems.map((item) => {
-                          const checked = pendingInventory.has(item);
+                        {pendingInvItems.map((inv) => {
+                          const checked = pendingInventory.has(inv.item);
                           return (
                             <div
-                              key={item}
-                              onClick={() => togglePendingItem(item)}
+                              key={inv.item}
+                              onClick={() => togglePendingItem(inv.item)}
                               className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-amber-50/30 transition-colors ${checked ? "bg-amber-50/50" : ""}`}
                             >
                               <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${checked ? "bg-amber-500 border-amber-500" : "border-gray-300"}`}>
@@ -730,7 +974,7 @@ export default function FeesPage() {
                               </div>
                               <div className="flex items-center gap-2.5 flex-1 min-w-0">
                                 <Package className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-                                <span className="text-sm font-medium text-gray-800">{item}</span>
+                                <span className="text-sm font-medium text-gray-800">{inv.item}</span>
                               </div>
                               {checked && (
                                 <span className="text-[11px] text-amber-700 font-semibold bg-amber-100 px-2 py-0.5 rounded-full flex-shrink-0">
@@ -782,10 +1026,19 @@ export default function FeesPage() {
                       </div>
                       <div>
                         <label className="block text-xs font-semibold text-gray-600 mb-1.5">Received By <span className="text-red-500">*</span></label>
-                        <SelectField value={newAdmin} onChange={(e) => setNewAdmin(e.target.value)}>
-                          <option value="">Select Admin</option>
+                        <SelectField value={newAdmin} onChange={(e) => { setNewAdmin(e.target.value); setNewAdminCustom(""); }}>
+                          <option value="">Select Name</option>
                           {ADMINS.map((a) => <option key={a}>{a}</option>)}
                         </SelectField>
+                        {newAdmin === "Other" && (
+                          <input
+                            type="text"
+                            placeholder="Enter name..."
+                            value={newAdminCustom}
+                            onChange={(e) => setNewAdminCustom(e.target.value)}
+                            className="mt-2 w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white"
+                          />
+                        )}
                       </div>
                     </div>
                     <div className="mt-3 flex justify-end">
@@ -849,11 +1102,15 @@ export default function FeesPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[680px]">
+            <table className="w-full text-sm min-w-[720px]">
               <thead>
                 <tr className="bg-gray-50">
                   {["Student", "Std", "Roll", "Mobile", "Paid", "Due", "Status", "Action"].map((h) => (
-                    <th key={h} className={`px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wide ${h === "Paid" || h === "Due" ? "text-right" : h === "Status" || h === "Action" ? "text-center" : "text-left"}`}>
+                    <th key={h} className={`px-4 py-3 text-[11px] font-bold text-gray-500 uppercase tracking-wide ${
+                      h === "Paid" || h === "Due" ? "text-right"
+                      : h === "Status" || h === "Action" ? "text-center"
+                      : "text-left"
+                    }`}>
                       {h}
                     </th>
                   ))}
@@ -903,19 +1160,27 @@ export default function FeesPage() {
                           {status}
                         </span>
                       </td>
-                      <td className="px-4 py-3.5 text-center">
-                        {status !== "Full Paid" ? (
+                      <td className="px-3 py-3.5">
+                        <div className="flex flex-col items-stretch gap-1.5 min-w-[72px]">
                           <button
-                            onClick={() => setNotifyStudent(s)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-school-navy/10 hover:bg-school-navy text-school-navy hover:text-white rounded-lg text-xs font-semibold transition-all"
+                            onClick={() => setViewStudent(s)}
+                            className="inline-flex items-center justify-center gap-1 px-2 py-1.5 bg-gray-100 hover:bg-school-navy hover:text-white text-gray-600 rounded-lg text-[11px] font-semibold transition-all"
                           >
-                            <Bell className="w-3 h-3" /> Notify
+                            <Eye className="w-3 h-3" /> View
                           </button>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-xs text-green-600 font-semibold">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> Paid
-                          </span>
-                        )}
+                          {status !== "Full Paid" ? (
+                            <button
+                              onClick={() => setNotifyStudent(s)}
+                              className="inline-flex items-center justify-center gap-1 px-2 py-1.5 bg-school-navy/10 hover:bg-school-navy text-school-navy hover:text-white rounded-lg text-[11px] font-semibold transition-all"
+                            >
+                              <Bell className="w-3 h-3" /> Notify
+                            </button>
+                          ) : (
+                            <span className="inline-flex items-center justify-center gap-1 text-[11px] text-green-600 font-semibold py-1">
+                              <CheckCircle2 className="w-3 h-3" /> Paid
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

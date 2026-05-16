@@ -3,7 +3,7 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ChevronDown, Upload, X, Plus, FileText,
+  ChevronDown, Upload, X, Plus, FileText, AlertTriangle,
   ArrowLeft, Check, Camera, Lock, GraduationCap,
 } from "lucide-react";
 
@@ -622,6 +622,17 @@ export default function AddStudentPage() {
               <Input placeholder="City / Town" value={form.lastSchoolPlace} onChange={set("lastSchoolPlace")} />
             </div>
           </div>
+          {(form.lastSchoolName || form.lastSchoolClass || form.lastSchoolMedium || form.lastSchoolPlace) && (
+            <div className="mt-4 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-bold text-amber-800">TC (Transfer Certificate) is Mandatory</p>
+                <p className="text-xs text-amber-700 mt-0.5">
+                  Please upload the Transfer Certificate in Section 10 (Document Upload) as soon as possible.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ══ SECTION 9: Aadhar Details ══ */}

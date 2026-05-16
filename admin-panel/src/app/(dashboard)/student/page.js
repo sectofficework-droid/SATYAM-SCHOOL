@@ -66,8 +66,9 @@ const INITIAL_STUDENTS = [
     password:"ARJ1001", aadhar:"1234 5678 9012",
     udise:"24180100101", pen:"", apaar:"", status:"Active",
     fees:{ total:48000, paid:36000 },
-    pendingDocs:["Father's Aadhar Card", "Mother's Aadhar Card"],
+    pendingDocs:["Father's Aadhar Card", "Mother's Aadhar Card", "Leaving Certificate"],
     pendingInventory:["Notebooks", "Assignment-1", "Assignment-2", "Assignment-3"],
+    lastSchoolName: "St. Xavier's Primary", tcUploaded: false,
   },
   {
     enrollment:"1002", name:"Priya Shah", photo:null,
@@ -90,8 +91,9 @@ const INITIAL_STUDENTS = [
     password:"ROH1003", aadhar:"9876 5432 1098",
     udise:"", pen:"12345678901", apaar:"", status:"Active",
     fees:{ total:52000, paid:20000 },
-    pendingDocs:["Birth Certificate", "Marksheet"],
+    pendingDocs:["Birth Certificate", "Marksheet", "Leaving Certificate"],
     pendingInventory:["ID Card"],
+    lastSchoolName: "City High School", tcUploaded: false,
   },
   {
     enrollment:"1004", name:"Sneha Desai", photo:null,
@@ -245,19 +247,26 @@ function PromoteModal({ student, onClose, onPromote, router }) {
   // step: "action" → choose promote or leave | "discount" → fill discounts then confirm
   const [step, setStep] = useState("action");
 
-  const [oldStudentOn, setOldStudentOn] = useState(true);
+  const [oldStudentOn,     setOldStudentOn]     = useState(true);
+  const [oldStudentType,   setOldStudentType]   = useState("fixed"); // "fixed" | "custom"
+  const [oldStudentCustom, setOldStudentCustom] = useState("");
   const [uniformReqd,  setUniformReqd]  = useState(true);
   const [extraOn,      setExtraOn]      = useState(false);
   const [extraAmount,  setExtraAmount]  = useState("");
   const [extraReason,  setExtraReason]  = useState("");
   const [extraCustom,  setExtraCustom]  = useState("");
 
+  const oldStudentAmt = oldStudentOn
+    ? (oldStudentType === "fixed" ? 1000 : (Number(oldStudentCustom) || 0))
+    : 0;
+
   const totalDiscount =
-    (oldStudentOn ? 1000 : 0) +
+    oldStudentAmt +
     (!uniformReqd  ? 1500 : 0) +
     (extraOn && extraAmount ? Number(extraAmount) : 0);
 
-  const extraValid = !extraOn || (extraAmount && extraReason && (extraReason !== "Other" || extraCustom));
+  const oldStudentValid = !oldStudentOn || oldStudentType === "fixed" || (oldStudentType === "custom" && !!oldStudentCustom);
+  const extraValid = oldStudentValid && (!extraOn || (extraAmount && extraReason && (extraReason !== "Other" || extraCustom)));
 
   const handleConfirmPromote = () => {
     if (!extraValid) return;
@@ -360,21 +369,64 @@ function PromoteModal({ student, onClose, onPromote, router }) {
               <div className="divide-y divide-gray-50">
 
                 {/* 1 — Old Student */}
-                <div className="px-4 py-3 flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setOldStudentOn((v) => !v)}
-                    className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${oldStudentOn ? "bg-school-navy border-school-navy" : "border-gray-300"}`}
-                  >
-                    {oldStudentOn && <Check className="w-3 h-3 text-white" />}
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">Old Student Discount</p>
-                    <p className="text-[11px] text-gray-400">Returning student — selected by default</p>
+                <div className="px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => { setOldStudentOn((v) => !v); setOldStudentCustom(""); }}
+                      className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${oldStudentOn ? "bg-school-navy border-school-navy" : "border-gray-300"}`}
+                    >
+                      {oldStudentOn && <Check className="w-3 h-3 text-white" />}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-gray-800">Old Student Discount</p>
+                      <p className="text-[11px] text-gray-400">Returning student — selected by default</p>
+                    </div>
+                    <span className={`text-sm font-bold flex-shrink-0 ${oldStudentOn ? "text-green-700" : "text-gray-300 line-through"}`}>
+                      {oldStudentOn
+                        ? (oldStudentType === "fixed"
+                            ? "₹1,000"
+                            : (oldStudentCustom ? `₹${Number(oldStudentCustom).toLocaleString("en-IN")}` : "—"))
+                        : "₹1,000"}
+                    </span>
                   </div>
-                  <span className={`text-sm font-bold flex-shrink-0 ${oldStudentOn ? "text-green-700" : "text-gray-300 line-through"}`}>
-                    ₹1,000
-                  </span>
+                  {oldStudentOn && (
+                    <div className="mt-2 pl-8 space-y-2">
+                      <div className="flex gap-5">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            checked={oldStudentType === "fixed"}
+                            onChange={() => { setOldStudentType("fixed"); setOldStudentCustom(""); }}
+                            className="w-3.5 h-3.5 accent-school-navy"
+                          />
+                          <span className="text-xs font-semibold text-gray-700">Fixed — ₹1,000</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            checked={oldStudentType === "custom"}
+                            onChange={() => setOldStudentType("custom")}
+                            className="w-3.5 h-3.5 accent-school-navy"
+                          />
+                          <span className="text-xs font-semibold text-gray-700">Custom Amount</span>
+                        </label>
+                      </div>
+                      {oldStudentType === "custom" && (
+                        <div className="relative">
+                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm pointer-events-none">₹</span>
+                          <input
+                            type="number"
+                            placeholder="Enter discount amount"
+                            value={oldStudentCustom}
+                            onChange={(e) => setOldStudentCustom(e.target.value)}
+                            min="0"
+                            className="w-full pl-7 pr-3.5 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* 2 — Uniform */}
@@ -510,6 +562,7 @@ export default function StudentPage() {
   const [session, setSession]             = useState("2025-26");
   const [search, setSearch]               = useState("");
   const [stdFilter, setStdFilter]         = useState("All Classes");
+  const [docFilter, setDocFilter]         = useState("All");
   const [showPasswords, setShowPasswords] = useState({});
   const [promotions, setPromotions]       = useState({});
   const [students, setStudents]           = useState(INITIAL_STUDENTS);
@@ -525,16 +578,28 @@ export default function StudentPage() {
     "11th - Commerce","12th - Commerce",
   ];
 
-  const filtered = students.filter((s) => {
-    if (s.status === "Left" || s.status === "Inactive") return false;
-    const matchSession = s.session === session;
-    const matchSearch  =
+  const DOC_FILTER_OPTIONS = [
+    { key: "Leaving Certificate",  label: "TC" },
+    { key: "Birth Certificate",    label: "Birth Certificate" },
+    { key: "Student Aadhar Card",  label: "Student Aadhar" },
+    { key: "Father's Aadhar Card", label: "Father's Aadhar" },
+    { key: "Mother's Aadhar Card", label: "Mother's Aadhar" },
+    { key: "Marksheet",            label: "Marksheet" },
+  ];
+
+  const sessionActiveStudents = students.filter((s) =>
+    s.session === session && s.status !== "Left" && s.status !== "Inactive"
+  );
+
+  const filtered = sessionActiveStudents.filter((s) => {
+    const matchSearch =
       !search ||
       s.name.toLowerCase().includes(search.toLowerCase()) ||
       s.enrollment.includes(search) ||
       s.fatherName.toLowerCase().includes(search.toLowerCase());
     const matchStd = stdFilter === "All Classes" || s.std === stdFilter;
-    return matchSession && matchSearch && matchStd;
+    const matchDoc = docFilter === "All" || (s.pendingDocs || []).includes(docFilter);
+    return matchSearch && matchStd && matchDoc;
   });
 
   const handleDeactivate = (student, { reason, date }) => {
@@ -602,7 +667,7 @@ export default function StudentPage() {
         </div>
 
         {/* ── Filters ── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -630,6 +695,56 @@ export default function StudentPage() {
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-school-navy pointer-events-none" />
             </div>
+          </div>
+
+          {/* ── Pending Document Filter Chips ── */}
+          <div className="flex items-center gap-2 flex-wrap pt-0.5 border-t border-gray-100">
+            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest flex-shrink-0">
+              Pending Doc:
+            </span>
+            <button
+              onClick={() => setDocFilter("All")}
+              className={`px-2.5 py-1 rounded-full text-xs font-semibold transition-all ${
+                docFilter === "All"
+                  ? "bg-school-navy text-white"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              All Students
+            </button>
+            {DOC_FILTER_OPTIONS.map(({ key, label }) => {
+              const count = sessionActiveStudents.filter((s) =>
+                (s.pendingDocs || []).includes(key)
+              ).length;
+              if (count === 0) return null;
+              const active = docFilter === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => setDocFilter(active ? "All" : key)}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all ${
+                    active
+                      ? "bg-school-navy text-white"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  }`}
+                >
+                  {label}
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                    active ? "bg-white/25 text-white" : "bg-red-100 text-red-600"
+                  }`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+            {docFilter !== "All" && (
+              <button
+                onClick={() => setDocFilter("All")}
+                className="ml-auto flex items-center gap-1 text-[11px] text-gray-400 hover:text-red-500 transition-colors"
+              >
+                <X className="w-3 h-3" /> Clear
+              </button>
+            )}
           </div>
         </div>
 
@@ -775,6 +890,17 @@ export default function StudentPage() {
                     {/* ── Column 4 (NEW): Alerts ── */}
                     <div className="px-3 py-4 border-r border-gray-100 space-y-2.5 bg-white">
                       <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Alerts</p>
+
+                      {/* TC Warning — special prominent alert */}
+                      {student.lastSchoolName && !student.tcUploaded && (
+                        <div className="flex items-start gap-1.5 bg-red-50 border border-red-300 rounded-lg px-2 py-1.5">
+                          <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0 mt-0.5" />
+                          <div className="min-w-0">
+                            <p className="text-[10px] font-bold text-red-600 leading-tight uppercase tracking-wide">TC Not Uploaded</p>
+                            <p className="text-[9px] text-red-500 leading-tight mt-0.5 truncate">Transfer Certificate required</p>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Document alerts */}
                       {student.pendingDocs.length > 0 ? (

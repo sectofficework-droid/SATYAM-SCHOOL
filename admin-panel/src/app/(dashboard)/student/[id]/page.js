@@ -1,12 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, User, Phone, Calendar, BookOpen,
   FileText, IndianRupee, ClipboardCheck, Award, Edit,
   Download, CheckCircle, XCircle, GraduationCap, Shield,
-  Package, Clock,
+  Package, Clock, AlertTriangle, Bell, Send, X,
 } from "lucide-react";
 
 // ── Dummy Student Data ─────────────────────────────────────────
@@ -31,7 +32,7 @@ const studentDB = {
       { name: "Student Aadhar Card", uploaded: true, file: "aadhar_student.jpg" },
       { name: "Father's Aadhar Card", uploaded: false, file: "" },
       { name: "Mother's Aadhar Card", uploaded: false, file: "" },
-      { name: "Leaving Certificate", uploaded: true, file: "leaving_cert.pdf" },
+      { name: "Leaving Certificate", uploaded: false, file: "" },
     ],
     fees: [
       { term: "Term 1 - 2025-26", amount: 8500, paid: true,  date: "05 Jun 2025", receipt: "RCP001" },
@@ -152,34 +153,109 @@ function PersonalTab({ s }) {
   );
 }
 
-function DocumentsTab({ docs }) {
-  return (
-    <div className="space-y-3">
-      {docs.map((doc) => (
-        <div key={doc.name} className="flex items-center gap-4 bg-gray-50 rounded-xl px-5 py-4">
-          <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
-            doc.uploaded ? "bg-green-100" : "bg-red-50"
-          }`}>
-            {doc.uploaded
-              ? <CheckCircle className="w-5 h-5 text-green-600" />
-              : <XCircle className="w-5 h-5 text-red-400" />
-            }
+function DocumentsTab({ docs, s }) {
+  const pendingDocs               = docs.filter((d) => !d.uploaded);
+  const [notifyOpen, setNotifyOpen] = useState(false);
+  const [notifyMsg,  setNotifyMsg]  = useState("");
+  const [mounted,    setMounted]    = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const openNotify = () => {
+    const docList = pendingDocs.map((d) => `• ${d.name}`).join("\n");
+    setNotifyMsg(
+      `Dear Parent,\n\nThis is to inform you that the following document${pendingDocs.length > 1 ? "s" : ""} for your child ${s.studentName} (Class ${s.std}-${s.section}, Enrollment #${s.enrollment}) ${pendingDocs.length > 1 ? "are" : "is"} still pending submission:\n\n${docList}\n\nKindly submit the above at the school office at the earliest.\n\nRegards,\nSatyam Stars International School, Surat`
+    );
+    setNotifyOpen(true);
+  };
+
+  const notifyModal = (
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/60 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="bg-school-navy px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Bell className="w-4 h-4 text-white" />
+            <p className="text-white font-bold">Document Reminder</p>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-gray-800">{doc.name}</p>
-            <p className="text-xs text-gray-400 mt-0.5">
-              {doc.uploaded ? doc.file : "Not uploaded yet"}
-            </p>
-          </div>
-          {doc.uploaded ? (
-            <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
-              <Download className="w-3.5 h-3.5" /> View
-            </button>
-          ) : (
-            <span className="text-xs text-red-400 font-medium">Pending</span>
-          )}
+          <button onClick={() => setNotifyOpen(false)} className="text-white/60 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
         </div>
-      ))}
+        <div className="p-5 space-y-4">
+          <p className="text-xs text-gray-500">Preview and edit the notification message before sending.</p>
+          <textarea
+            value={notifyMsg}
+            onChange={(e) => setNotifyMsg(e.target.value)}
+            rows={10}
+            className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-xs font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy resize-y"
+          />
+          <div className="flex gap-3">
+            <button
+              onClick={() => setNotifyOpen(false)}
+              className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => { alert("Notification sent! (Will send via student app after integration)"); setNotifyOpen(false); }}
+              className="flex-1 py-2.5 rounded-xl bg-school-navy hover:bg-school-navy-dark text-white text-sm font-bold transition-colors flex items-center justify-center gap-2"
+            >
+              <Send className="w-3.5 h-3.5" /> Send
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+
+      {pendingDocs.length > 0 && (
+        <div className="flex items-center justify-between bg-red-50 border border-red-100 rounded-xl px-4 py-3">
+          <div className="flex items-center gap-2">
+            <FileText className="w-4 h-4 text-red-400 flex-shrink-0" />
+            <span className="text-sm font-semibold text-red-700">
+              {pendingDocs.length} document{pendingDocs.length !== 1 ? "s" : ""} pending
+            </span>
+          </div>
+          <button
+            onClick={openNotify}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-school-navy text-white rounded-lg text-xs font-semibold hover:bg-school-navy-dark transition-colors flex-shrink-0"
+          >
+            <Bell className="w-3 h-3" /> Send Notification
+          </button>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {docs.map((doc) => (
+          <div key={doc.name} className="flex items-center gap-4 bg-gray-50 rounded-xl px-5 py-4">
+            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+              doc.uploaded ? "bg-green-100" : "bg-red-50"
+            }`}>
+              {doc.uploaded
+                ? <CheckCircle className="w-5 h-5 text-green-600" />
+                : <XCircle className="w-5 h-5 text-red-400" />
+              }
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-gray-800">{doc.name}</p>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {doc.uploaded ? doc.file : "Not uploaded yet"}
+              </p>
+            </div>
+            {doc.uploaded ? (
+              <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
+                <Download className="w-3.5 h-3.5" /> View
+              </button>
+            ) : (
+              <span className="text-xs text-red-400 font-medium">Pending</span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {notifyOpen && mounted && createPortal(notifyModal, document.body)}
     </div>
   );
 }
@@ -826,10 +902,26 @@ export default function StudentDetailPage() {
             const pendingDocs  = student.documents.filter((d) => !d.uploaded);
             const pendingInv   = student.inventory.filter((i) => !i.given);
             const hasDiscount  = student.discount?.applied;
-            const hasAnything  = pendingDocs.length > 0 || pendingInv.length > 0 || hasDiscount;
+            const hasPrevSchool = !!student.lastSchoolName;
+            const tcUploaded    = student.documents.some((d) => d.name === "Leaving Certificate" && d.uploaded);
+            const hasTCWarning  = hasPrevSchool && !tcUploaded;
+            const hasAnything  = pendingDocs.length > 0 || pendingInv.length > 0 || hasDiscount || hasTCWarning;
             if (!hasAnything) return null;
             return (
               <div className="mt-4 pt-3 border-t border-dashed border-gray-200 space-y-3">
+
+                {/* TC Warning */}
+                {hasTCWarning && (
+                  <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[10px] font-bold text-red-600 uppercase tracking-wider">TC Not Uploaded</span>
+                      <p className="text-[10px] text-red-600 mt-0.5 leading-relaxed">
+                        Transfer Certificate is mandatory for previous school students. Please submit at the school office immediately.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Documents Pending */}
                 {pendingDocs.length > 0 && (
@@ -936,7 +1028,7 @@ export default function StudentDetailPage() {
         {/* Tab Content */}
         <div className="p-5 lg:p-6">
           {activeTab === "personal"   && <PersonalTab   s={student} />}
-          {activeTab === "documents"  && <DocumentsTab  docs={student.documents} />}
+          {activeTab === "documents"  && <DocumentsTab  docs={student.documents} s={student} />}
           {activeTab === "fees"       && <FeesTab       fees={student.fees} />}
           {activeTab === "attendance" && <AttendanceTab attendance={student.attendance} />}
           {activeTab === "results"    && <ResultsTab    results={student.results} />}
