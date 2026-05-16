@@ -821,6 +821,82 @@ export default function StudentDetailPage() {
             </div>
           </div>
 
+          {/* Alerts Strip — Docs Pending · Inventory Pending · Discount */}
+          {(() => {
+            const pendingDocs  = student.documents.filter((d) => !d.uploaded);
+            const pendingInv   = student.inventory.filter((i) => !i.given);
+            const hasDiscount  = student.discount?.applied;
+            const hasAnything  = pendingDocs.length > 0 || pendingInv.length > 0 || hasDiscount;
+            if (!hasAnything) return null;
+            return (
+              <div className="mt-4 pt-3 border-t border-dashed border-gray-200 space-y-3">
+
+                {/* Documents Pending */}
+                {pendingDocs.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <FileText className="w-3.5 h-3.5 text-red-400 flex-shrink-0" />
+                      <span className="text-[10px] font-bold text-red-500 uppercase tracking-wider">Docs Pending</span>
+                      <span className="ml-1 text-[10px] font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
+                        {pendingDocs.length}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {pendingDocs.slice(0, 4).map((doc, i) => (
+                        <span key={i} className="text-[10px] bg-red-50 text-red-600 border border-red-200 px-2 py-0.5 rounded-full font-medium">
+                          {doc.name}
+                        </span>
+                      ))}
+                      {pendingDocs.length > 4 && (
+                        <span className="text-[10px] bg-red-100 text-red-500 border border-red-200 px-2 py-0.5 rounded-full font-medium">
+                          +{pendingDocs.length - 4} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Inventory Pending */}
+                {pendingInv.length > 0 && (
+                  <div>
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <Package className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                      <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wider">Inventory Pending</span>
+                      <span className="ml-1 text-[10px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">
+                        {pendingInv.length}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {pendingInv.slice(0, 4).map((item, i) => (
+                        <span key={i} className="text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-medium">
+                          {item.item}
+                        </span>
+                      ))}
+                      {pendingInv.length > 4 && (
+                        <span className="text-[10px] bg-amber-100 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full font-medium">
+                          +{pendingInv.length - 4} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Discount Applied */}
+                {hasDiscount && (
+                  <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                    <IndianRupee className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                    <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider flex-shrink-0">Discount Applied</span>
+                    <span className="text-[10px] font-bold text-amber-900 flex-shrink-0">
+                      ₹{student.discount.amount.toLocaleString("en-IN")}
+                    </span>
+                    <span className="text-[10px] text-amber-600 truncate">· {student.discount.reason}</span>
+                  </div>
+                )}
+
+              </div>
+            );
+          })()}
+
           {/* Card Footer Strip */}
           <div className="mt-4 pt-4 border-t border-dashed border-gray-200 flex items-center gap-2 flex-wrap">
             <Shield className="w-3.5 h-3.5 text-school-navy/40" />

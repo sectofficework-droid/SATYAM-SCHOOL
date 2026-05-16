@@ -7,6 +7,7 @@ import {
   Plus, Search, GraduationCap, Phone, Calendar, Edit, Trash2,
   LogOut, Eye, EyeOff, User, ChevronDown, ArrowUpCircle,
   CheckCircle2, X, AlertTriangle, Package, FileText,
+  IndianRupee, Check, ArrowLeft,
 } from "lucide-react";
 
 // ── Session helpers ────────────────────────────────────────────
@@ -233,61 +234,269 @@ function DeactivateModal({ student, onClose, onConfirm }) {
 }
 
 // ── Promote modal ──────────────────────────────────────────────
+const PROMOTE_DISCOUNT_REASONS = [
+  "Financial Weak", "3 Kids", "Fatherless Student", "Relative",
+  "Early Fees Complete", "Early Admission", "Old Student", "Other",
+];
+
 function PromoteModal({ student, onClose, onPromote, router }) {
   const nextClass = getNextClass(student.std);
+
+  // step: "action" → choose promote or leave | "discount" → fill discounts then confirm
+  const [step, setStep] = useState("action");
+
+  const [oldStudentOn, setOldStudentOn] = useState(true);
+  const [uniformReqd,  setUniformReqd]  = useState(true);
+  const [extraOn,      setExtraOn]      = useState(false);
+  const [extraAmount,  setExtraAmount]  = useState("");
+  const [extraReason,  setExtraReason]  = useState("");
+  const [extraCustom,  setExtraCustom]  = useState("");
+
+  const totalDiscount =
+    (oldStudentOn ? 1000 : 0) +
+    (!uniformReqd  ? 1500 : 0) +
+    (extraOn && extraAmount ? Number(extraAmount) : 0);
+
+  const extraValid = !extraOn || (extraAmount && extraReason && (extraReason !== "Other" || extraCustom));
+
+  const handleConfirmPromote = () => {
+    if (!extraValid) return;
+    onPromote();
+    router.push("/fees");
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+
+        {/* Header */}
         <div className="bg-school-navy px-5 py-4 flex items-center justify-between">
-          <p className="text-white font-bold">Year-End Student Action</p>
+          <div className="flex items-center gap-2">
+            {step === "discount" && (
+              <button
+                onClick={() => setStep("action")}
+                className="p-1 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors mr-1"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
+            <p className="text-white font-bold">
+              {step === "action" ? "Year-End Student Action" : "Fee Discount — New Session"}
+            </p>
+          </div>
           <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
             <X className="w-4 h-4" />
           </button>
         </div>
-        <div className="p-5">
-          <p className="text-sm text-gray-600 mb-4">
-            Select action for <span className="font-bold text-gray-900">{student.name}</span>:
-          </p>
 
-          {nextClass ? (
+        {/* ── STEP 1: Choose action ── */}
+        {step === "action" && (
+          <div className="p-5 space-y-3">
+            <p className="text-sm text-gray-600 mb-1">
+              Select action for <span className="font-bold text-gray-900">{student.name}</span>:
+            </p>
+
+            {nextClass ? (
+              <button
+                onClick={() => setStep("discount")}
+                className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-green-50 border-2 border-green-200 hover:bg-green-100 hover:border-green-400 transition-all text-left"
+              >
+                <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                  <ArrowUpCircle className="w-5 h-5 text-green-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-green-800">Promote to Next Class</p>
+                  <p className="text-xs text-green-600 mt-0.5">
+                    Move to <b>{nextClass}</b> · Session <b>{CURRENT_SESSION}</b>
+                  </p>
+                </div>
+              </button>
+            ) : (
+              <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200">
+                <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                <p className="text-sm text-amber-700"><b>{student.std}</b> is the highest class — cannot promote further.</p>
+              </div>
+            )}
+
             <button
-              onClick={onPromote}
-              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-green-50 border-2 border-green-200 hover:bg-green-100 hover:border-green-400 transition-all mb-3 text-left"
+              onClick={() => { onClose(); router.push(`/student/${student.enrollment}/tc`); }}
+              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-red-50 border-2 border-red-200 hover:bg-red-100 hover:border-red-400 transition-all text-left"
+            >
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+                <LogOut className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-red-800">Leave School</p>
+                <p className="text-xs text-red-600 mt-0.5">Generate Transfer Certificate (TC)</p>
+              </div>
+            </button>
+
+            <button onClick={onClose} className="w-full py-2 text-sm text-gray-400 hover:text-gray-600 transition-colors">
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {/* ── STEP 2: Discount section ── */}
+        {step === "discount" && (
+          <div className="p-5 space-y-4 max-h-[85vh] overflow-y-auto">
+            <p className="text-xs text-gray-500">
+              Promoting <span className="font-semibold text-gray-800">{student.name}</span> → <span className="font-semibold text-school-navy">{nextClass}</span>
+            </p>
+
+            {/* Discount card */}
+            <div className="border border-gray-100 rounded-2xl overflow-hidden">
+
+              <div className="bg-amber-50 border-b border-amber-100 px-4 py-2.5 flex items-center gap-2">
+                <IndianRupee className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                <p className="text-xs font-bold text-amber-700 uppercase tracking-wide">Fee Discounts</p>
+                {totalDiscount > 0 && (
+                  <span className="ml-auto text-xs font-bold text-amber-900 bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full">
+                    ₹{totalDiscount.toLocaleString("en-IN")}
+                  </span>
+                )}
+              </div>
+
+              <div className="divide-y divide-gray-50">
+
+                {/* 1 — Old Student */}
+                <div className="px-4 py-3 flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setOldStudentOn((v) => !v)}
+                    className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${oldStudentOn ? "bg-school-navy border-school-navy" : "border-gray-300"}`}
+                  >
+                    {oldStudentOn && <Check className="w-3 h-3 text-white" />}
+                  </button>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">Old Student Discount</p>
+                    <p className="text-[11px] text-gray-400">Returning student — selected by default</p>
+                  </div>
+                  <span className={`text-sm font-bold flex-shrink-0 ${oldStudentOn ? "text-green-700" : "text-gray-300 line-through"}`}>
+                    ₹1,000
+                  </span>
+                </div>
+
+                {/* 2 — Uniform */}
+                <div className="px-4 py-3">
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">Uniform This Year</p>
+                      <p className="text-[11px] text-gray-400">If not required, ₹1,500 discount applies</p>
+                    </div>
+                    {!uniformReqd && (
+                      <span className="text-sm font-bold text-green-700 flex-shrink-0">₹1,500</span>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    {["Required", "Not Required"].map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => setUniformReqd(opt === "Required")}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                          (opt === "Required" && uniformReqd) || (opt === "Not Required" && !uniformReqd)
+                            ? "bg-school-navy text-white border-school-navy"
+                            : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 3 — Extra Discount */}
+                <div className="px-4 py-3">
+                  <div className="flex items-center gap-3 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => { setExtraOn((v) => !v); setExtraAmount(""); setExtraReason(""); setExtraCustom(""); }}
+                      className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${extraOn ? "bg-school-navy border-school-navy" : "border-gray-300"}`}
+                    >
+                      {extraOn && <Check className="w-3 h-3 text-white" />}
+                    </button>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-gray-800">Extra Discount</p>
+                      <p className="text-[11px] text-gray-400">Additional amount set by admin</p>
+                    </div>
+                    {extraOn && extraAmount && (
+                      <span className="text-sm font-bold text-green-700 flex-shrink-0">
+                        ₹{Number(extraAmount).toLocaleString("en-IN")}
+                      </span>
+                    )}
+                  </div>
+                  {extraOn && (
+                    <div className="space-y-2 pl-8 pt-1">
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm pointer-events-none">₹</span>
+                        <input
+                          type="number"
+                          placeholder="Enter discount amount"
+                          value={extraAmount}
+                          onChange={(e) => setExtraAmount(e.target.value)}
+                          min="0"
+                          className="w-full pl-7 pr-3.5 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
+                        />
+                      </div>
+                      <div className="relative">
+                        <select
+                          value={extraReason}
+                          onChange={(e) => { setExtraReason(e.target.value); setExtraCustom(""); }}
+                          className="w-full appearance-none pl-3.5 pr-9 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white cursor-pointer"
+                        >
+                          <option value="">Select Reason</option>
+                          {PROMOTE_DISCOUNT_REASONS.map((r) => <option key={r}>{r}</option>)}
+                        </select>
+                        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                      </div>
+                      {extraReason === "Other" && (
+                        <input
+                          type="text"
+                          placeholder="Enter custom reason..."
+                          value={extraCustom}
+                          onChange={(e) => setExtraCustom(e.target.value)}
+                          className="w-full px-3.5 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
+                        />
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Total row */}
+              {totalDiscount > 0 && (
+                <div className="bg-green-50 border-t border-green-100 px-4 py-2.5 flex items-center justify-between">
+                  <span className="text-xs font-bold text-green-700 uppercase tracking-wide">Total Discount</span>
+                  <span className="text-sm font-bold text-green-800">₹{totalDiscount.toLocaleString("en-IN")}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Confirm promote */}
+            <button
+              onClick={handleConfirmPromote}
+              disabled={!extraValid}
+              className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-green-50 border-2 border-green-200 hover:bg-green-100 hover:border-green-400 transition-all text-left disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
                 <ArrowUpCircle className="w-5 h-5 text-green-600" />
               </div>
               <div>
-                <p className="text-sm font-bold text-green-800">Promote to Next Class</p>
+                <p className="text-sm font-bold text-green-800">Confirm Promote to {nextClass}</p>
                 <p className="text-xs text-green-600 mt-0.5">
-                  Move to <b>{nextClass}</b> · Session <b>{CURRENT_SESSION}</b>
+                  Session <b>{CURRENT_SESSION}</b>
+                  {totalDiscount > 0 && <> · Discount: <b>₹{totalDiscount.toLocaleString("en-IN")}</b></>}
                 </p>
               </div>
             </button>
-          ) : (
-            <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200 mb-3">
-              <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
-              <p className="text-sm text-amber-700"><b>{student.std}</b> is the highest class — cannot promote further.</p>
-            </div>
-          )}
 
-          <button
-            onClick={() => { onClose(); router.push(`/student/${student.enrollment}/tc`); }}
-            className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl bg-red-50 border-2 border-red-200 hover:bg-red-100 hover:border-red-400 transition-all text-left"
-          >
-            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
-              <LogOut className="w-5 h-5 text-red-600" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-red-800">Leave School</p>
-              <p className="text-xs text-red-600 mt-0.5">Generate Transfer Certificate (TC)</p>
-            </div>
-          </button>
+            <button onClick={() => setStep("action")} className="w-full py-2 text-sm text-gray-400 hover:text-gray-600 transition-colors">
+              Back
+            </button>
+          </div>
+        )}
 
-          <button onClick={onClose} className="w-full mt-3 py-2 text-sm text-gray-400 hover:text-gray-600 transition-colors">
-            Cancel
-          </button>
-        </div>
       </div>
     </div>
   );
@@ -611,9 +820,15 @@ export default function StudentPage() {
                           )}
                         </div>
                       ) : (
-                        <div className="flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
-                          <span className="text-[10px] font-semibold text-green-600">Inventory OK</span>
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1">
+                            <Package className="w-3 h-3 text-green-500 flex-shrink-0" />
+                            <span className="text-[10px] font-bold text-green-600 uppercase tracking-wide leading-none">Inventory Pending</span>
+                            <span className="ml-auto text-[10px] font-bold bg-green-100 text-green-600 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                              0
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-green-500 pl-0.5">· All items distributed</p>
                         </div>
                       )}
                     </div>
