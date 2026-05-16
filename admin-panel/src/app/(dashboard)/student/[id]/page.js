@@ -13,6 +13,7 @@ import {
 const studentDB = {
   "1001": {
     enrollment: "1001", password: "ARJ1001", session: "2025-26",
+    grNo: "GR-001",
     joinDate: "01 Jun 2025", std: "10th", section: "A", rollNo: "101",
     studentName: "Arjun Rajesh Patel", fatherName: "Rajesh Patel",
     motherName: "Meena Patel", dob: "15 Jan 2010", gender: "Male",
@@ -24,6 +25,7 @@ const studentDB = {
     aadhar: "1234 5678 9012", aadharName: "Arjun Rajesh Patel",
     udise: "24180100101", pen: "", apaar: "",
     siblingName: "", siblingClass: "",
+    discount: { applied: true, amount: 5000, reason: "Financial Weak" },
     documents: [
       { name: "Birth Certificate", uploaded: true, file: "birth_cert.pdf" },
       { name: "Student Aadhar Card", uploaded: true, file: "aadhar_student.jpg" },
@@ -99,11 +101,19 @@ function PersonalTab({ s }) {
       <div className="bg-gray-50 rounded-2xl p-5">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Admission Info</p>
         <InfoRow label="Enrollment No"    value={s.enrollment} />
+        <InfoRow label="GR Number"        value={s.grNo} />
         <InfoRow label="Academic Session" value={s.session} />
         <InfoRow label="Date of Join"     value={s.joinDate} />
         <InfoRow label="Standard"         value={`${s.std} - ${s.section}`} />
         <InfoRow label="Roll Number"      value={s.rollNo} />
         <InfoRow label="App Password"     value={s.password} />
+        {s.discount?.applied && (
+          <div className="mt-3 pt-3 border-t border-gray-200 space-y-0.5">
+            <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-1.5">Fees Discount Applied</p>
+            <InfoRow label="Discount Amount" value={`₹${s.discount.amount.toLocaleString("en-IN")}`} />
+            <InfoRow label="Reason"          value={s.discount.reason} />
+          </div>
+        )}
       </div>
       <div className="bg-gray-50 rounded-2xl p-5">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Personal Info</p>
@@ -452,12 +462,238 @@ function InventoryTab({ inventory }) {
 }
 
 // ── Main Component ─────────────────────────────────────────────
+// ── Admission form PDF generator ───────────────────────────────
+function generateAdmissionFormHTML(s, logoUrl) {
+  // Page 2: Left col = Birth Certificate + TC; Right col = 3 Aadhar cards (compact)
+  const leftDocs = [
+    { key: "Birth Certificate",  alwaysShow: true  },
+    { key: "Leaving Certificate", alwaysShow: false },
+  ];
+  const rightDocs = [
+    { key: "Student Aadhar Card",  alwaysShow: true },
+    { key: "Father's Aadhar Card", alwaysShow: true },
+    { key: "Mother's Aadhar Card", alwaysShow: true },
+  ];
+
+  const makeDocBlock = ({ key, alwaysShow }, compact = false) => {
+    const doc = (s.documents || []).find((d) => d.name === key);
+    const uploaded = doc?.uploaded || false;
+    if (!alwaysShow && !uploaded) return "";
+    const label = key === "Leaving Certificate" ? "Transfer Certificate (TC)" : key;
+    const fileRef = doc?.file || "";
+
+    const isRealUrl = fileRef.startsWith("blob:") || fileRef.startsWith("data:") || fileRef.startsWith("http");
+    const isImg = isRealUrl
+      ? (doc?.type || "").startsWith("image/") || fileRef.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i)
+      : fileRef.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+    const isPdf = isRealUrl && !isImg;
+
+    const imgH = compact ? "110px" : "200px";
+    const pdfH = compact ? "120px" : "210px";
+    const phH  = compact ? "75px"  : "110px";
+    const iconW = compact ? 22 : 28;
+
+    let contentHTML = "";
+    if (!uploaded) {
+      contentHTML = `<div style="height:50px;background:#fafafa;border:1px dashed #e5e7eb;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#d1d5db;font-size:9px;">Document not submitted yet</div>`;
+    } else if (isRealUrl && isImg) {
+      contentHTML = `<img src="${fileRef}" style="max-width:100%;max-height:${imgH};object-fit:contain;border-radius:6px;border:1px solid #e5e7eb;display:block;margin:0 auto;" />`;
+    } else if (isRealUrl && isPdf) {
+      contentHTML = `<embed src="${fileRef}" type="application/pdf" style="width:100%;height:${pdfH};border-radius:6px;border:1px solid #e5e7eb;" />`;
+    } else {
+      contentHTML = `
+        <div style="height:${phH};background:#f8fafc;border:2px dashed #cbd5e1;border-radius:6px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:5px;">
+          <svg width="${iconW}" height="${iconW}" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+          </svg>
+          <div style="font-size:${compact ? 9 : 10}px;font-weight:600;color:#64748b;">${fileRef}</div>
+          <div style="font-size:8px;color:#94a3b8;">Preview available after Supabase integration</div>
+        </div>`;
+    }
+
+    return `
+    <div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:10px;">
+      <div style="background:${uploaded ? "#eff6ff" : "#fef2f2"};padding:6px 10px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;">
+        <span style="font-size:9.5px;font-weight:700;color:#1e3a5f;text-transform:uppercase;letter-spacing:0.4px;">${label}</span>
+        <span style="font-size:8.5px;font-weight:700;padding:2px 7px;border-radius:10px;background:${uploaded ? "#dcfce7" : "#fee2e2"};color:${uploaded ? "#166534" : "#991b1b"};">${uploaded ? "Submitted" : "Not Submitted"}</span>
+      </div>
+      <div style="padding:8px 10px;">${contentHTML}</div>
+    </div>`;
+  };
+
+  const leftColHTML  = leftDocs.map((d) => makeDocBlock(d, false)).filter(Boolean).join("");
+  const rightColHTML = rightDocs.map((d) => makeDocBlock(d, true)).filter(Boolean).join("");
+
+  const discountBlock = s.discount?.applied
+    ? `<div style="background:#fefce8;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;margin-top:8px;">
+         <div style="font-size:8.5px;font-weight:bold;color:#92400e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Fees Discount Applied</div>
+         <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;">
+           <div><div style="font-size:8px;color:#aaa;text-transform:uppercase;">Amount</div><div style="font-size:11px;font-weight:700;color:#222;">&#8377;${s.discount.amount.toLocaleString("en-IN")}</div></div>
+           <div><div style="font-size:8px;color:#aaa;text-transform:uppercase;">Reason</div><div style="font-size:11px;font-weight:700;color:#222;">${s.discount.reason}</div></div>
+         </div>
+       </div>`
+    : "";
+
+  const logoTag = logoUrl
+    ? `<img src="${logoUrl}" style="width:50px;height:50px;object-fit:contain;border-radius:6px;flex-shrink:0;" />`
+    : "";
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Admission Form - ${s.studentName}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:Arial,sans-serif;font-size:11px;color:#333;background:#fff;}
+  .page{width:210mm;padding:10mm 14mm;page-break-after:always;}
+  .page:last-child{page-break-after:avoid;}
+  @media print{body{margin:0;}.page{page-break-after:always;}.page:last-child{page-break-after:avoid;}}
+  .hdr{display:flex;align-items:center;gap:12px;border-bottom:2px solid #1e3a5f;padding-bottom:8px;margin-bottom:10px;}
+  .hdr-text{flex:1;}
+  .school-name{font-size:15px;font-weight:900;color:#1e3a5f;}
+  .school-sub{font-size:9px;color:#888;margin-top:1px;}
+  .form-title{font-size:12px;font-weight:bold;color:#444;margin-top:4px;text-transform:uppercase;letter-spacing:1px;}
+  .photo-box{width:75px;height:90px;border:1px solid #aaa;display:flex;align-items:center;justify-content:center;font-size:9px;color:#aaa;text-align:center;flex-shrink:0;border-radius:4px;margin-left:auto;}
+  .enroll-bar{background:#1e3a5f;color:white;padding:4px 10px;border-radius:4px;margin-bottom:9px;font-size:10px;display:flex;gap:18px;flex-wrap:wrap;}
+  .enroll-bar b{color:#fbbf24;}
+  .sec{font-size:8.5px;font-weight:bold;text-transform:uppercase;letter-spacing:0.5px;color:#1e3a5f;background:#eff6ff;padding:3px 8px;border-left:3px solid #1e3a5f;margin:9px 0 5px;}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 14px;}
+  .grid .full{grid-column:1/-1;}
+  .field{border-bottom:1px dotted #ddd;padding:3px 1px;}
+  .fl{font-size:8px;color:#aaa;text-transform:uppercase;letter-spacing:0.4px;}
+  .fv{font-size:11px;font-weight:600;color:#222;min-height:13px;}
+  .sigs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:18px;}
+  .sig{border-top:1px solid #bbb;padding-top:4px;text-align:center;font-size:9px;color:#777;}
+  .footer{text-align:center;font-size:8px;color:#ccc;margin-top:8px;}
+</style>
+</head>
+<body>
+
+<!-- PAGE 1: ADMISSION FORM -->
+<div class="page">
+  <div class="hdr">
+    ${logoTag}
+    <div class="hdr-text">
+      <div class="school-name">SATYAM STARS INTERNATIONAL SCHOOL</div>
+      <div class="school-sub">Affiliated &middot; Surat, Gujarat &middot; India</div>
+      <div class="form-title">Student Admission Form</div>
+    </div>
+    <div class="photo-box">Student<br/>Photo</div>
+  </div>
+
+  <div class="enroll-bar">
+    <span>Enrollment: <b>#${s.enrollment}</b></span>
+    <span>GR No: <b>${s.grNo || "—"}</b></span>
+    <span>Session: <b>${s.session}</b></span>
+    <span>Date of Join: <b>${s.joinDate}</b></span>
+  </div>
+
+  <div class="sec">Class Details</div>
+  <div class="grid">
+    <div class="field"><div class="fl">Standard</div><div class="fv">${s.std}</div></div>
+    <div class="field"><div class="fl">Section</div><div class="fv">${s.section || "—"}</div></div>
+    <div class="field"><div class="fl">Roll Number</div><div class="fv">${s.rollNo}</div></div>
+  </div>
+
+  <div class="sec">Personal Information</div>
+  <div class="grid">
+    <div class="field full"><div class="fl">Full Name</div><div class="fv">${s.studentName}</div></div>
+    <div class="field"><div class="fl">Father's Name</div><div class="fv">${s.fatherName}</div></div>
+    <div class="field"><div class="fl">Mother's Name</div><div class="fv">${s.motherName}</div></div>
+    <div class="field"><div class="fl">Date of Birth</div><div class="fv">${s.dob}</div></div>
+    <div class="field"><div class="fl">Gender</div><div class="fv">${s.gender}</div></div>
+    <div class="field"><div class="fl">Religion</div><div class="fv">${s.religion}</div></div>
+    <div class="field"><div class="fl">Category / Caste</div><div class="fv">${s.caste}</div></div>
+    <div class="field"><div class="fl">Place of Birth</div><div class="fv">${s.placeOfBirth}</div></div>
+  </div>
+
+  <div class="sec">Contact &amp; Address</div>
+  <div class="grid">
+    <div class="field"><div class="fl">Mobile 1</div><div class="fv">${s.mobile1}</div></div>
+    <div class="field"><div class="fl">Mobile 2</div><div class="fv">${s.mobile2 || "—"}</div></div>
+    <div class="field full"><div class="fl">Address</div><div class="fv">${s.roomPlotNo ? s.roomPlotNo + ", " : ""}${s.address}</div></div>
+  </div>
+
+  <div class="sec">Previous School</div>
+  <div class="grid">
+    <div class="field full"><div class="fl">School Name</div><div class="fv">${s.lastSchoolName || "—"}</div></div>
+    <div class="field"><div class="fl">Last Class</div><div class="fv">${s.lastSchoolClass || "—"}</div></div>
+    <div class="field"><div class="fl">Medium</div><div class="fv">${s.lastSchoolMedium || "—"}</div></div>
+    <div class="field"><div class="fl">School Location</div><div class="fv">${s.lastSchoolPlace || "—"}</div></div>
+  </div>
+
+  <div class="sec">Aadhar &amp; Government IDs</div>
+  <div class="grid">
+    <div class="field"><div class="fl">Aadhar Number</div><div class="fv">${s.aadhar || "Not Provided"}</div></div>
+    <div class="field"><div class="fl">Name on Aadhar</div><div class="fv">${s.aadharName || "—"}</div></div>
+    <div class="field"><div class="fl">UDISE Number</div><div class="fv">${s.udise || "—"}</div></div>
+    <div class="field"><div class="fl">PEN Number</div><div class="fv">${s.pen || "—"}</div></div>
+    <div class="field"><div class="fl">APAAR ID</div><div class="fv">${s.apaar || "—"}</div></div>
+  </div>
+
+  ${discountBlock}
+
+  <div class="sigs">
+    <div class="sig">Parent / Guardian Signature</div>
+    <div class="sig">Class Teacher</div>
+    <div class="sig">Principal</div>
+  </div>
+  <div class="footer">Satyam Stars International School &middot; Surat, Gujarat &middot; ${s.session} Academic Year</div>
+</div>
+
+<!-- PAGE 2: DOCUMENTS -->
+<div class="page">
+  <div class="hdr">
+    ${logoTag}
+    <div class="hdr-text">
+      <div class="school-name">SATYAM STARS INTERNATIONAL SCHOOL</div>
+      <div class="school-sub">Affiliated &middot; Surat, Gujarat &middot; India</div>
+      <div class="form-title">Document Submission Record</div>
+    </div>
+  </div>
+
+  <div style="font-size:11px;color:#555;margin-bottom:12px;">
+    Student: <b>${s.studentName}</b> &nbsp;|&nbsp; Enrollment: <b>#${s.enrollment}</b> &nbsp;|&nbsp; Session: <b>${s.session}</b>
+  </div>
+
+  ${docBlocksHTML}
+
+  <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:10px 14px;margin-top:6px;">
+    <div style="font-size:9px;font-weight:bold;color:#666;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Declaration</div>
+    <p style="font-size:10px;color:#555;line-height:1.7;">I hereby declare that all documents submitted are genuine. I undertake to abide by all the rules and regulations of the school.</p>
+  </div>
+
+  <div class="sigs" style="margin-top:18px;">
+    <div class="sig">Parent / Guardian Signature</div>
+    <div class="sig">Date</div>
+    <div class="sig">School Stamp &amp; Signature</div>
+  </div>
+  <div class="footer">Satyam Stars International School &middot; Document Submission Record &middot; ${s.session}</div>
+</div>
+
+</body>
+</html>`;
+}
+
 export default function StudentDetailPage() {
   const { id }  = useParams();
   const router  = useRouter();
   const [activeTab, setActiveTab] = useState("personal");
 
   const student = studentDB[id];
+
+  const handleDownloadPDF = () => {
+    if (!student) return;
+    const logoUrl = window.location.origin + "/school-logo.jpg";
+    const html = generateAdmissionFormHTML(student, logoUrl);
+    const win = window.open("", "_blank");
+    if (!win) { alert("Please allow pop-ups to download the admission form."); return; }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 600);
+  };
 
   if (!student) {
     return (
@@ -495,12 +731,20 @@ export default function StudentDetailPage() {
               </p>
             </div>
           </div>
-          <button
-            onClick={() => router.push(`/student/${id}/edit`)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-lg text-xs font-semibold transition-colors"
-          >
-            <Edit className="w-3.5 h-3.5" /> Edit Profile
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleDownloadPDF}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-lg text-xs font-semibold transition-colors"
+            >
+              <Download className="w-3.5 h-3.5" /> Download Form
+            </button>
+            <button
+              onClick={() => router.push(`/student/${id}/edit`)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-lg text-xs font-semibold transition-colors"
+            >
+              <Edit className="w-3.5 h-3.5" /> Edit Profile
+            </button>
+          </div>
         </div>
 
         {/* Card Body */}

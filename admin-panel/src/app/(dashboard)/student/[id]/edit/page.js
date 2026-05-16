@@ -10,6 +10,7 @@ import {
 // ── Options ────────────────────────────────────────────────────
 const CURRENT_SESSION = "2025-26";
 
+
 const standards = [
   "JR.KG", "SR.KG", "Balvatika",
   "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th",
@@ -37,6 +38,7 @@ const defaultDocTypes = [
   "Father's Aadhar Card",
   "Mother's Aadhar Card",
   "Leaving Certificate",
+  "Marksheet",
 ];
 
 // ── Dummy student data (form-ready format) ─────────────────────
@@ -152,10 +154,12 @@ function EditForm({ existing, id, router }) {
   const [hasSibling, setHasSibling]     = useState(existing.hasSibling);
   const [siblingClass, setSiblingClass] = useState(existing.siblingClass);
   const [siblingName, setSiblingName]   = useState(existing.siblingName);
-  const [hasAadhar, setHasAadhar]       = useState(existing.hasAadhar);
-  const [photo, setPhoto]               = useState(null);
-  const [photoPreview, setPhotoPreview] = useState(null);
-  const photoRef = useRef(null);
+  const [hasAadhar, setHasAadhar]         = useState(existing.hasAadhar);
+  const [photo, setPhoto]                 = useState(null);
+  const [photoPreview, setPhotoPreview]   = useState(null);
+  const [casteCertFile, setCasteCertFile] = useState(null);
+  const casteCertRef = useRef(null);
+  const photoRef     = useRef(null);
   const [aadharDisplay, setAadharDisplay] = useState(existing.aadhar || "");
   const [checkedDocs, setCheckedDocs]   = useState(
     Object.fromEntries(Object.keys(existing.uploadedDocs).map((k) => [k, true]))
@@ -226,8 +230,12 @@ function EditForm({ existing, id, router }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (form.caste !== "General" && !casteCertFile) {
+      setForm((p) => ({ ...p, caste: "General" }));
+      alert("No caste certificate uploaded — category has been reset to General.");
+    }
     alert("Student profile updated successfully! (Dummy — will save to Supabase later)");
-    router.push(`/student/${id}`);
+    router.replace(`/student/${id}`);
   };
 
   return (
@@ -366,11 +374,63 @@ function EditForm({ existing, id, router }) {
           </div>
           <div>
             <FieldLabel required>Category / Caste</FieldLabel>
-            <SelectField value={form.caste} onChange={set("caste")} required>
+            <SelectField
+              value={form.caste}
+              onChange={(e) => { set("caste")(e); setCasteCertFile(null); }}
+              required
+            >
               {castes.map((c) => <option key={c}>{c}</option>)}
             </SelectField>
           </div>
         </div>
+
+        {/* Caste certificate — required when non-General */}
+        {form.caste !== "General" && (
+          <div className="mt-4 bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <div className="flex items-start gap-3 mb-3">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <FileText className="w-4 h-4 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-amber-800">
+                  {form.caste} Certificate Required
+                </p>
+                <p className="text-xs text-amber-600 mt-0.5">
+                  Upload is mandatory. If not uploaded, the category will be reset to <b>General</b> on save.
+                </p>
+              </div>
+            </div>
+            <input
+              ref={casteCertRef}
+              type="file"
+              accept=".pdf,.jpg,.jpeg,.png"
+              className="hidden"
+              onChange={(e) => setCasteCertFile(e.target.files[0] || null)}
+            />
+            {casteCertFile ? (
+              <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
+                <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
+                <span className="text-sm text-green-700 font-medium flex-1 truncate">{casteCertFile.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setCasteCertFile(null)}
+                  className="text-red-400 hover:text-red-600 transition-colors flex-shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => casteCertRef.current.click()}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-amber-300 rounded-xl text-sm font-semibold text-amber-700 hover:bg-amber-100 transition-colors"
+              >
+                <Upload className="w-4 h-4" />
+                Upload {form.caste} Certificate
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ══ SECTION 6: Address & Contact ══ */}
@@ -548,7 +608,7 @@ function EditForm({ existing, id, router }) {
       {/* ══ Submit ══ */}
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
-          type="button" onClick={() => router.push(`/student/${id}`)}
+          type="button" onClick={() => router.replace(`/student/${id}`)}
           className="px-6 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
         >
           Cancel
@@ -587,7 +647,7 @@ export default function EditStudentPage() {
     <div className="max-w-4xl mx-auto space-y-6 pb-10">
       <div className="flex items-center gap-3">
         <button
-          type="button" onClick={() => router.push(`/student/${id}`)}
+          type="button" onClick={() => router.replace(`/student/${id}`)}
           className="p-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
         >
           <ArrowLeft className="w-4 h-4 text-gray-600" />

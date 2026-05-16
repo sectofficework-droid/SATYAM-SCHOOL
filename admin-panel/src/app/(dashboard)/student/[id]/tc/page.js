@@ -16,7 +16,8 @@ const studentDB = {
     dob: "15 Jan 2010", gender: "Male",
     address: "12, Shree Society, Varachha Road, Surat - 395006",
     mobile: "9876543210", aadhar: "1234 5678 9012",
-    admissionDate: "01 Jun 2025", caste: "General", religion: "Hindu",
+    admissionDate: "01 Jun 2023", admissionClass: "8th",
+    caste: "General", religion: "Hindu",
   },
   "1002": {
     enrollment: "1002", name: "Priya Shah", std: "9th", section: "B",
@@ -25,7 +26,8 @@ const studentDB = {
     dob: "22 Mar 2011", gender: "Female",
     address: "45, Ganesh Nagar, Adajan, Surat - 395009",
     mobile: "9765432100", aadhar: "",
-    admissionDate: "03 Jun 2025", caste: "OBC", religion: "Hindu",
+    admissionDate: "15 Jun 2023", admissionClass: "8th",
+    caste: "OBC", religion: "Hindu",
   },
   "1003": {
     enrollment: "1003", name: "Rohan Mehta", std: "11th - Commerce", section: "A",
@@ -34,7 +36,8 @@ const studentDB = {
     dob: "08 Jul 2009", gender: "Male",
     address: "78, Silver Park, Katargam, Surat - 395004",
     mobile: "9654321098", aadhar: "9876 5432 1098",
-    admissionDate: "05 Jun 2025", caste: "General", religion: "Jain",
+    admissionDate: "10 Apr 2022", admissionClass: "9th",
+    caste: "General", religion: "Jain",
   },
   "1004": {
     enrollment: "1004", name: "Sneha Desai", std: "8th", section: "C",
@@ -43,7 +46,8 @@ const studentDB = {
     dob: "30 Nov 2011", gender: "Female",
     address: "23, Krishna Society, Piplod, Surat - 395007",
     mobile: "9543210987", aadhar: "",
-    admissionDate: "02 Jun 2025", caste: "SC", religion: "Hindu",
+    admissionDate: "05 Jun 2024", admissionClass: "8th",
+    caste: "SC", religion: "Hindu",
   },
   "1005": {
     enrollment: "1005", name: "Dev Joshi", std: "JR.KG", section: "A",
@@ -52,7 +56,8 @@ const studentDB = {
     dob: "14 Sep 2020", gender: "Male",
     address: "5, Swaminarayan Society, Dindoli, Surat - 395010",
     mobile: "9432109876", aadhar: "",
-    admissionDate: "10 Jun 2025", caste: "General", religion: "Hindu",
+    admissionDate: "12 Jun 2024", admissionClass: "JR.KG",
+    caste: "General", religion: "Hindu",
   },
 };
 
@@ -64,6 +69,7 @@ const LEAVE_REASONS = [
   "Family relocation",
   "Financial reasons",
   "Health / Medical reasons",
+  "Study in Village",
   "Parent's request",
   "Disciplinary reasons",
   "Other",
@@ -141,7 +147,7 @@ function TcCertificate({ student, tcData }) {
           ["Category",                student.caste],
           ["Aadhar Card No.",         student.aadhar || "Not Provided"],
           ["Date of Admission",       student.admissionDate],
-          ["Class at Admission",      student.session.split("-")[0] === student.session.split("-")[0] ? "—" : "—"],
+          ["Class at Admission",      student.admissionClass || "—"],
           ["Last Class Attended",     `${student.std}${student.section ? "-" + student.section : ""}`],
           ["Academic Session",        student.session],
           ["Date of Leaving",         new Date(tcData.leavingDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })],
@@ -225,7 +231,7 @@ export default function TcPage() {
           <div className="flex-1">
             <p className="text-sm font-bold text-green-800">Transfer Certificate Generated</p>
             <p className="text-xs text-green-600 mt-0.5">
-              {student.name} has been marked as <b>Left</b>. TC No: <b>{form.tcNumber}</b>
+              {student.name} has been marked as <b>Inactive</b>. TC No: <b>{form.tcNumber}</b>
             </p>
           </div>
           <button
@@ -256,7 +262,7 @@ export default function TcPage() {
       {/* ── Page Header ── */}
       <div className="flex items-center gap-3">
         <button
-          type="button" onClick={() => router.push(`/student/${id}`)}
+          type="button" onClick={() => router.replace(`/student/${id}`)}
           className="p-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
         >
           <ArrowLeft className="w-4 h-4 text-gray-600" />
@@ -389,8 +395,8 @@ export default function TcPage() {
         <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3">
           <span className="text-red-500 text-lg flex-shrink-0 mt-0.5">⚠</span>
           <p className="text-xs text-red-700 font-medium">
-            Once the TC is generated, <b>{student.name}</b> will be marked as <b>Left</b> and will not appear
-            in any future session's student list. This action cannot be undone.
+            Once the TC is generated, <b>{student.name}</b> will be marked as <b>Inactive</b> and will not appear
+            in the active student list. Their data will be preserved for records. This action cannot be undone.
           </p>
         </div>
 
@@ -398,7 +404,7 @@ export default function TcPage() {
         <div className="flex items-center justify-end gap-3 pt-2">
           <button
             type="button"
-            onClick={() => router.push(`/student/${id}`)}
+            onClick={() => router.replace(`/student/${id}`)}
             className="px-6 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
           >
             Cancel
@@ -407,7 +413,7 @@ export default function TcPage() {
             type="submit"
             className="px-8 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors shadow-sm"
           >
-            Generate TC & Mark as Left
+            Generate TC & Mark as Deactive
           </button>
         </div>
       </form>

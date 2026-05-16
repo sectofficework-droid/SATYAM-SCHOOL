@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   Plus, Search, GraduationCap, Phone, Calendar, Edit, Trash2,
   LogOut, Eye, EyeOff, User, ChevronDown, ArrowUpCircle,
-  CheckCircle2, X, AlertTriangle,
+  CheckCircle2, X, AlertTriangle, Package, FileText,
 } from "lucide-react";
 
 // ── Session helpers ────────────────────────────────────────────
@@ -58,53 +58,63 @@ function calcAge(dobStr) {
 const INITIAL_STUDENTS = [
   {
     enrollment:"1001", name:"Arjun Patel", photo:null,
-    grNo:"GR-001", dateOfJoin:"01 Jun 2023",
+    grNo:"GR-001", dateOfJoin:"01 Jun 2023", admissionClass:"8th",
     std:"10th", section:"A", rollNo:"101", session:"2025-26",
     fatherName:"Rajesh", motherName:"Meena",
     mobile:"9876543210", dob:"15 Jan 2010", gender:"Male",
     password:"ARJ1001", aadhar:"1234 5678 9012",
     udise:"24180100101", pen:"", apaar:"", status:"Active",
     fees:{ total:48000, paid:36000 },
+    pendingDocs:["Father's Aadhar Card", "Mother's Aadhar Card"],
+    pendingInventory:["Notebooks", "Assignment-1", "Assignment-2", "Assignment-3"],
   },
   {
     enrollment:"1002", name:"Priya Shah", photo:null,
-    grNo:"GR-002", dateOfJoin:"15 Jun 2023",
+    grNo:"GR-002", dateOfJoin:"15 Jun 2023", admissionClass:"8th",
     std:"9th", section:"B", rollNo:"204", session:"2025-26",
     fatherName:"Amit", motherName:"Kavita",
     mobile:"9765432100", dob:"22 Mar 2011", gender:"Female",
     password:"PRI1002", aadhar:"",
     udise:"", pen:"", apaar:"123456789012", status:"Active",
     fees:{ total:44000, paid:44000 },
+    pendingDocs:[],
+    pendingInventory:["Uniform"],
   },
   {
     enrollment:"1003", name:"Rohan Mehta", photo:null,
-    grNo:"GR-003", dateOfJoin:"10 Apr 2022",
+    grNo:"GR-003", dateOfJoin:"10 Apr 2022", admissionClass:"9th",
     std:"11th - Commerce", section:"A", rollNo:"312", session:"2025-26",
     fatherName:"Suresh", motherName:"Asha",
     mobile:"9654321098", dob:"08 Jul 2009", gender:"Male",
     password:"ROH1003", aadhar:"9876 5432 1098",
     udise:"", pen:"12345678901", apaar:"", status:"Active",
     fees:{ total:52000, paid:20000 },
+    pendingDocs:["Birth Certificate", "Marksheet"],
+    pendingInventory:["ID Card"],
   },
   {
     enrollment:"1004", name:"Sneha Desai", photo:null,
-    grNo:"GR-004", dateOfJoin:"05 Jun 2024",
+    grNo:"GR-004", dateOfJoin:"05 Jun 2024", admissionClass:"8th",
     std:"8th", section:"C", rollNo:"418", session:"2025-26",
     fatherName:"Kishore", motherName:"Hetal",
     mobile:"9543210987", dob:"30 Nov 2011", gender:"Female",
     password:"SNE1004", aadhar:"",
     udise:"", pen:"", apaar:"", status:"Active",
     fees:{ total:40000, paid:0 },
+    pendingDocs:["Birth Certificate", "Aadhar Card", "Father's Aadhar"],
+    pendingInventory:["School Bag", "Uniform", "Notebooks"],
   },
   {
     enrollment:"1005", name:"Dev Joshi", photo:null,
-    grNo:"GR-005", dateOfJoin:"12 Jun 2024",
+    grNo:"GR-005", dateOfJoin:"12 Jun 2024", admissionClass:"JR.KG",
     std:"JR.KG", section:"A", rollNo:"501", session:"2025-26",
     fatherName:"Prakash", motherName:"Ruchita",
     mobile:"9432109876", dob:"14 Sep 2020", gender:"Male",
     password:"DEV1005", aadhar:"",
     udise:"", pen:"", apaar:"", status:"Active",
     fees:{ total:35000, paid:35000 },
+    pendingDocs:["Birth Certificate"],
+    pendingInventory:[],
   },
 ];
 
@@ -451,8 +461,8 @@ export default function StudentPage() {
                     </span>
                   </div>
 
-                  {/* ── 5-Column Grid Body ── */}
-                  <div className="grid" style={{ gridTemplateColumns: "148px 1fr 1fr 175px 205px" }}>
+                  {/* ── 6-Column Grid Body ── */}
+                  <div className="grid" style={{ gridTemplateColumns: "148px 1fr 155px 185px 175px 205px" }}>
 
                     {/* ── Column 1: Photo — full card height ── */}
                     <div className={`relative overflow-hidden border-r border-gray-100 ${a.photoBg}`} style={{ minHeight: "168px" }}>
@@ -553,7 +563,62 @@ export default function StudentPage() {
                       </div>
                     </div>
 
-                    {/* ── Column 4: Fee Summary ── */}
+                    {/* ── Column 4 (NEW): Alerts ── */}
+                    <div className="px-3 py-4 border-r border-gray-100 space-y-2.5 bg-white">
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Alerts</p>
+
+                      {/* Document alerts */}
+                      {student.pendingDocs.length > 0 ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1">
+                            <FileText className="w-3 h-3 text-red-400 flex-shrink-0" />
+                            <span className="text-[10px] font-bold text-red-500 uppercase tracking-wide leading-none">Docs Pending</span>
+                            <span className="ml-auto text-[10px] font-bold bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                              {student.pendingDocs.length}
+                            </span>
+                          </div>
+                          {student.pendingDocs.slice(0, 2).map((d) => (
+                            <p key={d} className="text-[11px] text-gray-500 leading-tight truncate pl-0.5">· {d}</p>
+                          ))}
+                          {student.pendingDocs.length > 2 && (
+                            <p className="text-[10px] text-red-400 pl-0.5">+{student.pendingDocs.length - 2} more</p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
+                          <span className="text-[10px] font-semibold text-green-600">Docs OK</span>
+                        </div>
+                      )}
+
+                      <div className="w-full h-px bg-gray-100" />
+
+                      {/* Inventory alerts */}
+                      {student.pendingInventory.length > 0 ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1">
+                            <Package className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                            <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wide leading-none">Inventory Pending</span>
+                            <span className="ml-auto text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                              {student.pendingInventory.length}
+                            </span>
+                          </div>
+                          {student.pendingInventory.slice(0, 4).map((d) => (
+                            <p key={d} className="text-[11px] text-gray-500 leading-tight truncate pl-0.5">· {d}</p>
+                          ))}
+                          {student.pendingInventory.length > 4 && (
+                            <p className="text-[10px] text-amber-500 pl-0.5">+{student.pendingInventory.length - 4} more</p>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
+                          <span className="text-[10px] font-semibold text-green-600">Inventory OK</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Column 5: Fee Summary ── */}
                     {(() => {
                       const due      = student.fees.total - student.fees.paid;
                       const paidPct  = student.fees.total > 0
@@ -600,7 +665,7 @@ export default function StudentPage() {
                       );
                     })()}
 
-                    {/* ── Column 5: Actions ── */}
+                    {/* ── Column 6: Actions ── */}
                     <div className="px-4 py-4 flex flex-col gap-2 justify-between">
                       <div className="space-y-2">
                         <Link

@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronDown, Upload, X, Plus, FileText,
-  ArrowLeft, Check, Camera, Lock,
+  ArrowLeft, Check, Camera, Lock, GraduationCap,
 } from "lucide-react";
 
 // ── Options ────────────────────────────────────────────────────
@@ -29,6 +29,17 @@ const mediums   = ["English", "Gujarati", "Hindi", "Other"];
 const todayStr  = new Date().toISOString().split("T")[0];
 const nextEnrollment = "1006";
 
+const DISCOUNT_REASONS = [
+  "Financial Weak",
+  "3 Kids",
+  "Fatherless Student",
+  "Relative",
+  "Early Fees Complete",
+  "Early Admission",
+  "Old Student",
+  "Other",
+];
+
 const siblingsByClass = {
   "10th": ["Arjun Patel", "Ravi Kumar"],
   "9th":  ["Priya Shah", "Nisha Mehta"],
@@ -41,6 +52,7 @@ const defaultDocTypes = [
   "Father's Aadhar Card",
   "Mother's Aadhar Card",
   "Leaving Certificate",
+  "Marksheet",
 ];
 
 // ── Helpers ────────────────────────────────────────────────────
@@ -119,10 +131,24 @@ function YesNoToggle({ value, onChange }) {
 export default function AddStudentPage() {
   const router = useRouter();
 
-  const [hasSibling, setHasSibling]       = useState(false);
-  const [siblingClass, setSiblingClass]   = useState("");
-  const [siblingName, setSiblingName]     = useState("");
-  const [hasAadhar, setHasAadhar]         = useState(true);
+  const [hasSibling, setHasSibling] = useState(false);
+  const [siblings, setSiblings]     = useState([{ id: 1, cls: "", name: "" }]);
+
+  const addSibling = () =>
+    setSiblings((p) => [...p, { id: Date.now(), cls: "", name: "" }]);
+  const removeSibling = (id) =>
+    setSiblings((p) => p.filter((s) => s.id !== id));
+  const updateSibling = (id, field, val) =>
+    setSiblings((p) =>
+      p.map((s) =>
+        s.id === id ? { ...s, [field]: val, ...(field === "cls" ? { name: "" } : {}) } : s
+      )
+    );
+  const [hasDiscount, setHasDiscount]           = useState(false);
+  const [discountAmount, setDiscountAmount]     = useState("");
+  const [discountReason, setDiscountReason]     = useState("");
+  const [discountCustomReason, setDiscountCustomReason] = useState("");
+  const [hasAadhar, setHasAadhar]               = useState(true);
   const [photo, setPhoto]                 = useState(null);
   const [photoPreview, setPhotoPreview]   = useState(null);
   const [casteCertFile, setCasteCertFile] = useState(null);
@@ -131,14 +157,16 @@ export default function AddStudentPage() {
 
   const [aadharDisplay, setAadharDisplay] = useState("");
 
-  const [checkedDocs, setCheckedDocs]     = useState({});
-  const [uploadedFiles, setUploadedFiles] = useState({});
-  const [customDocs, setCustomDocs]       = useState([]);
+  const [checkedDocs, setCheckedDocs]       = useState({});
+  const [uploadedFiles, setUploadedFiles]   = useState({}); // { docName: fileName }
+  const [uploadedFileUrls, setUploadedFileUrls] = useState({}); // { docName: { url, type } }
+  const [customDocs, setCustomDocs]         = useState([]);
 
   const [form, setForm] = useState({
     joinDate: todayStr,
     grNo: "",
     std: "",
+    admissionClass: "",
     firstName: "",
     lastName: "",
     fatherName: "",
@@ -164,6 +192,11 @@ export default function AddStudentPage() {
 
   const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
 
+  const handleStdChange = (e) => {
+    const val = e.target.value;
+    setForm((p) => ({ ...p, std: val, admissionClass: val }));
+  };
+
   // Aadhar formatting — XXXX XXXX XXXX display, raw digits saved
   const handleAadharInput = (e) => {
     const digits = e.target.value.replace(/\D/g, "").slice(0, 12);
@@ -185,17 +218,19 @@ export default function AddStudentPage() {
     const wasChecked = checkedDocs[name];
     setCheckedDocs((p) => ({ ...p, [name]: !p[name] }));
     if (wasChecked) {
-      setUploadedFiles((p) => {
-        const next = { ...p };
-        delete next[name];
-        return next;
-      });
+      setUploadedFiles((p) => { const next = { ...p }; delete next[name]; return next; });
+      setUploadedFileUrls((p) => { const next = { ...p }; delete next[name]; return next; });
     }
   };
 
   const handleDocFile = (name, e) => {
     const file = e.target.files[0];
-    if (file) setUploadedFiles((p) => ({ ...p, [name]: file.name }));
+    if (!file) return;
+    setUploadedFiles((p) => ({ ...p, [name]: file.name }));
+    setUploadedFileUrls((p) => ({
+      ...p,
+      [name]: { url: URL.createObjectURL(file), type: file.type },
+    }));
   };
 
   const addCustomDoc = () =>
@@ -321,37 +356,72 @@ export default function AddStudentPage() {
           <div className="space-y-4">
             <div>
               <FieldLabel>Does this student have a sibling already studying here?</FieldLabel>
-              <YesNoToggle value={hasSibling} onChange={(val) => { setHasSibling(val); setSiblingClass(""); setSiblingName(""); }} />
+              <YesNoToggle
+                value={hasSibling}
+                onChange={(val) => {
+                  setHasSibling(val);
+                  setSiblings([{ id: 1, cls: "", name: "" }]);
+                }}
+              />
             </div>
+
             {hasSibling && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                <div>
-                  <FieldLabel required>Sibling's Class</FieldLabel>
-                  <SelectField
-                    value={siblingClass}
-                    onChange={(e) => { setSiblingClass(e.target.value); setSiblingName(""); }}
-                    required
-                  >
-                    <option value="">Select Class</option>
-                    {standards.map((s) => <option key={s}>{s}</option>)}
-                  </SelectField>
-                </div>
-                <div>
-                  <FieldLabel required>Sibling's Name</FieldLabel>
-                  <SelectField
-                    value={siblingName}
-                    onChange={(e) => setSiblingName(e.target.value)}
-                    disabled={!siblingClass}
-                    required
-                  >
-                    <option value="">
-                      {siblingClass ? "Select Student" : "Select class first"}
-                    </option>
-                    {(siblingsByClass[siblingClass] || []).map((n) => (
-                      <option key={n}>{n}</option>
-                    ))}
-                  </SelectField>
-                </div>
+              <div className="space-y-4 pt-1">
+                {siblings.map((sib, i) => (
+                  <div key={sib.id} className="border border-gray-100 rounded-xl p-4 bg-gray-50/50">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+                        Sibling {i + 1}
+                      </p>
+                      {siblings.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeSibling(sib.id)}
+                          className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <FieldLabel required>Sibling's Class</FieldLabel>
+                        <SelectField
+                          value={sib.cls}
+                          onChange={(e) => updateSibling(sib.id, "cls", e.target.value)}
+                          required
+                        >
+                          <option value="">Select Class</option>
+                          {standards.map((s) => <option key={s}>{s}</option>)}
+                        </SelectField>
+                      </div>
+                      <div>
+                        <FieldLabel required>Sibling's Name</FieldLabel>
+                        <SelectField
+                          value={sib.name}
+                          onChange={(e) => updateSibling(sib.id, "name", e.target.value)}
+                          disabled={!sib.cls}
+                          required
+                        >
+                          <option value="">
+                            {sib.cls ? "Select Student" : "Select class first"}
+                          </option>
+                          {(siblingsByClass[sib.cls] || []).map((n) => (
+                            <option key={n}>{n}</option>
+                          ))}
+                        </SelectField>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={addSibling}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 border border-dashed border-school-navy/40 rounded-xl text-sm font-semibold text-school-navy hover:bg-blue-50 hover:border-school-navy transition-colors"
+                >
+                  <Plus className="w-4 h-4" /> Add Another Sibling
+                </button>
               </div>
             )}
           </div>
@@ -362,10 +432,18 @@ export default function AddStudentPage() {
           <SectionHeader number="4" title="Class Details" />
           <div className="max-w-xs">
             <FieldLabel required>Standard</FieldLabel>
-            <SelectField value={form.std} onChange={set("std")} required>
+            <SelectField value={form.std} onChange={handleStdChange} required>
               <option value="">Select Standard</option>
               {standards.map((s) => <option key={s}>{s}</option>)}
             </SelectField>
+            {form.std && (
+              <div className="mt-3 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
+                <GraduationCap className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                <p className="text-xs text-blue-700 font-medium">
+                  <b>{form.std}</b> will be permanently recorded as the joining class.
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -685,6 +763,60 @@ export default function AddStudentPage() {
               />
               <p className="text-xs text-gray-400 mt-1">12 digits</p>
             </div>
+          </div>
+        </div>
+
+        {/* ══ SECTION 12: Fees Discount ══ */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+          <SectionHeader number="12" title="Fees Discount" />
+          <div className="space-y-4">
+            <div>
+              <FieldLabel>Apply Discount to Fees?</FieldLabel>
+              <YesNoToggle
+                value={hasDiscount}
+                onChange={(v) => {
+                  setHasDiscount(v);
+                  setDiscountAmount(""); setDiscountReason(""); setDiscountCustomReason("");
+                }}
+              />
+            </div>
+            {hasDiscount && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+                <div>
+                  <FieldLabel required>Discount Amount</FieldLabel>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm pointer-events-none">₹</span>
+                    <Input
+                      type="number" placeholder="0" value={discountAmount}
+                      onChange={(e) => setDiscountAmount(e.target.value)}
+                      className="pl-7" min="0" required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <FieldLabel required>Reason</FieldLabel>
+                  <SelectField
+                    value={discountReason}
+                    onChange={(e) => { setDiscountReason(e.target.value); setDiscountCustomReason(""); }}
+                    required
+                  >
+                    <option value="">Select Reason</option>
+                    {DISCOUNT_REASONS.map((r) => <option key={r}>{r}</option>)}
+                  </SelectField>
+                </div>
+                {discountReason === "Other" && (
+                  <div className="sm:col-span-2">
+                    <FieldLabel required>Remarks</FieldLabel>
+                    <Input
+                      placeholder="Enter reason for discount..."
+                      value={discountCustomReason}
+                      onChange={(e) => setDiscountCustomReason(e.target.value)}
+                      required
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
