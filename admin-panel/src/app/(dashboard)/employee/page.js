@@ -4,9 +4,9 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import {
   Users, Plus, Search, X, Phone, Mail, MapPin,
-  Calendar, IndianRupee, GraduationCap, Briefcase,
+  Calendar, GraduationCap, Briefcase,
   User, FileText, Check, Eye, BookOpen,
-  ChevronRight, ChevronLeft, Shield,
+  ChevronRight, ChevronLeft, Shield, Upload,
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -72,12 +72,15 @@ const INITIAL_EMPLOYEES = [
     gender: "Male", dob: "1970-03-15", phone: "9876543210", altPhone: "",
     email: "sunil@satyamstars.edu.in", address: "12, Rander Road, Surat, Gujarat - 395009",
     aadhar: "1234 5678 9012", pan: "ABCDE1234F",
-    joiningDate: "2015-06-01", employmentType: "Permanent", salary: 55000, status: "Active",
+    joiningDate: "2015-06-01", employmentType: "Permanent", status: "Active",
     classTeacherOf: null, subjects: [], teachesClasses: [],
     documents: [
-      { name: "Aadhar Card", uploaded: true }, { name: "PAN Card", uploaded: true },
-      { name: "Degree Certificate", uploaded: true }, { name: "Experience Letter", uploaded: true },
-      { name: "Photo", uploaded: true }, { name: "Address Proof", uploaded: true },
+      { name: "Aadhar Card", uploaded: true, fileName: "" },
+      { name: "PAN Card", uploaded: true, fileName: "" },
+      { name: "Degree Certificate", uploaded: true, fileName: "" },
+      { name: "Experience Letter", uploaded: true, fileName: "" },
+      { name: "Photo", uploaded: true, fileName: "" },
+      { name: "Address Proof", uploaded: true, fileName: "" },
     ],
   },
   {
@@ -86,12 +89,15 @@ const INITIAL_EMPLOYEES = [
     gender: "Male", dob: "1975-07-22", phone: "9765432100", altPhone: "9876500011",
     email: "rajesh@satyamstars.edu.in", address: "45, City Light Road, Surat, Gujarat - 395007",
     aadhar: "2345 6789 0123", pan: "FGHIJ5678K",
-    joiningDate: "2018-06-01", employmentType: "Permanent", salary: 45000, status: "Active",
+    joiningDate: "2018-06-01", employmentType: "Permanent", status: "Active",
     classTeacherOf: null, subjects: [], teachesClasses: [],
     documents: [
-      { name: "Aadhar Card", uploaded: true }, { name: "PAN Card", uploaded: true },
-      { name: "Degree Certificate", uploaded: true }, { name: "Experience Letter", uploaded: true },
-      { name: "Photo", uploaded: true }, { name: "Address Proof", uploaded: false },
+      { name: "Aadhar Card", uploaded: true, fileName: "" },
+      { name: "PAN Card", uploaded: true, fileName: "" },
+      { name: "Degree Certificate", uploaded: true, fileName: "" },
+      { name: "Experience Letter", uploaded: true, fileName: "" },
+      { name: "Photo", uploaded: true, fileName: "" },
+      { name: "Address Proof", uploaded: false, fileName: "" },
     ],
   },
   {
@@ -100,12 +106,15 @@ const INITIAL_EMPLOYEES = [
     gender: "Female", dob: "1985-11-08", phone: "9654321098", altPhone: "",
     email: "anita@satyamstars.edu.in", address: "78, Adajan Patia, Surat, Gujarat - 395009",
     aadhar: "3456 7890 1234", pan: "KLMNO9012P",
-    joiningDate: "2019-06-01", employmentType: "Permanent", salary: 22000, status: "Active",
+    joiningDate: "2019-06-01", employmentType: "Permanent", status: "Active",
     classTeacherOf: "1st-A", subjects: ["English", "EVS", "Drawing"], teachesClasses: ["1st", "2nd"],
     documents: [
-      { name: "Aadhar Card", uploaded: true }, { name: "PAN Card", uploaded: false },
-      { name: "Degree Certificate", uploaded: true }, { name: "Experience Letter", uploaded: true },
-      { name: "Photo", uploaded: true }, { name: "Address Proof", uploaded: true },
+      { name: "Aadhar Card", uploaded: true, fileName: "" },
+      { name: "PAN Card", uploaded: false, fileName: "" },
+      { name: "Degree Certificate", uploaded: true, fileName: "" },
+      { name: "Experience Letter", uploaded: true, fileName: "" },
+      { name: "Photo", uploaded: true, fileName: "" },
+      { name: "Address Proof", uploaded: true, fileName: "" },
     ],
   },
   {
@@ -114,12 +123,15 @@ const INITIAL_EMPLOYEES = [
     gender: "Male", dob: "1980-05-14", phone: "9543210987", altPhone: "",
     email: "ramesh@satyamstars.edu.in", address: "23, Vesu, Surat, Gujarat - 395007",
     aadhar: "4567 8901 2345", pan: "QRSTU3456V",
-    joiningDate: "2017-06-01", employmentType: "Permanent", salary: 28000, status: "Active",
+    joiningDate: "2017-06-01", employmentType: "Permanent", status: "Active",
     classTeacherOf: "10th-A", subjects: ["Mathematics"], teachesClasses: ["8th", "9th", "10th"],
     documents: [
-      { name: "Aadhar Card", uploaded: true }, { name: "PAN Card", uploaded: true },
-      { name: "Degree Certificate", uploaded: true }, { name: "Experience Letter", uploaded: true },
-      { name: "Photo", uploaded: true }, { name: "Address Proof", uploaded: true },
+      { name: "Aadhar Card", uploaded: true, fileName: "" },
+      { name: "PAN Card", uploaded: true, fileName: "" },
+      { name: "Degree Certificate", uploaded: true, fileName: "" },
+      { name: "Experience Letter", uploaded: true, fileName: "" },
+      { name: "Photo", uploaded: true, fileName: "" },
+      { name: "Address Proof", uploaded: true, fileName: "" },
     ],
   },
   {
@@ -128,12 +140,15 @@ const INITIAL_EMPLOYEES = [
     gender: "Female", dob: "1988-09-30", phone: "9432109876", altPhone: "9120000055",
     email: "", address: "56, Pal Gam, Surat, Gujarat - 394510",
     aadhar: "5678 9012 3456", pan: "",
-    joiningDate: "2020-06-01", employmentType: "Contractual", salary: 18000, status: "Active",
+    joiningDate: "2020-06-01", employmentType: "Contractual", status: "Active",
     classTeacherOf: "8th-B", subjects: ["Science"], teachesClasses: ["6th", "7th", "8th"],
     documents: [
-      { name: "Aadhar Card", uploaded: true }, { name: "PAN Card", uploaded: false },
-      { name: "Degree Certificate", uploaded: true }, { name: "Experience Letter", uploaded: false },
-      { name: "Photo", uploaded: true }, { name: "Address Proof", uploaded: true },
+      { name: "Aadhar Card", uploaded: true, fileName: "" },
+      { name: "PAN Card", uploaded: false, fileName: "" },
+      { name: "Degree Certificate", uploaded: true, fileName: "" },
+      { name: "Experience Letter", uploaded: false, fileName: "" },
+      { name: "Photo", uploaded: true, fileName: "" },
+      { name: "Address Proof", uploaded: true, fileName: "" },
     ],
   },
   {
@@ -142,12 +157,15 @@ const INITIAL_EMPLOYEES = [
     gender: "Female", dob: "1990-02-18", phone: "9321098765", altPhone: "",
     email: "kavita@satyamstars.edu.in", address: "89, Katargam, Surat, Gujarat - 395004",
     aadhar: "6789 0123 4567", pan: "WXYZ78901A",
-    joiningDate: "2021-06-01", employmentType: "Permanent", salary: 16000, status: "Active",
+    joiningDate: "2021-06-01", employmentType: "Permanent", status: "Active",
     classTeacherOf: "JR.KG-A", subjects: ["English", "Drawing", "EVS"], teachesClasses: ["JR.KG", "SR.KG"],
     documents: [
-      { name: "Aadhar Card", uploaded: true }, { name: "PAN Card", uploaded: true },
-      { name: "Degree Certificate", uploaded: false }, { name: "Experience Letter", uploaded: false },
-      { name: "Photo", uploaded: true }, { name: "Address Proof", uploaded: true },
+      { name: "Aadhar Card", uploaded: true, fileName: "" },
+      { name: "PAN Card", uploaded: true, fileName: "" },
+      { name: "Degree Certificate", uploaded: false, fileName: "" },
+      { name: "Experience Letter", uploaded: false, fileName: "" },
+      { name: "Photo", uploaded: true, fileName: "" },
+      { name: "Address Proof", uploaded: true, fileName: "" },
     ],
   },
   {
@@ -156,12 +174,15 @@ const INITIAL_EMPLOYEES = [
     gender: "Male", dob: "1983-12-05", phone: "9210987654", altPhone: "",
     email: "harish@satyamstars.edu.in", address: "34, Bhatar Road, Surat, Gujarat - 395007",
     aadhar: "7890 1234 5678", pan: "BCDE23456F",
-    joiningDate: "2018-06-01", employmentType: "Permanent", salary: 20000, status: "Active",
+    joiningDate: "2018-06-01", employmentType: "Permanent", status: "Active",
     classTeacherOf: null, subjects: [], teachesClasses: [],
     documents: [
-      { name: "Aadhar Card", uploaded: true }, { name: "PAN Card", uploaded: true },
-      { name: "Degree Certificate", uploaded: true }, { name: "Experience Letter", uploaded: true },
-      { name: "Photo", uploaded: true }, { name: "Address Proof", uploaded: true },
+      { name: "Aadhar Card", uploaded: true, fileName: "" },
+      { name: "PAN Card", uploaded: true, fileName: "" },
+      { name: "Degree Certificate", uploaded: true, fileName: "" },
+      { name: "Experience Letter", uploaded: true, fileName: "" },
+      { name: "Photo", uploaded: true, fileName: "" },
+      { name: "Address Proof", uploaded: true, fileName: "" },
     ],
   },
   {
@@ -170,12 +191,15 @@ const INITIAL_EMPLOYEES = [
     gender: "Male", dob: "1992-06-25", phone: "9109876543", altPhone: "",
     email: "", address: "67, Limbayat, Surat, Gujarat - 395006",
     aadhar: "8901 2345 6789", pan: "",
-    joiningDate: "2022-06-01", employmentType: "Permanent", salary: 10000, status: "Active",
+    joiningDate: "2022-06-01", employmentType: "Permanent", status: "Active",
     classTeacherOf: null, subjects: [], teachesClasses: [],
     documents: [
-      { name: "Aadhar Card", uploaded: true }, { name: "PAN Card", uploaded: false },
-      { name: "Degree Certificate", uploaded: false }, { name: "Experience Letter", uploaded: false },
-      { name: "Photo", uploaded: true }, { name: "Address Proof", uploaded: true },
+      { name: "Aadhar Card", uploaded: true, fileName: "" },
+      { name: "PAN Card", uploaded: false, fileName: "" },
+      { name: "Degree Certificate", uploaded: false, fileName: "" },
+      { name: "Experience Letter", uploaded: false, fileName: "" },
+      { name: "Photo", uploaded: true, fileName: "" },
+      { name: "Address Proof", uploaded: true, fileName: "" },
     ],
   },
   {
@@ -184,12 +208,15 @@ const INITIAL_EMPLOYEES = [
     gender: "Male", dob: "1988-04-10", phone: "9098765432", altPhone: "9000000099",
     email: "", address: "90, Udhna, Surat, Gujarat - 394210",
     aadhar: "9012 3456 7890", pan: "",
-    joiningDate: "2023-06-01", employmentType: "Contractual", salary: 12000, status: "Active",
+    joiningDate: "2023-06-01", employmentType: "Contractual", status: "Active",
     classTeacherOf: null, subjects: [], teachesClasses: [],
     documents: [
-      { name: "Aadhar Card", uploaded: true }, { name: "PAN Card", uploaded: false },
-      { name: "Degree Certificate", uploaded: false }, { name: "Experience Letter", uploaded: false },
-      { name: "Photo", uploaded: true }, { name: "Address Proof", uploaded: false },
+      { name: "Aadhar Card", uploaded: true, fileName: "" },
+      { name: "PAN Card", uploaded: false, fileName: "" },
+      { name: "Degree Certificate", uploaded: false, fileName: "" },
+      { name: "Experience Letter", uploaded: false, fileName: "" },
+      { name: "Photo", uploaded: true, fileName: "" },
+      { name: "Address Proof", uploaded: false, fileName: "" },
     ],
   },
   {
@@ -198,12 +225,15 @@ const INITIAL_EMPLOYEES = [
     gender: "Female", dob: "1987-08-12", phone: "9876001122", altPhone: "",
     email: "meena@satyamstars.edu.in", address: "12, Piplod, Surat, Gujarat - 395007",
     aadhar: "0123 4567 8901", pan: "GHIJK67890L",
-    joiningDate: "2020-06-01", employmentType: "Permanent", salary: 19000, status: "Inactive",
+    joiningDate: "2020-06-01", employmentType: "Permanent", status: "Inactive",
     classTeacherOf: "2nd-A", subjects: ["Hindi", "English", "EVS"], teachesClasses: ["2nd", "3rd"],
     documents: [
-      { name: "Aadhar Card", uploaded: true }, { name: "PAN Card", uploaded: true },
-      { name: "Degree Certificate", uploaded: true }, { name: "Experience Letter", uploaded: true },
-      { name: "Photo", uploaded: false }, { name: "Address Proof", uploaded: true },
+      { name: "Aadhar Card", uploaded: true, fileName: "" },
+      { name: "PAN Card", uploaded: true, fileName: "" },
+      { name: "Degree Certificate", uploaded: true, fileName: "" },
+      { name: "Experience Letter", uploaded: true, fileName: "" },
+      { name: "Photo", uploaded: false, fileName: "" },
+      { name: "Address Proof", uploaded: true, fileName: "" },
     ],
   },
 ];
@@ -264,10 +294,10 @@ function ViewEmployeeModal({ emp, onClose }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const bg           = avatarBg(emp.id);
-  const age          = calcAge(emp.dob);
-  const done         = docsDone(emp);
-  const allDocsOk    = done === emp.documents.length;
+  const bg        = avatarBg(emp.id);
+  const age       = calcAge(emp.dob);
+  const done      = docsDone(emp);
+  const allDocsOk = done === emp.documents.length;
 
   const modal = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -331,10 +361,9 @@ function ViewEmployeeModal({ emp, onClose }) {
           {/* Job */}
           <div className="border-t border-gray-100 pt-4">
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-3">Job Details</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-              <InfoRow label="Salary"     value={`₹${emp.salary.toLocaleString("en-IN")} / month`} icon={IndianRupee} />
-              <InfoRow label="Employment" value={emp.employmentType} icon={Briefcase} />
-              <InfoRow label="Status"     value={emp.status}         icon={Shield}    />
+            <div className="grid grid-cols-2 gap-4">
+              <InfoRow label="Employment Type" value={emp.employmentType} icon={Briefcase} />
+              <InfoRow label="Status"          value={emp.status}         icon={Shield}    />
             </div>
           </div>
 
@@ -395,19 +424,26 @@ function ViewEmployeeModal({ emp, onClose }) {
                 {done}/{emp.documents.length}
               </span>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {emp.documents.map((d) => (
                 <div key={d.name}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold ${
+                  className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold ${
                     d.uploaded
                       ? "bg-green-50 border-green-200 text-green-700"
                       : "bg-red-50 border-red-200 text-red-600"
                   }`}>
-                  {d.uploaded
-                    ? <Check className="w-3.5 h-3.5 flex-shrink-0" />
-                    : <X     className="w-3.5 h-3.5 flex-shrink-0" />
-                  }
-                  {d.name}
+                  <div className="flex items-center gap-2 min-w-0">
+                    {d.uploaded
+                      ? <Check    className="w-3.5 h-3.5 flex-shrink-0" />
+                      : <X        className="w-3.5 h-3.5 flex-shrink-0" />
+                    }
+                    <span className="truncate">{d.name}</span>
+                  </div>
+                  {d.uploaded && d.fileName && (
+                    <span className="text-[10px] font-normal text-green-600 truncate max-w-[130px] flex-shrink-0">
+                      {d.fileName}
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
@@ -442,7 +478,6 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
   const [department, setDept]   = useState("");
   const [empType, setEmpType]   = useState("Permanent");
   const [joining, setJoining]   = useState("");
-  const [salary, setSalary]     = useState("");
   const [status, setStatus]     = useState("Active");
 
   // Academic
@@ -450,8 +485,10 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
   const [subjects, setSubj]   = useState([]);
   const [teaches, setTeaches] = useState([]);
 
-  // Documents
-  const [docs, setDocs] = useState(REQUIRED_DOCS.map((n) => ({ name: n, uploaded: false })));
+  // Documents — each doc: { name, uploaded, file (File|null), fileName }
+  const [docs, setDocs] = useState(
+    REQUIRED_DOCS.map((n) => ({ name: n, uploaded: false, file: null, fileName: "" }))
+  );
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -471,7 +508,25 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
   };
 
   const toggleDoc = (docName) =>
-    setDocs((prev) => prev.map((d) => d.name === docName ? { ...d, uploaded: !d.uploaded } : d));
+    setDocs((prev) => prev.map((d) => {
+      if (d.name !== docName) return d;
+      const next = !d.uploaded;
+      return { ...d, uploaded: next, ...(next ? {} : { file: null, fileName: "" }) };
+    }));
+
+  const handleFileSelect = (docName, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setDocs((prev) => prev.map((d) =>
+      d.name === docName ? { ...d, file, fileName: file.name } : d
+    ));
+    e.target.value = "";
+  };
+
+  const removeFile = (docName) =>
+    setDocs((prev) => prev.map((d) =>
+      d.name === docName ? { ...d, file: null, fileName: "" } : d
+    ));
 
   const handleSave = () => {
     if (!tab0Valid || !tab1Valid) return;
@@ -483,12 +538,11 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
       gender, dob, phone: phone.trim(), altPhone: altPhone.trim(),
       email: email.trim(), address: address.trim(),
       aadhar: aadhar.trim(), pan: pan.trim(),
-      joiningDate: joining, employmentType: empType,
-      salary: salary ? Number(salary) : 0, status,
+      joiningDate: joining, employmentType: empType, status,
       classTeacherOf: type === "teaching" ? ctOf || null : null,
       subjects: type === "teaching" ? subjects : [],
       teachesClasses: type === "teaching" ? teaches : [],
-      documents: docs,
+      documents: docs.map(({ name: n, uploaded, fileName }) => ({ name: n, uploaded, fileName })),
     });
   };
 
@@ -632,18 +686,11 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
                   </select>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Salary (₹ / month)</label>
-                  <input type="number" min="0" className={IPT} placeholder="0"
-                    value={salary} onChange={(e) => setSalary(e.target.value)} />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Status</label>
-                  <select className={IPT} value={status} onChange={(e) => setStatus(e.target.value)}>
-                    {["Active", "Inactive"].map((s) => <option key={s}>{s}</option>)}
-                  </select>
-                </div>
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5">Status</label>
+                <select className={IPT} value={status} onChange={(e) => setStatus(e.target.value)}>
+                  {["Active", "Inactive"].map((s) => <option key={s}>{s}</option>)}
+                </select>
               </div>
             </>
           )}
@@ -704,22 +751,50 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
           {/* Documents */}
           {tab === 3 && (
             <>
-              <p className="text-xs text-gray-500">Mark which documents have been collected from this employee:</p>
-              <div className="space-y-2">
+              <p className="text-xs text-gray-500">
+                Check each document that has been collected, then upload the file.
+              </p>
+              <div className="space-y-2.5">
                 {docs.map((d) => (
-                  <button key={d.name} onClick={() => toggleDoc(d.name)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-sm font-semibold transition-colors text-left ${
-                      d.uploaded
-                        ? "bg-green-50 border-green-300 text-green-700"
-                        : "bg-white border-gray-200 text-gray-600 hover:border-gray-300"
+                  <div key={d.name}
+                    className={`rounded-xl border transition-colors ${
+                      d.uploaded ? "border-green-200 bg-green-50" : "border-gray-200 bg-white"
                     }`}>
-                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                      d.uploaded ? "bg-green-500 border-green-500" : "border-gray-300"
-                    }`}>
-                      {d.uploaded && <Check className="w-3 h-3 text-white" />}
-                    </div>
-                    {d.name}
-                  </button>
+                    {/* Checkbox row */}
+                    <button onClick={() => toggleDoc(d.name)}
+                      className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-left">
+                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                        d.uploaded ? "bg-green-500 border-green-500" : "border-gray-300"
+                      }`}>
+                        {d.uploaded && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                      <span className={d.uploaded ? "text-green-700" : "text-gray-600"}>{d.name}</span>
+                    </button>
+
+                    {/* File upload (visible only when checked) */}
+                    {d.uploaded && (
+                      <div className="px-4 pb-3">
+                        {d.fileName ? (
+                          <div className="flex items-center gap-2 bg-white border border-green-200 rounded-lg px-3 py-2">
+                            <FileText className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                            <span className="text-xs text-gray-700 flex-1 truncate">{d.fileName}</span>
+                            <button onClick={() => removeFile(d.name)}
+                              className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0">
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <label className="flex items-center gap-2 cursor-pointer bg-white border border-dashed border-green-300 rounded-lg px-3 py-2 hover:border-green-400 transition-colors">
+                            <Upload className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                            <span className="text-xs text-green-600 font-medium">Upload file</span>
+                            <input type="file" className="hidden"
+                              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                              onChange={(e) => handleFileSelect(d.name, e)} />
+                          </label>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 ))}
               </div>
             </>
@@ -809,10 +884,10 @@ export default function EmployeePage() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: "Total Staff",   value: total,       color: "text-blue-600",   bg: "bg-blue-50",   icon: Users       },
+          { label: "Total Staff",   value: total,       color: "text-blue-600",   bg: "bg-blue-50",   icon: Users         },
           { label: "Teaching",      value: teaching,    color: "text-green-600",  bg: "bg-green-50",  icon: GraduationCap },
-          { label: "Non-Teaching",  value: nonTeaching, color: "text-gray-600",   bg: "bg-gray-100",  icon: Briefcase   },
-          { label: "Management",    value: management,  color: "text-purple-600", bg: "bg-purple-50", icon: Shield      },
+          { label: "Non-Teaching",  value: nonTeaching, color: "text-gray-600",   bg: "bg-gray-100",  icon: Briefcase     },
+          { label: "Management",    value: management,  color: "text-purple-600", bg: "bg-purple-50", icon: Shield        },
         ].map(({ label, value, color, bg, icon: Icon }) => (
           <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
             <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center flex-shrink-0`}>
@@ -838,7 +913,7 @@ export default function EmployeePage() {
           </div>
           <div className="flex gap-2 flex-wrap">
             {[
-              ["all", "All"],
+              ["all",          "All"],
               ["management",   "Management"],
               ["teaching",     "Teaching"],
               ["non-teaching", "Non-Teaching"],
@@ -870,7 +945,6 @@ export default function EmployeePage() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">Department</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">Phone</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500">Joined</th>
-                <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500">Salary</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500">Docs</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500">Status</th>
                 <th className="px-4 py-3"></th>
@@ -879,7 +953,7 @@ export default function EmployeePage() {
             <tbody className="divide-y divide-gray-50">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="text-center py-14 text-gray-400 text-sm">
+                  <td colSpan={8} className="text-center py-14 text-gray-400 text-sm">
                     No employees match your filters
                   </td>
                 </tr>
@@ -909,9 +983,6 @@ export default function EmployeePage() {
                     <td className="px-4 py-3.5 text-gray-600">{emp.department}</td>
                     <td className="px-4 py-3.5 text-gray-600">{emp.phone}</td>
                     <td className="px-4 py-3.5 text-gray-500">{fmtDate(emp.joiningDate)}</td>
-                    <td className="px-4 py-3.5 text-right font-semibold text-gray-700">
-                      ₹{emp.salary.toLocaleString("en-IN")}
-                    </td>
                     <td className="px-4 py-3.5 text-center">
                       <span className={`text-xs font-bold ${docsOk ? "text-green-600" : "text-amber-600"}`}>
                         {done}/{emp.documents.length}
