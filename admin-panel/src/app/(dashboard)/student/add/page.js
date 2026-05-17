@@ -385,7 +385,7 @@ export default function AddStudentPage() {
                     </div>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
-                        <FieldLabel required>Sibling's Class</FieldLabel>
+                        <FieldLabel required>Sibling&apos;s Class</FieldLabel>
                         <SelectField
                           value={sib.cls}
                           onChange={(e) => updateSibling(sib.id, "cls", e.target.value)}
@@ -396,7 +396,7 @@ export default function AddStudentPage() {
                         </SelectField>
                       </div>
                       <div>
-                        <FieldLabel required>Sibling's Name</FieldLabel>
+                        <FieldLabel required>Sibling&apos;s Name</FieldLabel>
                         <SelectField
                           value={sib.name}
                           onChange={(e) => updateSibling(sib.id, "name", e.target.value)}
@@ -463,13 +463,13 @@ export default function AddStudentPage() {
             </div>
 
             <div>
-              <FieldLabel required>Father's Name</FieldLabel>
+              <FieldLabel required>Father&apos;s Name</FieldLabel>
               <Input placeholder="e.g. Rajesh" value={form.fatherName} onChange={set("fatherName")} required />
               <p className="text-xs text-amber-600 mt-1 font-medium">Note: Write first name only</p>
             </div>
 
             <div>
-              <FieldLabel required>Mother's Name</FieldLabel>
+              <FieldLabel required>Mother&apos;s Name</FieldLabel>
               <Input placeholder="e.g. Meena" value={form.motherName} onChange={set("motherName")} required />
               <p className="text-xs text-amber-600 mt-1 font-medium">Note: Write first name only</p>
             </div>
@@ -597,7 +597,7 @@ export default function AddStudentPage() {
         {/* ══ SECTION 8: Previous School ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <SectionHeader number="8" title="Previous School Details" />
-          <p className="text-xs text-gray-400 mb-4 -mt-2">Leave blank if this is the student's first school</p>
+          <p className="text-xs text-gray-400 mb-4 -mt-2">Leave blank if this is the student&apos;s first school</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <FieldLabel>Previous School Name</FieldLabel>
