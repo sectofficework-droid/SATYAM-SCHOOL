@@ -65,6 +65,7 @@ const AVATAR_BG = [
 const ADD_TABS = ["Personal", "Job", "Academic", "Documents"];
 
 // ── Dummy Data ─────────────────────────────────────────────────────────────────
+// subjectMappings: [{ subject: "Mathematics", classes: ["8th","9th","10th"] }]
 const INITIAL_EMPLOYEES = [
   {
     id: 1, empId: "EMP001", name: "Sunil Pradhan", photo: null,
@@ -73,14 +74,14 @@ const INITIAL_EMPLOYEES = [
     email: "sunil@satyamstars.edu.in", address: "12, Rander Road, Surat, Gujarat - 395009",
     aadhar: "1234 5678 9012", pan: "ABCDE1234F",
     joiningDate: "2015-06-01", employmentType: "Permanent", status: "Active",
-    classTeacherOf: null, subjects: [], teachesClasses: [],
+    classTeacherOf: null, subjectMappings: [],
     documents: [
-      { name: "Aadhar Card", uploaded: true, fileName: "" },
-      { name: "PAN Card", uploaded: true, fileName: "" },
-      { name: "Degree Certificate", uploaded: true, fileName: "" },
-      { name: "Experience Letter", uploaded: true, fileName: "" },
-      { name: "Photo", uploaded: true, fileName: "" },
-      { name: "Address Proof", uploaded: true, fileName: "" },
+      { name: "Aadhar Card",       uploaded: true,  fileName: "" },
+      { name: "PAN Card",          uploaded: true,  fileName: "" },
+      { name: "Degree Certificate",uploaded: true,  fileName: "" },
+      { name: "Experience Letter", uploaded: true,  fileName: "" },
+      { name: "Photo",             uploaded: true,  fileName: "" },
+      { name: "Address Proof",     uploaded: true,  fileName: "" },
     ],
   },
   {
@@ -90,14 +91,14 @@ const INITIAL_EMPLOYEES = [
     email: "rajesh@satyamstars.edu.in", address: "45, City Light Road, Surat, Gujarat - 395007",
     aadhar: "2345 6789 0123", pan: "FGHIJ5678K",
     joiningDate: "2018-06-01", employmentType: "Permanent", status: "Active",
-    classTeacherOf: null, subjects: [], teachesClasses: [],
+    classTeacherOf: null, subjectMappings: [],
     documents: [
-      { name: "Aadhar Card", uploaded: true, fileName: "" },
-      { name: "PAN Card", uploaded: true, fileName: "" },
-      { name: "Degree Certificate", uploaded: true, fileName: "" },
-      { name: "Experience Letter", uploaded: true, fileName: "" },
-      { name: "Photo", uploaded: true, fileName: "" },
-      { name: "Address Proof", uploaded: false, fileName: "" },
+      { name: "Aadhar Card",       uploaded: true,  fileName: "" },
+      { name: "PAN Card",          uploaded: true,  fileName: "" },
+      { name: "Degree Certificate",uploaded: true,  fileName: "" },
+      { name: "Experience Letter", uploaded: true,  fileName: "" },
+      { name: "Photo",             uploaded: true,  fileName: "" },
+      { name: "Address Proof",     uploaded: false, fileName: "" },
     ],
   },
   {
@@ -107,14 +108,19 @@ const INITIAL_EMPLOYEES = [
     email: "anita@satyamstars.edu.in", address: "78, Adajan Patia, Surat, Gujarat - 395009",
     aadhar: "3456 7890 1234", pan: "KLMNO9012P",
     joiningDate: "2019-06-01", employmentType: "Permanent", status: "Active",
-    classTeacherOf: "1st-A", subjects: ["English", "EVS", "Drawing"], teachesClasses: ["1st", "2nd"],
+    classTeacherOf: "1st-A",
+    subjectMappings: [
+      { subject: "English", classes: ["1st", "2nd"] },
+      { subject: "EVS",     classes: ["1st", "2nd"] },
+      { subject: "Drawing", classes: ["1st"] },
+    ],
     documents: [
-      { name: "Aadhar Card", uploaded: true, fileName: "" },
-      { name: "PAN Card", uploaded: false, fileName: "" },
-      { name: "Degree Certificate", uploaded: true, fileName: "" },
-      { name: "Experience Letter", uploaded: true, fileName: "" },
-      { name: "Photo", uploaded: true, fileName: "" },
-      { name: "Address Proof", uploaded: true, fileName: "" },
+      { name: "Aadhar Card",       uploaded: true,  fileName: "" },
+      { name: "PAN Card",          uploaded: false, fileName: "" },
+      { name: "Degree Certificate",uploaded: true,  fileName: "" },
+      { name: "Experience Letter", uploaded: true,  fileName: "" },
+      { name: "Photo",             uploaded: true,  fileName: "" },
+      { name: "Address Proof",     uploaded: true,  fileName: "" },
     ],
   },
   {
@@ -124,14 +130,17 @@ const INITIAL_EMPLOYEES = [
     email: "ramesh@satyamstars.edu.in", address: "23, Vesu, Surat, Gujarat - 395007",
     aadhar: "4567 8901 2345", pan: "QRSTU3456V",
     joiningDate: "2017-06-01", employmentType: "Permanent", status: "Active",
-    classTeacherOf: "10th-A", subjects: ["Mathematics"], teachesClasses: ["8th", "9th", "10th"],
+    classTeacherOf: "10th-A",
+    subjectMappings: [
+      { subject: "Mathematics", classes: ["8th", "9th", "10th"] },
+    ],
     documents: [
-      { name: "Aadhar Card", uploaded: true, fileName: "" },
-      { name: "PAN Card", uploaded: true, fileName: "" },
-      { name: "Degree Certificate", uploaded: true, fileName: "" },
+      { name: "Aadhar Card",       uploaded: true, fileName: "" },
+      { name: "PAN Card",          uploaded: true, fileName: "" },
+      { name: "Degree Certificate",uploaded: true, fileName: "" },
       { name: "Experience Letter", uploaded: true, fileName: "" },
-      { name: "Photo", uploaded: true, fileName: "" },
-      { name: "Address Proof", uploaded: true, fileName: "" },
+      { name: "Photo",             uploaded: true, fileName: "" },
+      { name: "Address Proof",     uploaded: true, fileName: "" },
     ],
   },
   {
@@ -141,14 +150,17 @@ const INITIAL_EMPLOYEES = [
     email: "", address: "56, Pal Gam, Surat, Gujarat - 394510",
     aadhar: "5678 9012 3456", pan: "",
     joiningDate: "2020-06-01", employmentType: "Contractual", status: "Active",
-    classTeacherOf: "8th-B", subjects: ["Science"], teachesClasses: ["6th", "7th", "8th"],
+    classTeacherOf: "8th-B",
+    subjectMappings: [
+      { subject: "Science", classes: ["6th", "7th", "8th"] },
+    ],
     documents: [
-      { name: "Aadhar Card", uploaded: true, fileName: "" },
-      { name: "PAN Card", uploaded: false, fileName: "" },
-      { name: "Degree Certificate", uploaded: true, fileName: "" },
+      { name: "Aadhar Card",       uploaded: true,  fileName: "" },
+      { name: "PAN Card",          uploaded: false, fileName: "" },
+      { name: "Degree Certificate",uploaded: true,  fileName: "" },
       { name: "Experience Letter", uploaded: false, fileName: "" },
-      { name: "Photo", uploaded: true, fileName: "" },
-      { name: "Address Proof", uploaded: true, fileName: "" },
+      { name: "Photo",             uploaded: true,  fileName: "" },
+      { name: "Address Proof",     uploaded: true,  fileName: "" },
     ],
   },
   {
@@ -158,14 +170,19 @@ const INITIAL_EMPLOYEES = [
     email: "kavita@satyamstars.edu.in", address: "89, Katargam, Surat, Gujarat - 395004",
     aadhar: "6789 0123 4567", pan: "WXYZ78901A",
     joiningDate: "2021-06-01", employmentType: "Permanent", status: "Active",
-    classTeacherOf: "JR.KG-A", subjects: ["English", "Drawing", "EVS"], teachesClasses: ["JR.KG", "SR.KG"],
+    classTeacherOf: "JR.KG-A",
+    subjectMappings: [
+      { subject: "English", classes: ["JR.KG", "SR.KG"] },
+      { subject: "Drawing", classes: ["JR.KG", "SR.KG"] },
+      { subject: "EVS",     classes: ["JR.KG"] },
+    ],
     documents: [
-      { name: "Aadhar Card", uploaded: true, fileName: "" },
-      { name: "PAN Card", uploaded: true, fileName: "" },
-      { name: "Degree Certificate", uploaded: false, fileName: "" },
+      { name: "Aadhar Card",       uploaded: true,  fileName: "" },
+      { name: "PAN Card",          uploaded: true,  fileName: "" },
+      { name: "Degree Certificate",uploaded: false, fileName: "" },
       { name: "Experience Letter", uploaded: false, fileName: "" },
-      { name: "Photo", uploaded: true, fileName: "" },
-      { name: "Address Proof", uploaded: true, fileName: "" },
+      { name: "Photo",             uploaded: true,  fileName: "" },
+      { name: "Address Proof",     uploaded: true,  fileName: "" },
     ],
   },
   {
@@ -175,14 +192,14 @@ const INITIAL_EMPLOYEES = [
     email: "harish@satyamstars.edu.in", address: "34, Bhatar Road, Surat, Gujarat - 395007",
     aadhar: "7890 1234 5678", pan: "BCDE23456F",
     joiningDate: "2018-06-01", employmentType: "Permanent", status: "Active",
-    classTeacherOf: null, subjects: [], teachesClasses: [],
+    classTeacherOf: null, subjectMappings: [],
     documents: [
-      { name: "Aadhar Card", uploaded: true, fileName: "" },
-      { name: "PAN Card", uploaded: true, fileName: "" },
-      { name: "Degree Certificate", uploaded: true, fileName: "" },
+      { name: "Aadhar Card",       uploaded: true, fileName: "" },
+      { name: "PAN Card",          uploaded: true, fileName: "" },
+      { name: "Degree Certificate",uploaded: true, fileName: "" },
       { name: "Experience Letter", uploaded: true, fileName: "" },
-      { name: "Photo", uploaded: true, fileName: "" },
-      { name: "Address Proof", uploaded: true, fileName: "" },
+      { name: "Photo",             uploaded: true, fileName: "" },
+      { name: "Address Proof",     uploaded: true, fileName: "" },
     ],
   },
   {
@@ -192,14 +209,14 @@ const INITIAL_EMPLOYEES = [
     email: "", address: "67, Limbayat, Surat, Gujarat - 395006",
     aadhar: "8901 2345 6789", pan: "",
     joiningDate: "2022-06-01", employmentType: "Permanent", status: "Active",
-    classTeacherOf: null, subjects: [], teachesClasses: [],
+    classTeacherOf: null, subjectMappings: [],
     documents: [
-      { name: "Aadhar Card", uploaded: true, fileName: "" },
-      { name: "PAN Card", uploaded: false, fileName: "" },
-      { name: "Degree Certificate", uploaded: false, fileName: "" },
+      { name: "Aadhar Card",       uploaded: true,  fileName: "" },
+      { name: "PAN Card",          uploaded: false, fileName: "" },
+      { name: "Degree Certificate",uploaded: false, fileName: "" },
       { name: "Experience Letter", uploaded: false, fileName: "" },
-      { name: "Photo", uploaded: true, fileName: "" },
-      { name: "Address Proof", uploaded: true, fileName: "" },
+      { name: "Photo",             uploaded: true,  fileName: "" },
+      { name: "Address Proof",     uploaded: true,  fileName: "" },
     ],
   },
   {
@@ -209,14 +226,14 @@ const INITIAL_EMPLOYEES = [
     email: "", address: "90, Udhna, Surat, Gujarat - 394210",
     aadhar: "9012 3456 7890", pan: "",
     joiningDate: "2023-06-01", employmentType: "Contractual", status: "Active",
-    classTeacherOf: null, subjects: [], teachesClasses: [],
+    classTeacherOf: null, subjectMappings: [],
     documents: [
-      { name: "Aadhar Card", uploaded: true, fileName: "" },
-      { name: "PAN Card", uploaded: false, fileName: "" },
-      { name: "Degree Certificate", uploaded: false, fileName: "" },
+      { name: "Aadhar Card",       uploaded: true,  fileName: "" },
+      { name: "PAN Card",          uploaded: false, fileName: "" },
+      { name: "Degree Certificate",uploaded: false, fileName: "" },
       { name: "Experience Letter", uploaded: false, fileName: "" },
-      { name: "Photo", uploaded: true, fileName: "" },
-      { name: "Address Proof", uploaded: false, fileName: "" },
+      { name: "Photo",             uploaded: true,  fileName: "" },
+      { name: "Address Proof",     uploaded: false, fileName: "" },
     ],
   },
   {
@@ -226,14 +243,19 @@ const INITIAL_EMPLOYEES = [
     email: "meena@satyamstars.edu.in", address: "12, Piplod, Surat, Gujarat - 395007",
     aadhar: "0123 4567 8901", pan: "GHIJK67890L",
     joiningDate: "2020-06-01", employmentType: "Permanent", status: "Inactive",
-    classTeacherOf: "2nd-A", subjects: ["Hindi", "English", "EVS"], teachesClasses: ["2nd", "3rd"],
+    classTeacherOf: "2nd-A",
+    subjectMappings: [
+      { subject: "Hindi",   classes: ["2nd", "3rd"] },
+      { subject: "English", classes: ["2nd", "3rd"] },
+      { subject: "EVS",     classes: ["2nd"] },
+    ],
     documents: [
-      { name: "Aadhar Card", uploaded: true, fileName: "" },
-      { name: "PAN Card", uploaded: true, fileName: "" },
-      { name: "Degree Certificate", uploaded: true, fileName: "" },
-      { name: "Experience Letter", uploaded: true, fileName: "" },
-      { name: "Photo", uploaded: false, fileName: "" },
-      { name: "Address Proof", uploaded: true, fileName: "" },
+      { name: "Aadhar Card",       uploaded: true,  fileName: "" },
+      { name: "PAN Card",          uploaded: true,  fileName: "" },
+      { name: "Degree Certificate",uploaded: true,  fileName: "" },
+      { name: "Experience Letter", uploaded: true,  fileName: "" },
+      { name: "Photo",             uploaded: false, fileName: "" },
+      { name: "Address Proof",     uploaded: true,  fileName: "" },
     ],
   },
 ];
@@ -261,16 +283,11 @@ function calcAge(dob) {
   } catch { return null; }
 }
 
-function avatarBg(id) {
-  return AVATAR_BG[Math.abs(id) % AVATAR_BG.length];
-}
-
-function docsDone(emp) {
-  return emp.documents.filter((d) => d.uploaded).length;
-}
-
-function toggleArr(arr, val) {
-  return arr.includes(val) ? arr.filter((v) => v !== val) : [...arr, val];
+function avatarBg(id) { return AVATAR_BG[Math.abs(id) % AVATAR_BG.length]; }
+function docsDone(emp) { return emp.documents.filter((d) => d.uploaded).length; }
+function fmtAadhar(val) {
+  const digits = val.replace(/\D/g, "").slice(0, 12);
+  return digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim();
 }
 
 // ── Shared styles ──────────────────────────────────────────────────────────────
@@ -381,33 +398,27 @@ function ViewEmployeeModal({ emp, onClose }) {
                     </div>
                   </div>
                 )}
-                {emp.subjects.length > 0 && (
+                {emp.subjectMappings && emp.subjectMappings.length > 0 && (
                   <div className="flex items-start gap-2.5">
-                    <BookOpen className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Subjects</p>
-                      <div className="flex flex-wrap gap-1.5 mt-1">
-                        {emp.subjects.map((s) => (
-                          <span key={s} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg">{s}</span>
+                    <BookOpen className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 mt-1" />
+                    <div className="flex-1">
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide mb-2">Subjects & Classes</p>
+                      <div className="space-y-2">
+                        {emp.subjectMappings.map((m, i) => (
+                          <div key={i} className="flex items-start gap-3">
+                            <span className="text-xs font-bold text-blue-700 w-28 flex-shrink-0 pt-0.5">{m.subject}</span>
+                            <div className="flex flex-wrap gap-1">
+                              {m.classes.map((c) => (
+                                <span key={c} className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg">{c}</span>
+                              ))}
+                            </div>
+                          </div>
                         ))}
                       </div>
                     </div>
                   </div>
                 )}
-                {emp.teachesClasses.length > 0 && (
-                  <div className="flex items-start gap-2.5">
-                    <Users className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Teaches In</p>
-                      <div className="flex flex-wrap gap-1.5 mt-1">
-                        {emp.teachesClasses.map((c) => (
-                          <span key={c} className="px-2 py-0.5 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg">{c}</span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {!emp.classTeacherOf && emp.subjects.length === 0 && emp.teachesClasses.length === 0 && (
+                {!emp.classTeacherOf && (!emp.subjectMappings || emp.subjectMappings.length === 0) && (
                   <p className="text-sm text-gray-400">No academic assignment recorded.</p>
                 )}
               </div>
@@ -434,8 +445,8 @@ function ViewEmployeeModal({ emp, onClose }) {
                   }`}>
                   <div className="flex items-center gap-2 min-w-0">
                     {d.uploaded
-                      ? <Check    className="w-3.5 h-3.5 flex-shrink-0" />
-                      : <X        className="w-3.5 h-3.5 flex-shrink-0" />
+                      ? <Check className="w-3.5 h-3.5 flex-shrink-0" />
+                      : <X     className="w-3.5 h-3.5 flex-shrink-0" />
                     }
                     <span className="truncate">{d.name}</span>
                   </div>
@@ -458,19 +469,21 @@ function ViewEmployeeModal({ emp, onClose }) {
 }
 
 // ── Add Employee Modal ─────────────────────────────────────────────────────────
+// docs state: { name, selected, file, fileName }
+// "selected" = checkbox toggled; a doc is only "uploaded" when fileName is set
 function AddEmployeeModal({ employees, onClose, onSave }) {
   const [tab, setTab]         = useState(0);
 
   // Personal
-  const [name, setName]       = useState("");
-  const [gender, setGender]   = useState("Male");
-  const [dob, setDob]         = useState("");
-  const [phone, setPhone]     = useState("");
-  const [altPhone, setAlt]    = useState("");
-  const [email, setEmail]     = useState("");
-  const [address, setAddress] = useState("");
-  const [aadhar, setAadhar]   = useState("");
-  const [pan, setPan]         = useState("");
+  const [name, setName]         = useState("");
+  const [gender, setGender]     = useState("Male");
+  const [dob, setDob]           = useState("");
+  const [phone, setPhone]       = useState("");
+  const [altPhone, setAlt]      = useState("");
+  const [email, setEmail]       = useState("");
+  const [address, setAddress]   = useState("");
+  const [aadharDisplay, setAadharDisplay] = useState("");
+  const [pan, setPan]           = useState("");
 
   // Job
   const [type, setType]         = useState("teaching");
@@ -480,14 +493,13 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
   const [joining, setJoining]   = useState("");
   const [status, setStatus]     = useState("Active");
 
-  // Academic
-  const [ctOf, setCtOf]       = useState("");
-  const [subjects, setSubj]   = useState([]);
-  const [teaches, setTeaches] = useState([]);
+  // Academic — class teacher + subject→class mappings
+  const [ctOf, setCtOf]         = useState("");
+  const [mappings, setMappings] = useState([]); // [{subject:"", classes:[]}]
 
-  // Documents — each doc: { name, uploaded, file (File|null), fileName }
+  // Documents — selected: checkbox toggled; file uploaded only when fileName set
   const [docs, setDocs] = useState(
-    REQUIRED_DOCS.map((n) => ({ name: n, uploaded: false, file: null, fileName: "" }))
+    REQUIRED_DOCS.map((n) => ({ name: n, selected: false, file: null, fileName: "" }))
   );
 
   const [mounted, setMounted] = useState(false);
@@ -500,18 +512,17 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
 
   const tab0Valid = name.trim().length > 0 && phone.trim().length > 0;
   const tab1Valid = !!(type && designation && department && joining);
+  const canGoNext = () => { if (tab === 0) return tab0Valid; if (tab === 1) return tab1Valid; return true; };
 
-  const canGoNext = () => {
-    if (tab === 0) return tab0Valid;
-    if (tab === 1) return tab1Valid;
-    return true;
-  };
+  // Aadhar: format as XXXX XXXX XXXX
+  const handleAadhar = (e) => setAadharDisplay(fmtAadhar(e.target.value));
 
+  // Documents
   const toggleDoc = (docName) =>
     setDocs((prev) => prev.map((d) => {
       if (d.name !== docName) return d;
-      const next = !d.uploaded;
-      return { ...d, uploaded: next, ...(next ? {} : { file: null, fileName: "" }) };
+      const next = !d.selected;
+      return { ...d, selected: next, ...(next ? {} : { file: null, fileName: "" }) };
     }));
 
   const handleFileSelect = (docName, e) => {
@@ -528,6 +539,18 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
       d.name === docName ? { ...d, file: null, fileName: "" } : d
     ));
 
+  // Subject-class mappings
+  const addMapping    = () => setMappings((prev) => [...prev, { subject: "", classes: [] }]);
+  const removeMapping = (i) => setMappings((prev) => prev.filter((_, idx) => idx !== i));
+  const updateSubject = (i, val) =>
+    setMappings((prev) => prev.map((m, idx) => idx === i ? { ...m, subject: val } : m));
+  const toggleClass = (i, cls) =>
+    setMappings((prev) => prev.map((m, idx) => {
+      if (idx !== i) return m;
+      const classes = m.classes.includes(cls) ? m.classes.filter((c) => c !== cls) : [...m.classes, cls];
+      return { ...m, classes };
+    }));
+
   const handleSave = () => {
     if (!tab0Valid || !tab1Valid) return;
     onSave({
@@ -535,14 +558,21 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
       empId: nextEmpId,
       name: name.trim(), photo: null,
       type, designation, department,
-      gender, dob, phone: phone.trim(), altPhone: altPhone.trim(),
+      gender, dob,
+      phone: phone.trim(), altPhone: altPhone.trim(),
       email: email.trim(), address: address.trim(),
-      aadhar: aadhar.trim(), pan: pan.trim(),
+      aadhar: aadharDisplay, pan: pan.trim(),
       joiningDate: joining, employmentType: empType, status,
       classTeacherOf: type === "teaching" ? ctOf || null : null,
-      subjects: type === "teaching" ? subjects : [],
-      teachesClasses: type === "teaching" ? teaches : [],
-      documents: docs.map(({ name: n, uploaded, fileName }) => ({ name: n, uploaded, fileName })),
+      subjectMappings: type === "teaching"
+        ? mappings.filter((m) => m.subject && m.classes.length > 0)
+        : [],
+      // doc is "uploaded" only when a file was actually selected
+      documents: docs.map(({ name: n, fileName }) => ({
+        name: n,
+        uploaded: !!fileName,
+        fileName,
+      })),
     });
   };
 
@@ -567,14 +597,11 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
             <button key={t}
               onClick={() => { if (i < tab || (i > tab && canGoNext())) setTab(i); }}
               className={`pb-3 pt-3.5 px-1 mr-5 text-sm font-semibold border-b-2 whitespace-nowrap transition-colors flex-shrink-0 flex items-center gap-1 ${
-                tab === i
-                  ? "border-school-navy text-school-navy"
-                  : i < tab
-                  ? "border-transparent text-green-600"
-                  : "border-transparent text-gray-300 cursor-default"
+                tab === i ? "border-school-navy text-school-navy"
+                : i < tab  ? "border-transparent text-green-600"
+                :             "border-transparent text-gray-300 cursor-default"
               }`}>
-              {i < tab && <Check className="w-3 h-3" />}
-              {t}
+              {i < tab && <Check className="w-3 h-3" />}{t}
             </button>
           ))}
         </div>
@@ -582,7 +609,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
         {/* Body */}
         <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
 
-          {/* Personal */}
+          {/* ── Personal ── */}
           {tab === 0 && (
             <>
               <div>
@@ -627,8 +654,11 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Aadhar No.</label>
-                  <input className={IPT} placeholder="XXXX XXXX XXXX"
-                    value={aadhar} onChange={(e) => setAadhar(e.target.value)} />
+                  <input className={`${IPT} tracking-widest font-mono`}
+                    placeholder="XXXX XXXX XXXX"
+                    value={aadharDisplay}
+                    onChange={handleAadhar}
+                    maxLength={14} />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">PAN No.</label>
@@ -639,21 +669,18 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
             </>
           )}
 
-          {/* Job */}
+          {/* ── Job ── */}
           {tab === 1 && (
             <>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-2">Staff Type *</label>
                 <div className="grid grid-cols-3 gap-2">
-                  {[["management", "Management"], ["teaching", "Teaching"], ["non-teaching", "Non-Teaching"]].map(([k, l]) => (
+                  {[["management","Management"],["teaching","Teaching"],["non-teaching","Non-Teaching"]].map(([k,l]) => (
                     <button key={k} onClick={() => setType(k)}
                       className={`py-2 px-2 rounded-xl border text-xs font-semibold transition-colors ${
-                        type === k
-                          ? "border-school-navy bg-school-navy/5 text-school-navy"
-                          : "border-gray-200 text-gray-500 hover:border-gray-300"
-                      }`}>
-                      {l}
-                    </button>
+                        type === k ? "border-school-navy bg-school-navy/5 text-school-navy"
+                        : "border-gray-200 text-gray-500 hover:border-gray-300"
+                      }`}>{l}</button>
                   ))}
                 </div>
               </div>
@@ -695,7 +722,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
             </>
           )}
 
-          {/* Academic */}
+          {/* ── Academic ── */}
           {tab === 2 && (
             type !== "teaching" ? (
               <div className="flex flex-col items-center justify-center py-10 text-center">
@@ -707,6 +734,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
               </div>
             ) : (
               <>
+                {/* Class teacher */}
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Class Teacher Of</label>
                   <select className={IPT} value={ctOf} onChange={(e) => setCtOf(e.target.value)}>
@@ -714,33 +742,60 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
                     {CLASSES_WITH_SECTIONS.map((c) => <option key={c}>{c}</option>)}
                   </select>
                 </div>
+
+                {/* Subject-class mappings */}
                 <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-2">Subjects Taught</label>
-                  <div className="flex flex-wrap gap-2">
-                    {SUBJECTS_LIST.map((s) => (
-                      <button key={s} onClick={() => setSubj(toggleArr(subjects, s))}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ${
-                          subjects.includes(s)
-                            ? "bg-blue-600 text-white border-blue-600"
-                            : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
-                        }`}>
-                        {s}
-                      </button>
-                    ))}
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-gray-600">
+                      Subject &amp; Classes Taught
+                    </label>
+                    <button onClick={addMapping}
+                      className="flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-600 text-xs font-semibold rounded-lg hover:bg-blue-100 transition-colors">
+                      <Plus className="w-3 h-3" /> Add Subject
+                    </button>
                   </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-2">Teaches In (Classes)</label>
-                  <div className="flex flex-wrap gap-2">
-                    {CLASS_LIST.map((c) => (
-                      <button key={c} onClick={() => setTeaches(toggleArr(teaches, c))}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors ${
-                          teaches.includes(c)
-                            ? "bg-school-navy text-white border-school-navy"
-                            : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
-                        }`}>
-                        {c}
-                      </button>
+
+                  {mappings.length === 0 && (
+                    <div className="text-center py-5 border border-dashed border-gray-200 rounded-xl text-xs text-gray-400">
+                      No subjects added yet. Click &ldquo;Add Subject&rdquo; above.
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    {mappings.map((m, i) => (
+                      <div key={i} className="border border-gray-200 rounded-xl p-3.5 space-y-3">
+                        {/* Subject selector + remove */}
+                        <div className="flex items-center gap-2">
+                          <select value={m.subject} onChange={(e) => updateSubject(i, e.target.value)}
+                            className={`flex-1 ${IPT}`}>
+                            <option value="">Select Subject...</option>
+                            {SUBJECTS_LIST
+                              .filter((s) => !mappings.some((mm, ii) => ii !== i && mm.subject === s))
+                              .map((s) => <option key={s}>{s}</option>)
+                            }
+                          </select>
+                          <button onClick={() => removeMapping(i)}
+                            className="p-1.5 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        {/* Class toggles */}
+                        <div>
+                          <p className="text-[10px] font-semibold text-gray-400 mb-1.5">Teaches this subject in:</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {CLASS_LIST.map((c) => (
+                              <button key={c} onClick={() => toggleClass(i, c)}
+                                className={`px-2 py-0.5 rounded-lg text-xs font-semibold border transition-colors ${
+                                  m.classes.includes(c)
+                                    ? "bg-school-navy text-white border-school-navy"
+                                    : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+                                }`}>
+                                {c}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -748,54 +803,72 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
             )
           )}
 
-          {/* Documents */}
+          {/* ── Documents ── */}
           {tab === 3 && (
             <>
               <p className="text-xs text-gray-500">
-                Check each document that has been collected, then upload the file.
+                Check each document collected, then upload the file. Only documents with a file uploaded will be marked as submitted.
               </p>
               <div className="space-y-2.5">
-                {docs.map((d) => (
-                  <div key={d.name}
-                    className={`rounded-xl border transition-colors ${
-                      d.uploaded ? "border-green-200 bg-green-50" : "border-gray-200 bg-white"
-                    }`}>
-                    {/* Checkbox row */}
-                    <button onClick={() => toggleDoc(d.name)}
-                      className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-left">
-                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                        d.uploaded ? "bg-green-500 border-green-500" : "border-gray-300"
+                {docs.map((d) => {
+                  const isUploaded = !!d.fileName;
+                  return (
+                    <div key={d.name}
+                      className={`rounded-xl border transition-colors ${
+                        isUploaded  ? "border-green-200 bg-green-50"
+                        : d.selected ? "border-amber-200 bg-amber-50"
+                        :              "border-gray-200 bg-white"
                       }`}>
-                        {d.uploaded && <Check className="w-3 h-3 text-white" />}
-                      </div>
-                      <span className={d.uploaded ? "text-green-700" : "text-gray-600"}>{d.name}</span>
-                    </button>
-
-                    {/* File upload (visible only when checked) */}
-                    {d.uploaded && (
-                      <div className="px-4 pb-3">
-                        {d.fileName ? (
-                          <div className="flex items-center gap-2 bg-white border border-green-200 rounded-lg px-3 py-2">
-                            <FileText className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
-                            <span className="text-xs text-gray-700 flex-1 truncate">{d.fileName}</span>
-                            <button onClick={() => removeFile(d.name)}
-                              className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0">
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <label className="flex items-center gap-2 cursor-pointer bg-white border border-dashed border-green-300 rounded-lg px-3 py-2 hover:border-green-400 transition-colors">
-                            <Upload className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
-                            <span className="text-xs text-green-600 font-medium">Upload file</span>
-                            <input type="file" className="hidden"
-                              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
-                              onChange={(e) => handleFileSelect(d.name, e)} />
-                          </label>
+                      {/* Checkbox row */}
+                      <button onClick={() => toggleDoc(d.name)}
+                        className="w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold text-left">
+                        <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                          isUploaded  ? "bg-green-500 border-green-500"
+                          : d.selected ? "bg-amber-400 border-amber-400"
+                          :              "border-gray-300"
+                        }`}>
+                          {(isUploaded || d.selected) && <Check className="w-3 h-3 text-white" />}
+                        </div>
+                        <span className={
+                          isUploaded  ? "text-green-700"
+                          : d.selected ? "text-amber-700"
+                          :              "text-gray-600"
+                        }>
+                          {d.name}
+                        </span>
+                        {d.selected && !isUploaded && (
+                          <span className="ml-auto text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
+                            File pending
+                          </span>
                         )}
-                      </div>
-                    )}
-                  </div>
-                ))}
+                      </button>
+
+                      {/* File upload — shown only when selected */}
+                      {d.selected && (
+                        <div className="px-4 pb-3">
+                          {isUploaded ? (
+                            <div className="flex items-center gap-2 bg-white border border-green-200 rounded-lg px-3 py-2">
+                              <FileText className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
+                              <span className="text-xs text-gray-700 flex-1 truncate">{d.fileName}</span>
+                              <button onClick={() => removeFile(d.name)}
+                                className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="flex items-center gap-2 cursor-pointer bg-white border border-dashed border-amber-300 rounded-lg px-3 py-2 hover:border-amber-400 transition-colors">
+                              <Upload className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+                              <span className="text-xs text-amber-600 font-medium">Upload file to confirm submission</span>
+                              <input type="file" className="hidden"
+                                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                                onChange={(e) => handleFileSelect(d.name, e)} />
+                            </label>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
@@ -847,8 +920,7 @@ export default function EmployeePage() {
   const teaching    = employees.filter((e) => e.type === "teaching").length;
   const nonTeaching = employees.filter((e) => e.type === "non-teaching").length;
   const management  = employees.filter((e) => e.type === "management").length;
-
-  const allDepts = [...new Set(employees.map((e) => e.department))].sort();
+  const allDepts    = [...new Set(employees.map((e) => e.department))].sort();
 
   const filtered = employees.filter((e) => {
     const ms = !search ||
@@ -884,10 +956,10 @@ export default function EmployeePage() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: "Total Staff",   value: total,       color: "text-blue-600",   bg: "bg-blue-50",   icon: Users         },
-          { label: "Teaching",      value: teaching,    color: "text-green-600",  bg: "bg-green-50",  icon: GraduationCap },
-          { label: "Non-Teaching",  value: nonTeaching, color: "text-gray-600",   bg: "bg-gray-100",  icon: Briefcase     },
-          { label: "Management",    value: management,  color: "text-purple-600", bg: "bg-purple-50", icon: Shield        },
+          { label: "Total Staff",  value: total,       color: "text-blue-600",   bg: "bg-blue-50",   icon: Users         },
+          { label: "Teaching",     value: teaching,    color: "text-green-600",  bg: "bg-green-50",  icon: GraduationCap },
+          { label: "Non-Teaching", value: nonTeaching, color: "text-gray-600",   bg: "bg-gray-100",  icon: Briefcase     },
+          { label: "Management",   value: management,  color: "text-purple-600", bg: "bg-purple-50", icon: Shield        },
         ].map(({ label, value, color, bg, icon: Icon }) => (
           <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
             <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center flex-shrink-0`}>
@@ -912,17 +984,11 @@ export default function EmployeePage() {
               value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
           <div className="flex gap-2 flex-wrap">
-            {[
-              ["all",          "All"],
-              ["management",   "Management"],
-              ["teaching",     "Teaching"],
-              ["non-teaching", "Non-Teaching"],
-            ].map(([k, l]) => (
+            {[["all","All"],["management","Management"],["teaching","Teaching"],["non-teaching","Non-Teaching"]].map(([k,l]) => (
               <button key={k} onClick={() => setTypeFilter(k)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
-                  typeFilter === k
-                    ? "bg-school-navy text-white border-school-navy"
-                    : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+                  typeFilter === k ? "bg-school-navy text-white border-school-navy"
+                  : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
                 }`}>{l}</button>
             ))}
           </div>
