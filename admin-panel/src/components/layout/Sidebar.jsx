@@ -11,6 +11,7 @@ import {
   Package,
   BarChart3,
   Settings,
+  ShieldCheck,
   X,
   LogOut,
 } from "lucide-react";
@@ -25,6 +26,7 @@ const navItems = [
   { href: "/inventory", label: "Inventory Management", icon: Package },
   { href: "/report", label: "Report", icon: BarChart3 },
   { href: "/settings", label: "Setting", icon: Settings },
+  { href: "/super-admin", label: "Super Admin", icon: ShieldCheck },
 ];
 
 export default function Sidebar() {
