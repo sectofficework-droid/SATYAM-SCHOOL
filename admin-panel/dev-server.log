@@ -174,3 +174,13 @@ Require stack:
   path: 'D:\\SATYAM-SCHOOL\\admin-panel\\.next\\cache\\webpack\\client-development\\0.pack.gz'
 }
 <w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, stat 'D:\SATYAM-SCHOOL\admin-panel\.next\cache\webpack\client-development\0.pack.gz'
+ ✓ Compiled in 1416ms (1941 modules)
+ ✓ Compiled in 1591ms (1941 modules)
+ ✓ Compiled in 4.9s (1941 modules)
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'D:\SATYAM-SCHOOL\admin-panel\.next\cache\webpack\server-development\0.pack.gz_' -> 'D:\SATYAM-SCHOOL\admin-panel\.next\cache\webpack\server-development\0.pack.gz'
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'D:\SATYAM-SCHOOL\admin-panel\.next\cache\webpack\client-development\0.pack.gz_' -> 'D:\SATYAM-SCHOOL\admin-panel\.next\cache\webpack\client-development\0.pack.gz'
+ ✓ Compiled in 1233ms (1941 modules)
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, rename 'D:\SATYAM-SCHOOL\admin-panel\.next\cache\webpack\server-development\0.pack.gz_' -> 'D:\SATYAM-SCHOOL\admin-panel\.next\cache\webpack\server-development\0.pack.gz'
+ ✓ Compiled in 1494ms (1941 modules)
+ ✓ Compiled in 14.3s (1941 modules)
+ ✓ Compiled in 8.8s (1941 modules)
