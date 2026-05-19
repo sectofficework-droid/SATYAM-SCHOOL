@@ -57,3 +57,120 @@ The width(-1) and height(-1) of chart should be greater than 0,
  GET /_next/static/chunks/app-pages-internals.js 404 in 188ms
  GET /_next/static/chunks/app/(dashboard)/layout.js 404 in 124ms
  ✓ Compiled in 1653ms (1713 modules)
+ ✓ Compiled in 1324ms (1717 modules)
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 5.8s (1720 modules)
+ ○ Compiling /_error ...
+ ✓ Compiled /_error in 4.8s (1932 modules)
+ GET /dashboard 404 in 11770ms
+ ✓ Compiled in 2.1s (1941 modules)
+ ⨯ Error: Cannot find module './948.js'
+Require stack:
+- D:\SATYAM-SCHOOL\admin-panel\.next\server\webpack-runtime.js
+- D:\SATYAM-SCHOOL\admin-panel\.next\server\app\(dashboard)\dashboard\page.js
+- D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\require.js
+- D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\load-components.js
+- D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\build\utils.js
+- D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\dev\hot-middleware.js
+- D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\dev\hot-reloader-webpack.js
+- D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\lib\router-utils\setup-dev-bundler.js
+- D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\lib\router-server.js
+- D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\lib\start-server.js
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1456:15)
+    at D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\require-hook.js:55:36
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1066:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1071:22)
+    at Module._load (node:internal/modules/cjs/loader:1242:25)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1556:12)
+    at mod.require (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\require-hook.js:65:28)
+    at require (node:internal/modules/helpers:152:16)
+    at __webpack_require__.f.require (D:\SATYAM-SCHOOL\admin-panel\.next\server\webpack-runtime.js:198:28)
+    at D:\SATYAM-SCHOOL\admin-panel\.next\server\webpack-runtime.js:111:40
+    at Array.reduce (<anonymous>)
+    at __webpack_require__.e (D:\SATYAM-SCHOOL\admin-panel\.next\server\webpack-runtime.js:110:67)
+    at Array.map (<anonymous>)
+    at __webpack_require__.X (D:\SATYAM-SCHOOL\admin-panel\.next\server\webpack-runtime.js:162:22)
+    at D:\SATYAM-SCHOOL\admin-panel\.next\server\app\(dashboard)\dashboard\page.js:1:363150
+    at Object.<anonymous> (D:\SATYAM-SCHOOL\admin-panel\.next\server\app\(dashboard)\dashboard\page.js:1:363207)
+    at Module._compile (node:internal/modules/cjs/loader:1812:14)
+    at Object..js (node:internal/modules/cjs/loader:1943:10)
+    at Module.load (node:internal/modules/cjs/loader:1533:32)
+    at Module._load (node:internal/modules/cjs/loader:1335:12)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+    at Module.<anonymous> (node:internal/modules/cjs/loader:1556:12)
+    at mod.require (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\require-hook.js:65:28)
+    at require (node:internal/modules/helpers:152:16)
+    at requirePage (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\require.js:109:84)
+    at D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\load-components.js:103:84
+    at async loadComponentsImpl (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\load-components.js:103:26)
+    at async DevServer.findPageComponentsImpl (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\next-server.js:714:36)
+    at async DevServer.findPageComponents (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\dev\next-dev-server.js:577:20)
+    at async DevServer.renderPageComponent (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\base-server.js:1910:24)
+    at async DevServer.renderToResponseImpl (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\base-server.js:1962:32)
+    at async DevServer.pipeImpl (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\base-server.js:922:25)
+    at async NextNodeServer.handleCatchallRenderRequest (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\next-server.js:272:17)
+    at async DevServer.handleRequestImpl (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\base-server.js:818:17)
+    at async D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\dev\next-dev-server.js:339:20
+    at async Span.traceAsyncFn (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\trace\trace.js:154:20)
+    at async DevServer.handleRequest (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\dev\next-dev-server.js:336:24)
+    at async invokeRender (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\lib\router-server.js:179:21)
+    at async handleRequest (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\lib\router-server.js:359:24)
+    at async requestHandlerImpl (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\lib\router-server.js:383:13)
+    at async Server.requestListener (D:\SATYAM-SCHOOL\admin-panel\node_modules\next\dist\server\lib\start-server.js:141:13) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    'D:\\SATYAM-SCHOOL\\admin-panel\\.next\\server\\webpack-runtime.js',
+    'D:\\SATYAM-SCHOOL\\admin-panel\\.next\\server\\app\\(dashboard)\\dashboard\\page.js',
+    'D:\\SATYAM-SCHOOL\\admin-panel\\node_modules\\next\\dist\\server\\require.js',
+    'D:\\SATYAM-SCHOOL\\admin-panel\\node_modules\\next\\dist\\server\\load-components.js',
+    'D:\\SATYAM-SCHOOL\\admin-panel\\node_modules\\next\\dist\\build\\utils.js',
+    'D:\\SATYAM-SCHOOL\\admin-panel\\node_modules\\next\\dist\\server\\dev\\hot-middleware.js',
+    'D:\\SATYAM-SCHOOL\\admin-panel\\node_modules\\next\\dist\\server\\dev\\hot-reloader-webpack.js',
+    'D:\\SATYAM-SCHOOL\\admin-panel\\node_modules\\next\\dist\\server\\lib\\router-utils\\setup-dev-bundler.js',
+    'D:\\SATYAM-SCHOOL\\admin-panel\\node_modules\\next\\dist\\server\\lib\\router-server.js',
+    'D:\\SATYAM-SCHOOL\\admin-panel\\node_modules\\next\\dist\\server\\lib\\start-server.js'
+  ],
+  page: '/dashboard'
+}
+ GET /dashboard 500 in 3866ms
+ ○ Compiling /_not-found ...
+ ✓ Compiled /_not-found in 4.2s (1944 modules)
+ ⚠ Fast Refresh had to perform a full reload due to a runtime error.
+ GET /dashboard 404 in 5633ms
+ GET /_next/static/webpack/50c389940a291a59.webpack.hot-update.json 404 in 2950ms
+ GET /_next/static/css/app/layout.css?v=1779170288121 404 in 597ms
+ GET /_next/static/chunks/main-app.js?v=1779170288121 404 in 576ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 552ms
+ ✓ Compiled /login in 246ms (922 modules)
+ GET /login 200 in 392ms
+ GET /_next/static/css/app/layout.css?v=1779170336330 404 in 39ms
+ GET /_next/static/chunks/main-app.js?v=1779170336330 404 in 41ms
+ GET /login 200 in 51ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 27ms
+ GET /_next/static/chunks/app/(auth)/login/page.js 404 in 42ms
+ GET /login 200 in 688ms
+ GET /_next/static/css/app/layout.css?v=1779170357233 404 in 321ms
+ GET /_next/static/chunks/app-pages-internals.js 404 in 218ms
+ GET /_next/static/chunks/main-app.js?v=1779170357233 404 in 208ms
+ GET /_next/static/chunks/app/(auth)/login/page.js 404 in 204ms
+ ✓ Compiled in 304ms (1927 modules)
+[Error: ENOENT: no such file or directory, stat 'D:\SATYAM-SCHOOL\admin-panel\.next\cache\webpack\client-development\0.pack.gz'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: 'D:\\SATYAM-SCHOOL\\admin-panel\\.next\\cache\\webpack\\client-development\\0.pack.gz'
+}
+ ⨯ unhandledRejection: [Error: ENOENT: no such file or directory, stat 'D:\SATYAM-SCHOOL\admin-panel\.next\cache\webpack\client-development\0.pack.gz'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: 'D:\\SATYAM-SCHOOL\\admin-panel\\.next\\cache\\webpack\\client-development\\0.pack.gz'
+}
+ ⨯ unhandledRejection: [Error: ENOENT: no such file or directory, stat 'D:\SATYAM-SCHOOL\admin-panel\.next\cache\webpack\client-development\0.pack.gz'] {
+  errno: -4058,
+  code: 'ENOENT',
+  syscall: 'stat',
+  path: 'D:\\SATYAM-SCHOOL\\admin-panel\\.next\\cache\\webpack\\client-development\\0.pack.gz'
+}
+<w> [webpack.cache.PackFileCacheStrategy] Caching failed for pack: Error: ENOENT: no such file or directory, stat 'D:\SATYAM-SCHOOL\admin-panel\.next\cache\webpack\client-development\0.pack.gz'
