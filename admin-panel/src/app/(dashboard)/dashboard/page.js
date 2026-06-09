@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
@@ -8,8 +8,10 @@ import {
 import {
   GraduationCap, Users, IndianRupee, TrendingUp, TrendingDown,
   Bell, ArrowUpRight, Package, AlertCircle, Calendar,
-  UserCog, FileText, Activity, ChevronDown,
+  UserCog, FileText, Activity, ChevronDown, ClipboardList,
+  X, ShieldAlert,
 } from "lucide-react";
+import useStore from "@/lib/store";
 
 // ── Dummy Data ────────────────────────────────────────────────
 
@@ -141,10 +143,84 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
+const PRIORITY_BADGE = {
+  High:   "bg-red-100 text-red-700 border border-red-200",
+  Medium: "bg-amber-100 text-amber-700 border border-amber-200",
+  Low:    "bg-green-100 text-green-700 border border-green-200",
+};
+
+// ── Login Popup ────────────────────────────────────────────────
+function TasksPopup({ tasks, onClose, onToggle }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-school-navy to-school-navy-light px-6 py-5 flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+              <ShieldAlert className="w-5 h-5 text-white"/>
+            </div>
+            <div>
+              <p className="text-white font-bold text-base">Pending Tasks</p>
+              <p className="text-white/60 text-xs mt-0.5">{tasks.length} task{tasks.length !== 1 ? "s" : ""} need attention</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors mt-0.5">
+            <X className="w-5 h-5"/>
+          </button>
+        </div>
+
+        {/* Task list */}
+        <div className="px-6 py-4 max-h-80 overflow-y-auto space-y-2.5">
+          {tasks.map(task => (
+            <div key={task.id} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50/60">
+              <button
+                onClick={() => onToggle(task.id)}
+                className="w-5 h-5 rounded-md border-2 border-gray-300 hover:border-school-navy flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors"
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-gray-800 font-medium leading-snug">{task.text}</p>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${PRIORITY_BADGE[task.priority]}`}>{task.priority}</span>
+                  <span className="text-[10px] text-gray-400">by {task.createdBy}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
+          <p className="text-xs text-gray-400">Tasks remain until marked complete in Super Admin</p>
+          <button
+            onClick={onClose}
+            className="px-5 py-2 bg-school-navy text-white text-sm font-semibold rounded-xl hover:bg-school-navy-dark transition-colors"
+          >
+            Got it
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────
 export default function DashboardPage() {
   const [selectedDate,  setSelectedDate]  = useState(todayStr);
   const [selectedClass, setSelectedClass] = useState("All Classes");
+
+  const { pendingTasks, toggleTask } = useStore();
+  const [showPopup, setShowPopup]   = useState(false);
+
+  const pendingOnly = pendingTasks.filter(t => !t.done);
+
+  // Show popup once per browser session if there are pending tasks
+  useEffect(() => {
+    if (pendingOnly.length > 0 && !sessionStorage.getItem("tasksPopupShown")) {
+      setShowPopup(true);
+      sessionStorage.setItem("tasksPopupShown", "1");
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isToday   = selectedDate === todayStr;
   const dayStats  = getDayStats(selectedDate);
@@ -157,6 +233,15 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 max-w-screen-2xl">
+
+      {/* Login popup — shows once per session if pending tasks exist */}
+      {showPopup && (
+        <TasksPopup
+          tasks={pendingOnly}
+          onClose={() => setShowPopup(false)}
+          onToggle={(id) => { toggleTask(id); }}
+        />
+      )}
 
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -239,6 +324,42 @@ export default function DashboardPage() {
           <p className="text-xs mt-1.5 text-red-500">Month total: ₹1,24,800</p>
         </div>
       </div>
+
+      {/* ── Pending Tasks Card (shown only if tasks exist) ── */}
+      {pendingOnly.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm border border-red-100 overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-red-100 bg-red-50/60">
+            <div className="flex items-center gap-2">
+              <ClipboardList className="w-4 h-4 text-red-600" />
+              <h3 className="font-semibold text-gray-800 text-sm">Pending Tasks</h3>
+              <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{pendingOnly.length}</span>
+            </div>
+            <button
+              onClick={() => setShowPopup(true)}
+              className="text-xs text-red-600 hover:text-red-800 font-semibold flex items-center gap-1 transition-colors"
+            >
+              View All <ArrowUpRight className="w-3 h-3"/>
+            </button>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {pendingOnly.slice(0, 4).map(task => (
+              <div key={task.id} className="flex items-center gap-4 px-5 py-3 hover:bg-gray-50 transition-colors">
+                <button
+                  onClick={() => toggleTask(task.id)}
+                  className="w-4 h-4 rounded border-2 border-gray-300 hover:border-school-navy flex-shrink-0 transition-colors"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-800 font-medium truncate">{task.text}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">by {task.createdBy}</p>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${PRIORITY_BADGE[task.priority]}`}>
+                  {task.priority}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Notices + Inventory ── */}
       <div className="grid lg:grid-cols-3 gap-4">

@@ -4,11 +4,11 @@ import { useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ChevronDown, Upload, X, Plus, FileText, ArrowLeft,
-  Check, Camera, Lock, GraduationCap,
+  Check, Camera, Lock, GraduationCap, AlertTriangle,
 } from "lucide-react";
 
 // ── Options ────────────────────────────────────────────────────
-const CURRENT_SESSION = "2025-26";
+const CURRENT_SESSION = "2026-27";
 
 
 const standards = [
@@ -56,7 +56,7 @@ const studentEditDB = {
     lastSchoolClass: "9th", lastSchoolMedium: "English", lastSchoolPlace: "Surat",
     aadhar: "1234 5678 9012", aadharName: "Arjun Rajesh Patel",
     udise: "24180100101", pen: "", apaar: "",
-    hasAadhar: true, hasSibling: false, siblingClass: "", siblingName: "",
+    hasAadhar: true, hasSibling: false, siblings: [],
     photo: null,
     uploadedDocs: {
       "Birth Certificate":   "birth_cert.pdf",
@@ -151,9 +151,18 @@ function ReadOnlyField({ label, value }) {
 
 // ── Edit Form — receives pre-loaded student ────────────────────
 function EditForm({ existing, id, router }) {
-  const [hasSibling, setHasSibling]     = useState(existing.hasSibling);
-  const [siblingClass, setSiblingClass] = useState(existing.siblingClass);
-  const [siblingName, setSiblingName]   = useState(existing.siblingName);
+  const [hasPrevSchool, setHasPrevSchool] = useState(!!(existing.lastSchoolName));
+  const [hasSibling, setHasSibling] = useState(existing.hasSibling);
+  const [siblings, setSiblings]     = useState(
+    existing.siblings?.length ? existing.siblings : [{ id: 1, cls: "", name: "" }]
+  );
+
+  const addSibling    = () => setSiblings((p) => [...p, { id: Date.now(), cls: "", name: "" }]);
+  const removeSibling = (id) => setSiblings((p) => p.filter((s) => s.id !== id));
+  const updateSibling = (id, field, val) =>
+    setSiblings((p) =>
+      p.map((s) => s.id === id ? { ...s, [field]: val, ...(field === "cls" ? { name: "" } : {}) } : s)
+    );
   const [hasAadhar, setHasAadhar]         = useState(existing.hasAadhar);
   const [photo, setPhoto]                 = useState(null);
   const [photoPreview, setPhotoPreview]   = useState(null);
@@ -194,7 +203,7 @@ function EditForm({ existing, id, router }) {
     apaar:            existing.apaar,
   });
 
-  const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
+  const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value.toUpperCase() }));
 
   const handleAadharInput = (e) => {
     const digits    = e.target.value.replace(/\D/g, "").slice(0, 12);
@@ -301,24 +310,63 @@ function EditForm({ existing, id, router }) {
         <div className="space-y-4">
           <div>
             <FieldLabel>Does this student have a sibling already studying here?</FieldLabel>
-            <YesNoToggle value={hasSibling} onChange={(val) => { setHasSibling(val); setSiblingClass(""); setSiblingName(""); }} />
+            <YesNoToggle
+              value={hasSibling}
+              onChange={(val) => { setHasSibling(val); setSiblings([{ id: 1, cls: "", name: "" }]); }}
+            />
           </div>
           {hasSibling && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-              <div>
-                <FieldLabel required>Sibling&apos;s Class</FieldLabel>
-                <SelectField value={siblingClass} onChange={(e) => { setSiblingClass(e.target.value); setSiblingName(""); }} required>
-                  <option value="">Select Class</option>
-                  {standards.map((s) => <option key={s}>{s}</option>)}
-                </SelectField>
-              </div>
-              <div>
-                <FieldLabel required>Sibling&apos;s Name</FieldLabel>
-                <SelectField value={siblingName} onChange={(e) => setSiblingName(e.target.value)} disabled={!siblingClass} required>
-                  <option value="">{siblingClass ? "Select Student" : "Select class first"}</option>
-                  {(siblingsByClass[siblingClass] || []).map((n) => <option key={n}>{n}</option>)}
-                </SelectField>
-              </div>
+            <div className="space-y-4 pt-1">
+              {siblings.map((sib, i) => (
+                <div key={sib.id} className="border border-gray-100 rounded-xl p-4 bg-gray-50/50">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+                      Sibling {i + 1}
+                    </p>
+                    {siblings.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeSibling(sib.id)}
+                        className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <FieldLabel required>Sibling&apos;s Class</FieldLabel>
+                      <SelectField
+                        value={sib.cls}
+                        onChange={(e) => updateSibling(sib.id, "cls", e.target.value)}
+                        required
+                      >
+                        <option value="">Select Class</option>
+                        {standards.map((s) => <option key={s}>{s}</option>)}
+                      </SelectField>
+                    </div>
+                    <div>
+                      <FieldLabel required>Sibling&apos;s Name</FieldLabel>
+                      <SelectField
+                        value={sib.name}
+                        onChange={(e) => updateSibling(sib.id, "name", e.target.value)}
+                        disabled={!sib.cls}
+                        required
+                      >
+                        <option value="">{sib.cls ? "Select Student" : "Select class first"}</option>
+                        {(siblingsByClass[sib.cls] || []).map((n) => <option key={n}>{n}</option>)}
+                      </SelectField>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addSibling}
+                className="w-full flex items-center justify-center gap-2 py-2.5 border border-dashed border-school-navy/40 rounded-xl text-sm font-semibold text-school-navy hover:bg-blue-50 hover:border-school-navy transition-colors"
+              >
+                <Plus className="w-4 h-4" /> Add Another Sibling
+              </button>
             </div>
           )}
         </div>
@@ -471,30 +519,62 @@ function EditForm({ existing, id, router }) {
       {/* ══ SECTION 8: Previous School ══ */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
         <SectionHeader number="8" title="Previous School Details" />
-        <p className="text-xs text-gray-400 mb-4 -mt-2">Leave blank if this is the student&apos;s first school</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="sm:col-span-2">
-            <FieldLabel>Previous School Name</FieldLabel>
-            <Input placeholder="Name of the last school attended" value={form.lastSchoolName} onChange={set("lastSchoolName")} />
-          </div>
+        <div className="space-y-4">
           <div>
-            <FieldLabel>Last Class Attended</FieldLabel>
-            <SelectField value={form.lastSchoolClass} onChange={set("lastSchoolClass")}>
-              <option value="">Select Standard</option>
-              {prevStandards.map((s) => <option key={s}>{s}</option>)}
-            </SelectField>
+            <FieldLabel>Does this student have a previous school?</FieldLabel>
+            <YesNoToggle
+              value={hasPrevSchool}
+              onChange={(val) => {
+                setHasPrevSchool(val);
+                if (!val) setForm(p => ({ ...p, lastSchoolName:"", lastSchoolClass:"", lastSchoolMedium:"", lastSchoolPlace:"" }));
+              }}
+            />
           </div>
-          <div>
-            <FieldLabel>Medium of Instruction</FieldLabel>
-            <SelectField value={form.lastSchoolMedium} onChange={set("lastSchoolMedium")}>
-              <option value="">Select Medium</option>
-              {mediums.map((m) => <option key={m}>{m}</option>)}
-            </SelectField>
-          </div>
-          <div>
-            <FieldLabel>School Location</FieldLabel>
-            <Input placeholder="City / Town" value={form.lastSchoolPlace} onChange={set("lastSchoolPlace")} />
-          </div>
+
+          {!hasPrevSchool && (
+            <div className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+              <AlertTriangle className="w-4 h-4 text-blue-400 flex-shrink-0" />
+              <p className="text-xs text-blue-700 font-medium">
+                TC (Transfer Certificate) and Marksheet are <b>not required</b> — they will be hidden from documents.
+              </p>
+            </div>
+          )}
+
+          {hasPrevSchool && (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
+                  <FieldLabel>Previous School Name</FieldLabel>
+                  <Input placeholder="Name of the last school attended" value={form.lastSchoolName} onChange={set("lastSchoolName")} />
+                </div>
+                <div>
+                  <FieldLabel>Last Class Attended</FieldLabel>
+                  <SelectField value={form.lastSchoolClass} onChange={set("lastSchoolClass")}>
+                    <option value="">Select Standard</option>
+                    {prevStandards.map((s) => <option key={s}>{s}</option>)}
+                  </SelectField>
+                </div>
+                <div>
+                  <FieldLabel>Medium of Instruction</FieldLabel>
+                  <SelectField value={form.lastSchoolMedium} onChange={set("lastSchoolMedium")}>
+                    <option value="">Select Medium</option>
+                    {mediums.map((m) => <option key={m}>{m}</option>)}
+                  </SelectField>
+                </div>
+                <div>
+                  <FieldLabel>School Location</FieldLabel>
+                  <Input placeholder="City / Town" value={form.lastSchoolPlace} onChange={set("lastSchoolPlace")} />
+                </div>
+              </div>
+              <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-bold text-amber-800">TC & Marksheet are Mandatory</p>
+                  <p className="text-xs text-amber-700 mt-0.5">Upload Transfer Certificate and Marksheet in Section 10 (Documents).</p>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -533,7 +613,15 @@ function EditForm({ existing, id, router }) {
         <SectionHeader number="10" title="Document Upload" />
         <p className="text-xs text-gray-400 mb-4 -mt-2">Tick to confirm document is available · Untick to mark as not submitted</p>
         <div className="space-y-3">
-          {defaultDocTypes.map((docName) => (
+          {!hasPrevSchool && (
+            <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5">
+              <AlertTriangle className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+              <p className="text-xs text-blue-600 font-medium">TC and Marksheet hidden — no previous school.</p>
+            </div>
+          )}
+          {defaultDocTypes
+            .filter(d => hasPrevSchool || (d !== "Leaving Certificate" && d !== "Marksheet"))
+            .map((docName) => (
             <div key={docName} className="border border-gray-100 rounded-xl overflow-hidden">
               <div
                 className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${checkedDocs[docName] ? "bg-blue-50" : "bg-white"}`}

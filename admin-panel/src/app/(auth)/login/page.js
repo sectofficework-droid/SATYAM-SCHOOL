@@ -18,12 +18,12 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
 
-    // Dummy auth — will connect to Supabase later
     setTimeout(() => {
-      if (email && password) {
+      if (email === "admin@school.com" && password === "123456") {
+        sessionStorage.removeItem("tasksPopupShown");
         router.push("/dashboard");
       } else {
-        setError("Please enter valid credentials.");
+        setError("Invalid email or password.");
         setLoading(false);
       }
     }, 1500);

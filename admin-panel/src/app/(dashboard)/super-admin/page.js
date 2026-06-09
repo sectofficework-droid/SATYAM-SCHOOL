@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   ShieldCheck, Crown, Shield, LogOut, Eye, EyeOff,
   Camera, Calendar, CreditCard, MapPin, User, Tag,
@@ -8,9 +8,14 @@ import {
   ChevronRight, Users, Check, Phone, Hash, GraduationCap,
   IndianRupee, Package, Pencil, X, Plus, ChevronDown,
   ChevronUp, BookOpen, Briefcase, History, Trash2,
+  ClipboardList, Flag, Upload, FileText, Download, Filter,
 } from "lucide-react";
+import useStore from "@/lib/store";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// â"€â"€ Constants â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 const CLASSES = [
   "JR KG","SR KG","Balvatika",
   "1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th",
@@ -78,13 +83,15 @@ const GROUP_STYLES = {
   "Previous School": { activeCls:"bg-teal-500 border-teal-500",      iconBg:"bg-teal-100",    iconColor:"text-teal-500"    },
   "Aadhar":          { activeCls:"bg-rose-500 border-rose-500",      iconBg:"bg-rose-100",    iconColor:"text-rose-500"    },
   "Govt IDs":        { activeCls:"bg-purple-500 border-purple-500",  iconBg:"bg-purple-100",  iconColor:"text-purple-500"  },
+  "Photo":           { activeCls:"bg-pink-500 border-pink-500",      iconBg:"bg-pink-100",    iconColor:"text-pink-500"    },
+  "Documents":       { activeCls:"bg-cyan-600 border-cyan-600",      iconBg:"bg-cyan-100",    iconColor:"text-cyan-600"    },
 };
 
 const MODULE_THEMES = {
-  students:  { tabBg:"bg-blue-600",   tabActive:"bg-blue-600 text-white",   banner:"bg-gradient-to-r from-blue-600 to-blue-700",   ring:"focus:ring-blue-400"  },
-  fees:      { tabBg:"bg-emerald-600",tabActive:"bg-emerald-600 text-white",banner:"bg-gradient-to-r from-emerald-600 to-teal-700", ring:"focus:ring-emerald-400"},
-  inventory: { tabBg:"bg-amber-500",  tabActive:"bg-amber-500 text-white",  banner:"bg-gradient-to-r from-amber-500 to-orange-600", ring:"focus:ring-amber-400"  },
-  employee:  { tabBg:"bg-purple-600", tabActive:"bg-purple-600 text-white", banner:"bg-gradient-to-r from-purple-600 to-violet-700",ring:"focus:ring-purple-400" },
+  students:  { tabBg:"bg-blue-600",   tabActive:"bg-blue-600 text-white",   banner:"bg-gradient-to-r from-blue-600 to-blue-700",    ring:"focus:ring-blue-400"   },
+  fees:      { tabBg:"bg-emerald-600",tabActive:"bg-emerald-600 text-white",banner:"bg-gradient-to-r from-emerald-600 to-teal-700",  ring:"focus:ring-emerald-400" },
+  inventory: { tabBg:"bg-amber-500",  tabActive:"bg-amber-500 text-white",  banner:"bg-gradient-to-r from-amber-500 to-orange-600",  ring:"focus:ring-amber-400"   },
+  employee:  { tabBg:"bg-purple-600", tabActive:"bg-purple-600 text-white", banner:"bg-gradient-to-r from-purple-600 to-violet-700", ring:"focus:ring-purple-400"  },
 };
 
 const MGMT_MODULES = [
@@ -94,15 +101,28 @@ const MGMT_MODULES = [
   { key:"employee",  label:"Employee",         icon:Users,         stats:["12 Staff","8 Teachers","4 Support"]              },
 ];
 
-const FEES_STRUCTURE = [
-  { cls:"JR KG",         totalFee:16200 },{ cls:"SR KG",         totalFee:16200 },
-  { cls:"Balvatika",     totalFee:17000 },{ cls:"1st",           totalFee:18000 },
-  { cls:"2nd",           totalFee:18200 },{ cls:"3rd",           totalFee:18500 },
-  { cls:"4th",           totalFee:18800 },{ cls:"5th",           totalFee:19500 },
-  { cls:"6th",           totalFee:20000 },{ cls:"7th",           totalFee:20000 },
-  { cls:"8th",           totalFee:21300 },{ cls:"9th",           totalFee:21800 },
-  { cls:"10th",          totalFee:22500 },{ cls:"11th Commerce", totalFee:23500 },
-  { cls:"12th Commerce", totalFee:23500 },
+
+const DEFAULT_DOCS = ["Birth Certificate","Student Aadhar Card","Father's Aadhar Card","Mother's Aadhar Card","Leaving Certificate","Marksheet"];
+
+const PHOTO_GROUP = {
+  group: "Photo",
+  fields: [{ key:"photo", label:"Student Photo", icon:Camera, type:"photo" }],
+};
+const DOC_FIELDS_GROUP = {
+  group: "Documents",
+  fields: DEFAULT_DOCS.map(doc => ({
+    key: `doc__${doc.replace(/[\s']+/g,"_")}`,
+    label: doc,
+    icon: FileText,
+    type: "doc",
+  })),
+};
+
+const PENDING_ID_FIELDS = [
+  { key:"aadharNo", label:"Aadhar No"  },
+  { key:"udise",    label:"UDISE"      },
+  { key:"pen",      label:"PEN No"     },
+  { key:"apaar",    label:"APAAR ID"   },
 ];
 
 const INVENTORY_ITEMS = ["School Bag","Uniform","Textbooks","Notebooks","School Diary","ID Card"];
@@ -110,7 +130,7 @@ const EMP_ROLES    = ["Teacher","Admin Staff","Principal","Vice Principal","Lab 
 const EMP_STATUSES = ["Active","On Leave","Resigned"];
 const ASSET_ACTIONS = ["Purchased","Assigned","Returned","Serviced","Repaired","Moved","Disposed"];
 
-// ── Dummy data ────────────────────────────────────────────────────────────────
+// â"€â"€ Dummy data â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 let _sid = 0;
 function mkSt(cls, roll, firstName, lastName, gender) {
   _sid++;
@@ -213,11 +233,56 @@ const DUMMY_EMPLOYEES = [
   { id:12,name:"Savita Nair",     role:"Teacher",     subject:"Music",       qualification:"B.Mus",      mobile:"9876541012",email:"savita@satyam.in",salary:20000,joinDate:"2021-06-15",status:"Active"   },
 ];
 
-// ── Shared cell renderer ──────────────────────────────────────────────────────
+// â"€â"€ Shared cell renderer â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function FieldCell({ field, value, onChange, compact }) {
+  const fileRef = useRef(null);
+
   const cls = compact
     ? "border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-school-navy bg-white w-full"
     : "border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy bg-white w-full";
+
+  if (field.type === "photo") {
+    return (
+      <div className="flex items-center gap-2 min-w-28">
+        <input type="file" accept="image/*" className="hidden" ref={fileRef}
+          onChange={e => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = ev => onChange(ev.target.result);
+            reader.readAsDataURL(file);
+          }}/>
+        {value
+          ? <img src={value} alt="" className="w-8 h-8 rounded object-cover border border-gray-200 flex-shrink-0"/>
+          : <div className="w-8 h-8 rounded-lg bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center flex-shrink-0">
+              <Camera className="w-3.5 h-3.5 text-gray-300"/>
+            </div>}
+        <button type="button" onClick={() => fileRef.current?.click()}
+          className={`text-[10px] px-2 py-1 rounded border font-semibold whitespace-nowrap transition-colors ${value ? "bg-blue-50 border-blue-200 text-blue-600" : "bg-white border-gray-300 text-gray-500 hover:border-pink-400 hover:text-pink-600"}`}>
+          {value ? "Change" : "Upload"}
+        </button>
+      </div>
+    );
+  }
+
+  if (field.type === "doc") {
+    const isUploaded = value === "uploaded";
+    return (
+      <div className="flex items-center gap-1.5 min-w-24">
+        <input type="file" accept=".pdf,image/*" className="hidden" ref={fileRef}
+          onChange={e => { if (e.target.files[0]) onChange("uploaded"); }}/>
+        <button type="button" onClick={() => onChange(isUploaded ? "" : "uploaded")}
+          className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2 transition-all ${isUploaded ? "bg-green-500 border-green-500" : "border-gray-300 hover:border-green-400"}`}>
+          {isUploaded && <Check className="w-2.5 h-2.5 text-white"/>}
+        </button>
+        <button type="button" onClick={() => fileRef.current?.click()}
+          className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold whitespace-nowrap transition-colors ${isUploaded ? "bg-green-50 border-green-200 text-green-600" : "bg-white border-gray-300 text-gray-400 hover:border-cyan-400 hover:text-cyan-600"}`}>
+          {isUploaded ? "✓ Done" : "Upload"}
+        </button>
+      </div>
+    );
+  }
+
   if (field.type === "select") {
     return (
       <select className={cls} value={value || ""} onChange={e => onChange(e.target.value)}>
@@ -228,7 +293,7 @@ function FieldCell({ field, value, onChange, compact }) {
   return <input type={field.type} className={cls} value={value || ""} onChange={e => onChange(e.target.value)} />;
 }
 
-// ── Login ─────────────────────────────────────────────────────────────────────
+// â"€â"€ Login â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function LoginView({ onLogin }) {
   const [role,  setRole]  = useState("management");
   const [name,  setName]  = useState("");
@@ -248,7 +313,7 @@ function LoginView({ onLogin }) {
     <div className="-m-4 lg:-m-6 flex items-center justify-center h-[calc(100vh-4rem)] bg-gradient-to-br from-slate-900 via-slate-800 to-school-navy p-6">
       <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden flex">
 
-        {/* Left — branding panel */}
+        {/* Left —" branding panel */}
         <div className="hidden md:flex flex-col justify-center w-2/5 flex-shrink-0 bg-school-navy px-8 py-8 text-white">
           <div className="w-16 h-16 bg-school-gold rounded-2xl flex items-center justify-center mb-5 shadow-lg">
             <ShieldCheck className="w-8 h-8 text-white" />
@@ -273,14 +338,14 @@ function LoginView({ onLogin }) {
           </div>
         </div>
 
-        {/* Right — form */}
+        {/* Right —" form */}
         <div className="flex-1 flex flex-col justify-center px-8 py-8">
           {/* Mobile header */}
           <div className="flex md:hidden items-center gap-3 mb-5">
             <div className="w-10 h-10 bg-school-gold rounded-xl flex items-center justify-center flex-shrink-0">
               <ShieldCheck className="w-5 h-5 text-white" />
             </div>
-            <p className="font-bold text-gray-800">Super Admin — Restricted Access</p>
+            <p className="font-bold text-gray-800">Super Admin —" Restricted Access</p>
           </div>
 
           <p className="text-xl font-bold text-gray-800 mb-1">Sign In</p>
@@ -327,13 +392,44 @@ function LoginView({ onLogin }) {
   );
 }
 
-// ── Single Student Tool (Senior Admin) ────────────────────────────────────────
+// â"€â"€ Single Student Tool (Senior Admin) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function SingleStudentTool({ students }) {
   const [selClass, setSelClass] = useState("");
   const [search,   setSearch]   = useState("");
   const [selected, setSelected] = useState(null);
   const [form,     setForm]     = useState({});
   const [saved,    setSaved]    = useState(false);
+
+  const [photo,        setPhoto]        = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [checkedDocs,  setCheckedDocs]  = useState({});
+  const [uploadedFiles,setUploadedFiles]= useState({});
+  const [customDocs,   setCustomDocs]   = useState([]);
+  const photoRef = useRef(null);
+
+  function resetMedia() {
+    setPhoto(null); setPhotoPreview(null);
+    setCheckedDocs({}); setUploadedFiles({}); setCustomDocs([]);
+  }
+  function selectStudent(st) { setSelected(st); setForm({...st}); setSaved(false); resetMedia(); }
+  function goBack()           { setSelected(null); resetMedia(); }
+
+  function handlePhoto(e) {
+    const f = e.target.files[0];
+    if (!f) return;
+    setPhoto(f); setPhotoPreview(URL.createObjectURL(f));
+  }
+  function toggleDoc(name) {
+    const was = checkedDocs[name];
+    setCheckedDocs(p=>({...p,[name]:!p[name]}));
+    if (was) setUploadedFiles(p=>{ const n={...p}; delete n[name]; return n; });
+  }
+  function handleDocFile(name, e) {
+    const f = e.target.files[0];
+    if (f) setUploadedFiles(p=>({...p,[name]:f.name}));
+  }
+  function addCustomDoc()  { setCustomDocs(p=>[...p,{id:Date.now(),label:""}]); }
+  function removeCustomDoc(id) { setCustomDocs(p=>p.filter(d=>d.id!==id)); }
 
   const classCounts = {};
   students.forEach(s => { classCounts[s.cls] = (classCounts[s.cls] || 0) + 1; });
@@ -363,22 +459,22 @@ function SingleStudentTool({ students }) {
   if (!selected) return (
     <div>
       <div className="flex items-center gap-3 mb-5">
-        <button onClick={() => { setSelClass(""); setSearch(""); }} className="text-school-navy text-sm font-semibold">← Back</button>
+        <button onClick={() => { setSelClass(""); setSearch(""); resetMedia(); }} className="text-school-navy text-sm font-semibold">â† Back</button>
         <span className="text-gray-400">/</span>
         <span className="text-sm font-bold text-gray-700">{selClass}</span>
         <span className="ml-auto text-xs text-gray-400">{inClass.length} students</span>
       </div>
       <div className="relative mb-4">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy" placeholder="Search by name, roll, or enroll no…" value={search} onChange={e => setSearch(e.target.value)} />
+        <input className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy" placeholder="Search by name, roll, or enroll no—¦" value={search} onChange={e => setSearch(e.target.value)} />
       </div>
       <div className="space-y-2">
         {inClass.map(st => (
-          <button key={st.id} onClick={() => { setSelected(st); setForm({...st}); setSaved(false); }} className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-school-navy hover:bg-school-navy/5 transition-all text-left">
+          <button key={st.id} onClick={() => selectStudent(st)} className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-school-navy hover:bg-school-navy/5 transition-all text-left">
             <div className="w-10 h-10 rounded-full bg-school-gold flex items-center justify-center text-white font-bold text-sm flex-shrink-0">{st.firstName[0]}{st.lastName[0]}</div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-800">{st.name}</p>
-              <p className="text-xs text-gray-400">{st.enrollNo} · Roll {st.roll}</p>
+              <p className="text-xs text-gray-400">{st.enrollNo} Â· Roll {st.roll}</p>
             </div>
             <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
           </button>
@@ -391,7 +487,7 @@ function SingleStudentTool({ students }) {
   return (
     <div>
       <div className="flex items-center gap-3 mb-5">
-        <button onClick={() => setSelected(null)} className="text-school-navy text-sm font-semibold">← Back</button>
+        <button onClick={goBack} className="text-school-navy text-sm font-semibold">â† Back</button>
         <span className="text-gray-400">/</span>
         <span className="text-sm font-bold">{selClass}</span>
         <span className="text-gray-400">/</span>
@@ -416,22 +512,85 @@ function SingleStudentTool({ students }) {
           </div>
         ))}
       </div>
+      {/* â"€â"€ Photo Upload â"€â"€ */}
+      <div className="border-t border-gray-100 pt-5 mt-2">
+        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Student Photo</h4>
+        <div className="flex items-center gap-5">
+          <div className="w-20 h-20 rounded-xl bg-gray-100 flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-300 flex-shrink-0">
+            {photoPreview ? <img src={photoPreview} alt="Preview" className="w-full h-full object-cover"/> : <Camera className="w-7 h-7 text-gray-300"/>}
+          </div>
+          <div>
+            <input ref={photoRef} type="file" accept="image/jpg,image/jpeg,image/png" className="hidden" onChange={handlePhoto}/>
+            <button type="button" onClick={()=>photoRef.current.click()} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50">
+              <Upload className="w-4 h-4"/>{photo?"Change Photo":"Upload Photo"}
+            </button>
+            {photo && <button type="button" onClick={()=>{setPhoto(null);setPhotoPreview(null);}} className="ml-2 text-xs text-red-500 hover:text-red-700">Remove</button>}
+            <p className="text-xs text-gray-400 mt-1.5">JPG or PNG Â· Max 2MB</p>
+          </div>
+        </div>
+      </div>
+
+      {/* â"€â"€ Documents â"€â"€ */}
+      <div className="border-t border-gray-100 pt-5">
+        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Documents</h4>
+        <div className="space-y-2">
+          {DEFAULT_DOCS.map(docName=>(
+            <div key={docName} className="border border-gray-100 rounded-xl overflow-hidden">
+              <div className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-gray-50 transition-colors ${checkedDocs[docName]?"bg-blue-50":"bg-white"}`} onClick={()=>toggleDoc(docName)}>
+                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${checkedDocs[docName]?"bg-school-navy border-school-navy":"border-gray-300"}`}>
+                  {checkedDocs[docName]&&<Check className="w-2.5 h-2.5 text-white"/>}
+                </div>
+                <FileText className="w-3.5 h-3.5 text-gray-400 flex-shrink-0"/>
+                <span className="text-sm text-gray-700">{docName}</span>
+                {uploadedFiles[docName]&&<span className="ml-auto text-xs text-green-600 font-medium truncate max-w-[130px]">✓ {uploadedFiles[docName]}</span>}
+              </div>
+              {checkedDocs[docName]&&(
+                <div className="px-4 py-2.5 bg-blue-50 border-t border-blue-100">
+                  <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-white border border-blue-200 rounded-lg text-xs font-medium text-school-navy cursor-pointer hover:bg-blue-50">
+                    <Upload className="w-3 h-3"/>{uploadedFiles[docName]?"Change File":"Upload File"}
+                    <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={e=>handleDocFile(docName,e)}/>
+                  </label>
+                </div>
+              )}
+            </div>
+          ))}
+          {customDocs.map(doc=>(
+            <div key={doc.id} className="border border-dashed border-gray-200 rounded-xl p-3 flex items-center gap-3">
+              <FileText className="w-3.5 h-3.5 text-gray-300 flex-shrink-0"/>
+              <input type="text" placeholder="Document name—¦" value={doc.label} onChange={e=>setCustomDocs(p=>p.map(d=>d.id===doc.id?{...d,label:e.target.value}:d))} className="flex-1 text-sm bg-transparent focus:outline-none placeholder:text-gray-300"/>
+              {doc.label&&(
+                <label className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-gray-600 cursor-pointer hover:bg-gray-50">
+                  <Upload className="w-3 h-3"/>Upload
+                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={e=>handleDocFile(doc.label,e)}/>
+                </label>
+              )}
+              <button type="button" onClick={()=>removeCustomDoc(doc.id)} className="text-gray-300 hover:text-red-400"><X className="w-4 h-4"/></button>
+            </div>
+          ))}
+          <button type="button" onClick={addCustomDoc} className="w-full flex items-center justify-center gap-2 py-2 border border-dashed border-gray-300 rounded-xl text-xs text-gray-400 hover:border-school-navy hover:text-school-navy transition-colors">
+            <Plus className="w-3.5 h-3.5"/>Add Another Document
+          </button>
+        </div>
+      </div>
+
       <div className="mt-6 flex gap-3">
         <button onClick={() => { setSaved(true); setTimeout(()=>setSaved(false),2500); }} className="flex items-center gap-2 bg-school-navy text-white px-6 py-2.5 rounded-lg text-sm font-semibold"><Save className="w-4 h-4"/>Save Changes</button>
-        <button onClick={() => setForm({...selected})} className="flex items-center gap-2 border border-gray-200 text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold"><RefreshCw className="w-4 h-4"/>Reset</button>
+        <button onClick={() => { setForm({...selected}); resetMedia(); }} className="flex items-center gap-2 border border-gray-200 text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold"><RefreshCw className="w-4 h-4"/>Reset</button>
       </div>
     </div>
   );
 }
 
-// ── Spreadsheet bulk editor (shared logic) ────────────────────────────────────
+// â"€â"€ Spreadsheet bulk editor (shared logic) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function SpreadsheetEditor({ students, title }) {
-  const [selClass,       setSelClass]       = useState("All");
-  const [search,         setSearch]         = useState("");
-  const [selFields,      setSelFields]      = useState([]);
-  const [showPicker,     setShowPicker]     = useState(true);
-  const [edits,          setEdits]          = useState({});
-  const [saved,          setSaved]          = useState(false);
+  const [selClass,      setSelClass]      = useState("All");
+  const [search,        setSearch]        = useState("");
+  const [selFields,     setSelFields]     = useState([]);
+  const [showPicker,    setShowPicker]    = useState(true);
+  const [edits,         setEdits]         = useState({});
+  const [saved,         setSaved]         = useState(false);
+  const ALL_GROUPS     = [...FIELD_GROUPS, PHOTO_GROUP, DOC_FIELDS_GROUP];
+  const ALL_FIELDS_EXT = ALL_GROUPS.flatMap(g => g.fields);
 
   const filtered = students.filter(s =>
     (selClass==="All"||s.cls===selClass) &&
@@ -451,7 +610,7 @@ function SpreadsheetEditor({ students, title }) {
     setSelFields(prev => prev.includes(key) ? prev.filter(k=>k!==key) : [...prev, key]);
   }
 
-  const selectedFields = ALL_FIELDS.filter(f => selFields.includes(f.key));
+  const selectedFields = ALL_FIELDS_EXT.filter(f => selFields.includes(f.key));
 
   return (
     <div className="space-y-4">
@@ -463,7 +622,7 @@ function SpreadsheetEditor({ students, title }) {
         </button>
         {showPicker && (
           <div className="p-4 space-y-4">
-            {FIELD_GROUPS.map(grp => {
+            {ALL_GROUPS.map(grp => {
               const gs = GROUP_STYLES[grp.group]||GROUP_STYLES["Personal"];
               return (
                 <div key={grp.group}>
@@ -490,7 +649,7 @@ function SpreadsheetEditor({ students, title }) {
       <div className="flex flex-wrap gap-3">
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
-          <input className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy" placeholder="Search student…" value={search} onChange={e=>setSearch(e.target.value)}/>
+          <input className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy" placeholder="Search student—¦" value={search} onChange={e=>setSearch(e.target.value)}/>
         </div>
         <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" value={selClass} onChange={e=>setSelClass(e.target.value)}>
           <option value="All">All Classes</option>
@@ -502,7 +661,7 @@ function SpreadsheetEditor({ students, title }) {
       {selFields.length === 0 && (
         <div className="text-center py-10 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
           <p className="text-sm text-gray-400 font-medium">Select fields above to start editing</p>
-          <p className="text-xs text-gray-300 mt-1">Each student gets their own editable value</p>
+          <p className="text-xs text-gray-300 mt-1">Pick from student info, photo, or documents</p>
         </div>
       )}
 
@@ -532,7 +691,7 @@ function SpreadsheetEditor({ students, title }) {
                     </td>
                     <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{st.cls}</td>
                     {selectedFields.map(field => (
-                      <td key={field.key} className="px-2 py-1.5">
+                      <td key={field.key} className="px-2 py-2">
                         <FieldCell field={field} value={getCellVal(st.id, field.key)} onChange={v=>setCell(st.id, field.key, v)} compact />
                       </td>
                     ))}
@@ -548,20 +707,19 @@ function SpreadsheetEditor({ students, title }) {
           </div>
         </>
       )}
+
     </div>
   );
 }
 
-// ── Fees Panel ────────────────────────────────────────────────────────────────
+// â"€â"€ Fees Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function FeesPanel() {
-  const [tab,       setTab]       = useState("records");
-  const [feeRecs,   setFeeRecs]   = useState(DUMMY_FEE_RECORDS);
-  const [feeStruct, setFeeStruct] = useState(FEES_STRUCTURE);
-  const [expandId,  setExpandId]  = useState(null);
-  const [editRec,   setEditRec]   = useState(null);
-  const [clsF,      setClsF]      = useState("All");
-  const [search,    setSearch]    = useState("");
-  const [saved,     setSaved]     = useState(false);
+  const [feeRecs,  setFeeRecs]  = useState(DUMMY_FEE_RECORDS);
+  const [expandId, setExpandId] = useState(null);
+  const [editRec,  setEditRec]  = useState(null);
+  const [clsF,     setClsF]     = useState("All");
+  const [search,   setSearch]   = useState("");
+  const [saved,    setSaved]    = useState(false);
 
   const filtered = feeRecs.filter(r =>
     (clsF==="All"||r.cls===clsF) &&
@@ -593,43 +751,8 @@ function FeesPanel() {
 
   return (
     <div>
-      <div className="flex gap-2 mb-5">
-        {[{k:"records",label:"Student Fee Records"},{k:"structure",label:"Fee Structure"}].map(t=>(
-          <button key={t.k} onClick={()=>setTab(t.k)} className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-all ${tab===t.k?"bg-emerald-600 text-white border-emerald-600":"border-gray-200 text-gray-600 hover:border-emerald-500"}`}>{t.label}</button>
-        ))}
-      </div>
-
-      {tab==="structure" && (
-        <div className="overflow-x-auto rounded-xl border border-gray-200">
-          <table className="w-full text-sm">
-            <thead><tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-4 py-3 text-left font-semibold text-gray-600">Class / Standard</th>
-              <th className="px-4 py-3 text-left font-semibold text-gray-600">Annual Fee (₹)</th>
-            </tr></thead>
-            <tbody>
-              {feeStruct.map((row,idx)=>(
-                <tr key={row.cls} className="border-b border-gray-100 hover:bg-gray-50">
-                  <td className="px-4 py-3 font-semibold text-gray-800">{row.cls}</td>
-                  <td className="px-4 py-3">
-                    <div className="relative w-40">
-                      <IndianRupee className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
-                      <input type="number" className="w-full border border-gray-200 rounded-lg pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" value={row.totalFee} onChange={e=>setFeeStruct(prev=>prev.map((r,i)=>i===idx?{...r,totalFee:Number(e.target.value)}:r))}/>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="p-4 border-t border-gray-100">
-            <button className="flex items-center gap-2 bg-emerald-600 text-white px-5 py-2.5 rounded-lg text-sm font-semibold"><Save className="w-4 h-4"/>Save Fee Structure</button>
-          </div>
-        </div>
-      )}
-
-      {tab==="records" && (
-        <div>
-          <div className="flex flex-wrap gap-3 mb-4">
-            <div className="relative flex-1 min-w-48"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/><input className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none" placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
+      <div className="flex flex-wrap gap-3 mb-4">
+            <div className="relative flex-1 min-w-48"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/><input className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none" placeholder="Search—¦" value={search} onChange={e=>setSearch(e.target.value)}/></div>
             <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" value={clsF} onChange={e=>setClsF(e.target.value)}><option value="All">All Classes</option>{CLASSES.map(c=><option key={c}>{c}</option>)}</select>
           </div>
           {saved && <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-2.5 mb-3 text-sm"><CheckCircle2 className="w-4 h-4"/>Saved!</div>}
@@ -666,7 +789,7 @@ function FeesPanel() {
                         <tr key={`exp-${rec.id}`}><td colSpan={NCOLS} className="px-4 py-4 bg-emerald-50/40">
                           <div className="bg-white rounded-xl border border-emerald-200 p-4">
                             <div className="flex items-center justify-between mb-4">
-                              <h4 className="text-sm font-bold text-gray-800">{rec.name} — {rec.cls}</h4>
+                              <h4 className="text-sm font-bold text-gray-800">{rec.name} —" {rec.cls}</h4>
                               <div className="flex items-center gap-3 text-xs text-gray-500">
                                 <span>Annual: ₹{editRec.totalFee.toLocaleString()}</span>
                                 <span className="text-orange-600">Discount:
@@ -716,13 +839,11 @@ function FeesPanel() {
             </table>
             {filtered.length===0 && <p className="text-center text-gray-400 py-8 text-sm">No records found</p>}
           </div>
-        </div>
-      )}
     </div>
   );
 }
 
-// ── Inventory Panel ───────────────────────────────────────────────────────────
+// â"€â"€ Inventory Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function InventoryPanel() {
   const [tab,      setTab]      = useState("assets");
   const [assets,   setAssets]   = useState(DUMMY_ASSETS);
@@ -817,7 +938,7 @@ function InventoryPanel() {
                   {histMode===a.id && (
                     <tr key={`hist-${a.id}`}><td colSpan={9} className="px-4 py-4 bg-purple-50/40">
                       <div className="bg-white rounded-xl border border-purple-200 p-4">
-                        <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2"><History className="w-4 h-4 text-purple-600"/>Usage History — {a.name}</h4>
+                        <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2"><History className="w-4 h-4 text-purple-600"/>Usage History —" {a.name}</h4>
                         <div className="overflow-x-auto mb-3">
                           <table className="w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
                             <thead><tr className="bg-gray-50">
@@ -873,7 +994,7 @@ function InventoryPanel() {
                     <td className="px-3 py-2 text-gray-600">{s.cls}</td>
                     {s.items.map((it,j)=>(
                       <td key={j} className="px-3 py-2 text-center">
-                        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold ${it.given?"bg-green-100 text-green-700":"bg-gray-100 text-gray-400"}`}>{it.given?"✓":"✗"}</span>
+                        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold ${it.given?"bg-green-100 text-green-700":"bg-gray-100 text-gray-400"}`}>{it.given?"✓":"âœ—"}</span>
                       </td>
                     ))}
                     <td className="px-3 py-2"><button onClick={()=>{setSelStu(s);setStuItems(s.items.map(i=>({...i})));}} className="flex items-center gap-1 text-amber-700 font-semibold"><Pencil className="w-3.5 h-3.5"/>Edit</button></td>
@@ -886,9 +1007,9 @@ function InventoryPanel() {
       )}
       {tab==="student" && selStu && (
         <div>
-          <button onClick={()=>setSelStu(null)} className="text-amber-700 text-sm font-semibold mb-4">← Back to list</button>
+          <button onClick={()=>setSelStu(null)} className="text-amber-700 text-sm font-semibold mb-4">â† Back to list</button>
           <h4 className="text-sm font-bold text-gray-800 mb-1">{selStu.name}</h4>
-          <p className="text-xs text-gray-400 mb-4">{selStu.cls} · {selStu.enrollNo}</p>
+          <p className="text-xs text-gray-400 mb-4">{selStu.cls} Â· {selStu.enrollNo}</p>
           <div className="space-y-3">
             {stuItems.map((it,j)=>(
               <div key={j} className="flex flex-wrap items-center gap-4 p-3 bg-gray-50 rounded-xl border border-gray-200">
@@ -950,7 +1071,7 @@ function InventoryPanel() {
   );
 }
 
-// ── Employee Panel ────────────────────────────────────────────────────────────
+// â"€â"€ Employee Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function EmployeePanel() {
   const [employees,setEmployees]=useState(DUMMY_EMPLOYEES);
   const [search,   setSearch]   =useState("");
@@ -964,7 +1085,7 @@ function EmployeePanel() {
   return (
     <div>
       <div className="flex flex-wrap gap-3 mb-4">
-        <div className="relative flex-1 min-w-48"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/><input className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none" placeholder="Search…" value={search} onChange={e=>setSearch(e.target.value)}/></div>
+        <div className="relative flex-1 min-w-48"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/><input className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none" placeholder="Search—¦" value={search} onChange={e=>setSearch(e.target.value)}/></div>
         <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" value={roleF} onChange={e=>setRoleF(e.target.value)}><option value="All">All Roles</option>{EMP_ROLES.map(r=><option key={r}>{r}</option>)}</select>
       </div>
       {saved && <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-2.5 mb-3 text-sm"><CheckCircle2 className="w-4 h-4"/>Employee record updated!</div>}
@@ -1016,11 +1137,315 @@ function EmployeePanel() {
   );
 }
 
-// ── Super Admin Page ──────────────────────────────────────────────────────────
+// â"€â"€ Pending IDs Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+function PendingDetailsPanel({ students }) {
+  const [selFields, setSelFields] = useState([]);
+  const [selClass,  setSelClass]  = useState("All");
+
+  function toggleField(key) {
+    setSelFields(p => p.includes(key) ? p.filter(k=>k!==key) : [...p,key]);
+  }
+
+  const activeFields = PENDING_ID_FIELDS.filter(f => selFields.includes(f.key));
+
+  const filtered = selFields.length === 0 ? [] : students.filter(s =>
+    (selClass==="All" || s.cls===selClass) &&
+    selFields.some(key => !s[key])
+  ).filter(s => selClass==="All" || s.cls===selClass);
+
+  // â"€â"€ Export helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+  function exportExcel() {
+    const rows = filtered.map(s => {
+      const row = { Name:s.name, Class:s.cls, "Enroll No":s.enrollNo };
+      PENDING_ID_FIELDS.forEach(f => { row[f.label] = s[f.key] || "MISSING"; });
+      return row;
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Pending IDs");
+    XLSX.writeFile(wb, "students_pending_ids.xlsx");
+  }
+
+  function exportPDF() {
+    const doc = new jsPDF();
+    doc.setFontSize(13);
+    doc.text("Students with Pending Government IDs", 14, 15);
+    doc.setFontSize(9);
+    doc.setTextColor(120);
+    doc.text(`Filters: ${activeFields.map(f=>f.label).join(", ") || "None"} Â· Class: ${selClass} Â· Total: ${filtered.length}`, 14, 22);
+    autoTable(doc, {
+      startY: 28,
+      head: [["Name","Class","Enroll No",...PENDING_ID_FIELDS.map(f=>f.label)]],
+      body: filtered.map(s=>[s.name,s.cls,s.enrollNo,...PENDING_ID_FIELDS.map(f=>s[f.key]||"—")]),
+      styles: { fontSize:8 },
+      headStyles: { fillColor:[30,58,95] },
+      didParseCell(data) {
+        if (data.section==="body" && data.column.index >= 3) {
+          const val = data.cell.raw;
+          if (!val || val==="—") data.cell.styles.textColor = [220,38,38];
+        }
+      },
+    });
+    doc.save("students_pending_ids.pdf");
+  }
+
+  const fieldBadge = (val) => val
+    ? "bg-green-100 text-green-700 border border-green-200"
+    : "bg-red-100 text-red-700 border border-red-200";
+
+  return (
+    <div className="space-y-4">
+      {/* Field selector */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <p className="text-xs font-bold text-amber-700 uppercase tracking-wide mb-3 flex items-center gap-2">
+          <Filter className="w-3.5 h-3.5"/> Select which IDs to check as pending
+        </p>
+        <div className="flex flex-wrap gap-3">
+          {PENDING_ID_FIELDS.map(f=>{
+            const on = selFields.includes(f.key);
+            return (
+              <button key={f.key} onClick={()=>toggleField(f.key)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border-2 transition-all ${on?"bg-school-navy text-white border-school-navy shadow":"bg-white text-gray-600 border-gray-200 hover:border-school-navy"}`}>
+                <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${on?"bg-white border-white":"border-current"}`}>
+                  {on&&<Check className="w-2.5 h-2.5 text-school-navy"/>}
+                </div>
+                {f.label}
+              </button>
+            );
+          })}
+        </div>
+        {selFields.length>0&&(
+          <p className="text-xs text-amber-600 mt-2.5">
+            Showing students where <b>any of these are empty</b>: {activeFields.map(f=>f.label).join(", ")}
+          </p>
+        )}
+      </div>
+
+      {/* Class filter + export */}
+      <div className="flex flex-wrap items-center gap-3">
+        <select value={selClass} onChange={e=>setSelClass(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy">
+          <option value="All">All Classes</option>
+          {CLASSES.map(c=><option key={c}>{c}</option>)}
+        </select>
+        <span className="text-xs text-gray-400 flex-1">
+          {selFields.length===0 ? "Select at least one field above" : `${filtered.length} student${filtered.length!==1?"s":""} found`}
+        </span>
+        {filtered.length>0&&(
+          <>
+            <button onClick={exportExcel} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition-colors">
+              <Download className="w-4 h-4"/>Excel
+            </button>
+            <button onClick={exportPDF} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-colors">
+              <Download className="w-4 h-4"/>PDF
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Results table */}
+      {selFields.length>0&&filtered.length===0&&(
+        <div className="text-center py-10 bg-green-50 rounded-xl border border-green-200">
+          <CheckCircle2 className="w-10 h-10 text-green-400 mx-auto mb-2"/>
+          <p className="text-sm font-semibold text-green-700">All students have these IDs filled!</p>
+        </div>
+      )}
+
+      {filtered.length>0&&(
+        <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap sticky left-0 bg-gray-50">Student</th>
+                <th className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap">Class</th>
+                <th className="px-4 py-3 text-left font-semibold text-gray-600 whitespace-nowrap">Enroll No</th>
+                {PENDING_ID_FIELDS.map(f=>(
+                  <th key={f.key} className={`px-4 py-3 text-left font-semibold whitespace-nowrap ${selFields.includes(f.key)?"text-school-navy":"text-gray-400"}`}>
+                    {f.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((st,idx)=>(
+                <tr key={st.id} className={`border-b border-gray-100 ${idx%2===0?"bg-white":"bg-gray-50/40"}`}>
+                  <td className={`px-4 py-3 font-semibold text-gray-800 whitespace-nowrap sticky left-0 ${idx%2===0?"bg-white":"bg-gray-50/40"}`}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-full bg-school-gold flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">{st.firstName[0]}{st.lastName[0]}</div>
+                      {st.name}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{st.cls}</td>
+                  <td className="px-4 py-3 text-gray-500 whitespace-nowrap font-mono text-xs">{st.enrollNo}</td>
+                  {PENDING_ID_FIELDS.map(f=>(
+                    <td key={f.key} className="px-4 py-3">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${fieldBadge(st[f.key])}`}>
+                        {st[f.key] || "Missing"}
+                      </span>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// â"€â"€ Pending Tasks Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+const PRIORITIES = [
+  { key:"High",   color:"bg-red-100 text-red-700 border-red-200"    },
+  { key:"Medium", color:"bg-amber-100 text-amber-700 border-amber-200" },
+  { key:"Low",    color:"bg-green-100 text-green-700 border-green-200" },
+];
+
+function PendingTasksPanel({ createdBy }) {
+  const { pendingTasks, addTask, toggleTask, deleteTask } = useStore();
+  const [text,     setText]     = useState("");
+  const [priority, setPriority] = useState("High");
+  const [showDone, setShowDone] = useState(false);
+
+  const pending = pendingTasks.filter(t => !t.done);
+  const done    = pendingTasks.filter(t =>  t.done);
+
+  function handleAdd(e) {
+    e.preventDefault();
+    if (!text.trim()) return;
+    addTask(text.trim(), priority, createdBy);
+    setText("");
+  }
+
+  function fmtDate(iso) {
+    return new Date(iso).toLocaleDateString("en-IN", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" });
+  }
+
+  const priBadge = (p) => PRIORITIES.find(x=>x.key===p)?.color ?? "";
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-school-navy/5 to-transparent">
+        <div className="w-8 h-8 rounded-lg bg-school-navy flex items-center justify-center flex-shrink-0">
+          <ClipboardList className="w-4 h-4 text-white"/>
+        </div>
+        <div className="flex-1">
+          <h2 className="text-sm font-bold text-gray-900">Important Pending Tasks</h2>
+          <p className="text-xs text-gray-500 mt-0.5">Visible to all admins Â· Shown on dashboard</p>
+        </div>
+        {pending.length > 0 && (
+          <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{pending.length}</span>
+        )}
+      </div>
+
+      <div className="p-5 space-y-4">
+        {/* Add task form */}
+        <form onSubmit={handleAdd} className="flex gap-2">
+          <input
+            value={text}
+            onChange={e=>setText(e.target.value)}
+            placeholder="Write an important pending task—¦"
+            className="flex-1 px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white placeholder:text-gray-300"
+          />
+          <select
+            value={priority}
+            onChange={e=>setPriority(e.target.value)}
+            className="border border-gray-200 rounded-xl text-sm px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy cursor-pointer"
+          >
+            {PRIORITIES.map(p=><option key={p.key}>{p.key}</option>)}
+          </select>
+          <button
+            type="submit"
+            className="flex items-center gap-1.5 px-4 py-2.5 bg-school-navy text-white text-sm font-semibold rounded-xl hover:bg-school-navy-dark transition-colors flex-shrink-0"
+          >
+            <Plus className="w-4 h-4"/>Add
+          </button>
+        </form>
+
+        {/* Pending tasks list */}
+        {pending.length === 0 ? (
+          <div className="flex flex-col items-center py-6 text-gray-400">
+            <CheckCircle2 className="w-10 h-10 mb-2 text-green-300"/>
+            <p className="text-sm font-medium text-gray-500">All caught up! No pending tasks.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {pending.map(task=>(
+              <div key={task.id} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100 hover:border-gray-200 bg-gray-50/50 group">
+                <button
+                  type="button"
+                  onClick={()=>toggleTask(task.id)}
+                  className="w-5 h-5 rounded-md border-2 border-gray-300 hover:border-school-navy flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-800 font-medium leading-snug">{task.text}</p>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${priBadge(task.priority)}`}>{task.priority}</span>
+                    <span className="text-[10px] text-gray-400">by {task.createdBy} Â· {fmtDate(task.createdAt)}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={()=>deleteTask(task.id)}
+                  className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 rounded-lg transition-all flex-shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5"/>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Completed tasks toggle */}
+        {done.length > 0 && (
+          <div>
+            <button
+              type="button"
+              onClick={()=>setShowDone(p=>!p)}
+              className="flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              {showDone ? <ChevronUp className="w-3.5 h-3.5"/> : <ChevronDown className="w-3.5 h-3.5"/>}
+              {showDone ? "Hide" : "Show"} completed ({done.length})
+            </button>
+            {showDone && (
+              <div className="space-y-2 mt-2">
+                {done.map(task=>(
+                  <div key={task.id} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100 bg-white group opacity-60">
+                    <button
+                      type="button"
+                      onClick={()=>toggleTask(task.id)}
+                      className="w-5 h-5 rounded-md border-2 border-green-400 bg-green-400 flex items-center justify-center flex-shrink-0 mt-0.5"
+                    >
+                      <Check className="w-3 h-3 text-white"/>
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-400 line-through leading-snug">{task.text}</p>
+                      <span className="text-[10px] text-gray-400">by {task.createdBy} Â· {fmtDate(task.createdAt)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={()=>deleteTask(task.id)}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 rounded-lg transition-all flex-shrink-0"
+                    >
+                      <Trash2 className="w-3.5 h-3.5"/>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// â"€â"€ Super Admin Page â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 export default function SuperAdminPage() {
-  const [authUser,  setAuthUser]  = useState(null);
-  const [activeTab, setActiveTab] = useState("single");
-  const [mgmtTab,   setMgmtTab]   = useState("students");
+  const [authUser,     setAuthUser]     = useState(null);
+  const [activeTab,    setActiveTab]    = useState("single");
+  const [mgmtTab,      setMgmtTab]      = useState("students");
+  const [studentsSubTab, setStudentsSubTab] = useState("spreadsheet");
 
   if (!authUser) return <LoginView onLogin={setAuthUser} />;
 
@@ -1045,18 +1470,26 @@ export default function SuperAdminPage() {
         </button>
       </div>
 
+      {/* Pending Tasks —" visible to both roles */}
+      <PendingTasksPanel createdBy={authUser.name} />
+
       {/* Senior Admin tabs */}
       {!isMgmt && (
         <>
-          <div className="flex gap-2">
-            {[{key:"single",label:"Update Student",icon:GraduationCap},{key:"bulk",label:"Bulk Edit (Spreadsheet)",icon:Users}].map(t=>{
+          <div className="flex flex-wrap gap-2">
+            {[
+              {key:"single",  label:"Update Student",         icon:GraduationCap},
+              {key:"bulk",    label:"Bulk Edit (Spreadsheet)", icon:Users},
+              {key:"pending", label:"Pending IDs",             icon:Filter},
+            ].map(t=>{
               const Icon=t.icon; const isA=activeTab===t.key;
               return <button key={t.key} onClick={()=>setActiveTab(t.key)} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${isA?"bg-school-navy text-white shadow-md":"text-gray-600 hover:bg-gray-100"}`}><Icon className="w-4 h-4"/>{t.label}</button>;
             })}
           </div>
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-            {activeTab==="single" && <SingleStudentTool students={DUMMY_STUDENTS}/>}
-            {activeTab==="bulk"   && <SpreadsheetEditor students={DUMMY_STUDENTS} title="Bulk Edit Students"/>}
+            {activeTab==="single"  && <SingleStudentTool students={DUMMY_STUDENTS}/>}
+            {activeTab==="bulk"    && <SpreadsheetEditor students={DUMMY_STUDENTS} title="Bulk Edit Students"/>}
+            {activeTab==="pending" && <PendingDetailsPanel students={DUMMY_STUDENTS}/>}
           </div>
         </>
       )}
@@ -1099,7 +1532,24 @@ export default function SuperAdminPage() {
 
           {/* Module content */}
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-            {mgmtTab==="students"  && <SpreadsheetEditor students={DUMMY_STUDENTS} title="Student Records"/>}
+            {mgmtTab==="students" && (
+              <>
+                {/* Students sub-tabs */}
+                <div className="flex flex-wrap gap-2 mb-5">
+                  {[
+                    {key:"spreadsheet", label:"Spreadsheet Edit",   icon:Users},
+                    {key:"single",      label:"Single Student Update",icon:GraduationCap},
+                    {key:"pending",     label:"Pending IDs",          icon:Filter},
+                  ].map(t=>{
+                    const Icon=t.icon; const isA=studentsSubTab===t.key;
+                    return <button key={t.key} onClick={()=>setStudentsSubTab(t.key)} className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold border-2 transition-all ${isA?"bg-blue-600 text-white border-blue-600 shadow":"border-gray-200 text-gray-600 hover:border-blue-400 bg-white"}`}><Icon className="w-3.5 h-3.5"/>{t.label}</button>;
+                  })}
+                </div>
+                {studentsSubTab==="spreadsheet" && <SpreadsheetEditor students={DUMMY_STUDENTS} title="Student Records"/>}
+                {studentsSubTab==="single"      && <SingleStudentTool students={DUMMY_STUDENTS}/>}
+                {studentsSubTab==="pending"     && <PendingDetailsPanel students={DUMMY_STUDENTS}/>}
+              </>
+            )}
             {mgmtTab==="fees"      && <FeesPanel/>}
             {mgmtTab==="inventory" && <InventoryPanel/>}
             {mgmtTab==="employee"  && <EmployeePanel/>}

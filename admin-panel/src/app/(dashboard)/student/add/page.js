@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 
 // ── Options ────────────────────────────────────────────────────
-const CURRENT_SESSION = "2025-26"; // controlled from Settings — not editable in form
+const CURRENT_SESSION = "2026-27"; // controlled from Settings — not editable in form
 
 const standards = [
   "JR.KG", "SR.KG", "Balvatika",
@@ -131,6 +131,7 @@ function YesNoToggle({ value, onChange }) {
 export default function AddStudentPage() {
   const router = useRouter();
 
+  const [hasPrevSchool, setHasPrevSchool] = useState(false);
   const [hasSibling, setHasSibling] = useState(false);
   const [siblings, setSiblings]     = useState([{ id: 1, cls: "", name: "" }]);
 
@@ -190,7 +191,7 @@ export default function AddStudentPage() {
     apaar: "",
   });
 
-  const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
+  const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value.toUpperCase() }));
 
   const handleStdChange = (e) => {
     const val = e.target.value;
@@ -597,42 +598,65 @@ export default function AddStudentPage() {
         {/* ══ SECTION 8: Previous School ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <SectionHeader number="8" title="Previous School Details" />
-          <p className="text-xs text-gray-400 mb-4 -mt-2">Leave blank if this is the student&apos;s first school</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="sm:col-span-2">
-              <FieldLabel>Previous School Name</FieldLabel>
-              <Input placeholder="Name of the last school attended" value={form.lastSchoolName} onChange={set("lastSchoolName")} />
-            </div>
+          <div className="space-y-4">
             <div>
-              <FieldLabel>Last Class Attended</FieldLabel>
-              <SelectField value={form.lastSchoolClass} onChange={set("lastSchoolClass")}>
-                <option value="">Select Standard</option>
-                {prevStandards.map((s) => <option key={s}>{s}</option>)}
-              </SelectField>
+              <FieldLabel>Does this student have a previous school?</FieldLabel>
+              <YesNoToggle
+                value={hasPrevSchool}
+                onChange={(val) => {
+                  setHasPrevSchool(val);
+                  if (!val) setForm(p => ({ ...p, lastSchoolName:"", lastSchoolClass:"", lastSchoolMedium:"", lastSchoolPlace:"" }));
+                }}
+              />
             </div>
-            <div>
-              <FieldLabel>Medium of Instruction</FieldLabel>
-              <SelectField value={form.lastSchoolMedium} onChange={set("lastSchoolMedium")}>
-                <option value="">Select Medium</option>
-                {mediums.map((m) => <option key={m}>{m}</option>)}
-              </SelectField>
-            </div>
-            <div>
-              <FieldLabel>School Location</FieldLabel>
-              <Input placeholder="City / Town" value={form.lastSchoolPlace} onChange={set("lastSchoolPlace")} />
-            </div>
-          </div>
-          {(form.lastSchoolName || form.lastSchoolClass || form.lastSchoolMedium || form.lastSchoolPlace) && (
-            <div className="mt-4 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
-              <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-bold text-amber-800">TC (Transfer Certificate) is Mandatory</p>
-                <p className="text-xs text-amber-700 mt-0.5">
-                  Please upload the Transfer Certificate in Section 10 (Document Upload) as soon as possible.
+
+            {!hasPrevSchool && (
+              <div className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+                <AlertTriangle className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                <p className="text-xs text-blue-700 font-medium">
+                  TC (Transfer Certificate) and Marksheet are <b>not required</b> — they will be hidden from documents.
                 </p>
               </div>
-            </div>
-          )}
+            )}
+
+            {hasPrevSchool && (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="sm:col-span-2">
+                    <FieldLabel>Previous School Name</FieldLabel>
+                    <Input placeholder="Name of the last school attended" value={form.lastSchoolName} onChange={set("lastSchoolName")} />
+                  </div>
+                  <div>
+                    <FieldLabel>Last Class Attended</FieldLabel>
+                    <SelectField value={form.lastSchoolClass} onChange={set("lastSchoolClass")}>
+                      <option value="">Select Standard</option>
+                      {prevStandards.map((s) => <option key={s}>{s}</option>)}
+                    </SelectField>
+                  </div>
+                  <div>
+                    <FieldLabel>Medium of Instruction</FieldLabel>
+                    <SelectField value={form.lastSchoolMedium} onChange={set("lastSchoolMedium")}>
+                      <option value="">Select Medium</option>
+                      {mediums.map((m) => <option key={m}>{m}</option>)}
+                    </SelectField>
+                  </div>
+                  <div>
+                    <FieldLabel>School Location</FieldLabel>
+                    <Input placeholder="City / Town" value={form.lastSchoolPlace} onChange={set("lastSchoolPlace")} />
+                  </div>
+                </div>
+                <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-amber-800">TC & Marksheet are Mandatory</p>
+                    <p className="text-xs text-amber-700 mt-0.5">
+                      Upload Transfer Certificate and Marksheet in Section 10 (Documents).
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
         {/* ══ SECTION 9: Aadhar Details ══ */}
@@ -675,7 +699,15 @@ export default function AddStudentPage() {
           <SectionHeader number="10" title="Document Upload" />
           <p className="text-xs text-gray-400 mb-4 -mt-2">All documents are optional · Supported formats: PDF, JPG, PNG</p>
           <div className="space-y-3">
-            {defaultDocTypes.map((docName) => (
+            {!hasPrevSchool && (
+              <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-4 py-2.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+                <p className="text-xs text-blue-600 font-medium">TC and Marksheet hidden — no previous school.</p>
+              </div>
+            )}
+            {defaultDocTypes
+              .filter(d => hasPrevSchool || (d !== "Leaving Certificate" && d !== "Marksheet"))
+              .map((docName) => (
               <div key={docName} className="border border-gray-100 rounded-xl overflow-hidden">
                 <div
                   className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${checkedDocs[docName] ? "bg-blue-50" : "bg-white"}`}

@@ -2,13 +2,17 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import useStore from "@/lib/store";
 import { useRouter } from "next/navigation";
 import {
   Plus, Search, GraduationCap, Phone, Calendar, Edit, Trash2,
   LogOut, Eye, EyeOff, User, ChevronDown, ArrowUpCircle,
   CheckCircle2, X, AlertTriangle, Package, FileText,
-  IndianRupee, Check, ArrowLeft,
+  IndianRupee, Check, ArrowLeft, Download,
 } from "lucide-react";
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 // ── Session helpers ────────────────────────────────────────────
 function getCurrentSession() {
@@ -60,7 +64,7 @@ const INITIAL_STUDENTS = [
   {
     enrollment:"1001", name:"Arjun Patel", photo:null,
     grNo:"GR-001", dateOfJoin:"01 Jun 2023", admissionClass:"8th",
-    std:"10th", section:"A", rollNo:"101", session:"2025-26",
+    std:"10th", section:"A", rollNo:"101", session:"2026-27",
     fatherName:"Rajesh", motherName:"Meena",
     mobile:"9876543210", dob:"15 Jan 2010", gender:"Male",
     password:"ARJ1001", aadhar:"1234 5678 9012",
@@ -73,7 +77,7 @@ const INITIAL_STUDENTS = [
   {
     enrollment:"1002", name:"Priya Shah", photo:null,
     grNo:"GR-002", dateOfJoin:"15 Jun 2023", admissionClass:"8th",
-    std:"9th", section:"B", rollNo:"204", session:"2025-26",
+    std:"9th", section:"B", rollNo:"204", session:"2026-27",
     fatherName:"Amit", motherName:"Kavita",
     mobile:"9765432100", dob:"22 Mar 2011", gender:"Female",
     password:"PRI1002", aadhar:"",
@@ -85,7 +89,7 @@ const INITIAL_STUDENTS = [
   {
     enrollment:"1003", name:"Rohan Mehta", photo:null,
     grNo:"GR-003", dateOfJoin:"10 Apr 2022", admissionClass:"9th",
-    std:"11th - Commerce", section:"A", rollNo:"312", session:"2025-26",
+    std:"11th - Commerce", section:"A", rollNo:"312", session:"2026-27",
     fatherName:"Suresh", motherName:"Asha",
     mobile:"9654321098", dob:"08 Jul 2009", gender:"Male",
     password:"ROH1003", aadhar:"9876 5432 1098",
@@ -98,7 +102,7 @@ const INITIAL_STUDENTS = [
   {
     enrollment:"1004", name:"Sneha Desai", photo:null,
     grNo:"GR-004", dateOfJoin:"05 Jun 2024", admissionClass:"8th",
-    std:"8th", section:"C", rollNo:"418", session:"2025-26",
+    std:"8th", section:"C", rollNo:"418", session:"2026-27",
     fatherName:"Kishore", motherName:"Hetal",
     mobile:"9543210987", dob:"30 Nov 2011", gender:"Female",
     password:"SNE1004", aadhar:"",
@@ -110,7 +114,7 @@ const INITIAL_STUDENTS = [
   {
     enrollment:"1005", name:"Dev Joshi", photo:null,
     grNo:"GR-005", dateOfJoin:"12 Jun 2024", admissionClass:"JR.KG",
-    std:"JR.KG", section:"A", rollNo:"501", session:"2025-26",
+    std:"JR.KG", section:"A", rollNo:"501", session:"2026-27",
     fatherName:"Prakash", motherName:"Ruchita",
     mobile:"9432109876", dob:"14 Sep 2020", gender:"Male",
     password:"DEV1005", aadhar:"",
@@ -242,7 +246,9 @@ const PROMOTE_DISCOUNT_REASONS = [
 ];
 
 function PromoteModal({ student, onClose, onPromote, router }) {
-  const nextClass = getNextClass(student.std);
+  const nextClass    = getNextClass(student.std);
+  const uniformFees  = useStore(s => s.uniformFees);
+  const uniformFee   = (nextClass && uniformFees[nextClass]) ? uniformFees[nextClass] : 1500;
 
   // step: "action" → choose promote or leave | "discount" → fill discounts then confirm
   const [step, setStep] = useState("action");
@@ -262,7 +268,7 @@ function PromoteModal({ student, onClose, onPromote, router }) {
 
   const totalDiscount =
     oldStudentAmt +
-    (!uniformReqd  ? 1500 : 0) +
+    (!uniformReqd  ? uniformFee : 0) +
     (extraOn && extraAmount ? Number(extraAmount) : 0);
 
   const oldStudentValid = !oldStudentOn || oldStudentType === "fixed" || (oldStudentType === "custom" && !!oldStudentCustom);
@@ -434,10 +440,10 @@ function PromoteModal({ student, onClose, onPromote, router }) {
                   <div className="flex items-center justify-between gap-3 mb-2">
                     <div>
                       <p className="text-sm font-semibold text-gray-800">Uniform This Year</p>
-                      <p className="text-[11px] text-gray-400">If not required, ₹1,500 discount applies</p>
+                      <p className="text-[11px] text-gray-400">If not required, ₹{uniformFee.toLocaleString("en-IN")} discount applies</p>
                     </div>
                     {!uniformReqd && (
-                      <span className="text-sm font-bold text-green-700 flex-shrink-0">₹1,500</span>
+                      <span className="text-sm font-bold text-green-700 flex-shrink-0">₹{uniformFee.toLocaleString("en-IN")}</span>
                     )}
                   </div>
                   <div className="flex gap-2">
@@ -556,13 +562,17 @@ function PromoteModal({ student, onClose, onPromote, router }) {
 
 // ── Main Page ──────────────────────────────────────────────────
 export default function StudentPage() {
-  const router   = useRouter();
-  const sessions = buildSessionsList();
+  const router           = useRouter();
+  const sessions         = buildSessionsList();
+  const readmissionDate  = useStore(s => s.readmissionDate);
+  const canPromote       = readmissionDate && new Date() >= new Date(readmissionDate);
+  const activeClasses    = useStore(s => s.activeClasses);
 
-  const [session, setSession]             = useState("2025-26");
+  const [session, setSession]             = useState(CURRENT_SESSION);
   const [search, setSearch]               = useState("");
   const [stdFilter, setStdFilter]         = useState("All Classes");
   const [docFilter, setDocFilter]         = useState("All");
+  const [govtIdFilter, setGovtIdFilter]   = useState([]);
   const [showPasswords, setShowPasswords] = useState({});
   const [promotions, setPromotions]       = useState({});
   const [students, setStudents]           = useState(INITIAL_STUDENTS);
@@ -571,11 +581,15 @@ export default function StudentPage() {
 
   const togglePw = (enr) => setShowPasswords((p) => ({ ...p, [enr]: !p[enr] }));
 
+  const ACTIVE_CLASS_MAP = {
+    "JR KG":"JR.KG", "SR KG":"SR.KG", "Balvatika":"Balvatika",
+    "1st":"1st","2nd":"2nd","3rd":"3rd","4th":"4th","5th":"5th",
+    "6th":"6th","7th":"7th","8th":"8th","9th":"9th","10th":"10th",
+    "11th Commerce":"11th - Commerce","12th Commerce":"12th - Commerce",
+  };
   const allStandards = [
-    "All Classes","JR.KG","SR.KG","Balvatika",
-    "1st","2nd","3rd","4th","5th",
-    "6th","7th","8th","9th","10th",
-    "11th - Commerce","12th - Commerce",
+    "All Classes",
+    ...CLASS_ORDER.filter(c => activeClasses.some(ac => ACTIVE_CLASS_MAP[ac] === c)),
   ];
 
   const DOC_FILTER_OPTIONS = [
@@ -585,6 +599,12 @@ export default function StudentPage() {
     { key: "Father's Aadhar Card", label: "Father's Aadhar" },
     { key: "Mother's Aadhar Card", label: "Mother's Aadhar" },
     { key: "Marksheet",            label: "Marksheet" },
+  ];
+
+  const GOVTID_FILTER_OPTIONS = [
+    { key: "udise", label: "UDISE" },
+    { key: "pen",   label: "PEN"   },
+    { key: "apaar", label: "APAAR" },
   ];
 
   const sessionActiveStudents = students.filter((s) =>
@@ -598,8 +618,9 @@ export default function StudentPage() {
       s.enrollment.includes(search) ||
       s.fatherName.toLowerCase().includes(search.toLowerCase());
     const matchStd = stdFilter === "All Classes" || s.std === stdFilter;
-    const matchDoc = docFilter === "All" || (s.pendingDocs || []).includes(docFilter);
-    return matchSearch && matchStd && matchDoc;
+    const matchDoc    = docFilter    === "All" || (s.pendingDocs || []).includes(docFilter);
+    const matchGovtId = govtIdFilter.length === 0 || govtIdFilter.some(k => !(s[k] && s[k].trim()));
+    return matchSearch && matchStd && matchDoc && matchGovtId;
   });
 
   const handleDeactivate = (student, { reason, date }) => {
@@ -626,6 +647,93 @@ export default function StudentPage() {
     );
     setPromoteModal(null);
   };
+
+  function doExportExcel() {
+    const today = new Date().toLocaleDateString("en-IN");
+    const activeIdLabels = govtIdFilter.length > 0
+      ? `Pending: ${govtIdFilter.map(k => k.toUpperCase()).join(", ")}`
+      : "All Students";
+    const rows = [
+      ["Satyam Stars International School"],
+      ["Surat, Gujarat  |  GSEB Board  |  English Medium"],
+      [`Student List  |  Session: ${session}  |  ${activeIdLabels}`],
+      [`Generated: ${today}`, "", `Total Records: ${filtered.length}`],
+      [],
+      ["#","Enroll No","Student Name","Class","Father Name","Mobile","Aadhar","UDISE","PEN","APAAR","Pending Docs"],
+      ...filtered.map((s, i) => [
+        i+1, s.enrollment, s.name,
+        s.std + (s.section ? " - "+s.section : ""),
+        s.fatherName, s.mobile,
+        s.aadhar || "-",
+        s.udise  || "Pending",
+        s.pen    || "Pending",
+        s.apaar  || "Pending",
+        (s.pendingDocs || []).join(", ") || "None",
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = [4,10,20,12,18,14,16,16,16,16,30].map(wch => ({ wch }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Students");
+    XLSX.writeFile(wb, `Students_${session.replace("-","_")}_${today}.xlsx`);
+  }
+
+  function doExportPDF() {
+    const today = new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
+    const doc = new jsPDF({ orientation:"landscape" });
+    const w = doc.internal.pageSize.getWidth();
+
+    doc.setFillColor(30,58,95);
+    doc.rect(0, 0, w, 28, "F");
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(14); doc.setFont("helvetica","bold");
+    doc.text("Satyam Stars International School", w/2, 10, {align:"center"});
+    doc.setFontSize(8); doc.setFont("helvetica","normal");
+    doc.text("Surat, Gujarat  |  GSEB Board  |  English Medium", w/2, 17, {align:"center"});
+    doc.setFillColor(245,158,11);
+    doc.rect(0, 22, w, 7, "F");
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(9); doc.setFont("helvetica","bold");
+    doc.text("STUDENT LIST", w/2, 27, {align:"center"});
+
+    doc.setTextColor(60,60,60); doc.setFontSize(8); doc.setFont("helvetica","normal");
+    let y = 36;
+    doc.text(`Session: ${session}   |   Generated: ${today}   |   Total Records: ${filtered.length}`, 14, y); y += 5;
+    if (govtIdFilter.length > 0) {
+      doc.text(`Pending ID Filter: ${govtIdFilter.map(k => k.toUpperCase()).join(", ")}`, 14, y); y += 5;
+    }
+    if (stdFilter !== "All Classes") { doc.text(`Class Filter: ${stdFilter}`, 14, y); y += 5; }
+
+    autoTable(doc, {
+      startY: y + 2,
+      head: [["#","Enroll No","Student Name","Class","Father Name","Mobile","Aadhar","UDISE","PEN","APAAR"]],
+      body: filtered.map((s, i) => [
+        i+1, s.enrollment, s.name,
+        s.std + (s.section ? "-"+s.section : ""),
+        s.fatherName, s.mobile,
+        s.aadhar  || "-",
+        s.udise   || "Pending",
+        s.pen     || "Pending",
+        s.apaar   || "Pending",
+      ]),
+      headStyles: { fillColor:[30,58,95], textColor:[255,255,255], fontStyle:"bold", fontSize:7, cellPadding:2 },
+      bodyStyles: { fontSize:6.5, cellPadding:2 },
+      alternateRowStyles: { fillColor:[248,250,252] },
+      styles: { overflow:"linebreak" },
+      didDrawPage: () => {
+        const ph = doc.internal.pageSize.getHeight();
+        const pw = doc.internal.pageSize.getWidth();
+        const pn = doc.internal.getCurrentPageInfo().pageNumber;
+        doc.setDrawColor(210,210,210);
+        doc.line(14, ph-12, pw-14, ph-12);
+        doc.setFontSize(7); doc.setTextColor(140,140,140); doc.setFont("helvetica","normal");
+        doc.text("Satyam Stars International School  |  Confidential", 14, ph-7);
+        doc.text(`Page ${pn}  |  Generated: ${today}`, pw-14, ph-7, {align:"right"});
+      },
+    });
+
+    doc.save(`Students_${session.replace("-","_")}_${today}.pdf`);
+  }
 
   return (
     <>
@@ -745,6 +853,67 @@ export default function StudentPage() {
                 <X className="w-3 h-3" /> Clear
               </button>
             )}
+          </div>
+
+          {/* ── Pending Govt ID Filter Chips (multi-select) ── */}
+          <div className="flex items-center gap-2 flex-wrap pt-0.5 border-t border-gray-100">
+            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest flex-shrink-0">
+              Pending ID:
+            </span>
+            {GOVTID_FILTER_OPTIONS.map(({ key, label }) => {
+              const count  = sessionActiveStudents.filter((s) => !(s[key] && s[key].trim())).length;
+              const active = govtIdFilter.includes(key);
+              return (
+                <button
+                  key={key}
+                  onClick={() => setGovtIdFilter(prev =>
+                    prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+                  )}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all ${
+                    active
+                      ? "bg-purple-700 text-white"
+                      : "bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100"
+                  }`}
+                >
+                  {label} Pending
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                    active ? "bg-white/25 text-white" : "bg-purple-100 text-purple-700"
+                  }`}>
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+            {govtIdFilter.length > 0 && (
+              <button
+                onClick={() => setGovtIdFilter([])}
+                className="ml-auto flex items-center gap-1 text-[11px] text-gray-400 hover:text-red-500 transition-colors"
+              >
+                <X className="w-3 h-3" /> Clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ── Export Bar ── */}
+        <div className="flex items-center justify-between flex-wrap gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3">
+          <p className="text-sm text-gray-500">
+            <span className="font-semibold text-gray-800">{filtered.length}</span> student{filtered.length !== 1 ? "s" : ""}
+            {govtIdFilter.length > 0 && (
+              <span className="ml-2 text-xs font-semibold text-purple-700 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+                Pending: {govtIdFilter.map(k => k.toUpperCase()).join(", ")}
+              </span>
+            )}
+          </p>
+          <div className="flex gap-2">
+            <button onClick={doExportExcel}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
+              <Download className="w-4 h-4"/>Export Excel
+            </button>
+            <button onClick={doExportPDF}
+              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
+              <FileText className="w-4 h-4"/>Export PDF
+            </button>
           </div>
         </div>
 
@@ -1029,25 +1198,27 @@ export default function StudentPage() {
                         </button>
                       </div>
 
-                      {/* Promote */}
-                      <div className="pt-2 border-t border-gray-100">
-                        {isPromoted ? (
-                          <div className="flex items-start gap-2 px-1">
-                            <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
-                            <div>
-                              <p className="text-sm font-bold text-green-700 leading-tight">Promoted</p>
-                              <p className="text-[11px] text-green-600 mt-0.5">{promotion.newClass} · {promotion.session}</p>
+                      {/* Promote — only visible after re-admission date is reached */}
+                      {(canPromote || isPromoted) && (
+                        <div className="pt-2 border-t border-gray-100">
+                          {isPromoted ? (
+                            <div className="flex items-start gap-2 px-1">
+                              <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
+                              <div>
+                                <p className="text-sm font-bold text-green-700 leading-tight">Promoted</p>
+                                <p className="text-[11px] text-green-600 mt-0.5">{promotion.newClass} · {promotion.session}</p>
+                              </div>
                             </div>
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => setPromoteModal(student)}
-                            className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-bold bg-school-navy/10 text-school-navy hover:bg-school-navy hover:text-white border border-school-navy/20 transition-all"
-                          >
-                            <ArrowUpCircle className="w-4 h-4 flex-shrink-0" /> Promote
-                          </button>
-                        )}
-                      </div>
+                          ) : (
+                            <button
+                              onClick={() => setPromoteModal(student)}
+                              className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-bold bg-school-navy/10 text-school-navy hover:bg-school-navy hover:text-white border border-school-navy/20 transition-all"
+                            >
+                              <ArrowUpCircle className="w-4 h-4 flex-shrink-0" /> Promote
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                   </div>

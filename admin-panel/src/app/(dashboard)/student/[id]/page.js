@@ -13,7 +13,7 @@ import {
 // ── Dummy Student Data ─────────────────────────────────────────
 const studentDB = {
   "1001": {
-    enrollment: "1001", password: "ARJ1001", session: "2025-26",
+    enrollment: "1001", password: "ARJ1001", session: "2026-27",
     grNo: "GR-001",
     joinDate: "01 Jun 2025", std: "10th", section: "A", rollNo: "101",
     studentName: "Arjun Rajesh Patel", fatherName: "Rajesh Patel",
@@ -35,9 +35,9 @@ const studentDB = {
       { name: "Leaving Certificate", uploaded: false, file: "" },
     ],
     fees: [
-      { term: "Term 1 - 2025-26", amount: 8500, paid: true,  date: "05 Jun 2025", receipt: "RCP001" },
-      { term: "Term 2 - 2025-26", amount: 8500, paid: true,  date: "12 Oct 2025", receipt: "RCP042" },
-      { term: "Term 3 - 2025-26", amount: 8500, paid: false, date: "",            receipt: "" },
+      { term: "Term 1 - 2026-27", amount: 8500, paid: true,  date: "05 Jun 2025", receipt: "RCP001" },
+      { term: "Term 2 - 2026-27", amount: 8500, paid: true,  date: "12 Oct 2025", receipt: "RCP042" },
+      { term: "Term 3 - 2026-27", amount: 8500, paid: false, date: "",            receipt: "" },
     ],
     inventory: [
       { item: "School Bag",    givenDate: "05 Jun 2025", given: true  },
@@ -899,25 +899,52 @@ export default function StudentDetailPage() {
 
           {/* Alerts Strip — Docs Pending · Inventory Pending · Discount */}
           {(() => {
-            const pendingDocs  = student.documents.filter((d) => !d.uploaded);
-            const pendingInv   = student.inventory.filter((i) => !i.given);
-            const hasDiscount  = student.discount?.applied;
-            const hasPrevSchool = !!student.lastSchoolName;
-            const tcUploaded    = student.documents.some((d) => d.name === "Leaving Certificate" && d.uploaded);
-            const hasTCWarning  = hasPrevSchool && !tcUploaded;
-            const hasAnything  = pendingDocs.length > 0 || pendingInv.length > 0 || hasDiscount || hasTCWarning;
+            const hasPrevSchool    = !!student.lastSchoolName;
+            const tcUploaded       = student.documents.some((d) => d.name === "Leaving Certificate" && d.uploaded);
+            const bcUploaded       = student.documents.some((d) => d.name === "Birth Certificate"   && d.uploaded);
+            const hasTCWarning     = hasPrevSchool  && !tcUploaded;
+            const hasBCWarning     = !hasPrevSchool && !bcUploaded;
+
+            // Exclude from general pending list:
+            //  - TC/Marksheet when no prev school (not required)
+            //  - Birth Certificate when shown as its own warning (avoid double alert)
+            const notRequired = !hasPrevSchool
+              ? ["Leaving Certificate", "Marksheet"]
+              : [];
+            const pendingDocs = student.documents.filter((d) =>
+              !d.uploaded &&
+              !notRequired.includes(d.name) &&
+              !(hasBCWarning && d.name === "Birth Certificate")
+            );
+            const pendingInv  = student.inventory.filter((i) => !i.given);
+            const hasDiscount = student.discount?.applied;
+            const hasAnything = pendingDocs.length > 0 || pendingInv.length > 0 || hasDiscount || hasTCWarning || hasBCWarning;
             if (!hasAnything) return null;
             return (
               <div className="mt-4 pt-3 border-t border-dashed border-gray-200 space-y-3">
 
-                {/* TC Warning */}
+                {/* TC Warning — only when prev school + TC missing */}
                 {hasTCWarning && (
                   <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
                     <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
                     <div className="flex-1 min-w-0">
                       <span className="text-[10px] font-bold text-red-600 uppercase tracking-wider">TC Not Uploaded</span>
                       <p className="text-[10px] text-red-600 mt-0.5 leading-relaxed">
-                        Transfer Certificate is mandatory for previous school students. Please submit at the school office immediately.
+                        Transfer Certificate is mandatory for students with a previous school. Please submit at the school office immediately.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Birth Certificate Warning — only when no prev school + BC missing */}
+                {hasBCWarning && (
+                  <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[10px] font-bold text-red-600 uppercase tracking-wider">Birth Certificate Not Uploaded</span>
+                      <p className="text-[10px] text-red-600 mt-0.5 leading-relaxed">
+                        Please submit the Birth Certificate at the school office.
+                        <span className="ml-1 bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold">TC not required — no previous school</span>
                       </p>
                     </div>
                   </div>

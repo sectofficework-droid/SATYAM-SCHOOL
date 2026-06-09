@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   IndianRupee, Search, Send, Bell, CheckCircle2,
   Package, Phone, GraduationCap, ChevronDown, ChevronUp,
-  X, MessageSquare, Users, Check, Lock, Eye,
+  X, MessageSquare, Users, Check, Lock, Eye, RotateCcw,
 } from "lucide-react";
 
 // ── Fees Structure ─────────────────────────────────────────────
@@ -181,22 +181,38 @@ Satyam Stars International School, Surat
 ସତ୍ୟମ ଷ୍ଟାର୍ସ ଇଣ୍ଟରନ୍ୟାସନାଲ ସ୍କୁଲ, ସୁରାଟ`;
 }
 
-// Single-language for individual Notify modal
-function buildSingleReminder(student, lastDate) {
-  const { actualFees, dueFees } = calcSummary(student);
-  return `Dear Parent / Guardian,
+// Per-language short message for individual Notify modal
+function buildLangMessage(student, lastDate, lang) {
+  const { dueFees } = calcSummary(student);
+  const cls  = student.std + (student.section ? '-' + student.section : '');
+  const amt  = '₹' + dueFees.toLocaleString('en-IN');
+  const date = formatDateLong(lastDate);
+  const name = student.name;
+  const roll = student.rollNo;
 
-This is a gentle reminder regarding the school fee payment for your ward ${student.name} (Class ${student.std}${student.section ? "-" + student.section : ""}, Roll No. ${student.rollNo}).
+  if (lang === 'hi') return [
+    'प्रिय अभिभावक,',
+    name + ' (कक्षा ' + cls + ', रोल ' + roll + ') की ' + amt + ' स्कूल फीस बाकी है।',
+    'कृपया ' + date + ' तक जमा करें।',
+    'धन्यवाद,',
+    'सत्यम स्टार्स इंटरनेशनल स्कूल, सूरत',
+  ].join('\n');
 
-As per our records, a fee balance of ₹${dueFees.toLocaleString("en-IN")} is currently outstanding out of the total applicable fees of ₹${actualFees.toLocaleString("en-IN")}.
+  if (lang === 'or') return [
+    'ପ୍ରିଯ ଅଭିଭାବକ,',
+    name + ' (ଶ୍ରେଣୀ ' + cls + ', ରୋଲ ' + roll + ') ର ' + amt + ' ସ୍କୁଲ ଶୁଳ୍କ ବାକି ଅଛି।',
+    'ଦଯାକରି ' + date + ' ପୂର୍ବରୁ ଦେଯ ଦିଅନ୍ତୁ।',
+    'ଧନ୍ଯବାଦ,',
+    'ସତ୍ଯମ ଷ୍ଟାର୍ସ ଇଣ୍ଟରନ୍ଯାସନାଲ ସ୍କୁଲ, ସୁରାଟ',
+  ].join('\n');
 
-Kindly ensure the pending amount is cleared on or before ${formatDateLong(lastDate)} to avoid any inconvenience.
-
-For assistance or queries, please contact the school office during working hours.
-
-Warm Regards,
-Satyam Stars International School
-Surat, Gujarat`;
+  return [
+    'Dear Parent,',
+    name + ' (Class ' + cls + ', Roll ' + roll + ') has ' + amt + ' school fees pending.',
+    'Please pay on or before ' + date + '.',
+    'Thank you,',
+    'Satyam Stars International School, Surat',
+  ].join('\n');
 }
 
 // ── Reusable UI ────────────────────────────────────────────────
@@ -233,14 +249,26 @@ function ReadOnlyBadge() {
 }
 
 // ── Individual Notify Modal ────────────────────────────────────
+const NOTIFY_LANGS = [
+  { key:"en", label:"English" },
+  { key:"hi", label:"Hindi"   },
+  { key:"or", label:"Odia"    },
+];
+
 function NotificationModal({ student, onClose }) {
   const defaultLast = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
   const [lastDate, setLastDate] = useState(defaultLast);
-  const [message,  setMessage]  = useState(() => buildSingleReminder(student, defaultLast));
+  const [lang,     setLang]     = useState("en");
+  const [message,  setMessage]  = useState(() => buildLangMessage(student, defaultLast, "en"));
 
   const handleDateChange = (d) => {
     setLastDate(d);
-    setMessage(buildSingleReminder(student, d));
+    setMessage(buildLangMessage(student, d, lang));
+  };
+
+  const handleLangChange = (l) => {
+    setLang(l);
+    setMessage(buildLangMessage(student, lastDate, l));
   };
 
   const { dueFees } = calcSummary(student);
@@ -277,13 +305,31 @@ function NotificationModal({ student, onClose }) {
             />
           </div>
           <div>
-            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
-              Message <span className="text-gray-400 font-normal normal-case">(Editable)</span>
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+                Message <span className="text-gray-400 font-normal normal-case">(Editable)</span>
+              </label>
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
+                {NOTIFY_LANGS.map((l) => (
+                  <button
+                    key={l.key}
+                    onClick={() => handleLangChange(l.key)}
+                    className={`px-3 py-1.5 transition-colors ${
+                      lang === l.key
+                        ? "bg-school-navy text-white"
+                        : "bg-white text-gray-500 hover:bg-gray-50"
+                    }`}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <textarea
-              value={message} onChange={(e) => setMessage(e.target.value)} rows={11}
-              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-xs font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy resize-none"
+              value={message} onChange={(e) => setMessage(e.target.value)} rows={7}
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy resize-none"
             />
+            <p className="text-[11px] text-gray-400 mt-1">Selecting a language reloads the template. Edit freely before sending.</p>
           </div>
           <div className="flex gap-3">
             <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
@@ -496,7 +542,6 @@ export default function FeesPage() {
       )
     );
     setNewAmt(""); setNewDate(todayStr); setNewAdmin(""); setNewAdminCustom("");
-    setEntryStd(""); setEntryRoll("");
     setPendingInventory(new Set());
     alert("Payment recorded successfully!");
   };
@@ -1041,7 +1086,13 @@ export default function FeesPage() {
                         )}
                       </div>
                     </div>
-                    <div className="mt-3 flex justify-end">
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <button
+                        onClick={clearEntryStudent}
+                        className="inline-flex items-center gap-2 px-5 py-2.5 border border-gray-200 bg-white hover:bg-red-50 hover:border-red-200 hover:text-red-600 text-gray-500 text-sm font-semibold rounded-xl transition-colors"
+                      >
+                        <RotateCcw className="w-4 h-4" /> Clear
+                      </button>
                       <button
                         onClick={handleSavePayment}
                         className="inline-flex items-center gap-2 px-6 py-2.5 bg-school-navy hover:bg-school-navy-dark text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"

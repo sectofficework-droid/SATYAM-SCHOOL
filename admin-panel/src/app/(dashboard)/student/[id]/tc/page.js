@@ -11,7 +11,7 @@ import {
 const studentDB = {
   "1001": {
     enrollment: "1001", name: "Arjun Patel", std: "10th", section: "A",
-    rollNo: "101", session: "2025-26",
+    rollNo: "101", session: "2026-27",
     fatherName: "Rajesh Patel", motherName: "Meena Patel",
     dob: "15 Jan 2010", gender: "Male",
     address: "12, Shree Society, Varachha Road, Surat - 395006",
@@ -21,7 +21,7 @@ const studentDB = {
   },
   "1002": {
     enrollment: "1002", name: "Priya Shah", std: "9th", section: "B",
-    rollNo: "204", session: "2025-26",
+    rollNo: "204", session: "2026-27",
     fatherName: "Amit Shah", motherName: "Kavita Shah",
     dob: "22 Mar 2011", gender: "Female",
     address: "45, Ganesh Nagar, Adajan, Surat - 395009",
@@ -31,7 +31,7 @@ const studentDB = {
   },
   "1003": {
     enrollment: "1003", name: "Rohan Mehta", std: "11th - Commerce", section: "A",
-    rollNo: "312", session: "2025-26",
+    rollNo: "312", session: "2026-27",
     fatherName: "Suresh Mehta", motherName: "Asha Mehta",
     dob: "08 Jul 2009", gender: "Male",
     address: "78, Silver Park, Katargam, Surat - 395004",
@@ -41,7 +41,7 @@ const studentDB = {
   },
   "1004": {
     enrollment: "1004", name: "Sneha Desai", std: "8th", section: "C",
-    rollNo: "418", session: "2025-26",
+    rollNo: "418", session: "2026-27",
     fatherName: "Kishore Desai", motherName: "Hetal Desai",
     dob: "30 Nov 2011", gender: "Female",
     address: "23, Krishna Society, Piplod, Surat - 395007",
@@ -51,7 +51,7 @@ const studentDB = {
   },
   "1005": {
     enrollment: "1005", name: "Dev Joshi", std: "JR.KG", section: "A",
-    rollNo: "501", session: "2025-26",
+    rollNo: "501", session: "2026-27",
     fatherName: "Prakash Joshi", motherName: "Ruchita Joshi",
     dob: "14 Sep 2020", gender: "Male",
     address: "5, Swaminarayan Society, Dindoli, Surat - 395010",
