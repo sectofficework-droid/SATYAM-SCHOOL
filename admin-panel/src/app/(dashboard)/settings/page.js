@@ -23,16 +23,16 @@ const CLASSES = [
 
 const BOARDS   = ["GSEB","CBSE","ICSE","IB","State Board"];
 const MEDIUMS  = ["English","Gujarati","Hindi","Semi-English"];
-const ROLES    = ["Super Admin","Management Head","Fee Clerk","Teacher","Receptionist"];
+const ROLES    = ["Super Admin","Admin","Teacher"];
 const INIT_YEARS = ["2024-25","2025-26","2026-27"];
 
 // ── Default State ─────────────────────────────────────────────────────────────
 const DEF_SCHOOL = {
   name:"Satyam Stars International School",
-  address:"Gandhi Nagar", city:"Surat", state:"Gujarat", pin:"395001",
-  phone:"+91 98765 43210", email:"info@satyamstars.edu.in",
+  address:"Swaminarayan Nagar - Bhidbhanjan Society, Pandesara", city:"Surat", state:"Gujarat", pin:"394221",
+  phone:"8200069671", email:"satyamstarsinternational@gmail.com",
   board:"GSEB", medium:"English",
-  udise:"24XXXXXXXX", affiliation:"AFF-XXXX",
+  udise:"24224100067",
   website:"www.satyamstars.edu.in",
 };
 
@@ -59,8 +59,8 @@ const DEF_UNIFORM = CLASSES.map(cls => ({ cls, amount: 1500 }));
 
 const DEF_SECTIONS = CLASSES.map(cls => ({
   cls,
-  sections:["A","B"],
-  teacher:"",
+  sections: ["A"],
+  sectionTeachers: { "A": "" },
 }));
 
 const DEF_USERS = [
@@ -283,12 +283,6 @@ function SchoolProfileTab() {
               ? <div className="relative"><Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
                   <input className={inp + " pl-9"} value={form.udise} onChange={set("udise")}/></div>
               : <ViewVal val={form.udise} icon={Hash}/>}
-          </Field>
-          <Field label="Affiliation Number">
-            {editMode
-              ? <div className="relative"><Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
-                  <input className={inp + " pl-9"} value={form.affiliation} onChange={set("affiliation")}/></div>
-              : <ViewVal val={form.affiliation} icon={Hash}/>}
           </Field>
         </div>
       </div>
@@ -516,7 +510,9 @@ function buildRows2026_27() {
 }
 
 function FeeStructureTab() {
-  const setUniformFeesStore = useStore(s => s.setUniformFees);
+  const setUniformFeesStore      = useStore(s => s.setUniformFees);
+  const storedOldDiscount        = useStore(s => s.oldStudentDiscount);
+  const setOldStudentDiscountStore = useStore(s => s.setOldStudentDiscount);
 
   const [selectedYear, setSelectedYear] = useState("2026-27");
   const [feeData,      setFeeData]      = useState(() => {
@@ -526,21 +522,29 @@ function FeeStructureTab() {
     });
     return init;
   });
-  const [editMode, setEditMode] = useState(false);
-  const [backup,   setBackup]   = useState(null);
-  const [editing,  setEditing]  = useState(null);
-  const [saved,    setSaved]    = useState(false);
+  const [editMode,       setEditMode]       = useState(false);
+  const [backup,         setBackup]         = useState(null);
+  const [editing,        setEditing]        = useState(null);
+  const [saved,          setSaved]          = useState(false);
+  const [bulkUniform,    setBulkUniform]    = useState("");
+  const [oldDiscount,    setOldDiscount]    = useState(() => storedOldDiscount ?? 1000);
 
   const rows = feeData[selectedYear] ?? buildDefaultRows();
 
+  const backupDiscountRef = useRef(null);
+
   function startEdit() {
     setBackup(rows.map(r => ({ ...r })));
+    backupDiscountRef.current = oldDiscount;
+    setBulkUniform("");
     setEditMode(true);
   }
 
   function cancel() {
     setFeeData(p => ({ ...p, [selectedYear]: backup }));
+    setOldDiscount(backupDiscountRef.current);
     setEditing(null);
+    setBulkUniform("");
     setEditMode(false);
   }
 
@@ -548,10 +552,22 @@ function FeeStructureTab() {
     const map = {};
     rows.forEach(r => { map[r.cls] = r.uniform; });
     setUniformFeesStore(map);
+    setOldStudentDiscountStore(oldDiscount);
     setEditing(null);
+    setBulkUniform("");
     setSaved(true);
     setEditMode(false);
     setTimeout(() => setSaved(false), 2500);
+  }
+
+  function applyBulkUniform() {
+    const num = parseInt(bulkUniform);
+    if (!num || num <= 0) return;
+    setFeeData(p => ({
+      ...p,
+      [selectedYear]: p[selectedYear].map(r => ({ ...r, uniform: num })),
+    }));
+    setBulkUniform("");
   }
 
   function setCell(cls, key, val) {
@@ -598,6 +614,39 @@ function FeeStructureTab() {
             <EditBar editMode={editMode} saved={saved} onEdit={startEdit} onSave={save} onCancel={cancel}/>
           </div>
         </div>
+
+        {/* Bulk uniform setter — edit mode only */}
+        {editMode && (
+          <div className="px-5 py-3 border-b border-amber-100 bg-amber-50 flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <IndianRupee className="w-3.5 h-3.5 text-amber-600"/>
+              <span className="text-xs font-bold text-amber-700">Set uniform fee for all classes:</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm font-bold pointer-events-none">₹</span>
+                <input
+                  type="number" min="0"
+                  className="pl-7 pr-3 py-1.5 border border-amber-300 rounded-lg text-sm w-32 focus:outline-none focus:ring-2 focus:ring-amber-400 bg-white"
+                  placeholder="e.g. 1500"
+                  value={bulkUniform}
+                  onChange={e => setBulkUniform(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && applyBulkUniform()}
+                />
+              </div>
+              <button
+                onClick={applyBulkUniform}
+                disabled={!bulkUniform || parseInt(bulkUniform) <= 0}
+                className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Apply to All
+              </button>
+            </div>
+            <span className="text-[11px] text-amber-600">
+              Updates all classes · You can still edit individual classes below
+            </span>
+          </div>
+        )}
 
         {/* Table */}
         <div className="overflow-x-auto">
@@ -670,6 +719,31 @@ function FeeStructureTab() {
             </tbody>
           </table>
         </div>
+
+        {/* Old Student Discount */}
+        <div className="border-t border-gray-100 px-5 py-4 flex flex-wrap items-center justify-between gap-4 bg-gray-50/50">
+          <div>
+            <p className="text-sm font-bold text-gray-700">Old Student Discount</p>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Applied automatically to returning students during promotion · Change each year as needed
+            </p>
+          </div>
+          {editMode ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500 font-semibold">₹</span>
+              <input
+                type="number" min="0"
+                className="border border-gray-200 rounded-xl px-3 py-2 text-sm font-bold text-school-navy w-32 focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy text-right"
+                value={oldDiscount}
+                onChange={e => setOldDiscount(parseInt(e.target.value) || 0)}
+              />
+            </div>
+          ) : (
+            <span className="text-xl font-bold text-school-navy">
+              ₹{oldDiscount.toLocaleString("en-IN")}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -689,27 +763,39 @@ function ClassSectionsTab() {
 
   const inactiveClasses = CLASSES.filter(c => !activeClasses.includes(c));
 
-  function startEdit() { setBackup(rows.map(r => ({ ...r, sections: [...r.sections] }))); setEditMode(true); }
-  function cancel()    { setRows(backup); setEditMode(false); }
-  function save()      { setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2500); }
+  function startEdit() {
+    setBackup(rows.map(r => ({ ...r, sections: [...r.sections], sectionTeachers: { ...r.sectionTeachers } })));
+    setEditMode(true);
+  }
+  function cancel() { setRows(backup); setEditMode(false); }
+  function save()   { setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2500); }
 
   function addSection(cls) {
     setRows(prev => prev.map(r => {
       if (r.cls !== cls) return r;
       const next = String.fromCharCode(65 + r.sections.length);
       if (r.sections.includes(next)) return r;
-      return { ...r, sections: [...r.sections, next] };
+      return {
+        ...r,
+        sections: [...r.sections, next],
+        sectionTeachers: { ...r.sectionTeachers, [next]: "" },
+      };
     }));
   }
 
   function removeSection(cls, sec) {
-    setRows(prev => prev.map(r =>
-      r.cls === cls ? { ...r, sections: r.sections.filter(s => s !== sec) } : r
-    ));
+    setRows(prev => prev.map(r => {
+      if (r.cls !== cls) return r;
+      const st = { ...r.sectionTeachers };
+      delete st[sec];
+      return { ...r, sections: r.sections.filter(s => s !== sec), sectionTeachers: st };
+    }));
   }
 
-  function setTeacher(cls, val) {
-    setRows(prev => prev.map(r => r.cls === cls ? { ...r, teacher: val } : r));
+  function setSectionTeacher(cls, sec, val) {
+    setRows(prev => prev.map(r =>
+      r.cls === cls ? { ...r, sectionTeachers: { ...r.sectionTeachers, [sec]: val } } : r
+    ));
   }
 
   return (
@@ -743,8 +829,10 @@ function ClassSectionsTab() {
                         <p className="text-sm font-semibold text-gray-800">{row.cls}</p>
                         <p className="text-xs text-gray-400">
                           {row.sections.length} Section{row.sections.length !== 1 ? "s" : ""} &nbsp;·&nbsp;
-                          {row.sections.map(s => `${row.cls}-${s}`).join(", ")}
-                          {row.teacher && <> &nbsp;·&nbsp; Teacher: {row.teacher}</>}
+                          {row.sections.map(s => {
+                            const t = row.sectionTeachers?.[s];
+                            return t ? `${row.cls}-${s} (${t.split(" ")[0]})` : `${row.cls}-${s}`;
+                          }).join("  ·  ")}
                         </p>
                       </div>
                     </div>
@@ -759,34 +847,46 @@ function ClassSectionsTab() {
                 </div>
 
                 {isOpen && (
-                  <div className="px-5 pb-4 pt-2 bg-gray-50/60 border-t border-gray-100 space-y-4">
-                    <div>
-                      <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Sections</p>
-                      <div className="flex flex-wrap gap-2">
-                        {row.sections.map(sec => (
-                          <div key={sec} className="flex items-center gap-1 bg-school-navy text-white text-xs font-bold px-3 py-1.5 rounded-lg">
-                            {row.cls}-{sec}
+                  <div className="px-5 pb-4 pt-3 bg-gray-50/60 border-t border-gray-100">
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Sections & Class Teachers</p>
+                    <div className="space-y-2.5">
+                      {row.sections.map(sec => (
+                        <div key={sec} className="flex items-center gap-3">
+                          {/* Section badge */}
+                          <div className="flex items-center gap-1 bg-school-navy text-white text-xs font-bold px-3 py-2 rounded-lg flex-shrink-0 min-w-[64px] justify-between">
+                            <span>{row.cls}-{sec}</span>
                             {editMode && row.sections.length > 1 && (
                               <button onClick={() => removeSection(row.cls, sec)}
-                                className="ml-1 hover:text-red-300 transition-colors">
+                                className="ml-1.5 hover:text-red-300 transition-colors">
                                 <X className="w-3 h-3"/>
                               </button>
                             )}
                           </div>
-                        ))}
-                        {editMode && row.sections.length < 5 && (
-                          <button onClick={() => addSection(row.cls)}
-                            className="flex items-center gap-1 border-2 border-dashed border-gray-300 text-gray-400 hover:border-school-navy hover:text-school-navy text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors">
-                            <Plus className="w-3 h-3"/> Add Section
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div className="max-w-xs">
-                      <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Class Teacher</p>
-                      {editMode
-                        ? <input className={inp} placeholder="Enter teacher name" value={row.teacher} onChange={e => setTeacher(row.cls, e.target.value)}/>
-                        : <ViewVal val={row.teacher || "Not assigned"}/>}
+                          {/* Teacher for this section */}
+                          {editMode ? (
+                            <select
+                              className={`${sel} flex-1 max-w-xs`}
+                              value={row.sectionTeachers?.[sec] || ""}
+                              onChange={e => setSectionTeacher(row.cls, sec, e.target.value)}
+                            >
+                              <option value="">— Not Assigned —</option>
+                              {TEACHERS_TT.map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                          ) : (
+                            <span className={`text-sm font-medium ${row.sectionTeachers?.[sec] ? "text-gray-700" : "text-gray-300"}`}>
+                              {row.sectionTeachers?.[sec] || "Not assigned"}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+
+                      {/* Add Section button */}
+                      {editMode && row.sections.length < 5 && (
+                        <button onClick={() => addSection(row.cls)}
+                          className="flex items-center gap-1.5 border-2 border-dashed border-gray-300 text-gray-400 hover:border-school-navy hover:text-school-navy text-xs font-semibold px-3 py-2 rounded-lg transition-colors mt-1">
+                          <Plus className="w-3 h-3"/> Add Section
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
@@ -833,8 +933,79 @@ function ClassSectionsTab() {
   );
 }
 
+// ── Permission Constants ───────────────────────────────────────────────────────
+const PERM_ROLES = ["Admin","Teacher"];
+
+const PERMISSION_GROUPS = [
+  {
+    group:"Students",
+    items:[
+      { id:"student_basic", label:"Student Basic Info",    desc:"Name, class, section, roll no, photo" },
+      { id:"student_full",  label:"Student Full Details",  desc:"DOB, parent contact, govt IDs, all documents" },
+    ],
+  },
+  {
+    group:"Fees",
+    items:[
+      { id:"fees_view",       label:"View Fee Records",         desc:"See fee payment history and pending dues" },
+      { id:"fees_class_only", label:"Assigned Class Fees Only", desc:"Restrict fee view to their assigned class only" },
+      { id:"fees_remind",     label:"Send Fee Reminders",       desc:"Notify parents about pending fee payments" },
+    ],
+  },
+  {
+    group:"Other Access",
+    items:[
+      { id:"attendance", label:"Attendance",     desc:"Mark and view daily student attendance" },
+      { id:"reports",    label:"Reports",         desc:"View and export school reports" },
+      { id:"timetable",  label:"View Timetable",  desc:"Access and view the class timetable" },
+    ],
+  },
+];
+
+const DEFAULT_ROLE_PERMS = {
+  "Admin":   { student_basic:true, student_full:true,  fees_view:true,  fees_class_only:false, fees_remind:true,  attendance:true,  reports:true,  timetable:true  },
+  "Teacher": { student_basic:true, student_full:false, fees_view:true,  fees_class_only:true,  fees_remind:true,  attendance:true,  reports:false, timetable:true  },
+};
+
+const ROLE_COLORS = {
+  "Super Admin": "bg-red-100 text-red-700",
+  "Admin":       "bg-purple-100 text-purple-700",
+  "Teacher":     "bg-green-100 text-green-700",
+};
+
 // ── Tab: Users & Roles ─────────────────────────────────────────────────────────
 function UsersRolesTab() {
+  // ── Permissions ──
+  const storedPerms = useStore(s => s.rolePermissions);
+  const savePerms   = useStore(s => s.setRolePermissions);
+  const pBackupRef  = useRef(null);
+
+  const [perms, setPerms] = useState(() => {
+    // Always start from DEFAULT_ROLE_PERMS so all required roles exist,
+    // then overlay any previously saved values for matching roles.
+    const saved = storedPerms ?? {};
+    return Object.fromEntries(
+      PERM_ROLES.map(role => [
+        role,
+        { ...DEFAULT_ROLE_PERMS[role], ...(saved[role] ?? {}) },
+      ])
+    );
+  });
+  const [pEditMode, setPEditMode] = useState(false);
+  const [pSaved,    setPSaved]    = useState(false);
+
+  function pStartEdit() { pBackupRef.current = JSON.parse(JSON.stringify(perms)); setPEditMode(true); }
+  function pCancel()    { setPerms(pBackupRef.current); setPEditMode(false); }
+  function pSave()      { savePerms(perms); setPSaved(true); setPEditMode(false); setTimeout(() => setPSaved(false), 2500); }
+
+  function togglePerm(role, permId) {
+    setPerms(prev => ({
+      ...prev,
+      [role]: { ...(DEFAULT_ROLE_PERMS[role] ?? {}), ...(prev[role] ?? {}), [permId]: !(prev[role]?.[permId] ?? false) },
+    }));
+  }
+
+  // ── Users ──
   const [users,    setUsers]    = useState(DEF_USERS);
   const [editMode, setEditMode] = useState(false);
   const [backup,   setBackup]   = useState(null);
@@ -851,31 +1022,124 @@ function UsersRolesTab() {
   function cancel()    { setUsers(backup); setShowForm(false); setEditId(null); setEditMode(false); }
   function save()      { setShowForm(false); setEditId(null); setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2000); }
 
-  function openAdd() { setForm(blank); setEditId(null); setShowForm(true); }
-  function openEdit(u) { setForm({ ...u }); setEditId(u.id); setShowForm(true); }
+  function openAdd()    { setForm(blank); setEditId(null); setShowForm(true); }
+  function openEdit(u)  { setForm({ ...u }); setEditId(u.id); setShowForm(true); }
 
   function saveUser() {
     if (!form.name || !form.email) return;
-    if (editId) {
-      setUsers(prev => prev.map(u => u.id === editId ? { ...form, id: editId } : u));
-    } else {
-      setUsers(prev => [...prev, { ...form, id: Date.now() }]);
-    }
+    if (editId) setUsers(prev => prev.map(u => u.id === editId ? { ...form, id: editId } : u));
+    else        setUsers(prev => [...prev, { ...form, id: Date.now() }]);
     setShowForm(false);
   }
 
   function deleteUser(id) { setUsers(prev => prev.filter(u => u.id !== id)); }
 
-  const ROLE_COLORS = {
-    "Super Admin":      "bg-red-100 text-red-700",
-    "Management Head":  "bg-purple-100 text-purple-700",
-    "Fee Clerk":        "bg-blue-100 text-blue-700",
-    "Teacher":          "bg-green-100 text-green-700",
-    "Receptionist":     "bg-amber-100 text-amber-700",
-  };
-
   return (
     <div className="space-y-5">
+
+      {/* ── Role Permissions Matrix ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-gray-700">Role Permissions</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              Control what each role can access in the teacher &amp; staff app
+            </p>
+          </div>
+          <EditBar editMode={pEditMode} saved={pSaved} onEdit={pStartEdit} onSave={pSave} onCancel={pCancel}/>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100">
+                <th className="px-5 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide" style={{ minWidth:"220px" }}>
+                  Permission
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-bold text-red-600 whitespace-nowrap">
+                  Super Admin
+                </th>
+                {PERM_ROLES.map(role => (
+                  <th key={role} className="px-4 py-3 text-center text-xs font-bold text-gray-600 whitespace-nowrap">
+                    {role}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {PERMISSION_GROUPS.map(group => (
+                <>
+                  <tr key={group.group} className="bg-school-navy/5 border-b border-gray-100">
+                    <td colSpan={PERM_ROLES.length + 2} className="px-5 py-2">
+                      <span className="text-[10px] font-black text-school-navy uppercase tracking-[0.2em]">
+                        {group.group}
+                      </span>
+                    </td>
+                  </tr>
+                  {group.items.map((perm, idx) => (
+                    <tr key={perm.id} className={`border-b border-gray-50 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"}`}>
+                      <td className="px-5 py-3.5">
+                        <p className="text-sm font-semibold text-gray-800">{perm.label}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{perm.desc}</p>
+                      </td>
+                      {/* Super Admin — always enabled, locked */}
+                      <td className="px-4 py-3.5 text-center">
+                        <div className="flex justify-center">
+                          <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center">
+                            <Check className="w-4 h-4 text-red-600"/>
+                          </div>
+                        </div>
+                      </td>
+                      {/* Other roles — toggleable */}
+                      {PERM_ROLES.map(role => {
+                        const enabled = perms[role]?.[perm.id] ?? false;
+                        return (
+                          <td key={role} className="px-4 py-3.5 text-center">
+                            <div className="flex justify-center">
+                              <button
+                                disabled={!pEditMode}
+                                onClick={() => togglePerm(role, perm.id)}
+                                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
+                                  enabled
+                                    ? "bg-green-500 text-white shadow-sm"
+                                    : "bg-gray-100 border border-gray-200 text-transparent"
+                                } ${pEditMode ? "cursor-pointer hover:opacity-75 hover:scale-110" : "cursor-default"}`}
+                              >
+                                <Check className="w-4 h-4"/>
+                              </button>
+                            </div>
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Legend */}
+        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50 flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <div className="w-5 h-5 rounded-md bg-green-500 flex items-center justify-center">
+              <Check className="w-3 h-3 text-white"/>
+            </div>
+            <span className="text-xs text-gray-500 font-medium">Allowed</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-5 h-5 rounded-md bg-gray-100 border border-gray-200"/>
+            <span className="text-xs text-gray-500 font-medium">Not allowed</span>
+          </div>
+          {pEditMode && (
+            <span className="text-xs text-amber-600 font-medium ml-2">
+              · Click any cell to toggle permission
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* ── Users List ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <div>
@@ -893,7 +1157,6 @@ function UsersRolesTab() {
           </div>
         </div>
 
-        {/* Add/Edit Form */}
         {editMode && showForm && (
           <div className="px-5 py-4 bg-blue-50/50 border-b border-blue-100">
             <p className="text-xs font-bold text-school-navy uppercase tracking-wide mb-4">
@@ -913,16 +1176,10 @@ function UsersRolesTab() {
               </Field>
               <Field label="Password">
                 <div className="relative">
-                  <input
-                    className={inp + " pr-9"}
-                    type={showPass.form ? "text" : "password"}
-                    placeholder="Set password"
-                    value={form.pass}
-                    onChange={setF("pass")}
-                  />
-                  <button type="button"
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                    onClick={() => setShowPass(p => ({ ...p, form: !p.form }))}>
+                  <input className={inp + " pr-9"} type={showPass.form ? "text" : "password"}
+                    placeholder="Set password" value={form.pass} onChange={setF("pass")}/>
+                  <button type="button" onClick={() => setShowPass(p => ({ ...p, form: !p.form }))}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
                     {showPass.form ? <EyeOff className="w-3.5 h-3.5"/> : <Eye className="w-3.5 h-3.5"/>}
                   </button>
                 </div>
@@ -941,7 +1198,6 @@ function UsersRolesTab() {
           </div>
         )}
 
-        {/* Users List */}
         <div className="divide-y divide-gray-100">
           {users.map(u => (
             <div key={u.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">

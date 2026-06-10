@@ -246,9 +246,10 @@ const PROMOTE_DISCOUNT_REASONS = [
 ];
 
 function PromoteModal({ student, onClose, onPromote, router }) {
-  const nextClass    = getNextClass(student.std);
-  const uniformFees  = useStore(s => s.uniformFees);
-  const uniformFee   = (nextClass && uniformFees[nextClass]) ? uniformFees[nextClass] : 1500;
+  const nextClass          = getNextClass(student.std);
+  const uniformFees        = useStore(s => s.uniformFees);
+  const uniformFee         = (nextClass && uniformFees[nextClass]) ? uniformFees[nextClass] : 1500;
+  const oldStudentFixedAmt = useStore(s => s.oldStudentDiscount) ?? 1000;
 
   // step: "action" → choose promote or leave | "discount" → fill discounts then confirm
   const [step, setStep] = useState("action");
@@ -263,7 +264,7 @@ function PromoteModal({ student, onClose, onPromote, router }) {
   const [extraCustom,  setExtraCustom]  = useState("");
 
   const oldStudentAmt = oldStudentOn
-    ? (oldStudentType === "fixed" ? 1000 : (Number(oldStudentCustom) || 0))
+    ? (oldStudentType === "fixed" ? oldStudentFixedAmt : (Number(oldStudentCustom) || 0))
     : 0;
 
   const totalDiscount =
@@ -391,9 +392,9 @@ function PromoteModal({ student, onClose, onPromote, router }) {
                     <span className={`text-sm font-bold flex-shrink-0 ${oldStudentOn ? "text-green-700" : "text-gray-300 line-through"}`}>
                       {oldStudentOn
                         ? (oldStudentType === "fixed"
-                            ? "₹1,000"
+                            ? `₹${oldStudentFixedAmt.toLocaleString("en-IN")}`
                             : (oldStudentCustom ? `₹${Number(oldStudentCustom).toLocaleString("en-IN")}` : "—"))
-                        : "₹1,000"}
+                        : `₹${oldStudentFixedAmt.toLocaleString("en-IN")}`}
                     </span>
                   </div>
                   {oldStudentOn && (
@@ -406,7 +407,7 @@ function PromoteModal({ student, onClose, onPromote, router }) {
                             onChange={() => { setOldStudentType("fixed"); setOldStudentCustom(""); }}
                             className="w-3.5 h-3.5 accent-school-navy"
                           />
-                          <span className="text-xs font-semibold text-gray-700">Fixed — ₹1,000</span>
+                          <span className="text-xs font-semibold text-gray-700">Fixed — ₹{oldStudentFixedAmt.toLocaleString("en-IN")}</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
                           <input

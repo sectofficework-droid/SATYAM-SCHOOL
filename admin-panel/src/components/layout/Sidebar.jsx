@@ -27,8 +27,8 @@ const navItems = [
   { href: "/inventory", label: "Inventory Management", icon: Package },
   { href: "/report", label: "Report", icon: BarChart3 },
   { href: "/tasks", label: "Task Management", icon: ClipboardList },
-  { href: "/settings", label: "Setting", icon: Settings },
   { href: "/super-admin", label: "Super Admin", icon: ShieldCheck },
+  { href: "/settings", label: "Setting", icon: Settings },
 ];
 
 export default function Sidebar() {

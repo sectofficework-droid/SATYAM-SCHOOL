@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import useStore from "@/lib/store";
 import {
   Users, Plus, Search, X, Phone, Mail, MapPin,
   Calendar, GraduationCap, Briefcase,
@@ -815,7 +816,17 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function EmployeePage() {
-  const [employees, setEmployees]   = useState(INITIAL_EMPLOYEES);
+  const storeEmployees    = useStore(s => s.employees);
+  const setStoreEmployees = useStore(s => s.setEmployees);
+
+  const [employees, setEmployeesLocal] = useState(() =>
+    storeEmployees.length > 0 ? storeEmployees : INITIAL_EMPLOYEES
+  );
+
+  function setEmployees(updated) {
+    setEmployeesLocal(updated);
+    setStoreEmployees(updated);
+  }
   const [search, setSearch]         = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [deptFilter, setDeptFilter] = useState("all");

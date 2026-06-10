@@ -23,6 +23,18 @@ const useStore = create(
       uniformFees: {},
       setUniformFees: (fees) => set({ uniformFees: fees }),
 
+      // ── Old Student Discount ────────────────────────────────────
+      oldStudentDiscount: 1000,
+      setOldStudentDiscount: (amount) => set({ oldStudentDiscount: amount }),
+
+      // ── Employees ──────────────────────────────────────────────
+      employees: [],
+      setEmployees: (list) => set({ employees: list }),
+
+      // ── Role Permissions ──────────────────────────────────────
+      rolePermissions: {},
+      setRolePermissions: (perms) => set({ rolePermissions: perms }),
+
       // ── Active Classes ─────────────────────────────────────────
       activeClasses: [
         "JR KG","SR KG","Balvatika",

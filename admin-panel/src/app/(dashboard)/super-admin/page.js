@@ -27,8 +27,8 @@ const CASTES    = ["General","OBC","SC","ST","EWS","SEBC","Other"];
 const MEDIUMS   = ["English","Gujarati","Hindi","Other"];
 const PREV_CLS  = ["Nursery / KG","1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th","11th","12th"];
 
-const MGMT_USERS   = [{ name:"Sunil Pradhan",  password:"sunil123",  initials:"SP" },{ name:"Rajesh Pradhan",password:"rajesh123",initials:"RP" }];
-const SENIOR_USERS = [{ name:"Meena Shah",     password:"meena123",  initials:"MS" },{ name:"Kiran Joshi",  password:"kiran123", initials:"KJ" }];
+const MGMT_USERS   = [{ name:"Sunil Pradhan", password:"sunil123", initials:"SP" }];
+const SENIOR_USERS = [{ name:"Rajesh Biswal", password:"rajesh123", initials:"RB" },{ name:"BK Debiprasad Das", password:"bkdas123", initials:"BD" }];
 
 // All student fields matching Add Student form (no discount)
 const FIELD_GROUPS = [
@@ -1073,65 +1073,144 @@ function InventoryPanel() {
 
 // â"€â"€ Employee Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function EmployeePanel() {
-  const [employees,setEmployees]=useState(DUMMY_EMPLOYEES);
-  const [search,   setSearch]   =useState("");
-  const [roleF,    setRoleF]    =useState("All");
-  const [editId,   setEditId]   =useState(null);
-  const [form,     setForm]     =useState({});
-  const [saved,    setSaved]    =useState(false);
+  const storeEmployees    = useStore(s => s.employees);
+  const setStoreEmployees = useStore(s => s.setEmployees);
 
-  const filtered=employees.filter(e=>(roleF==="All"||e.role===roleF)&&(e.name.toLowerCase().includes(search.toLowerCase())||e.role.toLowerCase().includes(search.toLowerCase())));
+  // Use store data if populated, else empty (employee module will populate it on first visit)
+  const employees = storeEmployees;
+
+  const [search, setSearch] = useState("");
+  const [typeF,  setTypeF]  = useState("All");
+  const [editId, setEditId] = useState(null);
+  const [form,   setForm]   = useState({});
+  const [saved,  setSaved]  = useState(false);
+
+  const TYPE_COLORS = {
+    teaching:      "bg-blue-100 text-blue-700",
+    "non-teaching":"bg-gray-100 text-gray-600",
+    management:    "bg-purple-100 text-purple-700",
+  };
+
+  const filtered = employees.filter(e => {
+    const matchType = typeF === "All" || e.type === typeF;
+    const matchSearch = !search ||
+      e.name.toLowerCase().includes(search.toLowerCase()) ||
+      (e.designation||"").toLowerCase().includes(search.toLowerCase());
+    return matchType && matchSearch;
+  });
+
+  function saveEdit() {
+    const updated = employees.map(e => e.id === editId ? { ...e, ...form } : e);
+    setStoreEmployees(updated);
+    setEditId(null);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  }
+
+  if (employees.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center text-gray-400 space-y-2">
+        <Users className="w-10 h-10 text-gray-200"/>
+        <p className="text-sm font-medium">No employee data yet.</p>
+        <p className="text-xs">Visit the <span className="font-semibold text-school-navy">Employee</span> module first to load staff data.</p>
+      </div>
+    );
+  }
 
   return (
     <div>
-      <div className="flex flex-wrap gap-3 mb-4">
-        <div className="relative flex-1 min-w-48"><Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/><input className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none" placeholder="Search—¦" value={search} onChange={e=>setSearch(e.target.value)}/></div>
-        <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" value={roleF} onChange={e=>setRoleF(e.target.value)}><option value="All">All Roles</option>{EMP_ROLES.map(r=><option key={r}>{r}</option>)}</select>
+      <div className="flex flex-wrap gap-3 mb-4 items-center">
+        <div className="relative flex-1 min-w-48">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
+          <input className="w-full border border-gray-200 rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none" placeholder="Search by name or designation…" value={search} onChange={e=>setSearch(e.target.value)}/>
+        </div>
+        <select className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" value={typeF} onChange={e=>setTypeF(e.target.value)}>
+          <option value="All">All Types</option>
+          <option value="management">Management</option>
+          <option value="teaching">Teaching</option>
+          <option value="non-teaching">Non-Teaching</option>
+        </select>
+        <span className="text-xs text-gray-400 font-medium">{filtered.length} of {employees.length} staff</span>
       </div>
-      {saved && <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-2.5 mb-3 text-sm"><CheckCircle2 className="w-4 h-4"/>Employee record updated!</div>}
+
+      {saved && (
+        <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-2.5 mb-3 text-sm">
+          <CheckCircle2 className="w-4 h-4"/>Employee record updated!
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-xl border border-gray-200">
         <table className="w-full text-xs">
-          <thead><tr className="bg-gray-50 border-b border-gray-200">
-            {["Name","Role","Subject","Qualification","Mobile","Salary ₹","Status","Join Date","Action"].map(h=><th key={h} className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">{h}</th>)}
-          </tr></thead>
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              {["Emp ID","Name","Type","Designation","Phone","Email","Status","Join Date",""].map(h=>(
+                <th key={h} className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
+          </thead>
           <tbody>
-            {filtered.map(emp=>(
+            {filtered.map(emp => (
               <>
-                <tr key={emp.id} className={`border-b border-gray-100 hover:bg-gray-50 ${editId===emp.id?"bg-purple-50":""}`}>
+                <tr key={emp.id} className={`border-b border-gray-100 hover:bg-gray-50 ${editId===emp.id?"bg-purple-50/30":""}`}>
+                  <td className="px-3 py-2 text-gray-400 font-mono text-[10px]">{emp.empId}</td>
                   <td className="px-3 py-2 font-semibold text-gray-800">{emp.name}</td>
-                  <td className="px-3 py-2"><span className="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-[10px] font-bold">{emp.role}</span></td>
-                  <td className="px-3 py-2 text-gray-600">{emp.subject}</td>
-                  <td className="px-3 py-2 text-gray-600">{emp.qualification}</td>
-                  <td className="px-3 py-2 text-gray-600">{emp.mobile}</td>
-                  <td className="px-3 py-2 font-semibold">₹{emp.salary.toLocaleString()}</td>
-                  <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${emp.status==="Active"?"bg-green-100 text-green-700":emp.status==="On Leave"?"bg-yellow-100 text-yellow-700":"bg-red-100 text-red-700"}`}>{emp.status}</span></td>
-                  <td className="px-3 py-2 text-gray-500">{emp.joinDate}</td>
-                  <td className="px-3 py-2"><button onClick={()=>editId===emp.id?setEditId(null):(setEditId(emp.id),setForm({...emp}))} className="flex items-center gap-1 text-purple-700 font-semibold hover:text-purple-900"><Pencil className="w-3.5 h-3.5"/>{editId===emp.id?"Close":"Edit"}</button></td>
+                  <td className="px-3 py-2">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${TYPE_COLORS[emp.type]||"bg-gray-100 text-gray-600"}`}>
+                      {emp.type}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-gray-600">{emp.designation||"—"}</td>
+                  <td className="px-3 py-2 text-gray-600">{emp.phone||"—"}</td>
+                  <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate">{emp.email||"—"}</td>
+                  <td className="px-3 py-2">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${emp.status==="Active"?"bg-green-100 text-green-700":"bg-red-100 text-red-700"}`}>
+                      {emp.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-gray-400">{emp.joiningDate||"—"}</td>
+                  <td className="px-3 py-2">
+                    <button onClick={()=>editId===emp.id?setEditId(null):(setEditId(emp.id),setForm({ phone:emp.phone, email:emp.email, designation:emp.designation, status:emp.status, joiningDate:emp.joiningDate }))}
+                      className="flex items-center gap-1 text-purple-700 font-semibold hover:text-purple-900">
+                      <Pencil className="w-3.5 h-3.5"/>{editId===emp.id?"Close":"Edit"}
+                    </button>
+                  </td>
                 </tr>
                 {editId===emp.id && (
-                  <tr key={`ee-${emp.id}`}><td colSpan={9} className="px-4 py-4 bg-purple-50/40">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-3">
-                      {[{l:"Full Name",f:"name",t:"text"},{l:"Role",f:"role",t:"sel",opts:EMP_ROLES},{l:"Subject",f:"subject",t:"text"},{l:"Qualification",f:"qualification",t:"text"},{l:"Mobile",f:"mobile",t:"text"},{l:"Email",f:"email",t:"text"},{l:"Salary ₹",f:"salary",t:"number"},{l:"Join Date",f:"joinDate",t:"date"},{l:"Status",f:"status",t:"sel",opts:EMP_STATUSES}].map(({l,f,t,opts})=>(
-                        <div key={f} className="flex flex-col gap-0.5">
-                          <label className="text-[10px] font-semibold text-gray-500">{l}</label>
-                          {t==="sel"
-                            ?<select className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form[f]||""} onChange={e=>setForm({...form,[f]:e.target.value})}>{opts.map(o=><option key={o}>{o}</option>)}</select>
-                            :<input type={t} className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form[f]||""} onChange={e=>setForm({...form,[f]:t==="number"?Number(e.target.value):e.target.value})}/>
-                          }
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={()=>{setEmployees(prev=>prev.map(e=>e.id===editId?{...form}:e));setEditId(null);setSaved(true);setTimeout(()=>setSaved(false),2000);}} className="flex items-center gap-1.5 bg-purple-600 text-white px-4 py-2 rounded-lg text-xs font-semibold"><Save className="w-3.5 h-3.5"/>Save</button>
-                      <button onClick={()=>setEditId(null)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-xs font-semibold"><X className="w-3.5 h-3.5"/>Cancel</button>
-                    </div>
-                  </td></tr>
+                  <tr key={`ee-${emp.id}`}>
+                    <td colSpan={9} className="px-4 py-4 bg-purple-50/30 border-b border-purple-100">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
+                        {[
+                          {l:"Phone",      f:"phone",       t:"text"},
+                          {l:"Email",      f:"email",       t:"text"},
+                          {l:"Designation",f:"designation", t:"text"},
+                          {l:"Join Date",  f:"joiningDate", t:"date"},
+                          {l:"Status",     f:"status",      t:"sel", opts:["Active","Inactive"]},
+                        ].map(({l,f,t,opts})=>(
+                          <div key={f} className="flex flex-col gap-0.5">
+                            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">{l}</label>
+                            {t==="sel"
+                              ? <select className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form[f]||""} onChange={e=>setForm({...form,[f]:e.target.value})}>{opts.map(o=><option key={o}>{o}</option>)}</select>
+                              : <input type={t} className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form[f]||""} onChange={e=>setForm({...form,[f]:e.target.value})}/>
+                            }
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={saveEdit} className="flex items-center gap-1.5 bg-purple-600 text-white px-4 py-2 rounded-lg text-xs font-semibold">
+                          <Save className="w-3.5 h-3.5"/>Save Changes
+                        </button>
+                        <button onClick={()=>setEditId(null)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-xs font-semibold">
+                          <X className="w-3.5 h-3.5"/>Cancel
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
                 )}
               </>
             ))}
           </tbody>
         </table>
-        {filtered.length===0 && <p className="text-center text-gray-400 py-8 text-sm">No employees found</p>}
+        {filtered.length===0 && <p className="text-center text-gray-400 py-8 text-sm">No employees match your search</p>}
       </div>
     </div>
   );
@@ -1299,6 +1378,276 @@ const PRIORITIES = [
   { key:"Medium", color:"bg-amber-100 text-amber-700 border-amber-200" },
   { key:"Low",    color:"bg-green-100 text-green-700 border-green-200" },
 ];
+
+// ── Import Students Panel ──────────────────────────────────────────────────────
+const IMPORT_FIELDS = [
+  { key:"firstName",        label:"First Name",                  required:true  },
+  { key:"lastName",         label:"Last Name",                   required:true  },
+  { key:"fatherName",       label:"Father Name",                 required:false },
+  { key:"motherName",       label:"Mother Name",                 required:false },
+  { key:"dob",              label:"Date of Birth (YYYY-MM-DD)",  required:false },
+  { key:"gender",           label:"Gender (Male/Female/Other)",  required:true  },
+  { key:"cls",              label:"Class",                       required:true  },
+  { key:"section",          label:"Section (A/B/C)",             required:false },
+  { key:"rollNo",           label:"Roll No",                     required:false },
+  { key:"joinDate",         label:"Date of Joining (YYYY-MM-DD)",required:false },
+  { key:"grNo",             label:"GR Number",                   required:false },
+  { key:"mobile1",          label:"Mobile 1",                    required:false },
+  { key:"mobile2",          label:"Mobile 2",                    required:false },
+  { key:"address",          label:"Full Address",                required:false },
+  { key:"religion",         label:"Religion",                    required:false },
+  { key:"caste",            label:"Category / Caste",            required:false },
+  { key:"aadharNo",         label:"Aadhar Number",               required:false },
+  { key:"udise",            label:"UDISE Number",                required:false },
+  { key:"pen",              label:"PEN Number",                  required:false },
+  { key:"apaar",            label:"APAAR ID",                    required:false },
+  { key:"lastSchoolName",   label:"Last School Name",            required:false },
+  { key:"lastSchoolClass",  label:"Last School Class",           required:false },
+];
+
+const EXAMPLE_ROW = [
+  "Arjun","Patel","Rajesh Patel","Meena Patel","2015-06-15",
+  "Male","5th","A","1","2026-06-01","GR001",
+  "9876543210","","12 Gandhi Nagar Surat",
+  "Hindu","General","1234 5678 9012","","","",
+  "City Primary School","4th",
+];
+
+function ImportStudentsPanel() {
+  const fileRef = useRef(null);
+  const [step,      setStep]      = useState("idle"); // idle | preview | done
+  const [parsed,    setParsed]    = useState([]);
+  const [rowErrors, setRowErrors] = useState([]);
+  const [importing, setImporting] = useState(false);
+
+  function downloadTemplate() {
+    const wb = XLSX.utils.book_new();
+    const headers  = IMPORT_FIELDS.map(f => f.label);
+    const required = IMPORT_FIELDS.map(f => f.required ? "Required *" : "Optional");
+    const ws = XLSX.utils.aoa_to_sheet([headers, required, EXAMPLE_ROW]);
+    ws["!cols"] = IMPORT_FIELDS.map(() => ({ wch: 22 }));
+    XLSX.utils.book_append_sheet(wb, ws, "Students");
+    XLSX.writeFile(wb, "Student_Import_Template.xlsx");
+  }
+
+  function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb   = XLSX.read(evt.target.result, { type:"binary" });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:"" });
+
+        if (rows.length < 3) { alert("File has no data rows. Please use the downloaded template."); return; }
+
+        const headerRow = rows[0];
+        // Build map: fieldKey → column index
+        const colMap = {};
+        IMPORT_FIELDS.forEach(f => {
+          const idx = headerRow.findIndex(h => String(h).trim() === f.label);
+          if (idx >= 0) colMap[f.key] = idx;
+        });
+
+        // Skip row 1 (headers) and row 2 (required hints / example)
+        const dataRows = rows.slice(2);
+        const result = [];
+        const errs   = [];
+
+        dataRows.forEach((row, i) => {
+          if (row.every(c => !c)) return; // skip blank rows
+          const s = { _row: i + 3, _errors: [] };
+          IMPORT_FIELDS.forEach(f => {
+            s[f.key] = colMap[f.key] !== undefined ? String(row[colMap[f.key]] ?? "").trim() : "";
+          });
+
+          if (!s.firstName) s._errors.push("First Name missing");
+          if (!s.cls)       s._errors.push("Class missing");
+          if (s.cls && !CLASSES.includes(s.cls)) s._errors.push(`Unknown class "${s.cls}"`);
+          if (s.gender && !["Male","Female","Other"].includes(s.gender)) s._errors.push(`Invalid gender "${s.gender}"`);
+
+          result.push(s);
+          if (s._errors.length) errs.push(`Row ${s._row}: ${s._errors.join(", ")}`);
+        });
+
+        setParsed(result);
+        setRowErrors(errs);
+        setStep("preview");
+      } catch {
+        alert("Could not read the file. Please use the downloaded template (.xlsx).");
+      }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
+  }
+
+  function confirmImport() {
+    setImporting(true);
+    setTimeout(() => { setImporting(false); setStep("done"); }, 1200);
+  }
+
+  function reset() { setParsed([]); setRowErrors([]); setStep("idle"); }
+
+  const valid   = parsed.filter(s => s._errors.length === 0);
+  const invalid = parsed.filter(s => s._errors.length  >  0);
+
+  return (
+    <div className="space-y-5">
+
+      {/* ── Step: idle ── */}
+      {step === "idle" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+          {/* Step 1 — Download Template */}
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0">
+                <Download className="w-5 h-5 text-white"/>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-blue-900">Step 1 — Download Template</p>
+                <p className="text-xs text-blue-600 mt-0.5">Get the Excel sheet with all required column headers</p>
+              </div>
+            </div>
+            <ul className="text-xs text-blue-700 space-y-1 pl-1">
+              {["Contains all student fields (22 columns)","Row 2 shows which fields are required","Row 3 shows example data — replace with real data","Do not change column headers or order"].map(t => (
+                <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0"/>{t}</li>
+              ))}
+            </ul>
+            <button onClick={downloadTemplate}
+              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
+              <Download className="w-4 h-4"/> Download Template (.xlsx)
+            </button>
+          </div>
+
+          {/* Step 2 — Upload */}
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-5 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-green-600 flex items-center justify-center flex-shrink-0">
+                <Upload className="w-5 h-5 text-white"/>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-green-900">Step 2 — Upload Filled File</p>
+                <p className="text-xs text-green-600 mt-0.5">Upload the template after filling in student data</p>
+              </div>
+            </div>
+            <ul className="text-xs text-green-700 space-y-1 pl-1">
+              {["Use only the downloaded template","Keep column headers exactly as is","One student per row starting from Row 3","Supports .xlsx and .xls files"].map(t => (
+                <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0"/>{t}</li>
+              ))}
+            </ul>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile}/>
+            <button onClick={() => fileRef.current?.click()}
+              className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
+              <Upload className="w-4 h-4"/> Select Excel File
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step: preview ── */}
+      {step === "preview" && (
+        <div className="space-y-4">
+
+          {/* Summary bar */}
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-3 py-1.5 rounded-xl text-sm font-semibold">
+              <CheckCircle2 className="w-4 h-4"/> {valid.length} valid student{valid.length !== 1 ? "s" : ""}
+            </div>
+            {invalid.length > 0 && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-1.5 rounded-xl text-sm font-semibold">
+                <AlertCircle className="w-4 h-4"/> {invalid.length} row{invalid.length !== 1 ? "s" : ""} with errors
+              </div>
+            )}
+            <span className="text-xs text-gray-400">{parsed.length} total rows parsed</span>
+          </div>
+
+          {/* Errors list */}
+          {rowErrors.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-1 max-h-36 overflow-y-auto">
+              <p className="text-xs font-bold text-red-700 mb-2 uppercase tracking-wide">Errors — these rows will be skipped</p>
+              {rowErrors.map((e, i) => (
+                <p key={i} className="text-xs text-red-600 flex items-start gap-1.5">
+                  <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0"/> {e}
+                </p>
+              ))}
+            </div>
+          )}
+
+          {/* Preview table */}
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+              <p className="text-sm font-bold text-gray-700">Preview — First 10 valid rows</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-school-navy text-white">
+                    {["#","Name","Class","Section","Father","Mobile","Gender"].map(h => (
+                      <th key={h} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {valid.slice(0,10).map((s, i) => (
+                    <tr key={i} className={`border-b border-gray-50 ${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}>
+                      <td className="px-3 py-2 text-gray-400">{s._row}</td>
+                      <td className="px-3 py-2 font-semibold text-gray-800">{s.firstName} {s.lastName}</td>
+                      <td className="px-3 py-2 text-school-navy font-semibold">{s.cls}</td>
+                      <td className="px-3 py-2">{s.section || "—"}</td>
+                      <td className="px-3 py-2 text-gray-600">{s.fatherName || "—"}</td>
+                      <td className="px-3 py-2 text-gray-600">{s.mobile1 || "—"}</td>
+                      <td className="px-3 py-2">{s.gender}</td>
+                    </tr>
+                  ))}
+                  {valid.length > 10 && (
+                    <tr><td colSpan={7} className="px-3 py-2 text-center text-xs text-gray-400">... and {valid.length - 10} more students</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-3">
+            <button onClick={reset}
+              className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+              ← Back
+            </button>
+            <button
+              onClick={confirmImport}
+              disabled={valid.length === 0 || importing}
+              className="flex items-center gap-2 px-6 py-2.5 bg-school-navy text-white rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors shadow-sm disabled:opacity-50">
+              {importing
+                ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Importing...</>
+                : <><Upload className="w-4 h-4"/> Import {valid.length} Student{valid.length !== 1 ? "s" : ""}</>
+              }
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Step: done ── */}
+      {step === "done" && (
+        <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+          <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center">
+            <CheckCircle2 className="w-8 h-8 text-green-600"/>
+          </div>
+          <p className="text-xl font-bold text-gray-800">Import Successful!</p>
+          <p className="text-sm text-gray-500">
+            <span className="font-bold text-green-700">{valid.length} students</span> have been imported successfully.
+            {invalid.length > 0 && <><br/><span className="text-red-500">{invalid.length} rows were skipped</span> due to errors.</>}
+          </p>
+          <button onClick={reset}
+            className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-school-navy text-white rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors">
+            <Upload className="w-4 h-4"/> Import More Students
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function PendingTasksPanel({ createdBy }) {
   const { pendingTasks, addTask, toggleTask, deleteTask } = useStore();
@@ -1481,6 +1830,7 @@ export default function SuperAdminPage() {
               {key:"single",  label:"Update Student",         icon:GraduationCap},
               {key:"bulk",    label:"Bulk Edit (Spreadsheet)", icon:Users},
               {key:"pending", label:"Pending IDs",             icon:Filter},
+              {key:"import",  label:"Import Students",         icon:Upload},
             ].map(t=>{
               const Icon=t.icon; const isA=activeTab===t.key;
               return <button key={t.key} onClick={()=>setActiveTab(t.key)} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${isA?"bg-school-navy text-white shadow-md":"text-gray-600 hover:bg-gray-100"}`}><Icon className="w-4 h-4"/>{t.label}</button>;
@@ -1490,6 +1840,7 @@ export default function SuperAdminPage() {
             {activeTab==="single"  && <SingleStudentTool students={DUMMY_STUDENTS}/>}
             {activeTab==="bulk"    && <SpreadsheetEditor students={DUMMY_STUDENTS} title="Bulk Edit Students"/>}
             {activeTab==="pending" && <PendingDetailsPanel students={DUMMY_STUDENTS}/>}
+            {activeTab==="import"  && <ImportStudentsPanel/>}
           </div>
         </>
       )}
@@ -1537,9 +1888,10 @@ export default function SuperAdminPage() {
                 {/* Students sub-tabs */}
                 <div className="flex flex-wrap gap-2 mb-5">
                   {[
-                    {key:"spreadsheet", label:"Spreadsheet Edit",   icon:Users},
+                    {key:"spreadsheet", label:"Spreadsheet Edit",    icon:Users},
                     {key:"single",      label:"Single Student Update",icon:GraduationCap},
                     {key:"pending",     label:"Pending IDs",          icon:Filter},
+                    {key:"import",      label:"Import Students",       icon:Upload},
                   ].map(t=>{
                     const Icon=t.icon; const isA=studentsSubTab===t.key;
                     return <button key={t.key} onClick={()=>setStudentsSubTab(t.key)} className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold border-2 transition-all ${isA?"bg-blue-600 text-white border-blue-600 shadow":"border-gray-200 text-gray-600 hover:border-blue-400 bg-white"}`}><Icon className="w-3.5 h-3.5"/>{t.label}</button>;
@@ -1548,6 +1900,7 @@ export default function SuperAdminPage() {
                 {studentsSubTab==="spreadsheet" && <SpreadsheetEditor students={DUMMY_STUDENTS} title="Student Records"/>}
                 {studentsSubTab==="single"      && <SingleStudentTool students={DUMMY_STUDENTS}/>}
                 {studentsSubTab==="pending"     && <PendingDetailsPanel students={DUMMY_STUDENTS}/>}
+                {studentsSubTab==="import"      && <ImportStudentsPanel/>}
               </>
             )}
             {mgmtTab==="fees"      && <FeesPanel/>}
