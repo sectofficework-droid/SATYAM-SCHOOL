@@ -250,8 +250,8 @@ export default function AddStudentPage() {
       finalCaste = "General";
       alert("No caste certificate uploaded — category has been set to General automatically.");
     }
-    alert("Student added successfully! (Dummy — will save to Supabase later)");
-    router.push("/student");
+    alert("Student added successfully!");
+    router.push("/fees?std=" + encodeURIComponent(form.std) + "&new=1");
   };
 
   return (

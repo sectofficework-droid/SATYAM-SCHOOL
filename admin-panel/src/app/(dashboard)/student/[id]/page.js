@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import useStore from "@/lib/store";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, User, Phone, Calendar, BookOpen,
@@ -40,10 +41,10 @@ const studentDB = {
       { term: "Term 3 - 2026-27", amount: 8500, paid: false, date: "",            receipt: "" },
     ],
     inventory: [
-      { item: "School Bag",    givenDate: "05 Jun 2025", given: true  },
-      { item: "Uniform",       givenDate: "05 Jun 2025", given: true  },
-      { item: "Textbooks",     givenDate: "10 Jun 2025", given: true  },
-      { item: "Notebooks",     givenDate: "",            given: false },
+      { item: "Bag",    givenDate: "05 Jun 2025", given: true  },
+      { item: "Uniform Set",       givenDate: "05 Jun 2025", given: true  },
+      { item: "Book Set",     givenDate: "10 Jun 2025", given: true  },
+      { item: "Notebook Set",     givenDate: "",            given: false },
       { item: "School Diary",  givenDate: "05 Jun 2025", given: true  },
       { item: "ID Card",       givenDate: "15 Jun 2025", given: true  },
       { item: "Assignment - 1", givenDate: "",           given: false },
@@ -461,8 +462,13 @@ function ResultsTab({ results }) {
 }
 
 function InventoryTab({ inventory }) {
-  const given   = inventory.filter((i) => i.given);
-  const pending = inventory.filter((i) => !i.given);
+  const masterItems = useStore(s => s.studentInventoryItems);
+  const merged = masterItems.map(name => {
+    const existing = inventory.find(i => i.item === name);
+    return existing || { item: name, givenDate: "", given: false };
+  });
+  const given   = merged.filter((i) => i.given);
+  const pending = merged.filter((i) => !i.given);
 
   return (
     <div className="space-y-5">
@@ -471,7 +477,7 @@ function InventoryTab({ inventory }) {
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-blue-50 rounded-2xl p-4 text-center border border-blue-100">
           <p className="text-xs text-blue-500 font-bold uppercase tracking-wide mb-1">Total Items</p>
-          <p className="text-2xl font-bold text-blue-700">{inventory.length}</p>
+          <p className="text-2xl font-bold text-blue-700">{merged.length}</p>
         </div>
         <div className="bg-green-50 rounded-2xl p-4 text-center border border-green-100">
           <p className="text-xs text-green-500 font-bold uppercase tracking-wide mb-1">Given</p>
@@ -496,7 +502,7 @@ function InventoryTab({ inventory }) {
           )}
         </div>
         <div className="divide-y divide-gray-50">
-          {inventory.map((item, i) => (
+          {merged.map((item, i) => (
             <div key={i} className="flex items-center gap-4 px-5 py-3.5">
               <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
                 item.given ? "bg-green-100" : "bg-amber-50 border border-amber-200"

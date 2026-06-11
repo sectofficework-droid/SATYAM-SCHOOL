@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import useStore from "@/lib/store";
+import * as XLSX from "xlsx";
 import {
   Users, Plus, Search, X, Phone, Mail, MapPin,
   Calendar, GraduationCap, Briefcase,
   User, FileText, Check, Eye, BookOpen,
   ChevronRight, ChevronLeft, Shield, Upload,
+  ClipboardList, IndianRupee, AlertCircle, Download,
+  CheckCircle2, TrendingDown, FileSpreadsheet,
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -15,11 +18,13 @@ const DESIGNATIONS = {
   management:     ["Principal", "Vice Principal", "Director", "Coordinator"],
   teaching:       ["Class Teacher", "Subject Teacher", "HOD", "PGT", "TGT", "PRT"],
   "non-teaching": ["Accountant", "Admin", "Librarian", "Lab Assistant", "Peon", "Security", "Clerk", "Receptionist", "Care Taker"],
+  media:          ["Social Media Manager", "Editor", "Content Creator", "Photographer", "Videographer"],
 };
 
 const DEPARTMENTS = [
   "Administration", "Primary", "Secondary",
   "Higher Secondary", "Sports & Activity", "Arts & Craft", "Non-Teaching",
+  "Media & Communications",
 ];
 
 const EMPLOYMENT_TYPES = ["Permanent", "Contractual", "Part-time"];
@@ -49,12 +54,14 @@ const TYPE_COLOR = {
   management:     "bg-purple-100 text-purple-700",
   teaching:       "bg-blue-100 text-blue-700",
   "non-teaching": "bg-gray-100 text-gray-600",
+  media:          "bg-rose-100 text-rose-700",
 };
 
 const TYPE_LABEL = {
   management:     "Management",
   teaching:       "Teaching",
   "non-teaching": "Non-Teaching",
+  media:          "Media",
 };
 
 const AVATAR_BG = [
@@ -87,10 +94,10 @@ const INITIAL_EMPLOYEES = [
   },
   // ── Admin Staff ───────────────────────────────────────────────
   ...([
-    { id:3,  empId:"EMP003", name:"Rajesh Biswal",     desig:"Admin", gender:"Male"   },
-    { id:4,  empId:"EMP004", name:"BK Debiprasad Das", desig:"Admin", gender:"Male"   },
-    { id:5,  empId:"EMP005", name:"Sandeep Pradhan",   desig:"Admin", gender:"Male"   },
-    { id:6,  empId:"EMP006", name:"Gaurang Polai",     desig:"Admin", gender:"Male"   },
+    { id:2,  empId:"EMP002", name:"Rajesh Biswal",     desig:"Admin", gender:"Male"   },
+    { id:3,  empId:"EMP003", name:"BK Debiprasad Das", desig:"Admin", gender:"Male"   },
+    { id:4,  empId:"EMP004", name:"Sandeep Pradhan",   desig:"Admin", gender:"Male"   },
+    { id:5,  empId:"EMP005", name:"Gaurang Polai",     desig:"Admin", gender:"Male"   },
     { id:7,  empId:"EMP007", name:"Rudra Prasad Muni", desig:"Admin", gender:"Male"   },
     { id:8,  empId:"EMP008", name:"Ayeshkant Rout",    desig:"Admin", gender:"Male"   },
   ].map(({ id, empId, name, desig, gender }) => ({
@@ -165,6 +172,24 @@ const INITIAL_EMPLOYEES = [
     ],
   },
 
+  // ── Media & Communications ─────────────────────────────────────
+  {
+    id:6, empId:"EMP006", name:"Kishan Swain", photo: null,
+    type: "media", designation: "Social Media Manager", department: "Media & Communications",
+    gender: "Male", dob: "", phone: "", altPhone: "", email: "", address: "",
+    aadhar: "", pan: "",
+    joiningDate: "2026-06-01", employmentType: "Permanent", status: "Active",
+    classTeacherOf: null, subjectMappings: [],
+    documents: [
+      { name:"Aadhar Card",        uploaded:false, fileName:"" },
+      { name:"PAN Card",           uploaded:false, fileName:"" },
+      { name:"Degree Certificate", uploaded:false, fileName:"" },
+      { name:"Experience Letter",  uploaded:false, fileName:"" },
+      { name:"Photo",              uploaded:false, fileName:"" },
+      { name:"Address Proof",      uploaded:false, fileName:"" },
+    ],
+  },
+
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -191,7 +216,7 @@ function calcAge(dob) {
 }
 
 function avatarBg(id) { return AVATAR_BG[Math.abs(id) % AVATAR_BG.length]; }
-function docsDone(emp) { return emp.documents.filter((d) => d.uploaded).length; }
+function docsDone(emp) { return (emp.documents || []).filter((d) => d.uploaded).length; }
 function fmtAadhar(val) {
   const digits = val.replace(/\D/g, "").slice(0, 12);
   return digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim();
@@ -221,7 +246,7 @@ function ViewEmployeeModal({ emp, onClose }) {
   const bg        = avatarBg(emp.id);
   const age       = calcAge(emp.dob);
   const done      = docsDone(emp);
-  const allDocsOk = done === emp.documents.length;
+  const allDocsOk = done === (emp.documents || []).length;
 
   const modal = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -339,11 +364,11 @@ function ViewEmployeeModal({ emp, onClose }) {
               <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                 allDocsOk ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"
               }`}>
-                {done}/{emp.documents.length}
+                {done}/{(emp.documents || []).length}
               </span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {emp.documents.map((d) => (
+              {(emp.documents || []).map((d) => (
                 <div key={d.name}
                   className={`flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold ${
                     d.uploaded
@@ -581,8 +606,8 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
             <>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-2">Staff Type *</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {[["management","Management"],["teaching","Teaching"],["non-teaching","Non-Teaching"]].map(([k,l]) => (
+                <div className="grid grid-cols-2 gap-2">
+                  {[["management","Management"],["teaching","Teaching"],["non-teaching","Non-Teaching"],["media","Media"]].map(([k,l]) => (
                     <button key={k} onClick={() => setType(k)}
                       className={`py-2 px-2 rounded-xl border text-xs font-semibold transition-colors ${
                         type === k ? "border-school-navy bg-school-navy/5 text-school-navy"
@@ -814,6 +839,324 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
   return createPortal(modal, document.body);
 }
 
+// ── Attendance Section ─────────────────────────────────────────────────────────
+function AttendanceSection({ employees, salaries, addSalaryPayments, setStoreExpenses, storeExpenses }) {
+  const today = new Date().toISOString().split("T")[0];
+  const [periodType, setPeriodType] = useState("fullmonth");
+  const [fromDate,   setFromDate]   = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0]);
+  const [toDate,     setToDate]     = useState(today);
+  const [records,    setRecords]    = useState([]);
+  const [status,     setStatus]     = useState(null);
+  const [statusMsg,  setStatusMsg]  = useState("");
+  const [savedKey,   setSavedKey]   = useState(null);
+  const fileRef = useRef(null);
+
+  function fmtAmt(n) { return "\u20b9" + Number(n).toLocaleString("en-IN"); }
+  function fmtD(d)   { try { return new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}); } catch { return d; } }
+  function daysInRange(f, t) {
+    if (!f || !t) return 0;
+    const ms = new Date(t) - new Date(f);
+    return ms < 0 ? 0 : Math.round(ms / 86400000) + 1;
+  }
+
+  const periodDays = daysInRange(fromDate, toDate);
+  const periodKey  = fromDate + "_" + toDate;
+
+  function applyPreset(type) {
+    const now = new Date(), y = now.getFullYear(), m = now.getMonth();
+    const last = new Date(y, m + 1, 0).getDate();
+    const d    = now.getDate();
+    let f, t;
+    if      (type === "7days")     { t = today; f = new Date(+now - 6*86400000).toISOString().split("T")[0]; }
+    else if (type === "15days")    {
+      if (d <= 15) { f = new Date(y,m,1).toISOString().split("T")[0];  t = new Date(y,m,15).toISOString().split("T")[0]; }
+      else         { f = new Date(y,m,16).toISOString().split("T")[0]; t = new Date(y,m,last).toISOString().split("T")[0]; }
+    }
+    else if (type === "fullmonth") { f = new Date(y,m,1).toISOString().split("T")[0]; t = new Date(y,m,last).toISOString().split("T")[0]; }
+    else { setPeriodType("custom"); return; }
+    setPeriodType(type); setFromDate(f); setToDate(t); setRecords([]); setStatus(null);
+  }
+
+  function findCol(headers, cands) {
+    for (const c of cands) { const i = headers.findIndex(h => h.includes(c)); if (i !== -1) return i; }
+    return -1;
+  }
+  function getEmp(empId, name) {
+    return employees.find(e =>
+      (empId && e.empId.toLowerCase() === String(empId).toLowerCase()) ||
+      (name  && e.name.toLowerCase()  === String(name).trim().toLowerCase())
+    ) || null;
+  }
+  function getSal(emp) { return emp ? ((salaries||{})[emp.empId] ?? 15000) : 15000; }
+
+  function handleFile(file) {
+    if (!file || periodDays === 0) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const wb   = XLSX.read(e.target.result, { type: "binary" });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        if (data.length < 2) { setStatus("error"); setStatusMsg("File has no data rows."); return; }
+
+        const headers   = data[0].map(h => String(h || "").trim().toLowerCase());
+        const colEmpId  = findCol(headers, ["emp id","empid","employee id","emp_id","id"]);
+        const colName   = findCol(headers, ["name","employee name","staff name","emp name"]);
+        const colPres   = findCol(headers, ["present days","present","days present","p days","attended"]);
+        const colAbsent = findCol(headers, ["absent days","absent","lop","loss of pay","a days"]);
+        const colLeave  = findCol(headers, ["leave days","leave","leaves","cl","pl","leave taken"]);
+
+        const rows = data.slice(1).filter(r => r.some(c => c !== ""));
+        const parsed = rows.map(row => {
+          const empId   = colEmpId  !== -1 ? String(row[colEmpId]  || "").trim() : "";
+          const name    = colName   !== -1 ? String(row[colName]   || "").trim() : "";
+          const present = colPres   !== -1 ? Number(row[colPres]   || 0)         : 0;
+          const absent  = colAbsent !== -1 ? Number(row[colAbsent] || 0)         : Math.max(0, periodDays - present);
+          const leave   = colLeave  !== -1 ? Number(row[colLeave]  || 0)         : 0;
+          const emp     = getEmp(empId, name);
+          const salary  = getSal(emp);
+          const perDay  = periodDays > 0 ? Math.round(salary / periodDays) : 0;
+          const deduction = Math.round(Math.max(0, absent) * perDay);
+          const net       = Math.max(0, present * perDay);
+          return { empId, name, present, absent, leave, emp, salary, perDay, deduction, net };
+        }).filter(r => r.empId || r.name);
+
+        if (parsed.length === 0) { setStatus("error"); setStatusMsg("No valid rows found. Check that Emp ID or Name column exists."); return; }
+        setRecords(parsed);
+        setStatus("success");
+        setStatusMsg(parsed.length + " record" + (parsed.length !== 1 ? "s" : "") + " imported from \"" + wb.SheetNames[0] + "\". Review the calculation below.");
+        setSavedKey(null);
+      } catch(err) { setStatus("error"); setStatusMsg("Failed to read file: " + err.message); }
+    };
+    reader.readAsBinaryString(file);
+  }
+
+  function handleGenerate() {
+    const date  = today;
+    const label = fmtD(fromDate) + " to " + fmtD(toDate);
+    const month = fromDate.slice(0, 7);
+    const newPay = records.filter(r => r.emp).map((r,i) => ({
+      id: Date.now()+i, empId: r.emp.empId, empName: r.emp.name,
+      month, amount: r.net, date, paidBy: "Sunil Pradhan",
+    }));
+    const newExp = records.filter(r => r.emp).map((r,i) => ({
+      id: Date.now()+10000+i,
+      title: "Salary \u2014 " + label + " \u2014 " + r.emp.name,
+      category: "Salary", amount: r.net, date, paidBy: "Sunil Pradhan",
+      note: (r.emp.designation||"") + " \u00b7 " + r.emp.empId + " \u00b7 Present: " + r.present + "/" + periodDays,
+    }));
+    addSalaryPayments(newPay);
+    setStoreExpenses([...newExp, ...(storeExpenses||[])]);
+    setSavedKey(periodKey);
+  }
+
+  function exportCalc() {
+    const rows = records.map(r => ({
+      "Emp ID":          r.emp?.empId || r.empId || "\u2014",
+      "Name":            r.emp?.name  || r.name  || "\u2014",
+      "Period Days":     periodDays,
+      "Present Days":    r.present,
+      "Absent Days":     r.absent,
+      "Leave Days":      r.leave || 0,
+      "Monthly Salary":  r.salary,
+      "Per Day (Rs)":    r.perDay,
+      "Deduction (Rs)":  r.deduction,
+      "Net Salary (Rs)": r.net,
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb2 = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb2, ws, "Salary Calculation");
+    XLSX.writeFile(wb2, "Salary_" + fromDate + "_to_" + toDate + ".xlsx");
+  }
+
+  const totalDeduction = records.reduce((s,r) => s+r.deduction, 0);
+  const totalNet       = records.reduce((s,r) => s+r.net,       0);
+  const totalPayroll   = records.reduce((s,r) => s+r.salary,    0);
+  const unmatched      = records.filter(r => !r.emp).length;
+  const INP = "w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy";
+
+  return (
+    <div className="space-y-5">
+
+      {/* Step 1 */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="w-6 h-6 rounded-full bg-school-navy text-white text-xs font-bold flex items-center justify-center flex-shrink-0">1</span>
+          <p className="text-sm font-bold text-gray-800">Select Attendance Period</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {[["7days","7 Days"],["15days","15 Days"],["fullmonth","Full Month"],["custom","Custom"]].map(([k,l]) => (
+            <button key={k} onClick={() => applyPreset(k)}
+              className={"px-4 py-2 rounded-xl text-sm font-semibold border transition-colors " +
+                (periodType===k ? "bg-school-navy text-white border-school-navy shadow-sm" : "bg-white text-gray-600 border-gray-200 hover:border-school-navy/40 hover:text-school-navy")}>
+              {l}
+            </button>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">From Date</label>
+            <input type="date" value={fromDate} max={toDate || today}
+              onChange={e => { setFromDate(e.target.value); setPeriodType("custom"); setRecords([]); setStatus(null); }}
+              className={INP}/>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">To Date</label>
+            <input type="date" value={toDate} min={fromDate} max={today}
+              onChange={e => { setToDate(e.target.value); setPeriodType("custom"); setRecords([]); setStatus(null); }}
+              className={INP}/>
+          </div>
+          <div className="bg-school-navy rounded-xl px-4 py-3 text-center">
+            <p className="text-[10px] font-bold text-white/60 uppercase tracking-wide">Total Period Days</p>
+            <p className="text-3xl font-bold text-white">{periodDays}</p>
+            <p className="text-[10px] text-white/50 mt-0.5">{fmtD(fromDate)} &ndash; {fmtD(toDate)}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Step 2 */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="w-6 h-6 rounded-full bg-school-navy text-white text-xs font-bold flex items-center justify-center flex-shrink-0">2</span>
+          <p className="text-sm font-bold text-gray-800">Import Attendance Excel</p>
+        </div>
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <p className="text-xs text-gray-400">Upload the attendance sheet for the selected {periodDays}-day period</p>
+          <div className="flex items-center gap-2">
+            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden"
+              onChange={e => { if (e.target.files[0]) handleFile(e.target.files[0]); e.target.value=""; }}/>
+            <button onClick={() => { if (periodDays > 0) fileRef.current?.click(); }}
+              disabled={periodDays === 0}
+              className="flex items-center gap-2 bg-school-navy hover:bg-school-navy-dark text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm disabled:opacity-40">
+              <Upload className="w-4 h-4"/> Import Excel
+            </button>
+          </div>
+        </div>
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3.5">
+          <p className="text-xs font-bold text-blue-700 mb-2">Expected Excel Column Headers (any order):</p>
+          <div className="flex flex-wrap gap-1.5">
+            {["Emp ID","Name","Present Days","Absent Days","Leave Days"].map(c => (
+              <code key={c} className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-[11px] font-mono">{c}</code>
+            ))}
+          </div>
+          <p className="text-[11px] text-blue-500 mt-2">
+            <strong>Total Days</strong> is taken from your period selection ({periodDays} days) — no need to add it in Excel.
+            If Absent Days is missing it is auto-calculated as {periodDays} minus Present Days.
+          </p>
+        </div>
+        {status && (
+          <div className={"flex items-start gap-2.5 px-4 py-3 rounded-xl border text-sm font-medium " +
+            (status==="success" ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700")}>
+            {status==="success" ? <CheckCircle2 className="w-4 h-4 flex-shrink-0 mt-0.5"/> : <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5"/>}
+            {statusMsg}
+          </div>
+        )}
+      </div>
+
+      {/* Results */}
+      {records.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[
+              { label:"Employees",       value: records.length,        bg:"bg-blue-50",  color:"text-blue-700"  },
+              { label:"Total Payroll",   value: fmtAmt(totalPayroll),  bg:"bg-gray-50",  color:"text-gray-700"  },
+              { label:"Total Deduction", value: fmtAmt(totalDeduction),bg:"bg-red-50",   color:"text-red-700"   },
+              { label:"Net Payroll",     value: fmtAmt(totalNet),      bg:"bg-green-50", color:"text-green-700" },
+            ].map(({label,value,bg,color}) => (
+              <div key={label} className={bg+" rounded-2xl px-4 py-3 border border-gray-100"}>
+                <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide mb-1">{label}</p>
+                <p className={"text-lg font-bold "+color}>{value}</p>
+              </div>
+            ))}
+          </div>
+
+          {unmatched > 0 && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-700">
+              <AlertCircle className="w-4 h-4 flex-shrink-0"/>
+              {unmatched} row{unmatched!==1?"s":""} could not be matched to an employee. Check Emp ID or Name in your Excel.
+            </div>
+          )}
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-100 flex-wrap gap-2">
+              <div>
+                <p className="text-sm font-bold text-gray-800">Salary Calculation</p>
+                <p className="text-xs text-gray-400 mt-0.5">{fmtD(fromDate)} to {fmtD(toDate)} &nbsp;·&nbsp; {periodDays} days &nbsp;·&nbsp; Per day = Monthly ÷ {periodDays}</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={exportCalc}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-green-200 text-green-700 bg-green-50 text-xs font-bold hover:bg-green-100 transition-colors">
+                  <FileSpreadsheet className="w-3.5 h-3.5"/> Export
+                </button>
+                {savedKey === periodKey ? (
+                  <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-100 text-green-700 text-xs font-bold">
+                    <CheckCircle2 className="w-3.5 h-3.5"/> Saved to Salary
+                  </span>
+                ) : (
+                  <button onClick={handleGenerate}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-school-navy hover:bg-school-navy-dark text-white text-xs font-bold transition-colors">
+                    <IndianRupee className="w-3.5 h-3.5"/> Generate Salary
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs" style={{minWidth:"800px"}}>
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    {["Emp ID","Name","Period Days","Present","Absent","Leave","Monthly Salary","Per Day","Deduction","Net Salary"].map(h => (
+                      <th key={h} className="px-3 py-2.5 text-left font-semibold text-gray-500 whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {records.map((r,i) => (
+                    <tr key={i} className={r.emp ? "hover:bg-gray-50/60" : "bg-amber-50/50"}>
+                      <td className="px-3 py-2.5 font-mono text-gray-500">{r.emp?.empId || r.empId || "—"}</td>
+                      <td className="px-3 py-2.5 font-semibold text-gray-800">
+                        {r.emp?.name || r.name || "—"}
+                        {!r.emp && <span className="ml-1.5 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded-full font-bold">Unmatched</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-center text-gray-500">{periodDays}</td>
+                      <td className="px-3 py-2.5 text-center text-green-700 font-semibold">{r.present}</td>
+                      <td className="px-3 py-2.5 text-center text-red-600 font-semibold">{r.absent}</td>
+                      <td className="px-3 py-2.5 text-center text-amber-600">{r.leave||0}</td>
+                      <td className="px-3 py-2.5 text-gray-700 font-semibold">{fmtAmt(r.salary)}</td>
+                      <td className="px-3 py-2.5 text-gray-500">{fmtAmt(r.perDay)}</td>
+                      <td className="px-3 py-2.5 text-red-600 font-semibold">{r.deduction>0?"−"+fmtAmt(r.deduction):"—"}</td>
+                      <td className="px-3 py-2.5 font-bold text-green-700">{fmtAmt(r.net)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-gray-200 bg-gray-50">
+                    <td colSpan={6} className="px-3 py-2.5 text-xs font-bold text-gray-500 uppercase tracking-wide">Total ({records.length} employees)</td>
+                    <td className="px-3 py-2.5 font-bold text-gray-700">{fmtAmt(totalPayroll)}</td>
+                    <td/>
+                    <td className="px-3 py-2.5 font-bold text-red-600">{totalDeduction>0?"−"+fmtAmt(totalDeduction):"—"}</td>
+                    <td className="px-3 py-2.5 font-bold text-green-700">{fmtAmt(totalNet)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {records.length === 0 && !status && (
+        <div className="bg-white rounded-2xl border border-dashed border-gray-200 flex flex-col items-center justify-center py-16 gap-3 text-center">
+          <div className="w-14 h-14 bg-gray-100 rounded-2xl flex items-center justify-center">
+            <FileSpreadsheet className="w-7 h-7 text-gray-300"/>
+          </div>
+          <p className="text-gray-500 font-semibold">No attendance data imported yet</p>
+          <p className="text-xs text-gray-400 max-w-xs">Complete Step 1 to set the period, then upload your attendance Excel in Step 2</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function EmployeePage() {
   const storeEmployees    = useStore(s => s.employees);
@@ -827,16 +1170,31 @@ export default function EmployeePage() {
     setEmployeesLocal(updated);
     setStoreEmployees(updated);
   }
+
+  // Populate store on first visit so other modules (Super Admin Salary) can read it
+  useEffect(() => {
+    if (storeEmployees.length === 0) {
+      setStoreEmployees(INITIAL_EMPLOYEES);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [view, setView]             = useState("staff"); // "staff" | "attendance"
   const [search, setSearch]         = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [deptFilter, setDeptFilter] = useState("all");
   const [viewEmp, setViewEmp]       = useState(null);
   const [addOpen, setAddOpen]       = useState(false);
 
+  const salaries       = useStore(s => s.employeeSalaries);
+  const addSalaryPay   = useStore(s => s.addSalaryPayments);
+  const storeExpenses  = useStore(s => s.expenses);
+  const setStoreExp    = useStore(s => s.setExpenses);
+
   const total       = employees.length;
   const teaching    = employees.filter((e) => e.type === "teaching").length;
   const nonTeaching = employees.filter((e) => e.type === "non-teaching").length;
   const management  = employees.filter((e) => e.type === "management").length;
+  const media       = employees.filter((e) => e.type === "media").length;
   const allDepts    = [...new Set(employees.map((e) => e.department))].sort();
 
   const filtered = employees.filter((e) => {
@@ -863,20 +1221,46 @@ export default function EmployeePage() {
           <h2 className="text-xl font-bold text-gray-800">Employee Management</h2>
           <p className="text-sm text-gray-500 mt-0.5">Staff profiles, assignments & document tracking</p>
         </div>
-        <button onClick={() => setAddOpen(true)}
-          className="flex items-center gap-2 bg-school-navy hover:bg-school-navy-dark text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm">
-          <Plus className="w-4 h-4" />
-          Add Employee
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
+            {[["staff","Staff List",Users],["attendance","Attendance",ClipboardList]].map(([v,l,Icon]) => (
+              <button key={v} onClick={() => setView(v)}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all ${view===v?"bg-white shadow text-school-navy":"text-gray-500 hover:text-gray-700"}`}>
+                <Icon className="w-3.5 h-3.5"/>{l}
+              </button>
+            ))}
+          </div>
+          {view === "staff" && (
+            <button onClick={() => setAddOpen(true)}
+              className="flex items-center gap-2 bg-school-navy hover:bg-school-navy-dark text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm">
+              <Plus className="w-4 h-4"/> Add Employee
+            </button>
+          )}
+        </div>
       </div>
 
+      {/* Attendance view */}
+      {view === "attendance" && (
+        <AttendanceSection
+          employees={employees}
+          salaries={salaries || {}}
+          addSalaryPayments={addSalaryPay}
+          setStoreExpenses={setStoreExp}
+          storeExpenses={storeExpenses}
+        />
+      )}
+
+      {/* Staff list view */}
+      {view === "staff" && <>
+
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         {[
           { label: "Total Staff",  value: total,       color: "text-blue-600",   bg: "bg-blue-50",   icon: Users         },
           { label: "Teaching",     value: teaching,    color: "text-green-600",  bg: "bg-green-50",  icon: GraduationCap },
           { label: "Non-Teaching", value: nonTeaching, color: "text-gray-600",   bg: "bg-gray-100",  icon: Briefcase     },
           { label: "Management",   value: management,  color: "text-purple-600", bg: "bg-purple-50", icon: Shield        },
+          { label: "Media",        value: media,       color: "text-rose-600",   bg: "bg-rose-50",   icon: Users         },
         ].map(({ label, value, color, bg, icon: Icon }) => (
           <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
             <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center flex-shrink-0`}>
@@ -901,7 +1285,7 @@ export default function EmployeePage() {
               value={search} onChange={(e) => setSearch(e.target.value)} />
           </div>
           <div className="flex gap-2 flex-wrap">
-            {[["all","All"],["management","Management"],["teaching","Teaching"],["non-teaching","Non-Teaching"]].map(([k,l]) => (
+            {[["all","All"],["management","Management"],["teaching","Teaching"],["non-teaching","Non-Teaching"],["media","Media"]].map(([k,l]) => (
               <button key={k} onClick={() => setTypeFilter(k)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors ${
                   typeFilter === k ? "bg-school-navy text-white border-school-navy"
@@ -944,7 +1328,7 @@ export default function EmployeePage() {
               {filtered.map((emp) => {
                 const bg     = avatarBg(emp.id);
                 const done   = docsDone(emp);
-                const docsOk = done === emp.documents.length;
+                const docsOk = done === (emp.documents || []).length;
                 return (
                   <tr key={emp.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-5 py-3.5">
@@ -968,7 +1352,7 @@ export default function EmployeePage() {
                     <td className="px-4 py-3.5 text-gray-500">{fmtDate(emp.joiningDate)}</td>
                     <td className="px-4 py-3.5 text-center">
                       <span className={`text-xs font-bold ${docsOk ? "text-green-600" : "text-amber-600"}`}>
-                        {done}/{emp.documents.length}
+                        {done}/{(emp.documents || []).length}
                       </span>
                     </td>
                     <td className="px-4 py-3.5 text-center">
@@ -996,6 +1380,9 @@ export default function EmployeePage() {
           </div>
         )}
       </div>
+
+      {/* End staff list view */}
+      </>}
 
       {viewEmp && <ViewEmployeeModal emp={viewEmp} onClose={() => setViewEmp(null)} />}
       {addOpen  && <AddEmployeeModal employees={employees} onClose={() => setAddOpen(false)} onSave={handleAdd} />}

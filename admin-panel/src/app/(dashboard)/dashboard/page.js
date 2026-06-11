@@ -118,16 +118,6 @@ function formatDateLabel(dateStr) {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
 
-// Simulate different dummy values per date
-function getDayStats(dateStr) {
-  const seed = dateStr.replace(/-/g, "").slice(-4);
-  const n = parseInt(seed, 10);
-  return {
-    fees:     `₹${((n % 60) + 20).toLocaleString("en-IN")}K`,
-    expenses: `₹${((n % 20) + 5).toLocaleString("en-IN")}K`,
-  };
-}
-
 // ── Custom Tooltip ─────────────────────────────────────────────
 function CustomTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
@@ -209,7 +199,7 @@ export default function DashboardPage() {
   const [selectedDate,  setSelectedDate]  = useState(todayStr);
   const [selectedClass, setSelectedClass] = useState("All Classes");
 
-  const { pendingTasks, toggleTask } = useStore();
+  const { pendingTasks, toggleTask, feePayments, expenses: storeExpenses } = useStore();
   const [showPopup, setShowPopup]   = useState(false);
 
   const pendingOnly = pendingTasks.filter(t => !t.done);
@@ -223,8 +213,15 @@ export default function DashboardPage() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isToday   = selectedDate === todayStr;
-  const dayStats  = getDayStats(selectedDate);
   const dateLabel = isToday ? "Today" : formatDateLabel(selectedDate);
+
+  const curMonth = new Date().toISOString().slice(0, 7);
+  function fmtAmt(n) { return n === 0 ? "₹0" : "₹" + n.toLocaleString("en-IN"); }
+
+  const feeMonthTotal = feePayments.filter(p => p.date.startsWith(curMonth)).reduce((s, p) => s + p.amount, 0);
+  const feeDateTotal  = feePayments.filter(p => p.date === selectedDate).reduce((s, p) => s + p.amount, 0);
+  const expMonthTotal = storeExpenses.filter(e => e.date.startsWith(curMonth)).reduce((s, e) => s + e.amount, 0);
+  const expDateTotal  = storeExpenses.filter(e => e.date === selectedDate).reduce((s, e) => s + e.amount, 0);
 
   const studentChartData = useMemo(
     () => genStudentAttendance(selectedClass),
@@ -302,11 +299,11 @@ export default function DashboardPage() {
             </div>
             <TrendingUp className="w-4 h-4 text-green-500" />
           </div>
-          <p className="text-2xl font-bold text-gray-800">{dayStats.fees}</p>
-          <p className="text-xs font-medium text-gray-500 mt-1">
-            {dateLabel}&apos;s Fee Collection
+          <p className="text-2xl font-bold text-gray-800">{fmtAmt(feeMonthTotal)}</p>
+          <p className="text-xs font-medium text-gray-500 mt-1">This Month&apos;s Fee Collection</p>
+          <p className="text-xs mt-1.5 text-green-600">
+            {dateLabel}: {feeDateTotal > 0 ? fmtAmt(feeDateTotal) : "No payments"}
           </p>
-          <p className="text-xs mt-1.5 text-green-600">Month total: ₹4,82,500</p>
         </div>
 
         {/* 4 — Expenses */}
@@ -317,11 +314,11 @@ export default function DashboardPage() {
             </div>
             <AlertCircle className="w-4 h-4 text-amber-500" />
           </div>
-          <p className="text-2xl font-bold text-gray-800">{dayStats.expenses}</p>
-          <p className="text-xs font-medium text-gray-500 mt-1">
-            {dateLabel}&apos;s Expenses
+          <p className="text-2xl font-bold text-gray-800">{fmtAmt(expMonthTotal)}</p>
+          <p className="text-xs font-medium text-gray-500 mt-1">This Month&apos;s Expenses</p>
+          <p className="text-xs mt-1.5 text-red-500">
+            {dateLabel}: {expDateTotal > 0 ? fmtAmt(expDateTotal) : "None"}
           </p>
-          <p className="text-xs mt-1.5 text-red-500">Month total: ₹1,24,800</p>
         </div>
       </div>
 

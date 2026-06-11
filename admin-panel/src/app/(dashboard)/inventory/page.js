@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useState, useEffect } from "react";
+import { Fragment, useState, useEffect, useRef } from "react";
+import useStore from "@/lib/store";
 import { createPortal } from "react-dom";
 import {
   Package, Plus, AlertTriangle, Search, TrendingDown,
@@ -9,27 +10,27 @@ import {
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const RECEIVERS = ["Sunil Pradhan", "Rajesh Pradhan", "Other"];
+const RECEIVERS = ["Sunil Pradhan", "Rajesh Biswal", "BK Debiprasad Das", "Sandeep Pradhan", "Gaurang Polai", "Rudra Prasad Muni", "Ayeshkant Rout", "Other"];
 const TODAY     = new Date().toISOString().split("T")[0];
 
 // ── Stock Inventory Data ──────────────────────────────────────────────────────
 const INITIAL_INVENTORY = [
   {
-    id: 1, name: "School Bag", category: "student", unit: "Pcs", lowStockAt: 10,
+    id: 1, name: "Bag", category: "student", unit: "Pcs", lowStockAt: 10,
     storageAddress: "Store Room 1, Rack A",
     batches: [{ id: 1, qty: 150, date: "2026-05-01", by: "Sunil Pradhan", note: "Opening stock 2026-27" }],
     usages:  [{ id: 1, qty: 98,  date: "2026-06-05", purpose: "student", note: "Distributed Std 1–5", by: "Sunil Pradhan" }],
     studentsTotal: 110, studentsGiven: 98,
   },
   {
-    id: 2, name: "Uniform (Set)", category: "student", unit: "Sets", lowStockAt: 10,
+    id: 2, name: "Uniform Set", category: "student", unit: "Sets", lowStockAt: 10,
     storageAddress: "Store Room 1, Rack B",
     batches: [{ id: 1, qty: 200, date: "2026-05-03", by: "Rajesh Pradhan", note: "Summer uniform 2026-27" }],
     usages:  [{ id: 1, qty: 105, date: "2026-06-01", purpose: "student", note: "Distributed", by: "Rajesh Pradhan" }],
     studentsTotal: 110, studentsGiven: 105,
   },
   {
-    id: 3, name: "Textbooks (Set)", category: "student", unit: "Sets", lowStockAt: 8,
+    id: 3, name: "Book Set", category: "student", unit: "Sets", lowStockAt: 8,
     storageAddress: "Store Room 2, Shelf 1",
     batches: [
       { id: 1, qty: 120, date: "2026-05-10", by: "Sunil Pradhan", note: "Academic year 2026-27" },
@@ -39,7 +40,7 @@ const INITIAL_INVENTORY = [
     studentsTotal: 110, studentsGiven: 110,
   },
   {
-    id: 4, name: "Notebooks (Set)", category: "student", unit: "Sets", lowStockAt: 15,
+    id: 4, name: "Notebook Set", category: "student", unit: "Sets", lowStockAt: 15,
     storageAddress: "Store Room 2, Shelf 2",
     batches: [{ id: 1, qty: 130, date: "2026-05-10", by: "Sunil Pradhan", note: "" }],
     usages:  [{ id: 1, qty: 108, date: "2026-06-05", purpose: "student", note: "", by: "Rajesh Pradhan" }],
@@ -445,8 +446,15 @@ function AddStockModal({ items, onClose, onSave }) {
   const [by, setBy]             = useState("");
   const [byCustom, setByCustom] = useState("");
   const [note, setNote]         = useState("");
+  const [location, setLocation] = useState(() => items.find(i => i.id === items[0]?.id)?.storageAddress || "");
   const [mounted, setMounted]   = useState(false);
   useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    if (tab === "existing" && selId) {
+      const found = items.find(i => i.id === Number(selId));
+      setLocation(found?.storageAddress || "");
+    }
+  }, [selId, tab]);
 
   const receivedBy = by === "Other" ? byCustom.trim() : by;
   const valid =
@@ -463,7 +471,8 @@ function AddStockModal({ items, onClose, onSave }) {
         unit: newUnit.trim() || "Pcs", lowStockAt: Number(newLow) || 10,
         storageAddress: newAddr.trim(),
       } : null,
-      batch: { qty: Number(qty), date, by: receivedBy, note: note.trim() },
+      batch: { qty: Number(qty), date, by: receivedBy, note: note.trim(), location: location.trim() },
+      location: location.trim(),
     });
   };
 
@@ -496,10 +505,19 @@ function AddStockModal({ items, onClose, onSave }) {
                 ))}
               </select>
               {selId && (
-                <p className="text-[11px] text-gray-400 mt-1.5 flex items-center gap-1">
-                  <MapPin className="w-3 h-3" />
-                  {items.find((i) => i.id === Number(selId))?.storageAddress || "No location set"}
-                </p>
+                <div className="mt-3">
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Storage Location</label>
+                  <div className="relative">
+                    <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                    <input
+                      className={`${IPT} pl-9`}
+                      placeholder="e.g. Store Room 1, Rack A"
+                      value={location}
+                      onChange={e => setLocation(e.target.value)}
+                    />
+                  </div>
+                  <p className="text-[11px] text-gray-400 mt-1">Updates the stored address for this item and is saved with this batch.</p>
+                </div>
               )}
             </div>
           ) : (
@@ -866,6 +884,13 @@ function ReturnAssetModal({ asset, onClose, onSave }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
+  const masterItems    = useStore(s => s.studentInventoryItems);
+  const addMasterItem  = useStore(s => s.addStudentInventoryItem);
+  const remMasterItem  = useStore(s => s.removeStudentInventoryItem);
+  const [newItemName,  setNewItemName]  = useState("");
+  const [addingItem,   setAddingItem]   = useState(false);
+  const newItemRef = useRef(null);
+
   const [assets, setAssets]               = useState(INITIAL_ASSETS);
   const [assetPanelOpen, setAssetPanelOpen] = useState(false);
   const [items, setItems]                 = useState(INITIAL_INVENTORY);
@@ -931,7 +956,11 @@ export default function InventoryPage() {
       if (payload.tab === "existing") {
         return prev.map((item) =>
           item.id === payload.selId
-            ? { ...item, batches: [...item.batches, { id: Date.now(), ...payload.batch }] }
+            ? {
+                ...item,
+                storageAddress: payload.location || item.storageAddress,
+                batches: [...item.batches, { id: Date.now(), ...payload.batch }],
+              }
             : item
         );
       }
@@ -1059,6 +1088,69 @@ export default function InventoryPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* ── Student Inventory Items ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm font-bold text-gray-800">Student Inventory Items</p>
+            <p className="text-xs text-gray-400 mt-0.5">Items given to every student — shown in their profile &amp; fee entry</p>
+          </div>
+          {!addingItem && (
+            <button
+              onClick={() => { setAddingItem(true); setTimeout(() => newItemRef.current?.focus(), 50); }}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-school-navy text-white text-xs font-semibold hover:bg-school-navy-dark transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" /> Add Item
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {masterItems.map((name) => (
+            <span key={name} className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 text-blue-800 text-xs font-semibold px-3 py-1.5 rounded-full">
+              <Package className="w-3 h-3 text-blue-400 flex-shrink-0" />
+              {name}
+              <button
+                onClick={() => remMasterItem(name)}
+                className="ml-0.5 w-3.5 h-3.5 rounded-full hover:bg-blue-200 flex items-center justify-center text-blue-400 hover:text-red-500 transition-colors flex-shrink-0"
+              >
+                <X className="w-2.5 h-2.5" />
+              </button>
+            </span>
+          ))}
+
+          {addingItem && (
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const name = newItemName.trim();
+                if (name) {
+                  addMasterItem(name);
+                  setItems(prev => {
+                    if (prev.some(i => i.name === name)) return prev;
+                    const newId = Math.max(...prev.map(i => i.id)) + 1;
+                    return [...prev, { id: newId, name, category: "student", unit: "Pcs", lowStockAt: 5, storageAddress: "", batches: [], usages: [], studentsTotal: 0, studentsGiven: 0 }];
+                  });
+                }
+                setNewItemName("");
+                setAddingItem(false);
+              }}
+            >
+              <input
+                ref={newItemRef}
+                value={newItemName}
+                onChange={e => setNewItemName(e.target.value)}
+                placeholder="Item name…"
+                className="border border-blue-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy w-36"
+              />
+              <button type="submit" className="px-3 py-1.5 bg-school-navy text-white text-xs font-semibold rounded-lg hover:bg-school-navy-dark transition-colors">Add</button>
+              <button type="button" onClick={() => { setAddingItem(false); setNewItemName(""); }} className="px-3 py-1.5 border border-gray-200 text-gray-500 text-xs font-semibold rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+            </form>
+          )}
+        </div>
       </div>
 
       {/* ── Stock Alerts ── */}
@@ -1212,6 +1304,7 @@ export default function InventoryPage() {
                               <span className="text-gray-600">{fmtDate(b.date)}</span>
                               <span className="text-gray-300">·</span>
                               <span className="text-gray-600">{b.by}</span>
+                              {b.location && <><span className="text-gray-300">·</span><span className="flex items-center gap-1 text-gray-500"><MapPin className="w-2.5 h-2.5 flex-shrink-0" />{b.location}</span></>}
                               {b.note && <><span className="text-gray-300">·</span><span className="text-gray-500 italic">{b.note}</span></>}
                             </div>
                           ))}

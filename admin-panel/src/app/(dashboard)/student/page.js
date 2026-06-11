@@ -71,7 +71,7 @@ const INITIAL_STUDENTS = [
     udise:"24180100101", pen:"", apaar:"", status:"Active",
     fees:{ total:48000, paid:36000 },
     pendingDocs:["Father's Aadhar Card", "Mother's Aadhar Card", "Leaving Certificate"],
-    pendingInventory:["Notebooks", "Assignment-1", "Assignment-2", "Assignment-3"],
+    pendingInventory:["Notebook Set", "Assignment-1", "Assignment-2", "Assignment-3"],
     lastSchoolName: "St. Xavier's Primary", tcUploaded: false,
   },
   {
@@ -84,7 +84,7 @@ const INITIAL_STUDENTS = [
     udise:"", pen:"", apaar:"123456789012", status:"Active",
     fees:{ total:44000, paid:44000 },
     pendingDocs:[],
-    pendingInventory:["Uniform"],
+    pendingInventory:["Uniform Set"],
   },
   {
     enrollment:"1003", name:"Rohan Mehta", photo:null,
@@ -109,7 +109,7 @@ const INITIAL_STUDENTS = [
     udise:"", pen:"", apaar:"", status:"Active",
     fees:{ total:40000, paid:0 },
     pendingDocs:["Birth Certificate", "Aadhar Card", "Father's Aadhar"],
-    pendingInventory:["School Bag", "Uniform", "Notebooks"],
+    pendingInventory:["Bag", "Uniform Set", "Notebook Set"],
   },
   {
     enrollment:"1005", name:"Dev Joshi", photo:null,
@@ -277,8 +277,10 @@ function PromoteModal({ student, onClose, onPromote, router }) {
 
   const handleConfirmPromote = () => {
     if (!extraValid) return;
+    const std  = encodeURIComponent(student.std);
+    const roll = encodeURIComponent(student.rollNo);
     onPromote();
-    router.push("/fees");
+    router.push("/fees?std=" + std + "&roll=" + roll + "&promoted=1");
   };
 
   return (

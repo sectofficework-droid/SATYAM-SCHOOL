@@ -92,6 +92,7 @@ const MODULE_THEMES = {
   fees:      { tabBg:"bg-emerald-600",tabActive:"bg-emerald-600 text-white",banner:"bg-gradient-to-r from-emerald-600 to-teal-700",  ring:"focus:ring-emerald-400" },
   inventory: { tabBg:"bg-amber-500",  tabActive:"bg-amber-500 text-white",  banner:"bg-gradient-to-r from-amber-500 to-orange-600",  ring:"focus:ring-amber-400"   },
   employee:  { tabBg:"bg-purple-600", tabActive:"bg-purple-600 text-white", banner:"bg-gradient-to-r from-purple-600 to-violet-700", ring:"focus:ring-purple-400"  },
+  salary:    { tabBg:"bg-green-700",  tabActive:"bg-green-700 text-white",  banner:"bg-gradient-to-r from-green-700 to-emerald-800", ring:"focus:ring-green-400"   },
 };
 
 const MGMT_MODULES = [
@@ -99,6 +100,7 @@ const MGMT_MODULES = [
   { key:"fees",      label:"Fees Management",  icon:IndianRupee,   stats:["₹3.2L Collected","₹48K Pending","15 Records"]    },
   { key:"inventory", label:"Inventory",        icon:Package,       stats:["8 Assets","6 Item Types","₹2.4L Value"]          },
   { key:"employee",  label:"Employee",         icon:Users,         stats:["12 Staff","8 Teachers","4 Support"]              },
+  { key:"salary",    label:"Salary",           icon:IndianRupee,   stats:["Management Only","Auto Expense Sync","Private"]  },
 ];
 
 
@@ -125,7 +127,7 @@ const PENDING_ID_FIELDS = [
   { key:"apaar",    label:"APAAR ID"   },
 ];
 
-const INVENTORY_ITEMS = ["School Bag","Uniform","Textbooks","Notebooks","School Diary","ID Card"];
+const INVENTORY_ITEMS = ["Bag","Uniform Set","Book Set","Notebook Set","School Diary","ID Card"];
 const EMP_ROLES    = ["Teacher","Admin Staff","Principal","Vice Principal","Lab Assistant","Librarian","Peon","Guard","Cook","Driver"];
 const EMP_STATUSES = ["Active","On Leave","Resigned"];
 const ASSET_ACTIONS = ["Purchased","Assigned","Returned","Serviced","Repaired","Moved","Disposed"];
@@ -212,8 +214,8 @@ const DUMMY_STUDENT_INVENTORY = DUMMY_STUDENTS.map((s,i) => ({
 }));
 
 const DUMMY_STOCK = [
-  { id:1,item:"School Bag",   price:450, total:150,issued:120},{ id:2,item:"Uniform",      price:850, total:200,issued:185},
-  { id:3,item:"Textbooks",    price:1200,total:300,issued:252},{ id:4,item:"Notebooks",    price:180, total:500,issued:420},
+  { id:1,item:"Bag",   price:450, total:150,issued:120},{ id:2,item:"Uniform Set",      price:850, total:200,issued:185},
+  { id:3,item:"Book Set",    price:1200,total:300,issued:252},{ id:4,item:"Notebook Set",    price:180, total:500,issued:420},
   { id:5,item:"School Diary", price:120, total:180,issued:160},{ id:6,item:"ID Card",      price:50,  total:200,issued:192},
   { id:7,item:"Water Bottle", price:250, total:100,issued:78 },{ id:8,item:"PE Kit",       price:650, total:120,issued:92 },
 ];
@@ -1072,11 +1074,275 @@ function InventoryPanel() {
 }
 
 // â"€â"€ Employee Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+
+// -- Salary Panel (Management Head only) -------------------------------------------
+function SalaryPanel() {
+  const employees      = useStore(s => s.employees);
+  const salaries       = useStore(s => s.employeeSalaries);
+  const updateSal      = useStore(s => s.updateEmployeeSalary);
+  const salPayments    = useStore(s => s.salaryPayments);
+  const addSalPayments = useStore(s => s.addSalaryPayments);
+  const storeExpenses  = useStore(s => s.expenses);
+  const setStoreExp    = useStore(s => s.setExpenses);
+
+  const curMonth = new Date().toISOString().slice(0, 7);
+  const [month,   setMonth]   = useState(curMonth);
+  const [search,  setSearch]  = useState("");
+  const [typeF,   setTypeF]   = useState("All");
+  const [editId,  setEditId]  = useState(null);
+  const [editVal, setEditVal] = useState("");
+
+  const safeSalaries   = salaries    || {};
+  const safePayments   = Array.isArray(salPayments) ? salPayments : [];
+  const safeExpenses   = Array.isArray(storeExpenses) ? storeExpenses : [];
+
+  const monthLabel = (m) => new Date(m + "-01").toLocaleDateString("en-IN", { month:"long", year:"numeric" });
+  function getSal(emp)    { return safeSalaries[emp.empId] ?? 15000; }
+  function isPaid(emp)    { return safePayments.some(p => p.empId === emp.empId && p.month === month); }
+  function getPaidOn(emp) { return safePayments.find(p => p.empId === emp.empId && p.month === month)?.date; }
+
+  const filtered = (employees.length > 0 ? employees : []).filter(e => {
+    const mt = typeF === "All" || e.type === typeF;
+    const ms = !search || e.name.toLowerCase().includes(search.toLowerCase()) || (e.empId||"").toLowerCase().includes(search.toLowerCase());
+    return mt && ms;
+  });
+
+  const totalPayroll    = filtered.reduce((s,e) => s + getSal(e), 0);
+  const paidThisMonth   = filtered.filter(e => isPaid(e));
+  const unpaidThisMonth = filtered.filter(e => !isPaid(e));
+
+  function fmtAmt(n)  { return "\u20b9" + Number(n).toLocaleString("en-IN"); }
+  function fmtDate(d) { try { return new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}); } catch { return d; } }
+
+  function saveSalary(empId) {
+    const v = parseInt(editVal, 10);
+    if (!isNaN(v) && v > 0) updateSal(empId, v);
+    setEditId(null);
+  }
+
+  function payOne(emp) {
+    const amount = getSal(emp);
+    const date   = new Date().toISOString().split("T")[0];
+    addSalaryPayments([{ id: Date.now(), empId: emp.empId, empName: emp.name, month, amount, date, paidBy:"Sunil Pradhan" }]);
+    setStoreExp([{ id: Date.now()+1, title:"Salary \u2014 "+monthLabel(month)+" \u2014 "+emp.name, category:"Salary", amount, date, paidBy:"Sunil Pradhan", note:(emp.designation||"")+" \u00b7 "+emp.empId }, ...safeExpenses]);
+  }
+
+  function payAll() {
+    if (unpaidThisMonth.length === 0) return;
+    const date = new Date().toISOString().split("T")[0];
+    const newPay = unpaidThisMonth.map((emp,i) => ({ id:Date.now()+i, empId:emp.empId, empName:emp.name, month, amount:getSal(emp), date, paidBy:"Sunil Pradhan" }));
+    const newExp = unpaidThisMonth.map((emp,i) => ({ id:Date.now()+10000+i, title:"Salary \u2014 "+monthLabel(month)+" \u2014 "+emp.name, category:"Salary", amount:getSal(emp), date, paidBy:"Sunil Pradhan", note:(emp.designation||"")+" \u00b7 "+emp.empId }));
+    addSalaryPayments(newPay);
+    setStoreExp([...newExp, ...safeExpenses]);
+  }
+
+  if (employees.length === 0) return (
+    <div className="flex flex-col items-center justify-center py-12 text-center text-gray-400 space-y-2">
+      <Users className="w-10 h-10 text-gray-200"/>
+      <p className="text-sm font-medium">No employee data yet.</p>
+      <p className="text-xs">Visit the <span className="font-semibold text-school-navy">Employee</span> module first.</p>
+    </div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2">
+          <IndianRupee className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0"/>
+          <input type="month" value={month} onChange={e=>setMonth(e.target.value)} className="text-sm font-semibold text-gray-700 bg-transparent focus:outline-none cursor-pointer"/>
+        </div>
+        <div className="relative flex-1 min-w-36">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
+          <input className="w-full border border-gray-200 rounded-xl pl-9 pr-4 py-2 text-sm focus:outline-none" placeholder="Search staff..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        </div>
+        <select className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none bg-white" value={typeF} onChange={e=>setTypeF(e.target.value)}>
+          <option value="All">All Types</option>
+          <option value="management">Management</option>
+          <option value="teaching">Teaching</option>
+          <option value="non-teaching">Non-Teaching</option>
+          <option value="media">Media</option>
+        </select>
+        {unpaidThisMonth.length > 0 && (
+          <button onClick={payAll} className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm">
+            <IndianRupee className="w-3.5 h-3.5"/> Pay All Unpaid ({unpaidThisMonth.length})
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label:"Total Payroll",  value:fmtAmt(totalPayroll),                                  bg:"bg-emerald-50", color:"text-emerald-700" },
+          { label:"Paid This Month",value:fmtAmt(paidThisMonth.reduce((s,e)=>s+getSal(e),0)),   bg:"bg-green-50",   color:"text-green-700"   },
+          { label:"Pending Staff",  value:unpaidThisMonth.length+" staff",                        bg:"bg-amber-50",   color:"text-amber-700"   },
+          { label:"Total Staff",    value:filtered.length,                                         bg:"bg-blue-50",    color:"text-blue-700"    },
+        ].map(({label,value,bg,color})=>(
+          <div key={label} className={bg+" rounded-xl px-4 py-3"}>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500 mb-1">{label}</p>
+            <p className={"text-lg font-bold "+color}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full text-xs" style={{minWidth:"700px"}}>
+          <thead>
+            <tr className="bg-gray-50 border-b border-gray-200">
+              {["Emp ID","Name","Type","Designation","Monthly Salary","Status","Paid On","Action"].map(h=>(
+                <th key={h} className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100">
+            {filtered.map(emp=>{
+              const paid=isPaid(emp), paidOn=getPaidOn(emp), sal=getSal(emp), editing=editId===emp.id;
+              return (
+                <tr key={emp.id} className={"transition-colors "+(paid?"bg-green-50/40":"hover:bg-gray-50/60")}>
+                  <td className="px-3 py-2.5 font-mono text-gray-500">{emp.empId}</td>
+                  <td className="px-3 py-2.5 font-semibold text-gray-800 whitespace-nowrap">{emp.name}</td>
+                  <td className="px-3 py-2.5">
+                    <span className={"px-2 py-0.5 rounded-full text-[10px] font-bold "+(emp.type==="teaching"?"bg-blue-100 text-blue-700":emp.type==="management"?"bg-purple-100 text-purple-700":emp.type==="media"?"bg-rose-100 text-rose-700":"bg-gray-100 text-gray-600")}>{emp.type}</span>
+                  </td>
+                  <td className="px-3 py-2.5 text-gray-600">{emp.designation||"\u2014"}</td>
+                  <td className="px-3 py-2.5">
+                    {editing ? (
+                      <div className="flex items-center gap-1">
+                        <input type="number" className="border border-emerald-300 rounded px-2 py-1 w-24 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
+                          value={editVal} onChange={e=>setEditVal(e.target.value)} autoFocus
+                          onKeyDown={e=>{ if(e.key==="Enter") saveSalary(emp.empId); if(e.key==="Escape") setEditId(null); }}/>
+                        <button onClick={()=>saveSalary(emp.empId)} className="p-1 rounded bg-emerald-500 text-white hover:bg-emerald-600"><Check className="w-3 h-3"/></button>
+                        <button onClick={()=>setEditId(null)} className="p-1 rounded bg-gray-200 text-gray-600 hover:bg-gray-300"><X className="w-3 h-3"/></button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-gray-800">{fmtAmt(sal)}</span>
+                        {!paid && <button onClick={()=>{ setEditId(emp.id); setEditVal(String(sal)); }} className="p-0.5 rounded text-gray-300 hover:text-emerald-600 transition-colors"><Pencil className="w-3 h-3"/></button>}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5">{paid?<span className="flex items-center gap-1 text-green-600 font-semibold"><CheckCircle2 className="w-3.5 h-3.5"/>Paid</span>:<span className="text-amber-600 font-semibold">Pending</span>}</td>
+                  <td className="px-3 py-2.5 text-gray-400">{paidOn?fmtDate(paidOn):"\u2014"}</td>
+                  <td className="px-3 py-2.5">{!paid&&<button onClick={()=>payOne(emp)} className="px-3 py-1 bg-emerald-500 hover:bg-emerald-600 text-white text-[11px] font-bold rounded-lg transition-colors">Pay</button>}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr className="border-t border-gray-200 bg-gray-50">
+              <td colSpan={4} className="px-3 py-2.5 text-xs font-bold text-gray-500 uppercase tracking-wide">Total ({filtered.length} staff)</td>
+              <td className="px-3 py-2.5 font-bold text-emerald-700">{fmtAmt(totalPayroll)}</td>
+              <td colSpan={3}/>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {paidThisMonth.length > 0 && (
+        <div className="bg-green-50 border border-green-100 rounded-xl p-4">
+          <p className="text-xs font-bold text-green-700 uppercase tracking-wide mb-2">{monthLabel(month)} \u2014 {paidThisMonth.length} staff paid \u00b7 {fmtAmt(paidThisMonth.reduce((s,e)=>s+getSal(e),0))} total</p>
+          <div className="flex flex-wrap gap-2">
+            {paidThisMonth.map(emp=>(
+              <span key={emp.id} className="bg-white border border-green-200 text-green-700 text-[11px] font-semibold px-2.5 py-1 rounded-full">{emp.name} \u00b7 {fmtAmt(getSal(emp))}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* \u2500\u2500 All Months Payment History \u2500\u2500 */}
+      <AllMonthsHistory salPayments={safePayments} monthLabel={monthLabel} fmtAmt={fmtAmt} fmtDate={fmtDate}/>
+    </div>
+  );
+}
+
+function AllMonthsHistory({ salPayments, monthLabel, fmtAmt, fmtDate }) {
+  const [expandedMonth, setExpandedMonth] = useState(null);
+
+  if (salPayments.length === 0) return (
+    <div className="bg-gray-50 border border-gray-100 rounded-xl p-5 text-center text-gray-400 text-sm">
+      No salary payments recorded yet.
+    </div>
+  );
+
+  // Group by month, sort descending
+  const grouped = {};
+  salPayments.forEach(p => {
+    if (!grouped[p.month]) grouped[p.month] = [];
+    grouped[p.month].push(p);
+  });
+  const months = Object.keys(grouped).sort().reverse();
+
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-bold text-gray-700 flex items-center gap-2">
+        <History className="w-4 h-4 text-gray-400"/> All Months Payment History
+        <span className="text-xs font-normal text-gray-400">({months.length} month{months.length!==1?"s":""})</span>
+      </p>
+      {months.map(m => {
+        const payments  = grouped[m];
+        const total     = payments.reduce((s,p) => s+p.amount, 0);
+        const isOpen    = expandedMonth === m;
+        return (
+          <div key={m} className="border border-gray-200 rounded-xl overflow-hidden">
+            <button onClick={() => setExpandedMonth(isOpen ? null : m)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-gray-50 transition-colors text-left">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
+                  <IndianRupee className="w-4 h-4 text-emerald-600"/>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">{monthLabel(m)}</p>
+                  <p className="text-xs text-gray-400">{payments.length} staff paid</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-bold text-emerald-700">{fmtAmt(total)}</span>
+                <ChevronDown className={"w-4 h-4 text-gray-400 transition-transform "+(isOpen?"rotate-180":"")}/>
+              </div>
+            </button>
+            {isOpen && (
+              <div className="border-t border-gray-100">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-gray-50">
+                      <th className="px-4 py-2 text-left font-semibold text-gray-500">Emp ID</th>
+                      <th className="px-4 py-2 text-left font-semibold text-gray-500">Name</th>
+                      <th className="px-4 py-2 text-left font-semibold text-gray-500">Amount</th>
+                      <th className="px-4 py-2 text-left font-semibold text-gray-500">Paid On</th>
+                      <th className="px-4 py-2 text-left font-semibold text-gray-500">Paid By</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {payments.map((p,i) => (
+                      <tr key={i} className="hover:bg-gray-50/60">
+                        <td className="px-4 py-2 font-mono text-gray-400">{p.empId}</td>
+                        <td className="px-4 py-2 font-semibold text-gray-800">{p.empName}</td>
+                        <td className="px-4 py-2 font-bold text-emerald-700">{fmtAmt(p.amount)}</td>
+                        <td className="px-4 py-2 text-gray-500">{fmtDate(p.date)}</td>
+                        <td className="px-4 py-2 text-gray-500">{p.paidBy}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t border-gray-100 bg-gray-50">
+                      <td colSpan={2} className="px-4 py-2 text-xs font-bold text-gray-500">Total</td>
+                      <td colSpan={3} className="px-4 py-2 font-bold text-emerald-700">{fmtAmt(total)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function EmployeePanel() {
   const storeEmployees    = useStore(s => s.employees);
   const setStoreEmployees = useStore(s => s.setEmployees);
+  const salaries          = useStore(s => s.employeeSalaries);
+  const updateSal         = useStore(s => s.updateEmployeeSalary);
 
-  // Use store data if populated, else empty (employee module will populate it on first visit)
   const employees = storeEmployees;
 
   const [search, setSearch] = useState("");
@@ -1100,8 +1366,13 @@ function EmployeePanel() {
   });
 
   function saveEdit() {
-    const updated = employees.map(e => e.id === editId ? { ...e, ...form } : e);
+    const { salary: salVal, ...empFields } = form;
+    const updated = employees.map(e => e.id === editId ? { ...e, ...empFields } : e);
     setStoreEmployees(updated);
+    const emp = employees.find(e => e.id === editId);
+    if (emp && salVal && !isNaN(Number(salVal)) && Number(salVal) > 0) {
+      updateSal(emp.empId, Number(salVal));
+    }
     setEditId(null);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -1143,7 +1414,7 @@ function EmployeePanel() {
         <table className="w-full text-xs">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-200">
-              {["Emp ID","Name","Type","Designation","Phone","Email","Status","Join Date",""].map(h=>(
+              {["Emp ID","Name","Type","Designation","Phone","Email","Salary / Month","Status","Join Date",""].map(h=>(
                 <th key={h} className="px-3 py-2.5 text-left font-semibold text-gray-600 whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -1162,6 +1433,9 @@ function EmployeePanel() {
                   <td className="px-3 py-2 text-gray-600">{emp.designation||"—"}</td>
                   <td className="px-3 py-2 text-gray-600">{emp.phone||"—"}</td>
                   <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate">{emp.email||"—"}</td>
+                  <td className="px-3 py-2 text-emerald-700 font-semibold">
+                    {salaries[emp.empId] ? "₹"+Number(salaries[emp.empId]).toLocaleString("en-IN") : <span className="text-gray-300 text-[10px]">Not set</span>}
+                  </td>
                   <td className="px-3 py-2">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${emp.status==="Active"?"bg-green-100 text-green-700":"bg-red-100 text-red-700"}`}>
                       {emp.status}
@@ -1169,7 +1443,7 @@ function EmployeePanel() {
                   </td>
                   <td className="px-3 py-2 text-gray-400">{emp.joiningDate||"—"}</td>
                   <td className="px-3 py-2">
-                    <button onClick={()=>editId===emp.id?setEditId(null):(setEditId(emp.id),setForm({ phone:emp.phone, email:emp.email, designation:emp.designation, status:emp.status, joiningDate:emp.joiningDate }))}
+                    <button onClick={()=>editId===emp.id?setEditId(null):(setEditId(emp.id),setForm({ phone:emp.phone, email:emp.email, designation:emp.designation, status:emp.status, joiningDate:emp.joiningDate, salary: salaries[emp.empId]||"" }))}
                       className="flex items-center gap-1 text-purple-700 font-semibold hover:text-purple-900">
                       <Pencil className="w-3.5 h-3.5"/>{editId===emp.id?"Close":"Edit"}
                     </button>
@@ -1177,14 +1451,15 @@ function EmployeePanel() {
                 </tr>
                 {editId===emp.id && (
                   <tr key={`ee-${emp.id}`}>
-                    <td colSpan={9} className="px-4 py-4 bg-purple-50/30 border-b border-purple-100">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
+                    <td colSpan={10} className="px-4 py-4 bg-purple-50/30 border-b border-purple-100">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
                         {[
-                          {l:"Phone",      f:"phone",       t:"text"},
-                          {l:"Email",      f:"email",       t:"text"},
-                          {l:"Designation",f:"designation", t:"text"},
-                          {l:"Join Date",  f:"joiningDate", t:"date"},
-                          {l:"Status",     f:"status",      t:"sel", opts:["Active","Inactive"]},
+                          {l:"Phone",          f:"phone",       t:"text"},
+                          {l:"Email",          f:"email",       t:"text"},
+                          {l:"Designation",    f:"designation", t:"text"},
+                          {l:"Monthly Salary", f:"salary",      t:"number"},
+                          {l:"Join Date",      f:"joiningDate", t:"date"},
+                          {l:"Status",         f:"status",      t:"sel", opts:["Active","Inactive"]},
                         ].map(({l,f,t,opts})=>(
                           <div key={f} className="flex flex-col gap-0.5">
                             <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">{l}</label>
@@ -1906,6 +2181,7 @@ export default function SuperAdminPage() {
             {mgmtTab==="fees"      && <FeesPanel/>}
             {mgmtTab==="inventory" && <InventoryPanel/>}
             {mgmtTab==="employee"  && <EmployeePanel/>}
+            {mgmtTab==="salary"    && <SalaryPanel/>}
           </div>
         </>
       )}

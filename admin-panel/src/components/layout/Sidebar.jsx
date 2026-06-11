@@ -15,6 +15,8 @@ import {
   ClipboardList,
   X,
   LogOut,
+  TrendingDown,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import useStore from "@/lib/store";
@@ -25,6 +27,8 @@ const navItems = [
   { href: "/fees", label: "Fees", icon: IndianRupee },
   { href: "/employee", label: "Employee", icon: Users },
   { href: "/inventory", label: "Inventory Management", icon: Package },
+  { href: "/expenses",  label: "Expenses",             icon: TrendingDown },
+  { href: "/notice",    label: "Notice Board",         icon: Bell },
   { href: "/report", label: "Report", icon: BarChart3 },
   { href: "/tasks", label: "Task Management", icon: ClipboardList },
   { href: "/super-admin", label: "Super Admin", icon: ShieldCheck },

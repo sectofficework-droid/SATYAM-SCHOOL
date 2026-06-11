@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
+import useStore from "@/lib/store";
 import {
   IndianRupee, Search, Send, Bell, CheckCircle2,
   Package, Phone, GraduationCap, ChevronDown, ChevronUp,
@@ -26,12 +28,17 @@ const FEES_STRUCTURE = [
   { std: "12th - Commerce", amount: 19000 },
 ];
 
-const ADMINS = ["Sunil Pradhan", "Rajesh Pradhan", "Other"];
-
-// Inventory items exactly as defined in student profile module
-const SCHOOL_INVENTORY = [
-  "School Bag", "Uniform", "Textbooks", "Notebooks", "School Diary", "ID Card",
+const ADMINS = [
+  "Sunil Pradhan",
+  "Rajesh Biswal",
+  "BK Debiprasad Das",
+  "Sandeep Pradhan",
+  "Gaurang Polai",
+  "Rudra Prasad Muni",
+  "Ayeshkant Rout",
+  "Other",
 ];
+
 
 const INITIAL_STUDENTS = [
   {
@@ -43,10 +50,10 @@ const INITIAL_STUDENTS = [
       { date: "2026-10-12", amount: 5000, receivedBy: "Admin" },
     ],
     inventory: [
-      { item: "School Bag",   givenDate: "05 Jun 2026", given: true  },
-      { item: "Uniform",      givenDate: "05 Jun 2026", given: true  },
-      { item: "Textbooks",    givenDate: "10 Jun 2026", given: true  },
-      { item: "Notebooks",    givenDate: "",            given: false },
+      { item: "Bag",   givenDate: "05 Jun 2026", given: true  },
+      { item: "Uniform Set",      givenDate: "05 Jun 2026", given: true  },
+      { item: "Book Set",    givenDate: "10 Jun 2026", given: true  },
+      { item: "Notebook Set",    givenDate: "",            given: false },
       { item: "School Diary", givenDate: "05 Jun 2026", given: true  },
       { item: "ID Card",      givenDate: "15 Jun 2026", given: true  },
     ],
@@ -59,10 +66,10 @@ const INITIAL_STUDENTS = [
       { date: "2026-06-10", amount: 17500, receivedBy: "Admin" },
     ],
     inventory: [
-      { item: "School Bag",   givenDate: "10 Jun 2026", given: true },
-      { item: "Uniform",      givenDate: "10 Jun 2026", given: true },
-      { item: "Textbooks",    givenDate: "12 Jun 2026", given: true },
-      { item: "Notebooks",    givenDate: "12 Jun 2026", given: true },
+      { item: "Bag",   givenDate: "10 Jun 2026", given: true },
+      { item: "Uniform Set",      givenDate: "10 Jun 2026", given: true },
+      { item: "Book Set",    givenDate: "12 Jun 2026", given: true },
+      { item: "Notebook Set",    givenDate: "12 Jun 2026", given: true },
       { item: "School Diary", givenDate: "10 Jun 2026", given: true },
       { item: "ID Card",      givenDate: "15 Jun 2026", given: true },
     ],
@@ -75,10 +82,10 @@ const INITIAL_STUDENTS = [
       { date: "2026-06-08", amount: 9000, receivedBy: "Admin" },
     ],
     inventory: [
-      { item: "School Bag",   givenDate: "08 Jun 2026", given: true  },
-      { item: "Uniform",      givenDate: "",            given: false },
-      { item: "Textbooks",    givenDate: "10 Jun 2026", given: true  },
-      { item: "Notebooks",    givenDate: "",            given: false },
+      { item: "Bag",   givenDate: "08 Jun 2026", given: true  },
+      { item: "Uniform Set",      givenDate: "",            given: false },
+      { item: "Book Set",    givenDate: "10 Jun 2026", given: true  },
+      { item: "Notebook Set",    givenDate: "",            given: false },
       { item: "School Diary", givenDate: "",            given: false },
       { item: "ID Card",      givenDate: "15 Jun 2026", given: true  },
     ],
@@ -89,10 +96,10 @@ const INITIAL_STUDENTS = [
     discount: { amount: 2500, reason: "3 Kids" },
     payments: [],
     inventory: [
-      { item: "School Bag",   givenDate: "", given: false },
-      { item: "Uniform",      givenDate: "", given: false },
-      { item: "Textbooks",    givenDate: "", given: false },
-      { item: "Notebooks",    givenDate: "", given: false },
+      { item: "Bag",   givenDate: "", given: false },
+      { item: "Uniform Set",      givenDate: "", given: false },
+      { item: "Book Set",    givenDate: "", given: false },
+      { item: "Notebook Set",    givenDate: "", given: false },
       { item: "School Diary", givenDate: "", given: false },
       { item: "ID Card",      givenDate: "", given: false },
     ],
@@ -105,10 +112,10 @@ const INITIAL_STUDENTS = [
       { date: "2026-06-12", amount: 14500, receivedBy: "Admin" },
     ],
     inventory: [
-      { item: "School Bag",   givenDate: "12 Jun 2026", given: true  },
-      { item: "Uniform",      givenDate: "12 Jun 2026", given: true  },
-      { item: "Textbooks",    givenDate: "",            given: false },
-      { item: "Notebooks",    givenDate: "",            given: false },
+      { item: "Bag",   givenDate: "12 Jun 2026", given: true  },
+      { item: "Uniform Set",      givenDate: "12 Jun 2026", given: true  },
+      { item: "Book Set",    givenDate: "",            given: false },
+      { item: "Notebook Set",    givenDate: "",            given: false },
       { item: "School Diary", givenDate: "12 Jun 2026", given: true  },
       { item: "ID Card",      givenDate: "20 Jun 2026", given: true  },
     ],
@@ -152,67 +159,49 @@ function todayLong() {
   return new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
-// Tri-lingual reminder — short and simple (English + Hindi + Odia)
-function buildReminderMsg(student, lastDate) {
-  const { dueFees } = calcSummary(student);
-  const cls  = `${student.std}${student.section ? "-" + student.section : ""}`;
-  const due  = `₹${dueFees.toLocaleString("en-IN")}`;
-  const last = formatDateLong(lastDate);
-
-  return `— English —
-Dear Parent,
-Your child ${student.name} (Class ${cls}, Roll ${student.rollNo}) has ${due} school fees pending.
-Please pay before ${last}.
-Contact school office for any help.
-Satyam Stars International School, Surat
-
-— हिंदी —
-प्रिय अभिभावक,
-आपके बच्चे ${student.name} (कक्षा ${cls}, रोल ${student.rollNo}) की ${due} स्कूल फीस बाकी है।
-कृपया ${last} से पहले जमा करें।
-किसी भी सहायता के लिए स्कूल कार्यालय से संपर्क करें।
-सत्यम स्टार्स इंटरनेशनल स्कूल, सूरत
-
-— ଓଡ଼ିଆ —
-ପ୍ରିୟ ଅଭିଭାବକ,
-ଆପଣଙ୍କ ପିଲା ${student.name} (ଶ୍ରେଣୀ ${cls}, ରୋଲ ${student.rollNo}) ର ${due} ସ୍କୁଲ ଶୁଳ୍କ ବାକି ଅଛି।
-ଦୟାକରି ${last} ପୂର୍ବରୁ ଦିଅନ୍ତୁ।
-ଆବଶ୍ୟକ ହେଲେ ସ୍କୁଲ କାର୍ଯ୍ୟାଳୟ ସହ ଯୋଗାଯୋଗ କରନ୍ତୁ।
-ସତ୍ୟମ ଷ୍ଟାର୍ସ ଇଣ୍ଟରନ୍ୟାସନାଲ ସ୍କୁଲ, ସୁରାଟ`;
+// Fills {name}, {class}, {roll}, {amount}, {date} placeholders in a template
+function fillTemplate(template, vars) {
+  return template
+    .replace(/\{name\}/g,   vars.name)
+    .replace(/\{class\}/g,  vars.cls)
+    .replace(/\{roll\}/g,   vars.roll)
+    .replace(/\{amount\}/g, vars.amount)
+    .replace(/\{date\}/g,   vars.date);
 }
 
-// Per-language short message for individual Notify modal
-function buildLangMessage(student, lastDate, lang) {
+// Tri-lingual reminder — uses templates from Settings
+function buildReminderMsg(student, lastDate, templates) {
   const { dueFees } = calcSummary(student);
-  const cls  = student.std + (student.section ? '-' + student.section : '');
-  const amt  = '₹' + dueFees.toLocaleString('en-IN');
-  const date = formatDateLong(lastDate);
-  const name = student.name;
-  const roll = student.rollNo;
-
-  if (lang === 'hi') return [
-    'प्रिय अभिभावक,',
-    name + ' (कक्षा ' + cls + ', रोल ' + roll + ') की ' + amt + ' स्कूल फीस बाकी है।',
-    'कृपया ' + date + ' तक जमा करें।',
-    'धन्यवाद,',
-    'सत्यम स्टार्स इंटरनेशनल स्कूल, सूरत',
-  ].join('\n');
-
-  if (lang === 'or') return [
-    'ପ୍ରିଯ ଅଭିଭାବକ,',
-    name + ' (ଶ୍ରେଣୀ ' + cls + ', ରୋଲ ' + roll + ') ର ' + amt + ' ସ୍କୁଲ ଶୁଳ୍କ ବାକି ଅଛି।',
-    'ଦଯାକରି ' + date + ' ପୂର୍ବରୁ ଦେଯ ଦିଅନ୍ତୁ।',
-    'ଧନ୍ଯବାଦ,',
-    'ସତ୍ଯମ ଷ୍ଟାର୍ସ ଇଣ୍ଟରନ୍ଯାସନାଲ ସ୍କୁଲ, ସୁରାଟ',
-  ].join('\n');
-
+  const vars = {
+    name:   student.name,
+    cls:    `${student.std}${student.section ? "-" + student.section : ""}`,
+    roll:   student.rollNo,
+    amount: `₹${dueFees.toLocaleString("en-IN")}`,
+    date:   formatDateLong(lastDate),
+  };
   return [
-    'Dear Parent,',
-    name + ' (Class ' + cls + ', Roll ' + roll + ') has ' + amt + ' school fees pending.',
-    'Please pay on or before ' + date + '.',
-    'Thank you,',
-    'Satyam Stars International School, Surat',
-  ].join('\n');
+    "— English —",
+    fillTemplate(templates.en, vars),
+    "",
+    "— हिंदी —",
+    fillTemplate(templates.hi, vars),
+    "",
+    "— ଓଡ଼ିଆ —",
+    fillTemplate(templates.or, vars),
+  ].join("\n");
+}
+
+// Per-language message for individual Notify modal — uses templates from Settings
+function buildLangMessage(student, lastDate, lang, templates) {
+  const { dueFees } = calcSummary(student);
+  const vars = {
+    name:   student.name,
+    cls:    student.std + (student.section ? '-' + student.section : ''),
+    roll:   student.rollNo,
+    amount: '₹' + dueFees.toLocaleString('en-IN'),
+    date:   formatDateLong(lastDate),
+  };
+  return fillTemplate(templates[lang] || templates.en, vars);
 }
 
 // ── Reusable UI ────────────────────────────────────────────────
@@ -256,19 +245,20 @@ const NOTIFY_LANGS = [
 ];
 
 function NotificationModal({ student, onClose }) {
+  const templates  = useStore(s => s.feeReminderTemplates);
   const defaultLast = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
   const [lastDate, setLastDate] = useState(defaultLast);
   const [lang,     setLang]     = useState("en");
-  const [message,  setMessage]  = useState(() => buildLangMessage(student, defaultLast, "en"));
+  const [message,  setMessage]  = useState(() => buildLangMessage(student, defaultLast, "en", templates));
 
   const handleDateChange = (d) => {
     setLastDate(d);
-    setMessage(buildLangMessage(student, d, lang));
+    setMessage(buildLangMessage(student, d, lang, templates));
   };
 
   const handleLangChange = (l) => {
     setLang(l);
-    setMessage(buildLangMessage(student, lastDate, l));
+    setMessage(buildLangMessage(student, lastDate, l, templates));
   };
 
   const { dueFees } = calcSummary(student);
@@ -490,6 +480,9 @@ function ViewModal({ student, onClose }) {
 
 // ── Main Page ──────────────────────────────────────────────────
 export default function FeesPage() {
+  const searchParams    = useSearchParams();
+  const templates       = useStore(s => s.feeReminderTemplates);
+  const addFeePayment   = useStore(s => s.addFeePayment);
   const [students,      setStudents]      = useState(INITIAL_STUDENTS);
   const [notifyStudent, setNotifyStudent] = useState(null);
   const [viewStudent,   setViewStudent]   = useState(null);
@@ -501,6 +494,20 @@ export default function FeesPage() {
   // Fee Entry
   const [entryStd,         setEntryStd]         = useState("");
   const [entryRoll,        setEntryRoll]         = useState("");
+
+  // Auto-select student when redirected from Add Student or Promote
+  useEffect(() => {
+    const std  = searchParams.get("std");
+    const roll = searchParams.get("roll");
+    if (std)  setEntryStd(std);
+    if (roll) setEntryRoll(roll);
+    // Scroll fee entry section into view
+    if (std) {
+      setTimeout(() => {
+        document.getElementById("fee-entry-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 300);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [newAmt,           setNewAmt]            = useState("");
   const [newDate,          setNewDate]           = useState(todayStr);
   const [newAdmin,         setNewAdmin]          = useState("");
@@ -516,8 +523,11 @@ export default function FeesPage() {
     ? students.find((s) => s.std === entryStd && s.rollNo === entryRoll)
     : null;
 
+  const masterItems = useStore(s => s.studentInventoryItems);
   const pendingInvItems = entryStudent
-    ? entryStudent.inventory.filter((i) => !i.given)
+    ? masterItems
+        .map(name => entryStudent.inventory.find(i => i.item === name) || { item: name, givenDate: "", given: false })
+        .filter(i => !i.given)
     : [];
 
   const togglePendingItem = (item) => {
@@ -534,13 +544,15 @@ export default function FeesPage() {
       alert("Please fill amount and received by.");
       return;
     }
+    const amt = Number(newAmt);
     setStudents((prev) =>
       prev.map((s) =>
         s.enrollment === entryStudent.enrollment
-          ? { ...s, payments: [...s.payments, { date: newDate, amount: Number(newAmt), receivedBy }] }
+          ? { ...s, payments: [...s.payments, { date: newDate, amount: amt, receivedBy }] }
           : s
       )
     );
+    addFeePayment({ date: newDate, amount: amt });
     setNewAmt(""); setNewDate(todayStr); setNewAdmin(""); setNewAdminCustom("");
     setPendingInventory(new Set());
     alert("Payment recorded successfully!");
@@ -553,18 +565,15 @@ export default function FeesPage() {
     }
     const givenDate = todayLong();
     setStudents((prev) =>
-      prev.map((s) =>
-        s.enrollment === entryStudent.enrollment
-          ? {
-              ...s,
-              inventory: s.inventory.map((inv) =>
-                pendingInventory.has(inv.item)
-                  ? { ...inv, given: true, givenDate }
-                  : inv
-              ),
-            }
-          : s
-      )
+      prev.map((s) => {
+        if (s.enrollment !== entryStudent.enrollment) return s;
+        const updatedInventory = masterItems.map(name => {
+          const existing = s.inventory.find(i => i.item === name);
+          if (pendingInventory.has(name)) return { item: name, given: true, givenDate };
+          return existing || { item: name, givenDate: "", given: false };
+        });
+        return { ...s, inventory: updatedInventory };
+      })
     );
     setPendingInventory(new Set());
     alert(`${pendingInventory.size} inventory item(s) marked as given!`);
@@ -603,7 +612,7 @@ export default function FeesPage() {
   const [reminderMsg,        setReminderMsg]        = useState(() => {
     const initDate = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
     const first    = INITIAL_STUDENTS.find((s) => calcSummary(s).dueFees > 0);
-    return first ? buildReminderMsg(first, initDate) : "";
+    return first ? buildReminderMsg(first, initDate, templates) : "";
   });
 
   const incompleteStudents = students.filter((s) => getPaymentStatus(s) !== "Full Paid");
@@ -613,7 +622,7 @@ export default function FeesPage() {
       const next = new Set(prev);
       next.has(enr) ? next.delete(enr) : next.add(enr);
       const newFirst = incompleteStudents.find((s) => next.has(s.enrollment));
-      if (newFirst) setReminderMsg(buildReminderMsg(newFirst, msgLastDate));
+      if (newFirst) setReminderMsg(buildReminderMsg(newFirst, msgLastDate, templates));
       return next;
     });
   };
@@ -621,7 +630,7 @@ export default function FeesPage() {
   const handleReminderDateChange = (d) => {
     setMsgLastDate(d);
     const first = incompleteStudents.find((s) => selectedIncomplete.has(s.enrollment));
-    if (first) setReminderMsg(buildReminderMsg(first, d));
+    if (first) setReminderMsg(buildReminderMsg(first, d, templates));
   };
 
   const handleSendMessage = () => {
@@ -859,8 +868,22 @@ export default function FeesPage() {
           </div>
         </div>
 
+        {/* ── Redirect context banner ── */}
+        {searchParams.get("new") === "1" && (
+          <div className="flex items-center gap-2.5 bg-green-50 border border-green-200 rounded-2xl px-4 py-3 text-sm text-green-700 font-medium">
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0"/>
+            New student added successfully. Select their class and roll number below to record the admission fee.
+          </div>
+        )}
+        {searchParams.get("promoted") === "1" && (
+          <div className="flex items-center gap-2.5 bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 text-sm text-blue-700 font-medium">
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0"/>
+            Student promoted to next class. Their fee record is selected below — record the new session fee payment.
+          </div>
+        )}
+
         {/* ══ Fee Entry ══ */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div id="fee-entry-section" className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2.5">
             <IndianRupee className="w-4 h-4 text-school-navy" />
             <span className="text-sm font-bold text-gray-800">Fee Entry</span>

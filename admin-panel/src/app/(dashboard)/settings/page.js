@@ -11,7 +11,7 @@ import {
   Phone, Mail, MapPin, Hash, Shield, UserPlus,
   GraduationCap, Lock, ChevronDown, ChevronUp, Pencil,
   AlertCircle, LogOut, SlidersHorizontal, LayoutGrid,
-  Download, FileSpreadsheet,
+  Download, FileSpreadsheet, MessageSquare,
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1246,8 +1246,8 @@ function UsersRolesTab() {
 
 // ── Saturday uses only morning slots ──────────────────────────────────────────
 const SAT_SLOT_IDS = new Set(["prayer","p1","p2","recess","p3"]);
-function slotsForGroup(group) {
-  return group === "Saturday" ? TIME_SLOTS.filter(s => SAT_SLOT_IDS.has(s.id)) : TIME_SLOTS;
+function slotsForGroup(group, slots) {
+  return group === "Saturday" ? slots.filter(s => SAT_SLOT_IDS.has(s.id)) : slots;
 }
 
 // ── Tab: Timetable ─────────────────────────────────────────────────────────────
@@ -1255,6 +1255,8 @@ function TimetableTab() {
   const storedTT        = useStore(s => s.timetables);
   const saveTT          = useStore(s => s.setTimetables);
   const ttActiveClasses = useStore(s => s.activeClasses);
+  const storedSlots     = useStore(s => s.timeSlots);
+  const saveSlots       = useStore(s => s.setTimeSlots);
   const backupRef       = useRef(null);
 
   const [selYear,    setSelYear]    = useState(DEF_YEAR.current);
@@ -1262,6 +1264,18 @@ function TimetableTab() {
   const [saved,      setSaved]      = useState(false);
   const [activeCell, setActiveCell] = useState(null); // { group, slotId, cls }
   const [ttData,     setTtData]     = useState(() => storedTT || {});
+
+  // ── Period Times edit ──
+  const [timesEditMode, setTimesEditMode] = useState(false);
+  const [timesSaved,    setTimesSaved]    = useState(false);
+  const [slotsForm,     setSlotsForm]     = useState(() => storedSlots.map(s => ({ ...s })));
+  const slotsBackup = useRef(null);
+
+  const currentSlots = timesEditMode ? slotsForm : storedSlots;
+
+  function startTimesEdit() { slotsBackup.current = storedSlots.map(s => ({ ...s })); setSlotsForm(storedSlots.map(s => ({ ...s }))); setTimesEditMode(true); }
+  function cancelTimesEdit() { setSlotsForm(slotsBackup.current); setTimesEditMode(false); }
+  function saveTimesEdit()   { saveSlots(slotsForm); setTimesSaved(true); setTimesEditMode(false); setTimeout(() => setTimesSaved(false), 2500); }
 
   const activeColClasses = CLASSES.filter(c => ttActiveClasses.includes(c));
 
@@ -1310,7 +1324,7 @@ function TimetableTab() {
     let y = 58;
 
     DAY_GROUPS.forEach((group) => {
-      const slots = slotsForGroup(group);
+      const slots = slotsForGroup(group, currentSlots);
       const isSat = group === "Saturday";
 
       doc.setFillColor(...(isSat ? [180,72,0] : [30,58,95]));
@@ -1368,7 +1382,7 @@ function TimetableTab() {
   function exportExcel() {
     const wb = XLSX.utils.book_new();
     DAY_GROUPS.forEach(group => {
-      const slots = slotsForGroup(group);
+      const slots = slotsForGroup(group, currentSlots);
       const data  = [
         ["TIME", ...activeColClasses],
         ...slots.map(slot => {
@@ -1391,6 +1405,51 @@ function TimetableTab() {
 
   return (
     <div className="space-y-4">
+
+      {/* ── Period Times ── */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm font-bold text-gray-800">Period Times</p>
+            <p className="text-xs text-gray-400 mt-0.5">Set the start and end time for each period and special slot</p>
+          </div>
+          {!timesEditMode ? (
+            <button onClick={startTimesEdit}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-school-navy text-white hover:bg-school-navy/90 transition-colors shadow-sm">
+              <Pencil className="w-3.5 h-3.5"/> Edit Times
+            </button>
+          ) : (
+            <div className="flex gap-2">
+              <button onClick={cancelTimesEdit}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
+                <X className="w-3.5 h-3.5"/> Cancel
+              </button>
+              <button onClick={saveTimesEdit}
+                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold shadow-sm transition-all ${timesSaved ? "bg-green-500 text-white" : "bg-school-navy text-white hover:bg-school-navy/90"}`}>
+                {timesSaved ? <Check className="w-3.5 h-3.5"/> : <Save className="w-3.5 h-3.5"/>}
+                {timesSaved ? "Saved!" : "Save"}
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {(timesEditMode ? slotsForm : storedSlots).map((slot, idx) => (
+            <div key={slot.id} className={`rounded-xl border px-3.5 py-3 ${slot.special ? "border-amber-200 bg-amber-50" : "border-gray-100 bg-gray-50"}`}>
+              <p className={`text-[10px] font-bold uppercase tracking-wider mb-1.5 ${slot.special ? "text-amber-600" : "text-gray-400"}`}>{slot.label}</p>
+              {timesEditMode ? (
+                <input
+                  value={slot.time}
+                  onChange={e => setSlotsForm(prev => prev.map((s, i) => i === idx ? { ...s, time: e.target.value } : s))}
+                  className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white"
+                  placeholder="e.g. 9:00 – 9:20"
+                />
+              ) : (
+                <p className="text-sm font-bold text-gray-800">{slot.time}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* ── Top Controls ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
@@ -1428,7 +1487,7 @@ function TimetableTab() {
 
       {/* ── One table per day group, stacked ── */}
       {DAY_GROUPS.map(group => {
-        const slots  = slotsForGroup(group);
+        const slots  = slotsForGroup(group, currentSlots);
         const isSat  = group === "Saturday";
         const hdrBg  = isSat ? "bg-amber-600" : "bg-school-navy";
         const colLen = activeColClasses.length;
@@ -1668,13 +1727,74 @@ function SettingsLogin({ onLogin }) {
 }
 
 // ── Main Settings Page ─────────────────────────────────────────────────────────
+// ── Tab: Fee Reminder Templates ────────────────────────────────────────────────
+function FeeReminderTab() {
+  const stored    = useStore(s => s.feeReminderTemplates);
+  const setStored = useStore(s => s.setFeeReminderTemplates);
+  const [form,     setForm]     = useState({ ...stored });
+  const [editMode, setEditMode] = useState(false);
+  const [saved,    setSaved]    = useState(false);
+  const [backup,   setBackup]   = useState(null);
+
+  function startEdit() { setBackup({ ...form }); setEditMode(true); }
+  function cancel()    { setForm(backup); setEditMode(false); }
+  function save()      { setStored(form); setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2500); }
+
+  const LANGS = [
+    { key:"en", label:"English Template"  },
+    { key:"hi", label:"Hindi Template"    },
+    { key:"or", label:"Odia Template"     },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 flex gap-3">
+        <MessageSquare className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5"/>
+        <div className="space-y-2">
+          <p className="text-sm font-semibold text-blue-800">Fee Reminder Message Templates</p>
+          <p className="text-xs text-blue-600">Edit the default message for each language. These are used in the Fees module when sending reminders. Use the placeholders below — they are replaced automatically with each student&apos;s actual data:</p>
+          <div className="flex flex-wrap gap-2 mt-1">
+            {["{name}", "{class}", "{roll}", "{amount}", "{date}"].map(p => (
+              <code key={p} className="bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-mono">{p}</code>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
+        <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider border-b border-gray-100 pb-3">
+          Message Templates
+        </h3>
+        <div className="space-y-5">
+          {LANGS.map(({ key, label }) => (
+            <div key={key} className="space-y-1.5">
+              <label className="text-xs font-semibold text-gray-500 uppercase tracking-wide">{label}</label>
+              {editMode
+                ? <textarea
+                    rows={5}
+                    value={form[key]}
+                    onChange={e => setForm(p => ({ ...p, [key]: e.target.value }))}
+                    className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm leading-relaxed focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy resize-y"
+                  />
+                : <pre className="px-3.5 py-2.5 bg-gray-50 border border-gray-100 rounded-xl text-sm leading-relaxed text-gray-700 whitespace-pre-wrap font-sans">{form[key]}</pre>
+              }
+            </div>
+          ))}
+        </div>
+        <EditBar editMode={editMode} saved={saved} onEdit={startEdit} onSave={save} onCancel={cancel}/>
+      </div>
+    </div>
+  );
+}
+
 const TABS = [
-  { key:"school",     label:"School Profile",    icon:Building2   },
-  { key:"year",       label:"Academic Year",      icon:Calendar    },
-  { key:"fees",       label:"Fee Structure",      icon:IndianRupee },
-  { key:"classes",    label:"Classes & Sections", icon:BookOpen    },
-  { key:"timetable",  label:"Timetable",          icon:LayoutGrid  },
-  { key:"users",      label:"Users & Roles",      icon:Users       },
+  { key:"school",     label:"School Profile",    icon:Building2    },
+  { key:"year",       label:"Academic Year",      icon:Calendar     },
+  { key:"fees",       label:"Fee Structure",      icon:IndianRupee  },
+  { key:"classes",    label:"Classes & Sections", icon:BookOpen     },
+  { key:"timetable",  label:"Timetable",          icon:LayoutGrid   },
+  { key:"reminders",  label:"Fee Reminders",      icon:MessageSquare},
+  { key:"users",      label:"Users & Roles",      icon:Users        },
 ];
 
 export default function SettingsPage() {
@@ -1730,6 +1850,7 @@ export default function SettingsPage() {
       {tab === "fees"       && <FeeStructureTab/>}
       {tab === "classes"    && <ClassSectionsTab/>}
       {tab === "timetable"  && <TimetableTab/>}
+      {tab === "reminders"  && <FeeReminderTab/>}
       {tab === "users"      && <UsersRolesTab/>}
     </div>
   );
