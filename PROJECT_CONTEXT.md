@@ -1,6 +1,6 @@
 # PROJECT CONTEXT — Satyam Stars International School ERP
 
-> **As of:** June 2026  
+> **As of:** 11 June 2026 (commit `eeffe95`)  
 > **Branch:** main  
 > **Working directory:** `D:\SATYAM-SCHOOL\admin-panel`
 
@@ -47,12 +47,14 @@ A single-app Next.js 14 school management ERP for **Satyam Stars International S
 /student/[id]/edit            ← Edit student details
 /student/[id]/tc              ← Transfer Certificate generation
 /fees                         ← Fee structure, collection, reminders
-/employee                     ← Staff profiles, assignments, documents
+/employee                     ← Staff profiles, attendance, salary calculation
 /inventory                    ← Stock items, assets, distribution
+/expenses                     ← School expense tracking (NEW — eeffe95)
+/notice                       ← Notice board: post/pin/archive notices (NEW — eeffe95)
 /report                       ← Reports (UI complete — see details below)
-/settings                     ← School config, fee structure, user accounts
-/super-admin                  ← Bulk student edit wizard, import tool, role login
 /tasks                        ← Task management (assign to staff, track)
+/settings                     ← School config, fee structure, user accounts
+/super-admin                  ← Bulk student edit wizard, import tool, role login, salary panel
 ```
 
 ---
@@ -134,13 +136,18 @@ A single-app Next.js 14 school management ERP for **Satyam Stars International S
 ### 5. Employee Management — `/employee`
 **Status: Complete (frontend only)**
 
-- 28 employees: 1 Management, 16 Teaching, 11 Non-Teaching
+- 27 employees seeded in Zustand store (EMP001–EMP027): 1 Principal, 7 Admin/Non-Teaching, 1 Media, 1 Care Taker, 16 Teaching, 1 Social Media Manager
 - Profile fields: Personal (name, DOB, phone, email, Aadhar, PAN), Job (designation, dept, joining date, employment type), Academic (class teacher of, subject→class mappings)
 - Document tracking: Aadhar, PAN, Degree, Experience Letter, Photo, Address Proof (6 docs each)
 - View modal: complete profile with document status
 - Add modal: 4-tab form (Personal / Job / Academic / Documents) with file upload UI
 - Table filters: Type (Management / Teaching / Non-Teaching), Department, text search (name / ID / designation)
 - Stats cards: Total staff, Teaching, Non-Teaching, Management
+- **Attendance + Salary Calculation section (added eeffe95):**
+  - Select from/to date range → compute present/absent/leave days per employee
+  - Auto-calculate per-day rate and deduction; shows net salary
+  - "Generate Salary" button: marks as paid, writes salary payment records to Zustand `salaryPayments`, and auto-creates an expense entry in the Expenses module (category: Salary)
+  - Export salary calculation to Excel
 - **Pending:** Backend storage, actual file upload to Supabase storage
 
 ---
@@ -159,7 +166,40 @@ A single-app Next.js 14 school management ERP for **Satyam Stars International S
 
 ---
 
-### 7. Report — `/report`
+### 7. Expenses — `/expenses`
+**Status: Complete (frontend only) — added in commit eeffe95**
+
+- Track all school outgoings: 8 categories (Salary, Infrastructure, Supplies, Utilities, Events, Maintenance, Transport, Other)
+- KPI cards: Total all-time, This Month total, Top category by spend
+- Expense list with color-coded category badges; sorted newest-first
+- Filters: search (title / paid-by), category filter, month filter
+- Add Expense modal: title, category, amount, date, paid-by (admin dropdown), optional note
+- Delete expense (with confirm dialog)
+- Salary payments from the Employee module auto-appear here as Salary category entries (Zustand sync)
+- Export filtered list to Excel and PDF
+- Data lives in Zustand `expenses` array (persisted via localStorage)
+- **Pending:** Supabase persistence
+
+---
+
+### 8. Notice Board — `/notice`
+**Status: Complete (frontend only) — added in commit eeffe95**
+
+- 7 notice types: Academic, Event, Holiday, Fee, Circular, General, Urgent (each with its own color badge)
+- 5 audience targets: Everyone, All Students, All Staff, Parents, Management
+- Notice card features: pin/unpin, edit, archive/restore, delete
+- Days-until-expiry indicator on each card (shows "Expired" when past expiry date)
+- Filter by type, audience, and active/archived view
+- Search by title
+- Post Notice modal: title, content, type, audience, posted date, expiry date (optional), posted-by (admin dropdown), pin toggle
+- Edit support: pre-fills all fields from existing notice
+- Data is local component state (NOT in Zustand store); does not persist across refreshes
+- **Pending:** Move to Zustand/Supabase for persistence
+
+---
+
+### 9. Report — `/report`
+
 **Status: Complete (frontend only)**
 
 - 4 report types accessible via tab/section UI:
@@ -174,7 +214,7 @@ A single-app Next.js 14 school management ERP for **Satyam Stars International S
 
 ---
 
-### 8. Settings — `/settings`
+### 10. Settings — `/settings`
 **Status: Complete (frontend only)**
 
 - School info editor: name, board, medium, address, phone, email, logo
@@ -188,7 +228,7 @@ A single-app Next.js 14 school management ERP for **Satyam Stars International S
 
 ---
 
-### 9. Super Admin — `/super-admin`
+### 11. Super Admin — `/super-admin`
 **Status: Complete (frontend only)**
 
 This module has its own internal role-based login before showing content:
@@ -203,15 +243,16 @@ This module has its own internal role-based login before showing content:
 - **Role Permissions Panel:** View/toggle what each role (Admin, Teacher) can access per module
 - **System-wide config:** Active classes, readmission date, uniform fee per class, old student discount
 - **Task creation:** Add tasks with priority and assign to a staff member (writes to Zustand store)
+- **Salary Panel (Management-only, added eeffe95):** View/edit base monthly salary per employee (reads `employeeSalaries` from Zustand); view all salary payment history from `salaryPayments`
 - **History / Audit log:** View recent bulk actions (session-only, not persisted)
 
-**Last commits touching this module:** `super admin changes`, `super admin module with login and bulk update wizard`, `import student completed`
+**Last commits touching this module:** `notice and expeneces module ready`, `super admin changes`, `super admin module with login and bulk update wizard`, `import student completed`
 
 **Pending:** Backend integration; import currently does not persist to DB
 
 ---
 
-### 10. Tasks — `/tasks`
+### 12. Tasks — `/tasks`
 **Status: Complete (frontend only)**
 
 - Task list view: all tasks with priority badges (High / Medium / Low), assigned-to, created-by, due date
@@ -233,10 +274,19 @@ user: { name, role, email, initials }
 readmissionDate
 activeClasses: 15-item array (JR KG → 12th Commerce)
 timetables: {}
+timeSlots: [{id, label, time, special?}]  ← 7 slots: Prayer, P1–P5, Recess
+setTimeSlots
 uniformFees: { [className]: amount }
 oldStudentDiscount: 1000   ← fixed ₹1,000 for returning students
-employees: []
+employees: [27 seeded staff, EMP001–EMP027]
 rolePermissions: {}
+employeeSalaries: { [empId]: monthlyAmount }   ← management-only view
+updateEmployeeSalary(empId, amount)
+salaryPayments: []     ← auto-populated when Employee module generates salary
+addSalaryPayments(payments)
+expenses: [seeded with 10 initial entries]
+setExpenses(list)
+feePayments: [seeded with 5 entries for dashboard totals]
 pendingTasks: [{ id, text, priority, createdBy, done }]
 addTask / toggleTask / deleteTask
 ```
@@ -257,7 +307,9 @@ All state uses localStorage persistence via Zustand `persist` middleware.
 | Custom `dev-start.js` script | Replaces `next dev` to fix port/env issues |
 | Tri-lingual fee reminders (EN/HI/OD) | School has students from Odisha; Odia language needed |
 | Super Admin has its own internal login | Prevents accidental access; no separate auth route needed |
-| No salary fields for employees | Removed by decision (was present, then stripped out) |
+| Salary is management-only in Super Admin + Employee modules | Base salaries stored in `employeeSalaries` Zustand map; not shown to regular admins |
+| Salary payments auto-sync to Expenses module | When Employee generates salary, an expense entry (category: Salary) is created automatically via Zustand |
+| Notice board state is local (not in Zustand) | Notices are session-only until Supabase integration |
 | APAAR eligibility = Birth cert + Aadhar + name match | Government requirement logic implemented in code |
 
 ---
@@ -280,7 +332,7 @@ All state uses localStorage persistence via Zustand `persist` middleware.
 | Razorpay payment flow | Package installed, no integration code |
 | FCM / push notifications | Sonner toasts ready; FCM not wired |
 | Student/staff photo upload | UI elements exist, no Supabase storage calls |
-| Timetable module | State key exists in Zustand, no page built |
+| Timetable module | `timeSlots` and `timetables` in Zustand; no page built yet |
 | Attendance module | Referenced in dashboard charts, no dedicated page |
 | Parent portal | Not started |
 | SMS/WhatsApp delivery | Fee reminder text is ready, no send mechanism |
@@ -292,15 +344,17 @@ All state uses localStorage persistence via Zustand `persist` middleware.
 
 | File | Lines | Purpose |
 |---|---|---|
+| `src/app/(dashboard)/employee/page.js` | ~1,250+ | Employee + attendance + salary calculation |
 | `src/app/(dashboard)/fees/page.js` | ~1,250 | Fee management |
 | `src/app/(dashboard)/student/page.js` | ~1,235 | Student list |
-| `src/app/(dashboard)/employee/page.js` | ~1,005 | Employee management |
-| `src/app/(dashboard)/super-admin/page.js` | ~900+ | Super admin tools |
+| `src/app/(dashboard)/super-admin/page.js` | ~1,200+ | Super admin tools + salary panel |
+| `src/app/(dashboard)/notice/page.js` | ~416 | Notice board (NEW) |
 | `src/app/(dashboard)/report/page.js` | ~800+ | All reports |
-| `src/app/(dashboard)/settings/page.js` | ~700+ | School config |
-| `src/app/(dashboard)/inventory/page.js` | ~650+ | Inventory & assets |
+| `src/app/(dashboard)/settings/page.js` | ~850+ | School config |
+| `src/app/(dashboard)/expenses/page.js` | ~348 | Expense tracking (NEW) |
+| `src/app/(dashboard)/inventory/page.js` | ~770+ | Inventory & assets |
 | `src/app/(dashboard)/tasks/page.js` | ~500+ | Task management |
-| `src/lib/store.js` | ~200 | Global Zustand state |
+| `src/lib/store.js` | ~320+ | Global Zustand state (seeded employees, salaries, expenses) |
 
 ---
 
@@ -308,17 +362,18 @@ All state uses localStorage persistence via Zustand `persist` middleware.
 
 | Commit | Work Done |
 |---|---|
-| `import student completed` | Super Admin student import from Excel finished |
-| `9july updated` | General updates (9 July) |
-| `dev server change` | Custom dev-start.js script |
-| `super admin changes` | Super Admin module revisions |
-| `super admin module with login and bulk update wizard` | Core Super Admin built |
-| `assest management` | Asset checkout tracking in Inventory |
-| `inventory: storage addresses + permanent asset management` | Inventory module expanded |
-| `employee: fix doc validation, aadhar format, subject-class mapping` | Employee form fixes |
-| `employee: remove salary, add real file upload for documents` | Salary removed; upload UI added |
-| `employee module UI complete` | Employee module done |
-| `inventory module started` | Inventory begun |
-| `FEES MODULE UI STARTED` | Fees module begun |
-| `student ui Done` / `student ui extra change` | Student module complete |
-| `login and dashboard frontend ready` | Initial dashboard and auth |
+| `eeffe95` notice and expenses module ready | **Expenses** + **Notice Board** modules built; Employee gets Attendance+Salary section; Super Admin gets Salary panel; store seeded with 27 employees, salaries, timeSlots, expenses, feePayments |
+| `c213c41` project context created | PROJECT_CONTEXT.md created |
+| `40ae014` import student completed | Super Admin student import from Excel finished |
+| `ab8fe52` 9july updated | General updates (9 July) |
+| `f5907eb` dev server change | Custom dev-start.js script |
+| `594bd36` super admin changes | Super Admin module revisions |
+| `7c85062` changes in super admin | Super Admin further updates |
+| `c6faaa2` super admin module with login and bulk update wizard | Core Super Admin built |
+| `cdfb975` assest management | Asset checkout tracking in Inventory |
+| `fc8b339` inventory: storage addresses + permanent asset management | Inventory module expanded |
+| `fcc6094` employee: fix doc validation, aadhar format, subject-class mapping | Employee form fixes |
+| `a973fb5` employee: remove salary, add real file upload for documents | Salary removed; upload UI added |
+| `ead2fee` employee module UI complete | Employee module done |
+| `a44bc21` inventory module started | Inventory begun |
+| `24e0ae6` FEES MODULE UI STARTED | Fees module begun |

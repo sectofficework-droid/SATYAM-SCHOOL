@@ -43,11 +43,11 @@ const ADMINS = [
 const INITIAL_STUDENTS = [
   {
     enrollment: "1001", name: "Arjun Patel", fatherName: "Rajesh",
-    std: "10th", section: "A", rollNo: "101", mobile: "9876543210",
+    std: "10th", section: "A", rollNo: "1", mobile: "9876543210",
     discount: { amount: 5000, reason: "Financial Weak" },
     payments: [
-      { date: "2026-06-05", amount: 8500, receivedBy: "Principal" },
-      { date: "2026-10-12", amount: 5000, receivedBy: "Admin" },
+      { date: "2026-06-05", amount: 8500, receivedBy: "Principal", std: "10th" },
+      { date: "2026-10-12", amount: 5000, receivedBy: "Admin",     std: "10th" },
     ],
     inventory: [
       { item: "Bag",   givenDate: "05 Jun 2026", given: true  },
@@ -60,10 +60,10 @@ const INITIAL_STUDENTS = [
   },
   {
     enrollment: "1002", name: "Priya Shah", fatherName: "Amit",
-    std: "9th", section: "B", rollNo: "204", mobile: "9765432100",
+    std: "9th", section: "B", rollNo: "1", mobile: "9765432100",
     discount: { amount: 0, reason: "" },
     payments: [
-      { date: "2026-06-10", amount: 17500, receivedBy: "Admin" },
+      { date: "2026-06-10", amount: 17500, receivedBy: "Admin", std: "9th" },
     ],
     inventory: [
       { item: "Bag",   givenDate: "10 Jun 2026", given: true },
@@ -76,10 +76,10 @@ const INITIAL_STUDENTS = [
   },
   {
     enrollment: "1003", name: "Rohan Mehta", fatherName: "Suresh",
-    std: "11th - Commerce", section: "A", rollNo: "312", mobile: "9654321098",
+    std: "11th - Commerce", section: "A", rollNo: "1", mobile: "9654321098",
     discount: { amount: 1000, reason: "Old Student" },
     payments: [
-      { date: "2026-06-08", amount: 9000, receivedBy: "Admin" },
+      { date: "2026-06-08", amount: 9000, receivedBy: "Admin", std: "11th - Commerce" },
     ],
     inventory: [
       { item: "Bag",   givenDate: "08 Jun 2026", given: true  },
@@ -92,7 +92,7 @@ const INITIAL_STUDENTS = [
   },
   {
     enrollment: "1004", name: "Sneha Desai", fatherName: "Kishore",
-    std: "8th", section: "C", rollNo: "418", mobile: "9543210987",
+    std: "8th", section: "C", rollNo: "1", mobile: "9543210987",
     discount: { amount: 2500, reason: "3 Kids" },
     payments: [],
     inventory: [
@@ -106,10 +106,10 @@ const INITIAL_STUDENTS = [
   },
   {
     enrollment: "1005", name: "Dev Joshi", fatherName: "Prakash",
-    std: "JR.KG", section: "A", rollNo: "501", mobile: "9432109876",
+    std: "JR.KG", section: "A", rollNo: "1", mobile: "9432109876",
     discount: { amount: 0, reason: "" },
     payments: [
-      { date: "2026-06-12", amount: 14500, receivedBy: "Admin" },
+      { date: "2026-06-12", amount: 14500, receivedBy: "Admin", std: "JR.KG" },
     ],
     inventory: [
       { item: "Bag",   givenDate: "12 Jun 2026", given: true  },
@@ -133,9 +133,11 @@ function calcSummary(student) {
   const totalFees  = getStructureFee(student.std);
   const discount   = student.discount?.amount ?? 0;
   const actualFees = Math.max(totalFees - discount, 0);
-  const paidFees   = student.payments.reduce((s, p) => s + p.amount, 0);
+  // Only count payments recorded for the student's current class
+  const classPayments = student.payments.filter(p => !p.std || p.std === student.std);
+  const paidFees   = classPayments.reduce((s, p) => s + p.amount, 0);
   const dueFees    = Math.max(actualFees - paidFees, 0);
-  return { totalFees, discount, actualFees, paidFees, dueFees };
+  return { totalFees, discount, actualFees, paidFees, dueFees, classPayments };
 }
 
 function getPaymentStatus(student) {
@@ -340,7 +342,7 @@ function NotificationModal({ student, onClose }) {
 
 // ── View Modal ─────────────────────────────────────────────────
 function ViewModal({ student, onClose }) {
-  const { totalFees, discount, actualFees, paidFees, dueFees } = calcSummary(student);
+  const { totalFees, discount, actualFees, paidFees, dueFees, classPayments } = calcSummary(student);
   const status = getPaymentStatus(student);
   const givenItems   = student.inventory.filter((i) => i.given);
   const pendingItems = student.inventory.filter((i) => !i.given);
@@ -398,16 +400,16 @@ function ViewModal({ student, onClose }) {
             />
           </div>
 
-          {/* Payment History */}
+          {/* Payment History — class-specific */}
           <div className="border border-gray-100 rounded-2xl overflow-hidden">
             <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-              <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Payment History</p>
+              <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Payment History — {student.std}</p>
               <span className="text-[10px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">
-                {student.payments.length} payment{student.payments.length !== 1 ? "s" : ""}
+                {classPayments.length} payment{classPayments.length !== 1 ? "s" : ""}
               </span>
             </div>
-            {student.payments.length === 0 ? (
-              <p className="px-4 py-6 text-center text-sm text-gray-400">No payments recorded yet</p>
+            {classPayments.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-gray-400">No payments recorded for {student.std} yet</p>
             ) : (
               <table className="w-full text-sm">
                 <thead>
@@ -419,7 +421,7 @@ function ViewModal({ student, onClose }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {student.payments.map((p, i) => (
+                  {classPayments.map((p, i) => (
                     <tr key={i}>
                       <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
                       <td className="px-4 py-3 font-medium text-gray-700">{formatDateShort(p.date)}</td>
@@ -483,6 +485,7 @@ export default function FeesPage() {
   const searchParams    = useSearchParams();
   const templates       = useStore(s => s.feeReminderTemplates);
   const addFeePayment   = useStore(s => s.addFeePayment);
+  const storeStudents   = useStore(s => s.students);
   const [students,      setStudents]      = useState(INITIAL_STUDENTS);
   const [notifyStudent, setNotifyStudent] = useState(null);
   const [viewStudent,   setViewStudent]   = useState(null);
@@ -497,12 +500,31 @@ export default function FeesPage() {
 
   // Auto-select student when redirected from Add Student or Promote
   useEffect(() => {
+    const enrollment = searchParams.get("enrollment");
     const std  = searchParams.get("std");
     const roll = searchParams.get("roll");
-    if (std)  setEntryStd(std);
-    if (roll) setEntryRoll(roll);
-    // Scroll fee entry section into view
-    if (std) {
+
+    if (enrollment) {
+      // Promoted redirect: sync std/rollNo from Zustand store (which has the updated values)
+      const storeStudent = storeStudents.find(s => s.enrollment === enrollment);
+      if (storeStudent) {
+        setStudents(prev => prev.map(s =>
+          s.enrollment === enrollment
+            ? { ...s, std: storeStudent.std, rollNo: storeStudent.rollNo }
+            : s
+        ));
+        setEntryStd(storeStudent.std);
+        setEntryRoll(storeStudent.rollNo);
+      } else if (std) {
+        setEntryStd(std);
+        if (roll) setEntryRoll(roll);
+      }
+    } else {
+      if (std)  setEntryStd(std);
+      if (roll) setEntryRoll(roll);
+    }
+
+    if (std || enrollment) {
       setTimeout(() => {
         document.getElementById("fee-entry-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 300);
@@ -544,11 +566,24 @@ export default function FeesPage() {
       alert("Please fill amount and received by.");
       return;
     }
+    const { dueFees } = calcSummary(entryStudent);
+    if (dueFees <= 0) {
+      alert("All fees for this class are already paid. No further payment can be recorded.");
+      return;
+    }
     const amt = Number(newAmt);
+    if (amt <= 0) {
+      alert("Please enter a valid amount greater than zero.");
+      return;
+    }
+    if (amt > dueFees) {
+      alert(`Amount ₹${amt.toLocaleString("en-IN")} exceeds the due balance of ₹${dueFees.toLocaleString("en-IN")}. Please enter a correct amount.`);
+      return;
+    }
     setStudents((prev) =>
       prev.map((s) =>
         s.enrollment === entryStudent.enrollment
-          ? { ...s, payments: [...s.payments, { date: newDate, amount: amt, receivedBy }] }
+          ? { ...s, payments: [...s.payments, { date: newDate, amount: amt, receivedBy, std: entryStudent.std }] }
           : s
       )
     );
@@ -931,9 +966,21 @@ export default function FeesPage() {
             )}
 
             {entryStudent && (() => {
-              const { totalFees, discount, actualFees, paidFees, dueFees } = calcSummary(entryStudent);
+              const { totalFees, discount, actualFees, paidFees, dueFees, classPayments } = calcSummary(entryStudent);
+              const isFullyPaid = dueFees <= 0;
               return (
                 <div className="space-y-4">
+
+                  {/* Class indicator */}
+                  <div className="flex items-center gap-2 text-xs text-gray-500 font-medium">
+                    <GraduationCap className="w-3.5 h-3.5 text-school-navy" />
+                    Showing fees for class <span className="font-bold text-school-navy">{entryStudent.std}</span>
+                    {isFullyPaid && (
+                      <span className="ml-auto inline-flex items-center gap-1 bg-green-100 text-green-700 font-semibold px-2.5 py-0.5 rounded-full border border-green-200">
+                        <CheckCircle2 className="w-3 h-3" /> All Fees Paid
+                      </span>
+                    )}
+                  </div>
 
                   {/* Summary pills */}
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
@@ -943,24 +990,26 @@ export default function FeesPage() {
                     <SummaryPill label="Paid Fees"   value={`₹${paidFees.toLocaleString("en-IN")}`}   colorClass="bg-green-50 border-green-100 text-green-800" />
                     <SummaryPill
                       label="Due Fees"
-                      value={dueFees <= 0 ? "Cleared ✓" : `₹${dueFees.toLocaleString("en-IN")}`}
-                      colorClass={dueFees <= 0 ? "bg-gray-50 border-gray-100 text-gray-600" : "bg-red-50 border-red-100 text-red-700"}
+                      value={isFullyPaid ? "Cleared ✓" : `₹${dueFees.toLocaleString("en-IN")}`}
+                      colorClass={isFullyPaid ? "bg-gray-50 border-gray-100 text-gray-600" : "bg-red-50 border-red-100 text-red-700"}
                     />
                   </div>
 
-                  {/* Payment History — Read only */}
+                  {/* Payment History — class-specific, read only */}
                   <div className="border border-gray-100 rounded-2xl overflow-hidden">
                     <div className="px-4 py-3 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
-                      <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">Payment History</p>
+                      <p className="text-xs font-bold text-gray-700 uppercase tracking-wide">
+                        Payment History — {entryStudent.std}
+                      </p>
                       <div className="flex items-center gap-2">
                         <ReadOnlyBadge />
                         <span className="text-[10px] bg-green-100 text-green-700 font-semibold px-2 py-0.5 rounded-full">
-                          {entryStudent.payments.length} payment{entryStudent.payments.length !== 1 ? "s" : ""}
+                          {classPayments.length} payment{classPayments.length !== 1 ? "s" : ""}
                         </span>
                       </div>
                     </div>
-                    {entryStudent.payments.length === 0 ? (
-                      <p className="px-4 py-6 text-center text-sm text-gray-400">No payments recorded yet</p>
+                    {classPayments.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-sm text-gray-400">No payments recorded for {entryStudent.std} yet</p>
                     ) : (
                       <table className="w-full text-sm">
                         <thead>
@@ -972,7 +1021,7 @@ export default function FeesPage() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
-                          {entryStudent.payments.map((p, i) => (
+                          {classPayments.map((p, i) => (
                             <tr key={i} className="hover:bg-gray-50">
                               <td className="px-4 py-3 text-xs text-gray-400">{i + 1}</td>
                               <td className="px-4 py-3 font-medium text-gray-700">{formatDateShort(p.date)}</td>
@@ -1067,63 +1116,86 @@ export default function FeesPage() {
                     </div>
                   )}
 
-                  {/* New Payment Form */}
-                  <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
-                    <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-3 flex items-center gap-2">
-                      <IndianRupee className="w-3.5 h-3.5" /> Record New Payment
-                    </p>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Amount <span className="text-red-500">*</span></label>
-                        <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm pointer-events-none">₹</span>
-                          <input
-                            type="number" placeholder="0" value={newAmt} min="0"
-                            onChange={(e) => setNewAmt(e.target.value)}
-                            className="w-full pl-7 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white"
-                          />
-                        </div>
+                  {/* New Payment Form — hidden when fully paid */}
+                  {isFullyPaid ? (
+                    <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-2xl px-5 py-4">
+                      <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                        <CheckCircle2 className="w-5 h-5 text-green-600" />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date of Payment <span className="text-red-500">*</span></label>
-                        <input
-                          type="date" value={newDate}
-                          onChange={(e) => setNewDate(e.target.value)}
-                          className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white"
-                        />
+                        <p className="text-sm font-bold text-green-800">All Fees Paid — {entryStudent.std}</p>
+                        <p className="text-xs text-green-600 mt-0.5">
+                          ₹{actualFees.toLocaleString("en-IN")} collected in full. No further payment required.
+                        </p>
                       </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-600 mb-1.5">Received By <span className="text-red-500">*</span></label>
-                        <SelectField value={newAdmin} onChange={(e) => { setNewAdmin(e.target.value); setNewAdminCustom(""); }}>
-                          <option value="">Select Name</option>
-                          {ADMINS.map((a) => <option key={a}>{a}</option>)}
-                        </SelectField>
-                        {newAdmin === "Other" && (
-                          <input
-                            type="text"
-                            placeholder="Enter name..."
-                            value={newAdminCustom}
-                            onChange={(e) => setNewAdminCustom(e.target.value)}
-                            className="mt-2 w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white"
-                          />
-                        )}
-                      </div>
-                    </div>
-                    <div className="mt-3 flex items-center justify-between gap-3">
                       <button
                         onClick={clearEntryStudent}
-                        className="inline-flex items-center gap-2 px-5 py-2.5 border border-gray-200 bg-white hover:bg-red-50 hover:border-red-200 hover:text-red-600 text-gray-500 text-sm font-semibold rounded-xl transition-colors"
+                        className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 border border-green-200 bg-white text-green-700 text-xs font-semibold rounded-lg hover:bg-green-50 transition-colors"
                       >
-                        <RotateCcw className="w-4 h-4" /> Clear
-                      </button>
-                      <button
-                        onClick={handleSavePayment}
-                        className="inline-flex items-center gap-2 px-6 py-2.5 bg-school-navy hover:bg-school-navy-dark text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
-                      >
-                        <Check className="w-4 h-4" /> Save Payment
+                        <RotateCcw className="w-3 h-3" /> Clear
                       </button>
                     </div>
-                  </div>
+                  ) : (
+                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
+                      <p className="text-xs font-bold text-blue-700 uppercase tracking-wide mb-3 flex items-center gap-2">
+                        <IndianRupee className="w-3.5 h-3.5" /> Record New Payment
+                        <span className="ml-auto font-semibold text-blue-600 normal-case">
+                          Balance due: ₹{dueFees.toLocaleString("en-IN")}
+                        </span>
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Amount <span className="text-red-500">*</span></label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-bold text-sm pointer-events-none">₹</span>
+                            <input
+                              type="number" placeholder="0" value={newAmt} min="1" max={dueFees}
+                              onChange={(e) => setNewAmt(e.target.value)}
+                              className="w-full pl-7 pr-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date of Payment <span className="text-red-500">*</span></label>
+                          <input
+                            type="date" value={newDate}
+                            onChange={(e) => setNewDate(e.target.value)}
+                            className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Received By <span className="text-red-500">*</span></label>
+                          <SelectField value={newAdmin} onChange={(e) => { setNewAdmin(e.target.value); setNewAdminCustom(""); }}>
+                            <option value="">Select Name</option>
+                            {ADMINS.map((a) => <option key={a}>{a}</option>)}
+                          </SelectField>
+                          {newAdmin === "Other" && (
+                            <input
+                              type="text"
+                              placeholder="Enter name..."
+                              value={newAdminCustom}
+                              onChange={(e) => setNewAdminCustom(e.target.value)}
+                              className="mt-2 w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white"
+                            />
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between gap-3">
+                        <button
+                          onClick={clearEntryStudent}
+                          className="inline-flex items-center gap-2 px-5 py-2.5 border border-gray-200 bg-white hover:bg-red-50 hover:border-red-200 hover:text-red-600 text-gray-500 text-sm font-semibold rounded-xl transition-colors"
+                        >
+                          <RotateCcw className="w-4 h-4" /> Clear
+                        </button>
+                        <button
+                          onClick={handleSavePayment}
+                          className="inline-flex items-center gap-2 px-6 py-2.5 bg-school-navy hover:bg-school-navy-dark text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
+                        >
+                          <Check className="w-4 h-4" /> Save Payment
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                 </div>
               );

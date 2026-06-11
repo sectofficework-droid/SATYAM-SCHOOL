@@ -2,9 +2,10 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
+import useStore from "@/lib/store";
 import {
   ChevronDown, Upload, X, Plus, FileText, AlertTriangle,
-  ArrowLeft, Check, Camera, Lock, GraduationCap,
+  ArrowLeft, Check, Camera, Lock, GraduationCap, Hash,
 } from "lucide-react";
 
 // ── Options ────────────────────────────────────────────────────
@@ -26,8 +27,7 @@ const genders   = ["Male", "Female", "Other"];
 const religions = ["Hindu", "Muslim", "Christian", "Jain", "Sikh", "Buddhist", "Parsi", "Other"];
 const castes    = ["General", "OBC", "SC", "ST", "EWS", "SEBC", "Other"];
 const mediums   = ["English", "Gujarati", "Hindi", "Other"];
-const todayStr  = new Date().toISOString().split("T")[0];
-const nextEnrollment = "1006";
+const todayStr = new Date().toISOString().split("T")[0];
 
 const DISCOUNT_REASONS = [
   "Financial Weak",
@@ -131,6 +131,14 @@ function YesNoToggle({ value, onChange }) {
 export default function AddStudentPage() {
   const router = useRouter();
 
+  const students      = useStore(s => s.students);
+  const addStudent    = useStore(s => s.addStudent);
+  const nextEnrollment = String(
+    Math.max(...students.map(s => parseInt(s.enrollment) || 0), 1000) + 1
+  );
+
+  const [autoRollNo, setAutoRollNo] = useState(null);
+
   const [hasPrevSchool, setHasPrevSchool] = useState(false);
   const [hasSibling, setHasSibling] = useState(false);
   const [siblings, setSiblings]     = useState([{ id: 1, cls: "", name: "" }]);
@@ -196,6 +204,14 @@ export default function AddStudentPage() {
   const handleStdChange = (e) => {
     const val = e.target.value;
     setForm((p) => ({ ...p, std: val, admissionClass: val }));
+    if (val) {
+      const nums = students
+        .filter(s => s.std === val && s.status !== "Inactive" && s.status !== "Left")
+        .map(s => parseInt(s.rollNo, 10) || 0);
+      setAutoRollNo(nums.length ? Math.max(...nums) + 1 : 1);
+    } else {
+      setAutoRollNo(null);
+    }
   };
 
   // Aadhar formatting — XXXX XXXX XXXX display, raw digits saved
@@ -250,7 +266,49 @@ export default function AddStudentPage() {
       finalCaste = "General";
       alert("No caste certificate uploaded — category has been set to General automatically.");
     }
-    alert("Student added successfully!");
+    // Re-compute roll number at submit time (authoritative)
+    const classStudents = students.filter(
+      s => s.std === form.std && s.status !== "Inactive" && s.status !== "Left"
+    );
+    const rollNums = classStudents.map(s => parseInt(s.rollNo, 10) || 0);
+    const assignedRoll = String(rollNums.length ? Math.max(...rollNums) + 1 : 1);
+
+    const aadharFormatted = form.aadharRaw
+      ? form.aadharRaw.replace(/(\d{4})(?=\d)/g, "$1 ").trim()
+      : "";
+
+    const newStudent = {
+      enrollment: nextEnrollment,
+      name: (form.firstName + " " + form.lastName).trim(),
+      photo: photoPreview || null,
+      grNo: form.grNo || "",
+      dateOfJoin: form.joinDate,
+      admissionClass: form.std,
+      std: form.std,
+      section: "A",
+      rollNo: assignedRoll,
+      session: CURRENT_SESSION,
+      fatherName: form.fatherName || "",
+      motherName: form.motherName || "",
+      mobile: form.mobile1 || "",
+      dob: form.dob || "",
+      gender: form.gender || "",
+      religion: form.religion || "",
+      caste: finalCaste,
+      aadhar: aadharFormatted,
+      udise: form.udise || "",
+      pen: form.pen || "",
+      apaar: form.apaar || "",
+      status: "Active",
+      fees: { total: 0, paid: 0 },
+      pendingDocs: Object.keys(checkedDocs).filter(k => checkedDocs[k]),
+      pendingInventory: [],
+      password: ((form.firstName || "STU").slice(0, 3) + nextEnrollment).toUpperCase(),
+      lastSchoolName: form.lastSchoolName || "",
+      tcUploaded: false,
+    };
+    addStudent(newStudent);
+    alert("Student added successfully! Roll No. " + assignedRoll + " assigned for " + form.std + ".");
     router.push("/fees?std=" + encodeURIComponent(form.std) + "&new=1");
   };
 
@@ -431,21 +489,34 @@ export default function AddStudentPage() {
         {/* ══ SECTION 4: Class Details ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <SectionHeader number="4" title="Class Details" />
-          <div className="max-w-xs">
-            <FieldLabel required>Standard</FieldLabel>
-            <SelectField value={form.std} onChange={handleStdChange} required>
-              <option value="">Select Standard</option>
-              {standards.map((s) => <option key={s}>{s}</option>)}
-            </SelectField>
-            {form.std && (
-              <div className="mt-3 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
-                <GraduationCap className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                <p className="text-xs text-blue-700 font-medium">
-                  <b>{form.std}</b> will be permanently recorded as the joining class.
-                </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
+            <div>
+              <FieldLabel required>Standard</FieldLabel>
+              <SelectField value={form.std} onChange={handleStdChange} required>
+                <option value="">Select Standard</option>
+                {standards.map((s) => <option key={s}>{s}</option>)}
+              </SelectField>
+            </div>
+            <div>
+              <FieldLabel required>Roll Number</FieldLabel>
+              <div className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl border ${autoRollNo ? "border-dashed border-school-navy/30 bg-blue-50" : "border-gray-200 bg-gray-50"}`}>
+                <Hash className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                {autoRollNo
+                  ? <span className="text-school-navy font-bold text-sm">{autoRollNo}</span>
+                  : <span className="text-gray-400 text-sm">Select class first</span>
+                }
+                {autoRollNo && <span className="text-xs text-gray-400 ml-auto">(Auto-assigned)</span>}
               </div>
-            )}
+            </div>
           </div>
+          {form.std && (
+            <div className="mt-3 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 max-w-lg">
+              <GraduationCap className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+              <p className="text-xs text-blue-700 font-medium">
+                <b>{form.std}</b> will be permanently recorded as the joining class.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* ══ SECTION 5: Personal Information ══ */}

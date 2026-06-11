@@ -128,6 +128,19 @@ const useStore = create(
       setFeePayments: (list) => set({ feePayments: list }),
       addFeePayment: (p) => set((s) => ({ feePayments: [...s.feePayments, { id: Date.now(), ...p }] })),
 
+      // ── Students ──────────────────────────────────────────────
+      students: [
+        { enrollment:"1001", name:"Arjun Patel", photo:null, grNo:"GR-001", dateOfJoin:"01 Jun 2023", admissionClass:"8th", std:"10th", section:"A", rollNo:"1", session:"2026-27", fatherName:"Rajesh", motherName:"Meena", mobile:"9876543210", dob:"15 Jan 2010", gender:"Male", password:"ARJ1001", aadhar:"1234 5678 9012", udise:"24180100101", pen:"", apaar:"", status:"Active", fees:{ total:48000, paid:36000 }, pendingDocs:["Father's Aadhar Card", "Mother's Aadhar Card", "Leaving Certificate"], pendingInventory:["Notebook Set", "Assignment-1", "Assignment-2", "Assignment-3"], lastSchoolName:"St. Xavier's Primary", tcUploaded:false },
+        { enrollment:"1002", name:"Priya Shah", photo:null, grNo:"GR-002", dateOfJoin:"15 Jun 2023", admissionClass:"8th", std:"9th", section:"B", rollNo:"1", session:"2026-27", fatherName:"Amit", motherName:"Kavita", mobile:"9765432100", dob:"22 Mar 2011", gender:"Female", password:"PRI1002", aadhar:"", udise:"", pen:"", apaar:"123456789012", status:"Active", fees:{ total:44000, paid:44000 }, pendingDocs:[], pendingInventory:["Uniform Set"] },
+        { enrollment:"1003", name:"Rohan Mehta", photo:null, grNo:"GR-003", dateOfJoin:"10 Apr 2022", admissionClass:"9th", std:"11th - Commerce", section:"A", rollNo:"1", session:"2026-27", fatherName:"Suresh", motherName:"Asha", mobile:"9654321098", dob:"08 Jul 2009", gender:"Male", password:"ROH1003", aadhar:"9876 5432 1098", udise:"", pen:"12345678901", apaar:"", status:"Active", fees:{ total:52000, paid:20000 }, pendingDocs:["Birth Certificate", "Marksheet", "Leaving Certificate"], pendingInventory:["ID Card"], lastSchoolName:"City High School", tcUploaded:false },
+        { enrollment:"1004", name:"Sneha Desai", photo:null, grNo:"GR-004", dateOfJoin:"05 Jun 2024", admissionClass:"8th", std:"8th", section:"C", rollNo:"1", session:"2026-27", fatherName:"Kishore", motherName:"Hetal", mobile:"9543210987", dob:"30 Nov 2011", gender:"Female", password:"SNE1004", aadhar:"", udise:"", pen:"", apaar:"", status:"Active", fees:{ total:40000, paid:0 }, pendingDocs:["Birth Certificate", "Aadhar Card", "Father's Aadhar"], pendingInventory:["Bag", "Uniform Set", "Notebook Set"] },
+        { enrollment:"1005", name:"Dev Joshi", photo:null, grNo:"GR-005", dateOfJoin:"12 Jun 2024", admissionClass:"JR.KG", std:"JR.KG", section:"A", rollNo:"1", session:"2026-27", fatherName:"Prakash", motherName:"Ruchita", mobile:"9432109876", dob:"14 Sep 2020", gender:"Male", password:"DEV1005", aadhar:"", udise:"", pen:"", apaar:"", status:"Active", fees:{ total:35000, paid:35000 }, pendingDocs:["Birth Certificate"], pendingInventory:[] },
+      ],
+      setStudents: (listOrUpdater) => set((s) => ({
+        students: typeof listOrUpdater === "function" ? listOrUpdater(s.students) : listOrUpdater,
+      })),
+      addStudent: (student) => set((s) => ({ students: [...s.students, student] })),
+
       // ── Student Inventory Items (master list) ─────────────────
       studentInventoryItems: ["Bag", "Uniform Set", "Book Set", "Notebook Set", "ID Card", "School Diary"],
       addStudentInventoryItem: (name) => set((s) => ({
@@ -170,7 +183,7 @@ const useStore = create(
           pendingTasks: state.pendingTasks.filter((t) => t.id !== id),
         })),
     }),
-    { name: "satyam-school-store", version: 2 }
+    { name: "satyam-school-store", version: 3 }
   )
 );
 

@@ -48,6 +48,13 @@ function getNextClass(cls) {
   return idx < 0 || idx >= CLASS_ORDER.length - 1 ? null : CLASS_ORDER[idx + 1];
 }
 
+function nextRollNo(className, allStudents) {
+  const nums = allStudents
+    .filter(s => s.std === className && s.status !== "Inactive" && s.status !== "Left")
+    .map(s => parseInt(s.rollNo, 10) || 0);
+  return nums.length ? Math.max(...nums) + 1 : 1;
+}
+
 function calcAge(dobStr) {
   try {
     const dob = new Date(dobStr);
@@ -59,71 +66,6 @@ function calcAge(dobStr) {
   } catch { return "—"; }
 }
 
-// ── Dummy students ─────────────────────────────────────────────
-const INITIAL_STUDENTS = [
-  {
-    enrollment:"1001", name:"Arjun Patel", photo:null,
-    grNo:"GR-001", dateOfJoin:"01 Jun 2023", admissionClass:"8th",
-    std:"10th", section:"A", rollNo:"101", session:"2026-27",
-    fatherName:"Rajesh", motherName:"Meena",
-    mobile:"9876543210", dob:"15 Jan 2010", gender:"Male",
-    password:"ARJ1001", aadhar:"1234 5678 9012",
-    udise:"24180100101", pen:"", apaar:"", status:"Active",
-    fees:{ total:48000, paid:36000 },
-    pendingDocs:["Father's Aadhar Card", "Mother's Aadhar Card", "Leaving Certificate"],
-    pendingInventory:["Notebook Set", "Assignment-1", "Assignment-2", "Assignment-3"],
-    lastSchoolName: "St. Xavier's Primary", tcUploaded: false,
-  },
-  {
-    enrollment:"1002", name:"Priya Shah", photo:null,
-    grNo:"GR-002", dateOfJoin:"15 Jun 2023", admissionClass:"8th",
-    std:"9th", section:"B", rollNo:"204", session:"2026-27",
-    fatherName:"Amit", motherName:"Kavita",
-    mobile:"9765432100", dob:"22 Mar 2011", gender:"Female",
-    password:"PRI1002", aadhar:"",
-    udise:"", pen:"", apaar:"123456789012", status:"Active",
-    fees:{ total:44000, paid:44000 },
-    pendingDocs:[],
-    pendingInventory:["Uniform Set"],
-  },
-  {
-    enrollment:"1003", name:"Rohan Mehta", photo:null,
-    grNo:"GR-003", dateOfJoin:"10 Apr 2022", admissionClass:"9th",
-    std:"11th - Commerce", section:"A", rollNo:"312", session:"2026-27",
-    fatherName:"Suresh", motherName:"Asha",
-    mobile:"9654321098", dob:"08 Jul 2009", gender:"Male",
-    password:"ROH1003", aadhar:"9876 5432 1098",
-    udise:"", pen:"12345678901", apaar:"", status:"Active",
-    fees:{ total:52000, paid:20000 },
-    pendingDocs:["Birth Certificate", "Marksheet", "Leaving Certificate"],
-    pendingInventory:["ID Card"],
-    lastSchoolName: "City High School", tcUploaded: false,
-  },
-  {
-    enrollment:"1004", name:"Sneha Desai", photo:null,
-    grNo:"GR-004", dateOfJoin:"05 Jun 2024", admissionClass:"8th",
-    std:"8th", section:"C", rollNo:"418", session:"2026-27",
-    fatherName:"Kishore", motherName:"Hetal",
-    mobile:"9543210987", dob:"30 Nov 2011", gender:"Female",
-    password:"SNE1004", aadhar:"",
-    udise:"", pen:"", apaar:"", status:"Active",
-    fees:{ total:40000, paid:0 },
-    pendingDocs:["Birth Certificate", "Aadhar Card", "Father's Aadhar"],
-    pendingInventory:["Bag", "Uniform Set", "Notebook Set"],
-  },
-  {
-    enrollment:"1005", name:"Dev Joshi", photo:null,
-    grNo:"GR-005", dateOfJoin:"12 Jun 2024", admissionClass:"JR.KG",
-    std:"JR.KG", section:"A", rollNo:"501", session:"2026-27",
-    fatherName:"Prakash", motherName:"Ruchita",
-    mobile:"9432109876", dob:"14 Sep 2020", gender:"Male",
-    password:"DEV1005", aadhar:"",
-    udise:"", pen:"", apaar:"", status:"Active",
-    fees:{ total:35000, paid:35000 },
-    pendingDocs:["Birth Certificate"],
-    pendingInventory:[],
-  },
-];
 
 // Auto-assigned accent colors — cycle automatically for every student added
 const ACCENTS = [
@@ -245,7 +187,7 @@ const PROMOTE_DISCOUNT_REASONS = [
   "Early Fees Complete", "Early Admission", "Old Student", "Other",
 ];
 
-function PromoteModal({ student, onClose, onPromote, router }) {
+function PromoteModal({ student, onClose, onPromote, router, students }) {
   const nextClass          = getNextClass(student.std);
   const uniformFees        = useStore(s => s.uniformFees);
   const uniformFee         = (nextClass && uniformFees[nextClass]) ? uniformFees[nextClass] : 1500;
@@ -277,10 +219,13 @@ function PromoteModal({ student, onClose, onPromote, router }) {
 
   const handleConfirmPromote = () => {
     if (!extraValid) return;
-    const std  = encodeURIComponent(student.std);
-    const roll = encodeURIComponent(student.rollNo);
+    // Compute new roll BEFORE onPromote so we use the pre-update list
+    const newRoll = nextRollNo(nextClass, students);
     onPromote();
-    router.push("/fees?std=" + std + "&roll=" + roll + "&promoted=1");
+    const enr  = encodeURIComponent(student.enrollment);
+    const std  = encodeURIComponent(nextClass);
+    const roll = encodeURIComponent(String(newRoll));
+    router.push("/fees?enrollment=" + enr + "&std=" + std + "&roll=" + roll + "&promoted=1");
   };
 
   return (
@@ -578,7 +523,8 @@ export default function StudentPage() {
   const [govtIdFilter, setGovtIdFilter]   = useState([]);
   const [showPasswords, setShowPasswords] = useState({});
   const [promotions, setPromotions]       = useState({});
-  const [students, setStudents]           = useState(INITIAL_STUDENTS);
+  const students    = useStore(s => s.students);
+  const setStudents = useStore(s => s.setStudents);
   const [promoteModal, setPromoteModal]       = useState(null);
   const [deactivateModal, setDeactivateModal] = useState(null);
 
@@ -640,11 +586,12 @@ export default function StudentPage() {
   const handlePromote = (student) => {
     const nextClass = getNextClass(student.std);
     if (!nextClass) return;
+    const newRoll = String(nextRollNo(nextClass, students));
     setPromotions((p) => ({ ...p, [student.enrollment]: { session: CURRENT_SESSION, newClass: nextClass } }));
     setStudents((prev) =>
       prev.map((s) =>
         s.enrollment === student.enrollment
-          ? { ...s, std: nextClass, session: CURRENT_SESSION }
+          ? { ...s, std: nextClass, session: CURRENT_SESSION, rollNo: newRoll }
           : s
       )
     );
@@ -746,6 +693,7 @@ export default function StudentPage() {
           onClose={() => setPromoteModal(null)}
           onPromote={() => handlePromote(promoteModal)}
           router={router}
+          students={students}
         />
       )}
       {deactivateModal && (
