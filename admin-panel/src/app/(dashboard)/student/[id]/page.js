@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import useStore from "@/lib/store";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, User, Phone, Calendar, BookOpen,
   FileText, IndianRupee, ClipboardCheck, Award, Edit,
@@ -126,21 +126,33 @@ function PersonalTab({ s }) {
         <InfoRow label="Gender"        value={s.gender} />
         <InfoRow label="Religion"      value={s.religion} />
         <InfoRow label="Category"      value={s.caste} />
+        <InfoRow label="Sub Caste"     value={s.subCaste} />
+        <InfoRow label="Mother Tongue" value={s.motherTongue} />
+        <InfoRow label="Height"        value={s.height ? `${s.height} cm` : ""} />
+        <InfoRow label="Weight"        value={s.weight ? `${s.weight} kg` : ""} />
       </div>
       <div className="bg-gray-50 rounded-2xl p-5">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Contact & Address</p>
         <InfoRow label="Mobile 1"      value={s.mobile1} />
         <InfoRow label="Mobile 2"      value={s.mobile2} />
         <InfoRow label="Room / Plot"   value={s.roomPlotNo} />
+        <InfoRow label="Society"       value={s.society} />
+        <InfoRow label="Landmark"      value={s.landmark} />
+        <InfoRow label="Area"          value={s.area} />
+        <InfoRow label="Pin Code"      value={s.pinCode} />
         <InfoRow label="Address"       value={s.address} />
         <InfoRow label="Place of Birth" value={s.placeOfBirth} />
       </div>
       <div className="bg-gray-50 rounded-2xl p-5">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Previous School</p>
         <InfoRow label="School Name"   value={s.lastSchoolName} />
+        <InfoRow label="School GR No"  value={s.lastSchoolGrNo} />
         <InfoRow label="Last Class"    value={s.lastSchoolClass} />
         <InfoRow label="Medium"        value={s.lastSchoolMedium} />
         <InfoRow label="Location"      value={s.lastSchoolPlace} />
+        <InfoRow label="Attendance Days" value={s.prevAttendanceDays} />
+        <InfoRow label="Last Exam Given" value={s.lastExamGiven} />
+        <InfoRow label="Previous Percentage" value={s.prevPercentage} />
         <div className="mt-4 pt-3 border-t border-gray-200">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Government IDs</p>
           <InfoRow label="Aadhar No"   value={s.aadhar} />
@@ -262,11 +274,22 @@ function DocumentsTab({ docs, s }) {
 }
 
 function FeesTab({ fees }) {
-  const totalFees = fees.reduce((s, f) => s + f.amount, 0);
-  const paidFees  = fees.filter((f) => f.paid);
-  const totalPaid = paidFees.reduce((s, f) => s + f.amount, 0);
-  const totalDue  = totalFees - totalPaid;
-  const paidPct   = totalFees > 0 ? Math.round((totalPaid / totalFees) * 100) : 0;
+  // fees can be:
+  //   array  → dummy/legacy format (term objects)
+  //   object → store student format { total, paid, discount }
+  const isArray = Array.isArray(fees);
+
+  const totalFees = isArray
+    ? fees.reduce((s, f) => s + f.amount, 0)
+    : (fees?.total ?? 0);
+  const discount  = isArray ? 0 : (fees?.discount ?? 0);
+  const actualFees = Math.max(totalFees - discount, 0);
+  const paidFees  = isArray ? fees.filter((f) => f.paid) : [];
+  const totalPaid = isArray
+    ? paidFees.reduce((s, f) => s + f.amount, 0)
+    : (fees?.paid ?? 0);
+  const totalDue  = Math.max(actualFees - totalPaid, 0);
+  const paidPct   = actualFees > 0 ? Math.round((totalPaid / actualFees) * 100) : 0;
 
   return (
     <div className="space-y-5">
@@ -274,13 +297,14 @@ function FeesTab({ fees }) {
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-blue-50 rounded-2xl p-4 text-center border border-blue-100">
           <p className="text-xs text-blue-500 font-bold uppercase tracking-wide mb-1">Total Fees</p>
-          <p className="text-2xl font-bold text-blue-700">₹{totalFees.toLocaleString("en-IN")}</p>
-          <p className="text-xs text-blue-400 mt-1">{fees.length} term{fees.length !== 1 ? "s" : ""}</p>
+          <p className="text-2xl font-bold text-blue-700">₹{actualFees.toLocaleString("en-IN")}</p>
+          {isArray && <p className="text-xs text-blue-400 mt-1">{fees.length} term{fees.length !== 1 ? "s" : ""}</p>}
+          {discount > 0 && <p className="text-xs text-amber-600 font-semibold mt-1">₹{totalFees.toLocaleString("en-IN")} - ₹{discount.toLocaleString("en-IN")} discount</p>}
         </div>
         <div className="bg-green-50 rounded-2xl p-4 text-center border border-green-100">
           <p className="text-xs text-green-500 font-bold uppercase tracking-wide mb-1">Total Paid</p>
           <p className="text-2xl font-bold text-green-700">₹{totalPaid.toLocaleString("en-IN")}</p>
-          <p className="text-xs text-green-400 mt-1">{paidPct}% of total</p>
+          <p className="text-xs text-green-400 mt-1">{paidPct}% paid</p>
         </div>
         <div className={`rounded-2xl p-4 text-center border ${totalDue === 0 ? "bg-gray-50 border-gray-100" : "bg-red-50 border-red-100"}`}>
           <p className={`text-xs font-bold uppercase tracking-wide mb-1 ${totalDue === 0 ? "text-gray-400" : "text-red-500"}`}>Balance Due</p>
@@ -288,7 +312,7 @@ function FeesTab({ fees }) {
             {totalDue === 0 ? "Cleared" : `₹${totalDue.toLocaleString("en-IN")}`}
           </p>
           <p className={`text-xs mt-1 ${totalDue === 0 ? "text-gray-400" : "text-red-400"}`}>
-            {totalDue === 0 ? "Fully paid ✓" : `${fees.length - paidFees.length} term pending`}
+            {totalDue === 0 ? "Fully paid ✓" : `of ₹${actualFees.toLocaleString("en-IN")} payable`}
           </p>
         </div>
       </div>
@@ -307,53 +331,55 @@ function FeesTab({ fees }) {
         </div>
         <div className="flex justify-between mt-1.5">
           <span className="text-xs text-gray-400">₹0</span>
-          <span className="text-xs text-gray-400">₹{totalFees.toLocaleString("en-IN")}</span>
+          <span className="text-xs text-gray-400">₹{actualFees.toLocaleString("en-IN")}</span>
         </div>
       </div>
 
-      {/* Paid-only Table */}
-      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
-          <p className="text-sm font-semibold text-gray-700">Fee Payment History</p>
-          <span className="text-xs bg-green-100 text-green-700 font-semibold px-2.5 py-1 rounded-full">
-            {paidFees.length} payment{paidFees.length !== 1 ? "s" : ""}
-          </span>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Fee Term</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Paid On</th>
-              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Receipt No</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {paidFees.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-5 py-10 text-center text-gray-400 text-sm">
-                  No fee payments recorded yet
-                </td>
+      {/* Payment history — only shown for term-based (dummy) students */}
+      {isArray && (
+        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+            <p className="text-sm font-semibold text-gray-700">Fee Payment History</p>
+            <span className="text-xs bg-green-100 text-green-700 font-semibold px-2.5 py-1 rounded-full">
+              {paidFees.length} payment{paidFees.length !== 1 ? "s" : ""}
+            </span>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Fee Term</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Paid On</th>
+                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Receipt No</th>
               </tr>
-            ) : (
-              paidFees.map((fee, i) => (
-                <tr key={i} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-5 py-3.5 font-medium text-gray-800">{fee.term}</td>
-                  <td className="px-5 py-3.5 font-semibold text-green-700">
-                    ₹{fee.amount.toLocaleString("en-IN")}
-                  </td>
-                  <td className="px-5 py-3.5 text-gray-500">{fee.date}</td>
-                  <td className="px-5 py-3.5">
-                    <button className="text-school-navy text-xs font-semibold hover:text-school-gold transition-colors">
-                      {fee.receipt}
-                    </button>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {paidFees.length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="px-5 py-10 text-center text-gray-400 text-sm">
+                    No fee payments recorded yet
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ) : (
+                paidFees.map((fee, i) => (
+                  <tr key={i} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-3.5 font-medium text-gray-800">{fee.term}</td>
+                    <td className="px-5 py-3.5 font-semibold text-green-700">
+                      ₹{fee.amount.toLocaleString("en-IN")}
+                    </td>
+                    <td className="px-5 py-3.5 text-gray-500">{fee.date}</td>
+                    <td className="px-5 py-3.5">
+                      <button className="text-school-navy text-xs font-semibold hover:text-school-gold transition-colors">
+                        {fee.receipt}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -687,6 +713,10 @@ function generateAdmissionFormHTML(s, logoUrl) {
     <div class="field"><div class="fl">Gender</div><div class="fv">${s.gender}</div></div>
     <div class="field"><div class="fl">Religion</div><div class="fv">${s.religion}</div></div>
     <div class="field"><div class="fl">Category / Caste</div><div class="fv">${s.caste}</div></div>
+    <div class="field"><div class="fl">Sub Caste</div><div class="fv">${s.subCaste || "—"}</div></div>
+    <div class="field"><div class="fl">Mother Tongue</div><div class="fv">${s.motherTongue || "—"}</div></div>
+    <div class="field"><div class="fl">Height</div><div class="fv">${s.height ? s.height + " cm" : "—"}</div></div>
+    <div class="field"><div class="fl">Weight</div><div class="fv">${s.weight ? s.weight + " kg" : "—"}</div></div>
     <div class="field"><div class="fl">Place of Birth</div><div class="fv">${s.placeOfBirth}</div></div>
   </div>
 
@@ -694,15 +724,23 @@ function generateAdmissionFormHTML(s, logoUrl) {
   <div class="grid">
     <div class="field"><div class="fl">Mobile 1</div><div class="fv">${s.mobile1}</div></div>
     <div class="field"><div class="fl">Mobile 2</div><div class="fv">${s.mobile2 || "—"}</div></div>
+    <div class="field"><div class="fl">Society</div><div class="fv">${s.society || "—"}</div></div>
+    <div class="field"><div class="fl">Landmark</div><div class="fv">${s.landmark || "—"}</div></div>
+    <div class="field"><div class="fl">Area</div><div class="fv">${s.area || "—"}</div></div>
+    <div class="field"><div class="fl">Pin Code</div><div class="fv">${s.pinCode || "—"}</div></div>
     <div class="field full"><div class="fl">Address</div><div class="fv">${s.roomPlotNo ? s.roomPlotNo + ", " : ""}${s.address}</div></div>
   </div>
 
   <div class="sec">Previous School</div>
   <div class="grid">
     <div class="field full"><div class="fl">School Name</div><div class="fv">${s.lastSchoolName || "—"}</div></div>
+    <div class="field"><div class="fl">Last School GR No</div><div class="fv">${s.lastSchoolGrNo || "—"}</div></div>
     <div class="field"><div class="fl">Last Class</div><div class="fv">${s.lastSchoolClass || "—"}</div></div>
     <div class="field"><div class="fl">Medium</div><div class="fv">${s.lastSchoolMedium || "—"}</div></div>
     <div class="field"><div class="fl">School Location</div><div class="fv">${s.lastSchoolPlace || "—"}</div></div>
+    <div class="field"><div class="fl">Attendance Days</div><div class="fv">${s.prevAttendanceDays || "—"}</div></div>
+    <div class="field"><div class="fl">Last Exam Given</div><div class="fv">${s.lastExamGiven || "—"}</div></div>
+    <div class="field"><div class="fl">Previous Percentage</div><div class="fv">${s.prevPercentage || "—"}</div></div>
   </div>
 
   <div class="sec">Aadhar &amp; Government IDs</div>
@@ -759,11 +797,86 @@ function generateAdmissionFormHTML(s, logoUrl) {
 }
 
 export default function StudentDetailPage() {
-  const { id }  = useParams();
-  const router  = useRouter();
+  const { id }      = useParams();
+  const router      = useRouter();
+  const searchParams = useSearchParams();
+  const sessionParam = searchParams.get("session");
   const [activeTab, setActiveTab] = useState("personal");
+  const storeStudents = useStore(s => s.students);
 
-  const student = studentDB[id];
+  // Standard document names used across all student records
+  const ALL_DOC_NAMES = [
+    "Birth Certificate",
+    "Student Aadhar Card",
+    "Father's Aadhar Card",
+    "Mother's Aadhar Card",
+    "Leaving Certificate",
+  ];
+
+  // Find the exact session's record; store students take priority over hardcoded dummy data
+  const student = (() => {
+    const allForEnrollment = storeStudents.filter(s => s.enrollment === id);
+    // Prefer store record when session param is present, otherwise fall back to dummy
+    const rec = sessionParam
+      ? (allForEnrollment.find(s => s.session === sessionParam) ?? allForEnrollment[0])
+      : allForEnrollment[0] ?? studentDB[id];
+    if (!rec) return studentDB[id] ?? null;
+
+    // If it's the hardcoded dummy student and no store record exists, return as-is
+    if (!allForEnrollment.length) return studentDB[id] ?? null;
+
+    // Personal details are the same across all sessions — pull from the earliest record
+    const base = [...allForEnrollment].sort((a, b) => (a.session ?? "").localeCompare(b.session ?? ""))[0];
+
+    // Build documents array — prefer rec.documents, then any session that has them,
+    // otherwise derive from pendingDocs (store field: array of pending doc name strings)
+    const docsSource = allForEnrollment.find(s => Array.isArray(s.documents) && s.documents.length > 0);
+    const pendingDocNames = base.pendingDocs ?? rec.pendingDocs ?? [];
+    const derivedDocs = ALL_DOC_NAMES.map(name => ({
+      name,
+      uploaded: !pendingDocNames.includes(name),
+      file: "",
+    }));
+    const resolvedDocs = rec.documents ?? docsSource?.documents ?? derivedDocs;
+
+    return {
+      ...rec,
+      // normalise field names: store uses `name`/`mobile`, profile expects `studentName`/`mobile1`
+      studentName:      rec.studentName      ?? rec.name              ?? base.studentName      ?? base.name      ?? "",
+      mobile1:          rec.mobile1          ?? rec.mobile             ?? base.mobile1          ?? base.mobile    ?? "",
+      mobile2:          rec.mobile2          ?? base.mobile2           ?? "",
+      fatherName:       rec.fatherName       ?? base.fatherName        ?? "",
+      motherName:       rec.motherName       ?? base.motherName        ?? "",
+      dob:              rec.dob              ?? base.dob               ?? "",
+      gender:           rec.gender           ?? base.gender            ?? "",
+      religion:         rec.religion         ?? base.religion          ?? "",
+      caste:            rec.caste            ?? base.caste             ?? "",
+      motherTongue:     rec.motherTongue     ?? base.motherTongue      ?? "",
+      subCaste:         rec.subCaste         ?? base.subCaste          ?? "",
+      height:           rec.height           ?? base.height            ?? "",
+      weight:           rec.weight           ?? base.weight            ?? "",
+      address:          rec.address          ?? base.address           ?? "",
+      roomPlotNo:       rec.roomPlotNo       ?? base.roomPlotNo        ?? "",
+      society:          rec.society          ?? base.society           ?? "",
+      landmark:         rec.landmark         ?? base.landmark          ?? "",
+      area:             rec.area             ?? base.area              ?? "",
+      pinCode:          rec.pinCode          ?? base.pinCode           ?? "",
+      placeOfBirth:     rec.placeOfBirth     ?? base.placeOfBirth      ?? "",
+      aadhar:           rec.aadhar           ?? base.aadhar            ?? "",
+      aadharName:       rec.aadharName       ?? base.aadharName        ?? "",
+      lastSchoolName:   rec.lastSchoolName   ?? base.lastSchoolName    ?? "",
+      lastSchoolGrNo:   rec.lastSchoolGrNo   ?? base.lastSchoolGrNo    ?? "",
+      lastSchoolClass:  rec.lastSchoolClass  ?? base.lastSchoolClass   ?? "",
+      lastSchoolMedium: rec.lastSchoolMedium ?? base.lastSchoolMedium  ?? "",
+      lastSchoolPlace:  rec.lastSchoolPlace  ?? base.lastSchoolPlace   ?? "",
+      prevPercentage:        rec.prevPercentage        ?? base.prevPercentage        ?? "",
+      prevAttendanceDays:    rec.prevAttendanceDays    ?? base.prevAttendanceDays    ?? "",
+      lastExamGiven:         rec.lastExamGiven         ?? base.lastExamGiven         ?? "",
+      siblingName:      rec.siblingName      ?? base.siblingName       ?? "",
+      siblingClass:     rec.siblingClass     ?? base.siblingClass      ?? "",
+      documents:        resolvedDocs,
+    };
+  })();
 
   const handleDownloadPDF = () => {
     if (!student) return;
@@ -906,8 +1019,9 @@ export default function StudentDetailPage() {
           {/* Alerts Strip — Docs Pending · Inventory Pending · Discount */}
           {(() => {
             const hasPrevSchool    = !!student.lastSchoolName;
-            const tcUploaded       = student.documents.some((d) => d.name === "Leaving Certificate" && d.uploaded);
-            const bcUploaded       = student.documents.some((d) => d.name === "Birth Certificate"   && d.uploaded);
+            const docs             = student.documents ?? [];
+            const tcUploaded       = docs.some((d) => d.name === "Leaving Certificate" && d.uploaded);
+            const bcUploaded       = docs.some((d) => d.name === "Birth Certificate"   && d.uploaded);
             const hasTCWarning     = hasPrevSchool  && !tcUploaded;
             const hasBCWarning     = !hasPrevSchool && !bcUploaded;
 
@@ -917,12 +1031,12 @@ export default function StudentDetailPage() {
             const notRequired = !hasPrevSchool
               ? ["Leaving Certificate", "Marksheet"]
               : [];
-            const pendingDocs = student.documents.filter((d) =>
+            const pendingDocs = docs.filter((d) =>
               !d.uploaded &&
               !notRequired.includes(d.name) &&
               !(hasBCWarning && d.name === "Birth Certificate")
             );
-            const pendingInv  = student.inventory.filter((i) => !i.given);
+            const pendingInv  = (student.inventory ?? []).filter((i) => !i.given);
             const hasDiscount = student.discount?.applied;
             const hasAnything = pendingDocs.length > 0 || pendingInv.length > 0 || hasDiscount || hasTCWarning || hasBCWarning;
             if (!hasAnything) return null;
@@ -1061,11 +1175,11 @@ export default function StudentDetailPage() {
         {/* Tab Content */}
         <div className="p-5 lg:p-6">
           {activeTab === "personal"   && <PersonalTab   s={student} />}
-          {activeTab === "documents"  && <DocumentsTab  docs={student.documents} s={student} />}
+          {activeTab === "documents"  && <DocumentsTab  docs={student.documents ?? []} s={student} />}
           {activeTab === "fees"       && <FeesTab       fees={student.fees} />}
-          {activeTab === "attendance" && <AttendanceTab attendance={student.attendance} />}
-          {activeTab === "results"    && <ResultsTab    results={student.results} />}
-          {activeTab === "inventory"  && <InventoryTab  inventory={student.inventory} />}
+          {activeTab === "attendance" && <AttendanceTab attendance={student.attendance ?? []} />}
+          {activeTab === "results"    && <ResultsTab    results={student.results ?? []} />}
+          {activeTab === "inventory"  && <InventoryTab  inventory={student.inventory ?? []} />}
         </div>
       </div>
     </div>

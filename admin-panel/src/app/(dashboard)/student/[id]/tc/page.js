@@ -6,6 +6,7 @@ import {
   ArrowLeft, GraduationCap, CheckCircle2, Printer, FileText,
   ChevronDown, Lock,
 } from "lucide-react";
+import { isDateOnOrAfter, isValidLength } from "@/lib/validators";
 
 // ── Dummy student DB ───────────────────────────────────────────
 const studentDB = {
@@ -219,6 +220,15 @@ export default function TcPage() {
     if (form.reason === "Other" && !form.customReason.trim()) {
       alert("Please enter the reason for leaving."); return;
     }
+    if (form.reason === "Other" && !isValidLength(form.customReason, 300)) {
+      alert("Reason for leaving must be 300 characters or fewer."); return;
+    }
+    if (form.remarks && !isValidLength(form.remarks, 300)) {
+      alert("Remarks must be 300 characters or fewer."); return;
+    }
+    if (!isDateOnOrAfter(form.leavingDate, form.tcDate)) {
+      alert("Date of Leaving cannot be before the TC Issue Date."); return;
+    }
     setSubmitted(true);
   };
 
@@ -344,6 +354,7 @@ export default function TcPage() {
                   placeholder="Enter reason..."
                   value={form.customReason}
                   onChange={set("customReason")}
+                  maxLength={300}
                   required
                 />
               </div>
@@ -385,6 +396,7 @@ export default function TcPage() {
                 value={form.remarks}
                 onChange={set("remarks")}
                 rows={3}
+                maxLength={300}
                 className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy transition-all bg-white placeholder:text-gray-300 resize-none"
               />
             </div>

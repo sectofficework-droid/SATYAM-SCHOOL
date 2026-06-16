@@ -1,8 +1,9 @@
 "use client";
 
-import { Fragment, useState, useEffect, useRef } from "react";
+import { Fragment, useState, useEffect } from "react";
 import useStore from "@/lib/store";
 import { createPortal } from "react-dom";
+import { isPositiveAmount, isValidLength } from "@/lib/validators";
 import {
   Package, Plus, AlertTriangle, Search, TrendingDown,
   Users, Archive, X, ArrowUpCircle, MinusCircle, Info,
@@ -457,8 +458,9 @@ function AddStockModal({ items, onClose, onSave }) {
   }, [selId, tab]);
 
   const receivedBy = by === "Other" ? byCustom.trim() : by;
+  const qtyValid = isPositiveAmount(qty, 100000);
   const valid =
-    receivedBy && qty && Number(qty) > 0 && date &&
+    receivedBy && qtyValid && date &&
     (tab === "existing" ? !!selId : !!newName.trim());
 
   const handleSave = () => {
@@ -567,6 +569,9 @@ function AddStockModal({ items, onClose, onSave }) {
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Quantity *</label>
                 <input type="number" min="1" className={IPT} placeholder="0" value={qty} onChange={(e) => setQty(e.target.value)} />
+                {qty.length > 0 && !qtyValid && (
+                  <p className="text-xs text-red-500 mt-1">Enter a quantity between 1 and 100000</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
@@ -727,7 +732,11 @@ function AddAssetModal({ onClose, onSave }) {
   const [addr, setAddr]   = useState("");
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
-  const valid = name.trim().length > 0;
+
+  const nameValid  = isValidLength(name, 80, 2);
+  const brandValid = !brand.trim() || isValidLength(brand, 100, 1);
+  const addrValid  = !addr.trim() || isValidLength(addr, 100, 1);
+  const valid = nameValid && brandValid && addrValid;
 
   const modal = (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
@@ -740,10 +749,16 @@ function AddAssetModal({ onClose, onSave }) {
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">Asset Name *</label>
             <input className={IPT} placeholder="e.g. Wireless Microphone" value={name} onChange={(e) => setName(e.target.value)} />
+            {name.length > 0 && !nameValid && (
+              <p className="text-xs text-red-500 mt-1">Name must be 2-80 characters</p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">Brand / Model</label>
             <input className={IPT} placeholder="e.g. Boya BY-WM8" value={brand} onChange={(e) => setBrand(e.target.value)} />
+            {brand.length > 0 && !brandValid && (
+              <p className="text-xs text-red-500 mt-1">Brand / Model must be under 100 characters</p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">Storage Location *</label>
@@ -751,6 +766,9 @@ function AddAssetModal({ onClose, onSave }) {
               <MapPin className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
               <input className={`${IPT} pl-9`} placeholder="e.g. AV Room, Cabinet 1" value={addr} onChange={(e) => setAddr(e.target.value)} />
             </div>
+            {addr.length > 0 && !addrValid && (
+              <p className="text-xs text-red-500 mt-1">Storage location must be under 100 characters</p>
+            )}
           </div>
         </div>
         <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
@@ -884,12 +902,7 @@ function ReturnAssetModal({ asset, onClose, onSave }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
-  const masterItems    = useStore(s => s.studentInventoryItems);
-  const addMasterItem  = useStore(s => s.addStudentInventoryItem);
-  const remMasterItem  = useStore(s => s.removeStudentInventoryItem);
-  const [newItemName,  setNewItemName]  = useState("");
-  const [addingItem,   setAddingItem]   = useState(false);
-  const newItemRef = useRef(null);
+  const masterItems = useStore(s => s.studentInventoryItems);
 
   const [assets, setAssets]               = useState(INITIAL_ASSETS);
   const [assetPanelOpen, setAssetPanelOpen] = useState(false);
@@ -1092,19 +1105,15 @@ export default function InventoryPage() {
 
       {/* ── Student Inventory Items ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-start justify-between mb-4 gap-3">
           <div>
             <p className="text-sm font-bold text-gray-800">Student Inventory Items</p>
             <p className="text-xs text-gray-400 mt-0.5">Items given to every student — shown in their profile &amp; fee entry</p>
           </div>
-          {!addingItem && (
-            <button
-              onClick={() => { setAddingItem(true); setTimeout(() => newItemRef.current?.focus(), 50); }}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-school-navy text-white text-xs font-semibold hover:bg-school-navy-dark transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" /> Add Item
-            </button>
-          )}
+          <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold px-3 py-1.5 rounded-xl flex-shrink-0">
+            <Info className="w-3.5 h-3.5 flex-shrink-0" />
+            Manage in Super Admin
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -1112,43 +1121,10 @@ export default function InventoryPage() {
             <span key={name} className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 text-blue-800 text-xs font-semibold px-3 py-1.5 rounded-full">
               <Package className="w-3 h-3 text-blue-400 flex-shrink-0" />
               {name}
-              <button
-                onClick={() => remMasterItem(name)}
-                className="ml-0.5 w-3.5 h-3.5 rounded-full hover:bg-blue-200 flex items-center justify-center text-blue-400 hover:text-red-500 transition-colors flex-shrink-0"
-              >
-                <X className="w-2.5 h-2.5" />
-              </button>
             </span>
           ))}
-
-          {addingItem && (
-            <form
-              className="flex items-center gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const name = newItemName.trim();
-                if (name) {
-                  addMasterItem(name);
-                  setItems(prev => {
-                    if (prev.some(i => i.name === name)) return prev;
-                    const newId = Math.max(...prev.map(i => i.id)) + 1;
-                    return [...prev, { id: newId, name, category: "student", unit: "Pcs", lowStockAt: 5, storageAddress: "", batches: [], usages: [], studentsTotal: 0, studentsGiven: 0 }];
-                  });
-                }
-                setNewItemName("");
-                setAddingItem(false);
-              }}
-            >
-              <input
-                ref={newItemRef}
-                value={newItemName}
-                onChange={e => setNewItemName(e.target.value)}
-                placeholder="Item name…"
-                className="border border-blue-300 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy w-36"
-              />
-              <button type="submit" className="px-3 py-1.5 bg-school-navy text-white text-xs font-semibold rounded-lg hover:bg-school-navy-dark transition-colors">Add</button>
-              <button type="button" onClick={() => { setAddingItem(false); setNewItemName(""); }} className="px-3 py-1.5 border border-gray-200 text-gray-500 text-xs font-semibold rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
-            </form>
+          {masterItems.length === 0 && (
+            <p className="text-xs text-gray-400">No items configured. Go to Super Admin → Inventory → Item Master to add items.</p>
           )}
         </div>
       </div>

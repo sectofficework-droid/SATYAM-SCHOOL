@@ -11,6 +11,10 @@ import {
   ClipboardList, Flag, Upload, FileText, Download, Filter,
 } from "lucide-react";
 import useStore from "@/lib/store";
+import {
+  isValidName, isValidPhone, isValidEmail, isValidAadhar, isValidPincode,
+  isNonNegativeNumber,
+} from "@/lib/validators";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -236,12 +240,41 @@ const DUMMY_EMPLOYEES = [
 ];
 
 // â"€â"€ Shared cell renderer â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-function FieldCell({ field, value, onChange, compact }) {
-  const fileRef = useRef(null);
+// Detects the semantic type of a free-text field from its key/label so the
+// spreadsheet editor can flag obviously invalid values without blocking typing.
+function detectFieldKind(field) {
+  const probe = `${field.key} ${field.label}`.toLowerCase();
+  if (probe.includes("aadhar")) return "aadhar";
+  if (probe.includes("pincode") || probe.includes("pin code")) return "pincode";
+  if (probe.includes("mobile") || probe.includes("phone")) return "phone";
+  if (probe.includes("email")) return "email";
+  return null;
+}
 
-  const cls = compact
-    ? "border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-school-navy bg-white w-full"
-    : "border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy bg-white w-full";
+function isFieldValueValid(kind, value) {
+  if (!value) return true; // empty stays neutral — only flag once something is typed
+  switch (kind) {
+    case "aadhar":  return isValidAadhar(value);
+    case "pincode": return isValidPincode(value);
+    case "phone":   return isValidPhone(value);
+    case "email":   return isValidEmail(value);
+    default:        return true;
+  }
+}
+
+function FieldCell({ field, value, onChange, compact, error }) {
+  const fileRef = useRef(null);
+  const [touched, setTouched] = useState(false);
+
+  const kind         = detectFieldKind(field);
+  const selfInvalid  = kind && touched && !isFieldValueValid(kind, value);
+  const isInvalid    = Boolean(error) || selfInvalid;
+  const invalidMsg   = error || (selfInvalid ? `Invalid ${field.label.toLowerCase()}` : "");
+
+  const cls = `${compact
+    ? "border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-school-navy bg-white w-full"
+    : "border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy bg-white w-full"
+  } ${isInvalid ? "border-red-400" : "border-gray-200"}`;
 
   if (field.type === "photo") {
     return (
@@ -292,7 +325,16 @@ function FieldCell({ field, value, onChange, compact }) {
       </select>
     );
   }
-  return <input type={field.type} className={cls} value={value || ""} onChange={e => onChange(e.target.value)} />;
+  return (
+    <input
+      type={field.type}
+      className={cls}
+      value={value || ""}
+      onChange={e => onChange(e.target.value)}
+      onBlur={() => setTouched(true)}
+      title={invalidMsg || undefined}
+    />
+  );
 }
 
 // â"€â"€ Login â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
@@ -306,6 +348,10 @@ function LoginView({ onLogin }) {
 
   function handleLogin(e) {
     e.preventDefault();
+    if (!name.trim() || !pass.trim()) {
+      setError("Please enter both fields.");
+      return;
+    }
     const found = users.find(u => u.name === name && u.password === pass);
     if (found) onLogin({ ...found, role });
     else setError("Invalid credentials.");
@@ -395,12 +441,28 @@ function LoginView({ onLogin }) {
 }
 
 // â"€â"€ Single Student Tool (Senior Admin) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+const NAME_FIELDS  = ["firstName", "lastName", "fatherName", "motherName", "aadharName"];
+const PHONE_FIELDS = ["mobile1", "mobile2"];
+
+function validateStudentForm(form) {
+  const errors = {};
+  NAME_FIELDS.forEach(key => {
+    if (form[key] && !isValidName(form[key])) errors[key] = "Enter a valid name";
+  });
+  // mobile1 is required; mobile2 is optional
+  if (!isValidPhone(form.mobile1)) errors.mobile1 = "Enter a valid 10-digit mobile number";
+  if (form.mobile2 && !isValidPhone(form.mobile2)) errors.mobile2 = "Enter a valid 10-digit mobile number";
+  if (form.aadharNo && !isValidAadhar(form.aadharNo)) errors.aadharNo = "Enter a valid 12-digit Aadhar number";
+  return errors;
+}
+
 function SingleStudentTool({ students }) {
   const [selClass, setSelClass] = useState("");
   const [search,   setSearch]   = useState("");
   const [selected, setSelected] = useState(null);
   const [form,     setForm]     = useState({});
   const [saved,    setSaved]    = useState(false);
+  const [errors,   setErrors]   = useState({});
 
   const [photo,        setPhoto]        = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
@@ -413,8 +475,15 @@ function SingleStudentTool({ students }) {
     setPhoto(null); setPhotoPreview(null);
     setCheckedDocs({}); setUploadedFiles({}); setCustomDocs([]);
   }
-  function selectStudent(st) { setSelected(st); setForm({...st}); setSaved(false); resetMedia(); }
+  function selectStudent(st) { setSelected(st); setForm({...st}); setSaved(false); setErrors({}); resetMedia(); }
   function goBack()           { setSelected(null); resetMedia(); }
+
+  function handleSave() {
+    const errs = validateStudentForm(form);
+    setErrors(errs);
+    if (Object.keys(errs).length > 0) return;
+    setSaved(true); setTimeout(()=>setSaved(false),2500);
+  }
 
   function handlePhoto(e) {
     const f = e.target.files[0];
@@ -506,7 +575,8 @@ function SingleStudentTool({ students }) {
                 return (
                   <div key={field.key}>
                     <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-500 mb-1"><Icon className="w-3.5 h-3.5"/>{field.label}</label>
-                    <FieldCell field={field} value={form[field.key]} onChange={v => setForm({...form,[field.key]:v})} />
+                    <FieldCell field={field} value={form[field.key]} onChange={v => { setForm({...form,[field.key]:v}); setErrors(p => ({...p, [field.key]:""})); }} error={errors[field.key]} />
+                    {errors[field.key] && <p className="text-[11px] text-red-500 mt-1">{errors[field.key]}</p>}
                   </div>
                 );
               })}
@@ -576,8 +646,8 @@ function SingleStudentTool({ students }) {
       </div>
 
       <div className="mt-6 flex gap-3">
-        <button onClick={() => { setSaved(true); setTimeout(()=>setSaved(false),2500); }} className="flex items-center gap-2 bg-school-navy text-white px-6 py-2.5 rounded-lg text-sm font-semibold"><Save className="w-4 h-4"/>Save Changes</button>
-        <button onClick={() => { setForm({...selected}); resetMedia(); }} className="flex items-center gap-2 border border-gray-200 text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold"><RefreshCw className="w-4 h-4"/>Reset</button>
+        <button onClick={handleSave} className="flex items-center gap-2 bg-school-navy text-white px-6 py-2.5 rounded-lg text-sm font-semibold"><Save className="w-4 h-4"/>Save Changes</button>
+        <button onClick={() => { setForm({...selected}); setErrors({}); resetMedia(); }} className="flex items-center gap-2 border border-gray-200 text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold"><RefreshCw className="w-4 h-4"/>Reset</button>
       </div>
     </div>
   );
@@ -722,22 +792,34 @@ function FeesPanel() {
   const [clsF,     setClsF]     = useState("All");
   const [search,   setSearch]   = useState("");
   const [saved,    setSaved]    = useState(false);
+  const [feeError, setFeeError] = useState("");
 
   const filtered = feeRecs.filter(r =>
     (clsF==="All"||r.cls===clsF) &&
     (r.name.toLowerCase().includes(search.toLowerCase())||r.enrollNo.toLowerCase().includes(search.toLowerCase()))
   );
 
-  function openEdit(rec) { setExpandId(rec.id); setEditRec(JSON.parse(JSON.stringify(rec))); }
+  function openEdit(rec) { setExpandId(rec.id); setEditRec(JSON.parse(JSON.stringify(rec))); setFeeError(""); }
 
   function saveEdit() {
+    const hasNegative = !isNonNegativeNumber(editRec.discount)
+      || editRec.payments.some(p => !isNonNegativeNumber(p.amount) || !isNonNegativeNumber(p.paid));
+    if (hasNegative) {
+      setFeeError("Fee amounts and discount cannot be negative.");
+      return;
+    }
+    setFeeError("");
     setFeeRecs(prev=>prev.map(r=>r.id===editRec.id?editRec:r));
     setSaved(true); setTimeout(()=>setSaved(false),2000);
     setExpandId(null); setEditRec(null);
   }
 
+  // Clamp payment-term amount/paid fields to a non-negative number before they enter state.
   function updatePay(pIdx, key, val) {
-    setEditRec(prev => { const p=[...prev.payments]; p[pIdx]={...p[pIdx],[key]:val}; return {...prev,payments:p}; });
+    const safeVal = (key === "amount" || key === "paid")
+      ? Math.max(0, Math.min(Number(val) || 0, 10000000))
+      : val;
+    setEditRec(prev => { const p=[...prev.payments]; p[pIdx]={...p[pIdx],[key]:safeVal}; return {...prev,payments:p}; });
   }
 
   function addPayment() {
@@ -795,7 +877,7 @@ function FeesPanel() {
                               <div className="flex items-center gap-3 text-xs text-gray-500">
                                 <span>Annual: ₹{editRec.totalFee.toLocaleString()}</span>
                                 <span className="text-orange-600">Discount:
-                                  <input type="number" className="ml-1 w-20 border border-gray-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" value={editRec.discount} onChange={e=>setEditRec({...editRec,discount:Number(e.target.value)})}/>
+                                  <input type="number" min="0" className="ml-1 w-20 border border-gray-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" value={editRec.discount} onChange={e=>setEditRec({...editRec,discount:Math.max(0, Math.min(Number(e.target.value) || 0, 10000000))})}/>
                                 </span>
                               </div>
                             </div>
@@ -813,9 +895,9 @@ function FeesPanel() {
                                       <tr key={p.id} className="border-t border-gray-100">
                                         <td className="px-2 py-2 text-gray-400">{pIdx+1}</td>
                                         <td className="px-2 py-1.5"><input className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none w-28 bg-white" value={p.label} onChange={e=>updatePay(pIdx,"label",e.target.value)}/></td>
-                                        <td className="px-2 py-1.5"><input type="number" className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none w-20 bg-white" value={p.amount} onChange={e=>updatePay(pIdx,"amount",Number(e.target.value))}/></td>
+                                        <td className="px-2 py-1.5"><input type="number" min="0" className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none w-20 bg-white" value={p.amount} onChange={e=>updatePay(pIdx,"amount",Number(e.target.value))}/></td>
                                         <td className="px-2 py-1.5"><input type="date" className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none bg-white" value={p.dueDate} onChange={e=>updatePay(pIdx,"dueDate",e.target.value)}/></td>
-                                        <td className="px-2 py-1.5"><input type="number" className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none w-20 bg-white" value={p.paid} onChange={e=>updatePay(pIdx,"paid",Number(e.target.value))}/></td>
+                                        <td className="px-2 py-1.5"><input type="number" min="0" className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none w-20 bg-white" value={p.paid} onChange={e=>updatePay(pIdx,"paid",Number(e.target.value))}/></td>
                                         <td className="px-2 py-1.5"><input type="date" className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none bg-white" value={p.paidDate} onChange={e=>updatePay(pIdx,"paidDate",e.target.value)}/></td>
                                         <td className={`px-2 py-2 font-semibold ${bal<=0?"text-green-600":"text-red-500"}`}>{bal<=0?"Cleared":`₹${bal.toLocaleString()}`}</td>
                                         <td className="px-2 py-2"><span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${p.paid>=p.amount?"bg-green-100 text-green-700":p.paid>0?"bg-yellow-100 text-yellow-700":"bg-red-100 text-red-700"}`}>{p.paid>=p.amount?"Paid":p.paid>0?"Partial":"Unpaid"}</span></td>
@@ -826,10 +908,11 @@ function FeesPanel() {
                                 </tbody>
                               </table>
                             </div>
+                            {feeError && <p className="text-xs text-red-500 font-semibold mb-2">{feeError}</p>}
                             <div className="flex gap-2 flex-wrap">
                               <button onClick={addPayment} className="flex items-center gap-1.5 border border-dashed border-emerald-400 text-emerald-700 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-emerald-50"><Plus className="w-3.5 h-3.5"/>Add Payment</button>
                               <button onClick={saveEdit} className="flex items-center gap-1.5 bg-emerald-600 text-white px-4 py-1.5 rounded-lg text-xs font-semibold"><Save className="w-3.5 h-3.5"/>Save</button>
-                              <button onClick={()=>{setExpandId(null);setEditRec(null);}} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-4 py-1.5 rounded-lg text-xs font-semibold"><X className="w-3.5 h-3.5"/>Cancel</button>
+                              <button onClick={()=>{setExpandId(null);setEditRec(null);setFeeError("");}} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-4 py-1.5 rounded-lg text-xs font-semibold"><X className="w-3.5 h-3.5"/>Cancel</button>
                             </div>
                           </div>
                         </td></tr>
@@ -847,17 +930,23 @@ function FeesPanel() {
 
 // â"€â"€ Inventory Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 function InventoryPanel() {
-  const [tab,      setTab]      = useState("assets");
-  const [assets,   setAssets]   = useState(DUMMY_ASSETS);
-  const [stock,    setStock]    = useState(DUMMY_STOCK);
-  const [stuInv,   setStuInv]   = useState(DUMMY_STUDENT_INVENTORY);
-  const [clsF,     setClsF]     = useState("All");
-  const [selStu,   setSelStu]   = useState(null);
-  const [stuItems, setStuItems] = useState([]);
-  const [expandId, setExpandId] = useState(null);
-  const [histMode, setHistMode] = useState(null); // assetId showing history
-  const [stockEdit,setStockEdit]= useState(null);
-  const [saved,    setSaved]    = useState("");
+  const masterItems   = useStore(s => s.studentInventoryItems);
+  const addMasterItem = useStore(s => s.addStudentInventoryItem);
+  const remMasterItem = useStore(s => s.removeStudentInventoryItem);
+
+  const [tab,        setTab]        = useState("assets");
+  const [assets,     setAssets]     = useState(DUMMY_ASSETS);
+  const [stock,      setStock]      = useState(DUMMY_STOCK);
+  const [stuInv,     setStuInv]     = useState(DUMMY_STUDENT_INVENTORY);
+  const [clsF,       setClsF]       = useState("All");
+  const [selStu,     setSelStu]     = useState(null);
+  const [stuItems,   setStuItems]   = useState([]);
+  const [expandId,   setExpandId]   = useState(null);
+  const [histMode,   setHistMode]   = useState(null);
+  const [stockEdit,  setStockEdit]  = useState(null);
+  const [saved,      setSaved]      = useState("");
+  const [newItem,    setNewItem]     = useState("");
+  const [confirmDel, setConfirmDel] = useState(null);
   let _hid = 100;
 
   function showSaved(msg) { setSaved(msg); setTimeout(()=>setSaved(""),2000); }
@@ -879,7 +968,7 @@ function InventoryPanel() {
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-5">
-        {[{k:"assets",label:"Assets"},{k:"student",label:"Student Items"},{k:"stock",label:"Stock / Extra"}].map(t=>(
+        {[{k:"assets",label:"Assets"},{k:"student",label:"Student Items"},{k:"stock",label:"Stock / Extra"},{k:"master",label:"Item Master"}].map(t=>(
           <button key={t.k} onClick={()=>setTab(t.k)} className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-all ${tab===t.k?"bg-amber-500 text-white border-amber-500":"border-gray-200 text-gray-600 hover:border-amber-400"}`}>{t.label}</button>
         ))}
       </div>
@@ -1067,6 +1156,84 @@ function InventoryPanel() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Item Master tab — add/delete student inventory items */}
+      {tab==="master" && (
+        <div className="space-y-5">
+          <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5"/>
+            <p className="text-xs text-amber-700">These are the master item names that appear in every student's profile and fee entry. Deleting an item removes it from the list permanently — only use this when an item is no longer issued to students.</p>
+          </div>
+
+          {/* Current items */}
+          <div>
+            <p className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-3">Current Items ({masterItems.length})</p>
+            {masterItems.length === 0 && (
+              <p className="text-sm text-gray-400">No items configured yet.</p>
+            )}
+            <div className="space-y-2">
+              {masterItems.map((name) => (
+                <div key={name} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
+                  <div className="flex items-center gap-2.5">
+                    <Package className="w-3.5 h-3.5 text-blue-400 flex-shrink-0"/>
+                    <span className="text-sm font-semibold text-gray-800">{name}</span>
+                  </div>
+                  {confirmDel === name ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-red-600 font-semibold">Delete &quot;{name}&quot;?</span>
+                      <button
+                        onClick={() => { remMasterItem(name); setConfirmDel(null); showSaved(`"${name}" removed from item master.`); }}
+                        className="px-3 py-1 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition-colors"
+                      >Yes, Delete</button>
+                      <button
+                        onClick={() => setConfirmDel(null)}
+                        className="px-3 py-1 border border-gray-200 text-gray-600 text-xs font-semibold rounded-lg hover:bg-gray-100 transition-colors"
+                      >Cancel</button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmDel(name)}
+                      className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-red-500 border border-gray-200 hover:border-red-300 px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      <Trash2 className="w-3.5 h-3.5"/>Delete
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Add new item */}
+          <div className="border-t border-gray-100 pt-5">
+            <p className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-3">Add New Item</p>
+            <form
+              className="flex items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const trimmed = newItem.trim();
+                if (!trimmed) return;
+                addMasterItem(trimmed);
+                setNewItem("");
+                showSaved(`"${trimmed}" added to item master.`);
+              }}
+            >
+              <input
+                value={newItem}
+                onChange={e => setNewItem(e.target.value)}
+                placeholder="e.g. Sports Kit"
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400/30 focus:border-amber-400 w-56"
+              />
+              <button
+                type="submit"
+                disabled={!newItem.trim()}
+                className="flex items-center gap-1.5 bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-600 transition-colors disabled:opacity-40"
+              >
+                <Plus className="w-4 h-4"/>Add Item
+              </button>
+            </form>
+          </div>
         </div>
       )}
     </div>
@@ -1688,12 +1855,17 @@ const EXAMPLE_ROW = [
   "City Primary School","4th",
 ];
 
+const IMPORT_SESSION = "2026-27"; // controlled from Settings — matches the single Add Student form
+
 function ImportStudentsPanel() {
   const fileRef = useRef(null);
+  const students    = useStore(s => s.students);
+  const addStudent  = useStore(s => s.addStudent);
   const [step,      setStep]      = useState("idle"); // idle | preview | done
   const [parsed,    setParsed]    = useState([]);
   const [rowErrors, setRowErrors] = useState([]);
   const [importing, setImporting] = useState(false);
+  const [importedCount, setImportedCount] = useState(0);
 
   function downloadTemplate() {
     const wb = XLSX.utils.book_new();
@@ -1759,10 +1931,70 @@ function ImportStudentsPanel() {
 
   function confirmImport() {
     setImporting(true);
-    setTimeout(() => { setImporting(false); setStep("done"); }, 1200);
+    setTimeout(() => {
+      let nextEnrollment = Math.max(...students.map(s => parseInt(s.enrollment) || 0), 1000);
+      const rollByClass = {};
+
+      valid.forEach(s => {
+        nextEnrollment += 1;
+        const enrollment = String(nextEnrollment);
+
+        const classKey = s.cls;
+        if (rollByClass[classKey] === undefined) {
+          const existingRolls = students
+            .filter(st => st.std === classKey && st.status !== "Inactive" && st.status !== "Left")
+            .map(st => parseInt(st.rollNo, 10) || 0);
+          rollByClass[classKey] = existingRolls.length ? Math.max(...existingRolls) : 0;
+        }
+        rollByClass[classKey] += 1;
+        const assignedRoll = s.rollNo || String(rollByClass[classKey]);
+
+        const aadharFormatted = s.aadharNo
+          ? s.aadharNo.replace(/\D/g, "").replace(/(\d{4})(?=\d)/g, "$1 ").trim()
+          : "";
+
+        const newStudent = {
+          enrollment,
+          name: `${s.firstName} ${s.lastName}`.trim(),
+          photo: null,
+          grNo: s.grNo || "",
+          dateOfJoin: s.joinDate || "",
+          admissionClass: s.cls,
+          std: s.cls,
+          section: s.section || "A",
+          rollNo: assignedRoll,
+          session: IMPORT_SESSION,
+          fatherName: s.fatherName || "",
+          motherName: s.motherName || "",
+          mobile: s.mobile1 || "",
+          mobile2: s.mobile2 || "",
+          dob: s.dob || "",
+          gender: s.gender || "",
+          religion: s.religion || "",
+          caste: s.caste || "General",
+          address: s.address || "",
+          aadhar: aadharFormatted,
+          udise: s.udise || "",
+          pen: s.pen || "",
+          apaar: s.apaar || "",
+          status: "Active",
+          fees: { total: 0, paid: 0 },
+          pendingDocs: [],
+          pendingInventory: [],
+          password: ((s.firstName || "STU").slice(0, 3) + enrollment).toUpperCase(),
+          lastSchoolName: s.lastSchoolName || "",
+          lastSchoolClass: s.lastSchoolClass || "",
+        };
+        addStudent(newStudent);
+      });
+
+      setImportedCount(valid.length);
+      setImporting(false);
+      setStep("done");
+    }, 1200);
   }
 
-  function reset() { setParsed([]); setRowErrors([]); setStep("idle"); }
+  function reset() { setParsed([]); setRowErrors([]); setImportedCount(0); setStep("idle"); }
 
   const valid   = parsed.filter(s => s._errors.length === 0);
   const invalid = parsed.filter(s => s._errors.length  >  0);
@@ -1911,7 +2143,7 @@ function ImportStudentsPanel() {
           </div>
           <p className="text-xl font-bold text-gray-800">Import Successful!</p>
           <p className="text-sm text-gray-500">
-            <span className="font-bold text-green-700">{valid.length} students</span> have been imported successfully.
+            <span className="font-bold text-green-700">{importedCount} students</span> have been imported successfully with auto-assigned enrollment numbers.
             {invalid.length > 0 && <><br/><span className="text-red-500">{invalid.length} rows were skipped</span> due to errors.</>}
           </p>
           <button onClick={reset}

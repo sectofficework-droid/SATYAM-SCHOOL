@@ -11,8 +11,18 @@ import {
   Phone, Mail, MapPin, Hash, Shield, UserPlus,
   GraduationCap, Lock, ChevronDown, ChevronUp, Pencil,
   AlertCircle, LogOut, SlidersHorizontal, LayoutGrid,
-  Download, FileSpreadsheet, MessageSquare,
+  Download, FileSpreadsheet, MessageSquare, CalendarRange,
 } from "lucide-react";
+import YearPlanningTab from "./YearPlanningTab";
+import {
+  isNonEmpty, isValidEmail, isValidPhone, isValidPincode, isValidName,
+  isValidAddressText, isValidLength, isPositiveAmount, isDateOnOrAfter, hasNoErrors,
+} from "@/lib/validators";
+
+function FieldError({ msg }) {
+  if (!msg) return null;
+  return <p className="text-xs text-red-500 mt-1">{msg}</p>;
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CLASSES = [
@@ -194,11 +204,32 @@ function SchoolProfileTab() {
   const [saved,    setSaved]    = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [backup,   setBackup]   = useState(null);
-  const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+  const [errors,   setErrors]   = useState({});
+  const set = k => e => { setForm(p => ({ ...p, [k]: e.target.value })); setErrors(p => ({ ...p, [k]: "" })); };
 
-  function startEdit() { setBackup({ ...form }); setEditMode(true); }
-  function cancel()    { setForm(backup); setEditMode(false); }
-  function save()      { setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2500); }
+  function startEdit() { setBackup({ ...form }); setEditMode(true); setErrors({}); }
+  function cancel()    { setForm(backup); setEditMode(false); setErrors({}); }
+
+  function validate() {
+    const e = {};
+    if (!isValidLength(form.name, 100, 3)) e.name = "Enter a valid school name (3-100 characters).";
+    if (!isValidAddressText(form.address)) e.address = "Enter a valid address (3-200 characters).";
+    if (!isValidName(form.city, { max: 60 })) e.city = "Enter a valid city name.";
+    if (!isValidName(form.state, { max: 60 })) e.state = "Enter a valid state name.";
+    if (!isValidPincode(form.pin)) e.pin = "PIN code must be exactly 6 digits.";
+    if (!isValidPhone(form.phone)) e.phone = "Phone must be a valid 10-digit mobile number.";
+    if (!isValidEmail(form.email)) e.email = "Enter a valid email address.";
+    if (form.website && !/^https?:\/\/.+\..+/.test(form.website.trim())) e.website = "Website must start with http:// or https://";
+    if (!isNonEmpty(form.udise) || !/^\d{8,11}$/.test(form.udise.trim())) e.udise = "UDISE code must be 8-11 digits.";
+    return e;
+  }
+
+  function save() {
+    const e = validate();
+    setErrors(e);
+    if (!hasNoErrors(e)) return;
+    setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2500);
+  }
 
   return (
     <div className="space-y-6">
@@ -210,28 +241,28 @@ function SchoolProfileTab() {
           <div className="md:col-span-2">
             <Field label="School Name">
               {editMode
-                ? <input className={inp} value={form.name} onChange={set("name")}/>
+                ? <><input className={inp} value={form.name} onChange={set("name")}/><FieldError msg={errors.name}/></>
                 : <ViewVal val={form.name}/>}
             </Field>
           </div>
           <Field label="Address">
             {editMode
-              ? <input className={inp} value={form.address} onChange={set("address")} placeholder="Street / Area"/>
+              ? <><input className={inp} value={form.address} onChange={set("address")} placeholder="Street / Area"/><FieldError msg={errors.address}/></>
               : <ViewVal val={form.address}/>}
           </Field>
           <Field label="City">
             {editMode
-              ? <input className={inp} value={form.city} onChange={set("city")}/>
+              ? <><input className={inp} value={form.city} onChange={set("city")}/><FieldError msg={errors.city}/></>
               : <ViewVal val={form.city}/>}
           </Field>
           <Field label="State">
             {editMode
-              ? <input className={inp} value={form.state} onChange={set("state")}/>
+              ? <><input className={inp} value={form.state} onChange={set("state")}/><FieldError msg={errors.state}/></>
               : <ViewVal val={form.state}/>}
           </Field>
           <Field label="PIN Code">
             {editMode
-              ? <input className={inp} value={form.pin} onChange={set("pin")} maxLength={6}/>
+              ? <><input className={inp} value={form.pin} onChange={set("pin")} maxLength={6}/><FieldError msg={errors.pin}/></>
               : <ViewVal val={form.pin}/>}
           </Field>
         </div>
@@ -244,20 +275,20 @@ function SchoolProfileTab() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Field label="Phone Number">
             {editMode
-              ? <div className="relative"><Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
-                  <input className={inp + " pl-9"} value={form.phone} onChange={set("phone")}/></div>
+              ? <div><div className="relative"><Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
+                  <input className={inp + " pl-9"} value={form.phone} onChange={set("phone")} maxLength={10}/></div><FieldError msg={errors.phone}/></div>
               : <ViewVal val={form.phone} icon={Phone}/>}
           </Field>
           <Field label="Email Address">
             {editMode
-              ? <div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
-                  <input className={inp + " pl-9"} value={form.email} onChange={set("email")} type="email"/></div>
+              ? <div><div className="relative"><Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
+                  <input className={inp + " pl-9"} value={form.email} onChange={set("email")} type="email"/></div><FieldError msg={errors.email}/></div>
               : <ViewVal val={form.email} icon={Mail}/>}
           </Field>
           <Field label="Website">
             {editMode
-              ? <div className="relative"><MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
-                  <input className={inp + " pl-9"} value={form.website} onChange={set("website")}/></div>
+              ? <div><div className="relative"><MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
+                  <input className={inp + " pl-9"} value={form.website} onChange={set("website")} placeholder="https://..."/></div><FieldError msg={errors.website}/></div>
               : <ViewVal val={form.website} icon={MapPin}/>}
           </Field>
         </div>
@@ -280,8 +311,8 @@ function SchoolProfileTab() {
           </Field>
           <Field label="UDISE Code">
             {editMode
-              ? <div className="relative"><Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
-                  <input className={inp + " pl-9"} value={form.udise} onChange={set("udise")}/></div>
+              ? <div><div className="relative"><Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
+                  <input className={inp + " pl-9"} value={form.udise} onChange={set("udise")}/></div><FieldError msg={errors.udise}/></div>
               : <ViewVal val={form.udise} icon={Hash}/>}
           </Field>
         </div>
@@ -303,6 +334,7 @@ function AcademicYearTab() {
   const [backup,    setBackup]    = useState(null);
   const [newYear,   setNewYear]   = useState("");
   const [addError,  setAddError]  = useState("");
+  const [dateError, setDateError] = useState("");
 
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
@@ -318,10 +350,16 @@ function AcademicYearTab() {
     setYearsList(backup.yearsList);
     setNewYear("");
     setAddError("");
+    setDateError("");
     setEditMode(false);
   }
 
   function save() {
+    if (form.newAdmissionDate && form.readmissionDate && !isDateOnOrAfter(form.readmissionDate, form.newAdmissionDate)) {
+      setDateError("Re-admission date must be on or after the new admission start date.");
+      return;
+    }
+    setDateError("");
     setReadmissionDate(form.readmissionDate);
     setSaved(true);
     setEditMode(false);
@@ -445,15 +483,20 @@ function AcademicYearTab() {
           </Field>
           <Field label="New Admission Start Date">
             {editMode
-              ? <input type="date" className={inp} value={form.newAdmissionDate} onChange={set("newAdmissionDate")}/>
+              ? <input type="date" className={inp} value={form.newAdmissionDate} onChange={e => { set("newAdmissionDate")(e); setDateError(""); }}/>
               : <ViewVal val={fmt(form.newAdmissionDate)}/>}
           </Field>
           <Field label="Re-admission Date (Promotion)">
             {editMode
-              ? <input type="date" className={inp} value={form.readmissionDate} onChange={set("readmissionDate")}/>
+              ? <input type="date" className={inp} value={form.readmissionDate} onChange={e => { set("readmissionDate")(e); setDateError(""); }}/>
               : <ViewVal val={fmt(form.readmissionDate)}/>}
           </Field>
         </div>
+        {editMode && dateError && (
+          <p className="text-xs text-red-500 flex items-center gap-1 pt-1">
+            <AlertCircle className="w-3 h-3"/> {dateError}
+          </p>
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
@@ -562,7 +605,7 @@ function FeeStructureTab() {
 
   function applyBulkUniform() {
     const num = parseInt(bulkUniform);
-    if (!num || num <= 0) return;
+    if (!isPositiveAmount(num, 100000)) return;
     setFeeData(p => ({
       ...p,
       [selectedYear]: p[selectedYear].map(r => ({ ...r, uniform: num })),
@@ -572,9 +615,10 @@ function FeeStructureTab() {
 
   function setCell(cls, key, val) {
     const num = parseInt(val) || 0;
+    const clamped = Math.min(Math.max(num, 0), 1000000);
     setFeeData(p => ({
       ...p,
-      [selectedYear]: p[selectedYear].map(r => r.cls === cls ? { ...r, [key]: num } : r),
+      [selectedYear]: p[selectedYear].map(r => r.cls === cls ? { ...r, [key]: clamped } : r),
     }));
   }
 
@@ -636,7 +680,7 @@ function FeeStructureTab() {
               </div>
               <button
                 onClick={applyBulkUniform}
-                disabled={!bulkUniform || parseInt(bulkUniform) <= 0}
+                disabled={!isPositiveAmount(parseInt(bulkUniform), 100000)}
                 className="px-3 py-1.5 bg-amber-600 text-white text-xs font-bold rounded-lg hover:bg-amber-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 Apply to All
@@ -1016,17 +1060,26 @@ function UsersRolesTab() {
 
   const blank = { name:"", email:"", role:"Fee Clerk", status:"Active", pass:"" };
   const [form, setForm] = useState(blank);
-  const setF = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
+  const [userErrors, setUserErrors] = useState({});
+  const setF = k => e => { setForm(p => ({ ...p, [k]: e.target.value })); setUserErrors(p => ({ ...p, [k]: "" })); };
 
   function startEdit() { setBackup(users.map(u => ({ ...u }))); setEditMode(true); }
   function cancel()    { setUsers(backup); setShowForm(false); setEditId(null); setEditMode(false); }
   function save()      { setShowForm(false); setEditId(null); setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2000); }
 
-  function openAdd()    { setForm(blank); setEditId(null); setShowForm(true); }
-  function openEdit(u)  { setForm({ ...u }); setEditId(u.id); setShowForm(true); }
+  function openAdd()    { setForm(blank); setEditId(null); setUserErrors({}); setShowForm(true); }
+  function openEdit(u)  { setForm({ ...u }); setEditId(u.id); setUserErrors({}); setShowForm(true); }
 
   function saveUser() {
-    if (!form.name || !form.email) return;
+    const e = {};
+    if (!isValidName(form.name, { max: 80 })) e.name = "Enter a valid full name.";
+    if (!isValidEmail(form.email)) e.email = "Enter a valid email address.";
+    else if (users.some(u => u.email.toLowerCase() === form.email.trim().toLowerCase() && u.id !== editId)) {
+      e.email = "A user with this email already exists.";
+    }
+    if (!isNonEmpty(form.pass) || form.pass.trim().length < 6) e.pass = "Password must be at least 6 characters.";
+    setUserErrors(e);
+    if (!hasNoErrors(e)) return;
     if (editId) setUsers(prev => prev.map(u => u.id === editId ? { ...form, id: editId } : u));
     else        setUsers(prev => [...prev, { ...form, id: Date.now() }]);
     setShowForm(false);
@@ -1165,9 +1218,11 @@ function UsersRolesTab() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
               <Field label="Full Name">
                 <input className={inp} placeholder="Enter name" value={form.name} onChange={setF("name")}/>
+                <FieldError msg={userErrors.name}/>
               </Field>
               <Field label="Email">
                 <input className={inp} type="email" placeholder="email@school.in" value={form.email} onChange={setF("email")}/>
+                <FieldError msg={userErrors.email}/>
               </Field>
               <Field label="Role">
                 <select className={sel} value={form.role} onChange={setF("role")}>
@@ -1183,6 +1238,7 @@ function UsersRolesTab() {
                     {showPass.form ? <EyeOff className="w-3.5 h-3.5"/> : <Eye className="w-3.5 h-3.5"/>}
                   </button>
                 </div>
+                <FieldError msg={userErrors.pass}/>
               </Field>
             </div>
             <div className="flex gap-2 mt-4">
@@ -1793,6 +1849,7 @@ const TABS = [
   { key:"fees",       label:"Fee Structure",      icon:IndianRupee  },
   { key:"classes",    label:"Classes & Sections", icon:BookOpen     },
   { key:"timetable",  label:"Timetable",          icon:LayoutGrid   },
+  { key:"planning",   label:"Year Planning",      icon:CalendarRange},
   { key:"reminders",  label:"Fee Reminders",      icon:MessageSquare},
   { key:"users",      label:"Users & Roles",      icon:Users        },
 ];
@@ -1850,6 +1907,7 @@ export default function SettingsPage() {
       {tab === "fees"       && <FeeStructureTab/>}
       {tab === "classes"    && <ClassSectionsTab/>}
       {tab === "timetable"  && <TimetableTab/>}
+      {tab === "planning"   && <YearPlanningTab/>}
       {tab === "reminders"  && <FeeReminderTab/>}
       {tab === "users"      && <UsersRolesTab/>}
     </div>

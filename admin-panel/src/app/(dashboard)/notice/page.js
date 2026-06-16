@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
+import { isValidLength, isDateOnOrAfter } from "@/lib/validators";
 import {
   Bell, Plus, Search, Trash2, X, Pin, PinOff,
   ChevronDown, Pencil, Archive, ArchiveRestore,
@@ -91,7 +92,10 @@ function NoticeModal({ initial, onClose, onSave }) {
   const [postedBy,   setPostedBy]   = useState(initial?.postedBy   ?? POSTED_BY_LIST[0]);
   const [pinned,     setPinned]     = useState(initial?.pinned     ?? false);
 
-  const valid = title.trim() && content.trim() && date;
+  const titleValid      = isValidLength(title, 100, 3);
+  const contentValid    = isValidLength(content, 2000, 5);
+  const expiryDateValid = !expiryDate || isDateOnOrAfter(expiryDate, date);
+  const valid = titleValid && contentValid && !!date && expiryDateValid;
 
   function handleSave() {
     if (!valid) return;
@@ -115,6 +119,9 @@ function NoticeModal({ initial, onClose, onSave }) {
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">Title *</label>
             <input className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
               placeholder="Notice title…" value={title} onChange={e => setTitle(e.target.value)}/>
+            {title.length > 0 && !titleValid && (
+              <p className="text-xs text-red-500 mt-1">Title must be 3-100 characters</p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -164,11 +171,17 @@ function NoticeModal({ initial, onClose, onSave }) {
               <input type="date" value={expiryDate} min={date || TODAY} onChange={e => setExpiryDate(e.target.value)}
                 className="w-full border border-gray-200 rounded-xl pl-9 pr-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"/>
             </div>
+            {expiryDate && !expiryDateValid && (
+              <p className="text-xs text-red-500 mt-1">Expiry date must be on or after the posted date</p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">Content *</label>
             <textarea rows={5} value={content} onChange={e => setContent(e.target.value)} placeholder="Write the notice content here…"
               className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy resize-none leading-relaxed"/>
+            {content.length > 0 && !contentValid && (
+              <p className="text-xs text-red-500 mt-1">Content must be 5-2000 characters</p>
+            )}
           </div>
           <label className="flex items-center gap-2.5 cursor-pointer select-none">
             <div onClick={() => setPinned(v => !v)}

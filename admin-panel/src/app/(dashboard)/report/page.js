@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   GraduationCap, IndianRupee, Users, Package, Search,
-  RefreshCw, Download, FileText, ShieldCheck,
+  RefreshCw, Download, FileText, ShieldCheck, BookOpen, Landmark, IdCard,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -38,6 +38,21 @@ function dobToWords(dateStr) {
   const rem = yr - 2000;
   const yStr = rem === 0 ? "Two Thousand" : "Two Thousand " + n2w(rem);
   return `${dN[dy]||dy} ${mN[mo]||mo} ${yStr}`;
+}
+
+// ── Date Formatting (DD/MM/YYYY everywhere) ──────────────────────────────────
+function fmtDate(dateStr) {
+  if (!dateStr) return "";
+  const parts = String(dateStr).split("-");
+  if (parts.length !== 3) return dateStr;
+  const [y, m, d] = parts;
+  if (!y || !m || !d) return dateStr;
+  return `${d.padStart(2,"0")}/${m.padStart(2,"0")}/${y}`;
+}
+
+function formatCellValue(col, value) {
+  if (value === undefined || value === null || value === "") return "";
+  return col.isDate ? fmtDate(value) : value;
 }
 
 // ── Eligibility Logic ─────────────────────────────────────────────────────────
@@ -85,10 +100,24 @@ function mkSt(cls, roll, fn, ln, gender, opts) {
     udise: o.udise || "", pen: o.pen || "", apaar: o.apaar || "",
     grNo:`GR${2000+_sid}`,
     lastSchoolName: o.lastSchoolName || "City Primary School",
+    lastSchoolGrNo: o.lastSchoolGrNo || `LS${1000+_sid}`,
     remarks:  o.remarks  || "",
     followUp: o.followUp || "",
     status:  o.status  || "Active",
     session: o.session || "2025-26",
+    // ── GR/UDISE/PEN register fields ──
+    prevPercentage:     o.prevPercentage     || `${60+(_sid%35)}%`,
+    prevAttendanceDays: o.prevAttendanceDays !== undefined ? o.prevAttendanceDays : (180+(_sid%20)),
+    height:        o.height        || `${130+(_sid%30)}`,
+    weight:        o.weight        || `${30+(_sid%25)}`,
+    plotNo:        o.plotNo        || `${100+_sid}`,
+    society:       o.society       || "Shanti Nagar Society",
+    landmark:      o.landmark      || "Near Bus Stand",
+    area:          o.area          || "Vesu",
+    pinCode:       o.pinCode       || "395007",
+    motherTongue:  o.motherTongue  || "Gujarati",
+    subCaste:      o.subCaste      || "-",
+    lastExamGiven: o.lastExamGiven !== undefined ? o.lastExamGiven : "Yes",
   };
 }
 
@@ -199,6 +228,147 @@ const DUMMY_ASSETS = [
   { id:8, name:"CCTV Camera Set",        category:"Security",    location:"Entire School", status:"Active",      assignedTo:"Admin",     purchaseDate:"2023-07-01", value:38000 },
 ];
 
+// ── Fixed-Structure Register Entries (GR / UDISE / PEN) ───────────────────────
+function decorateStudentForEntry(st) {
+  return {
+    ...st,
+    dobInWords:           dobToWords(st.dob),
+    religionCaste:        `${st.religion || "-"}${st.caste ? " - " + st.caste : ""}`,
+    lastSchoolGrSchool:   `${st.lastSchoolGrNo || "-"} - ${st.lastSchoolName || "-"}`,
+    firstAdmissionStd:    st.joinClass,
+    studentFatherSurname: `${st.fatherName || ""} ${st.surname || ""}`.trim(),
+  };
+}
+
+function entryGetData(f, df, dt, s) {
+  let d = DUMMY_STUDENTS.map(decorateStudentForEntry);
+  if (f.cls     && f.cls     !== "All") d = d.filter(x => x.cls     === f.cls);
+  if (f.session && f.session !== "All") d = d.filter(x => x.session === f.session);
+  if (s) d = d.filter(x => x.name.toLowerCase().includes(s.toLowerCase()) || x.enrollNo.toLowerCase().includes(s.toLowerCase()));
+  return d;
+}
+
+function entryCompleteness(row, cols) {
+  return cols.every(c => {
+    const v = row[c.key];
+    return v !== undefined && v !== null && String(v).trim() !== "" && String(v) !== "-";
+  });
+}
+
+function entryGetSummary(cols) {
+  return d => {
+    const complete = d.filter(r => entryCompleteness(r, cols)).length;
+    return [
+      {label:"Total Students",     value:d.length,          color:"blue"  },
+      {label:"Complete Records",   value:complete,          color:"green" },
+      {label:"Incomplete Records", value:d.length-complete, color:"red"   },
+    ];
+  };
+}
+
+const ENTRY_QUICK_FILTERS = [
+  {key:"cls",     label:"Class",         options:["All",...CLASSES] },
+  {key:"session", label:"Academic Year", options:["All",...SESSIONS]},
+];
+
+// pool of optional fields that can be inserted as a one-off "extra field" into a fixed register
+const STUDENT_FIELD_POOL = [
+  { key:"enrollNo",       label:"Enroll No" },
+  { key:"status",         label:"Status" },
+  { key:"session",        label:"Academic Year" },
+  { key:"religion",       label:"Religion" },
+  { key:"caste",          label:"Category/Caste" },
+  { key:"gender",         label:"Gender" },
+  { key:"mobile1",        label:"Mobile No 1" },
+  { key:"mobile2",        label:"Mobile No 2" },
+  { key:"remarks",        label:"Remarks" },
+  { key:"followUp",       label:"Follow Up" },
+  { key:"placeOfBirth",   label:"Place of Birth" },
+  { key:"lastSchoolName", label:"Last School Name" },
+  { key:"roll",           label:"Roll No" },
+  { key:"joinDate",       label:"Date of Admission", isDate:true },
+  { key:"dob",            label:"Date of Birth",     isDate:true },
+];
+
+const GR_REGISTER_COLUMNS = [
+  { key:"grNo",              label:"GR No" },
+  { key:"surname",           label:"Surname" },
+  { key:"name",              label:"Student Name" },
+  { key:"fatherName",        label:"Father's Name" },
+  { key:"motherName",        label:"Mother's Name" },
+  { key:"religionCaste",     label:"Religion & Caste" },
+  { key:"placeOfBirth",      label:"Place of Birth" },
+  { key:"dob",               label:"Date of Birth (in Number)", isDate:true },
+  { key:"dobInWords",        label:"Date of Birth (in Word)" },
+  { key:"lastSchoolGrSchool",label:"Last School GR No & School Name" },
+  { key:"joinDate",          label:"Date of Admission", isDate:true },
+  { key:"firstAdmissionStd", label:"First Admission in STD" },
+  { key:"aadharNo",          label:"Aadhar No" },
+  { key:"udise",             label:"UDISE No" },
+  { key:"apaar",             label:"APAAR ID" },
+  { key:"pen",               label:"PEN No" },
+];
+
+const PEN_ENTRY_COLUMNS = [
+  { key:"cls",                  label:"Class" },
+  { key:"studentFatherSurname", label:"Student Father Surname" },
+  { key:"gender",                label:"Gender" },
+  { key:"dob",                   label:"Date of Birth", isDate:true },
+  { key:"udise",                 label:"Student State Code (UDISE No)" },
+  { key:"motherName",            label:"Mother's Name" },
+  { key:"fatherName",            label:"Father's Name" },
+  { key:"aadharNo",              label:"Aadhar Number of Student" },
+  { key:"aadharName",            label:"Name of Student as per Aadhar Card" },
+  { key:"joinDate",               label:"Admission Date", isDate:true },
+  { key:"mobile1",                label:"Mobile No 1" },
+  { key:"mobile2",                label:"Mobile No 2" },
+  { key:"grNo",                   label:"Admission Number in Present School (GR No)" },
+  { key:"roll",                   label:"Roll No" },
+  { key:"prevPercentage",         label:"Previous Class Percentage" },
+  { key:"prevAttendanceDays",     label:"Previous Class Attendance Days" },
+  { key:"height",                 label:"Height (cm)" },
+  { key:"weight",                 label:"Weight (kg)" },
+];
+
+const UDISE_ENTRY_COLUMNS = [
+  { key:"cls",               label:"Class" },
+  { key:"name",               label:"Student Name" },
+  { key:"fatherName",         label:"Father's Name" },
+  { key:"motherName",         label:"Mother's Name" },
+  { key:"surname",            label:"Surname" },
+  { key:"dob",                 label:"Date of Birth", isDate:true },
+  { key:"grNo",                label:"GR No" },
+  { key:"roll",                label:"Roll No" },
+  { key:"plotNo",              label:"Plot Number" },
+  { key:"society",             label:"Society" },
+  { key:"landmark",            label:"Landmark" },
+  { key:"area",                label:"Area" },
+  { key:"pinCode",             label:"Pin Code" },
+  { key:"motherTongue",        label:"Mother Tongue" },
+  { key:"joinDate",             label:"Date of Join", isDate:true },
+  { key:"gender",               label:"Gender" },
+  { key:"caste",                label:"Caste" },
+  { key:"subCaste",             label:"Sub Caste" },
+  { key:"religion",             label:"Religion" },
+  { key:"aadharNo",             label:"Aadhar Card No" },
+  { key:"aadharName",           label:"Name as per Aadhar" },
+  { key:"prevAttendanceDays",   label:"Previous Year Attendance Days" },
+  { key:"lastExamGiven",        label:"Last Exam Given or Not" },
+  { key:"prevPercentage",       label:"If Given Percentage" },
+  { key:"mobile1",               label:"Mobile No 1" },
+  { key:"mobile2",               label:"Mobile No 2" },
+];
+
+// insert the optional "extra field"(s) into the fixed column order at the chosen position
+function buildFixedCols(fixedCols, extras) {
+  let list = [...fixedCols];
+  extras.forEach(ef => {
+    const idx = Math.min(Math.max(ef.position - 1, 0), list.length);
+    list.splice(idx, 0, { key: ef.key, label: ef.label, isExtra: true, isDate: ef.isDate });
+  });
+  return list;
+}
+
 // ── Report Configs ─────────────────────────────────────────────────────────────
 const REPORT_CONFIGS = {
   student: {
@@ -220,8 +390,8 @@ const REPORT_CONFIGS = {
       {key:"surname",        label:"Surname",         dflt:false },
       {key:"mobile1",        label:"Mobile No 1",     dflt:true  },
       {key:"mobile2",        label:"Mobile No 2",     dflt:false },
-      {key:"dob",            label:"DOB",             dflt:true  },
-      {key:"joinDate",       label:"DOJ",             dflt:false },
+      {key:"dob",            label:"DOB",             dflt:true,  isDate:true },
+      {key:"joinDate",       label:"DOJ",             dflt:false, isDate:true },
       {key:"joinClass",      label:"Class of Join",   dflt:false },
       {key:"cls",            label:"Current Class",   dflt:true  },
       {key:"status",         label:"Status",          dflt:true  },
@@ -316,7 +486,7 @@ const REPORT_CONFIGS = {
       {key:"mobile",        label:"Mobile",         dflt:true },
       {key:"email",         label:"Email",          dflt:false},
       {key:"salary",        label:"Salary (Rs)",    dflt:true },
-      {key:"joinDate",      label:"Join Date",      dflt:false},
+      {key:"joinDate",      label:"Join Date",      dflt:false, isDate:true},
       {key:"status",        label:"Status",         dflt:true },
     ],
     getData(f, df, dt, s) {
@@ -348,7 +518,7 @@ const REPORT_CONFIGS = {
       {key:"location",     label:"Location",      dflt:true },
       {key:"status",       label:"Status",        dflt:true },
       {key:"assignedTo",   label:"Assigned To",   dflt:false},
-      {key:"purchaseDate", label:"Purchase Date", dflt:false},
+      {key:"purchaseDate", label:"Purchase Date", dflt:false, isDate:true},
       {key:"value",        label:"Value (Rs)",    dflt:true },
     ],
     getData(f, df, dt, s) {
@@ -403,6 +573,39 @@ const REPORT_CONFIGS = {
       ];
     },
   },
+  grRegister: {
+    label:"GR Register Entry", icon:BookOpen,
+    isFixedEntry:true,
+    fixedColumns: GR_REGISTER_COLUMNS,
+    extraFieldPool: STUDENT_FIELD_POOL.filter(f => !GR_REGISTER_COLUMNS.some(c => c.key === f.key)),
+    quickFilters: ENTRY_QUICK_FILTERS,
+    dateField:null, dateLabel:null,
+    columns: GR_REGISTER_COLUMNS,
+    getData: entryGetData,
+    getSummary: entryGetSummary(GR_REGISTER_COLUMNS),
+  },
+  udiseEntry: {
+    label:"UDISE Entry (State)", icon:Landmark,
+    isFixedEntry:true,
+    fixedColumns: UDISE_ENTRY_COLUMNS,
+    extraFieldPool: STUDENT_FIELD_POOL.filter(f => !UDISE_ENTRY_COLUMNS.some(c => c.key === f.key)),
+    quickFilters: ENTRY_QUICK_FILTERS,
+    dateField:null, dateLabel:null,
+    columns: UDISE_ENTRY_COLUMNS,
+    getData: entryGetData,
+    getSummary: entryGetSummary(UDISE_ENTRY_COLUMNS),
+  },
+  penEntry: {
+    label:"PEN Entry (National)", icon:IdCard,
+    isFixedEntry:true,
+    fixedColumns: PEN_ENTRY_COLUMNS,
+    extraFieldPool: STUDENT_FIELD_POOL.filter(f => !PEN_ENTRY_COLUMNS.some(c => c.key === f.key)),
+    quickFilters: ENTRY_QUICK_FILTERS,
+    dateField:null, dateLabel:null,
+    columns: PEN_ENTRY_COLUMNS,
+    getData: entryGetData,
+    getSummary: entryGetSummary(PEN_ENTRY_COLUMNS),
+  },
 };
 
 // ── Color Map ─────────────────────────────────────────────────────────────────
@@ -446,23 +649,35 @@ function EligBadge({ eligible, done }) {
 export default function ReportPage() {
   const [rType,    setRType]    = useState("student");
   const [filters,  setFilters]  = useState({});
-  const [selCols,  setSelCols]  = useState({});
+  const [selCols,  setSelCols]  = useState([]); // ordered array of selected column keys
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo,   setDateTo]   = useState("");
   const [search,   setSearch]   = useState("");
 
+  // fixed-entry (GR/UDISE/PEN) — optional one-off extra field(s) inserted into the fixed order
+  const [extraFields,   setExtraFields]   = useState([]); // [{key, label, position, isDate}]
+  const [showAddExtra,  setShowAddExtra]  = useState(false);
+  const [extraFieldKey, setExtraFieldKey] = useState("");
+  const [extraFieldPos, setExtraFieldPos] = useState(1);
+
   const cfg = REPORT_CONFIGS[rType];
 
   useEffect(() => {
-    const init = {};
-    cfg.columns.forEach(c => { init[c.key] = c.dflt; });
+    // Initialise with default columns in their original definition order
+    const init = cfg.columns.filter(c => c.dflt).map(c => c.key);
     setSelCols(init);
+    setExtraFields([]);
+    setShowAddExtra(false);
+    setExtraFieldKey(""); setExtraFieldPos(1);
     setFilters({});
     setDateFrom(""); setDateTo(""); setSearch("");
   }, [rType]);
 
   const data    = cfg.getData(filters, dateFrom, dateTo, search);
-  const actCols = cfg.columns.filter(c => selCols[c.key]);
+  // actCols follows selection order (not definition order); fixed-entry types use the locked order + any inserted extra field
+  const actCols = cfg.isFixedEntry
+    ? buildFixedCols(cfg.fixedColumns, extraFields)
+    : selCols.map(key => cfg.columns.find(c => c.key === key)).filter(Boolean);
   const summary = cfg.getSummary(data);
 
   function eligStatusText(eligible, done) {
@@ -472,14 +687,15 @@ export default function ReportPage() {
   }
 
   function doExportExcel() {
-    const today = new Date().toLocaleDateString("en-IN");
+    const isoToday     = new Date().toISOString().slice(0,10);
+    const todayDisplay = fmtDate(isoToday);
     let rows;
     if (cfg.isEligibility) {
       rows = [
         ["Satyam Stars International School"],
         ["Surat, Gujarat  |  GSEB Board  |  English Medium"],
         ["ID Eligibility Report"],
-        [`Generated: ${today}`, "", `Total Records: ${data.length}`],
+        [`Generated: ${todayDisplay}`, "", `Total Records: ${data.length}`],
         [],
         ["#","Enroll No","Student Name","Class","Birth Cert","Aadhar","Name Match","UDISE","PEN","APAAR","Remarks","Follow Up"],
         ...data.map((st, i) => {
@@ -505,12 +721,12 @@ export default function ReportPage() {
         ["Satyam Stars International School"],
         ["Surat, Gujarat  |  GSEB Board  |  English Medium"],
         [cfg.label],
-        [`Generated: ${today}`, "", `Total Records: ${data.length}`],
+        [`Generated: ${todayDisplay}`, "", `Total Records: ${data.length}`],
         filterStr ? [`Filters Applied: ${filterStr}`] : null,
-        (dateFrom||dateTo) ? [`Date Range: ${dateFrom||"-"} to ${dateTo||"-"}`] : null,
+        (dateFrom||dateTo) ? [`Date Range: ${dateFrom?fmtDate(dateFrom):"-"} to ${dateTo?fmtDate(dateTo):"-"}`] : null,
         [],
         actCols.map(c => c.label),
-        ...data.map(row => actCols.map(c => { const v=row[c.key]; return (v===undefined||v===null||v==="")? "-" : v; })),
+        ...data.map(row => actCols.map(c => { const v=formatCellValue(c, row[c.key]); return v===""? "-" : v; })),
         [],
         ["SUMMARY:", ...summary.map(s=>`${s.label}: ${s.value}`)],
       ].filter(r => r !== null);
@@ -521,11 +737,12 @@ export default function ReportPage() {
     ws["!cols"] = Array.from({length:colCount}, () => ({ wch: 18 }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, cfg.label.slice(0,31));
-    XLSX.writeFile(wb, `${cfg.label.replace(/[\s/]+/g,"_")}_${today}.xlsx`);
+    XLSX.writeFile(wb, `${cfg.label.replace(/[\s/]+/g,"_")}_${isoToday}.xlsx`);
   }
 
   function doExportPDF() {
-    const today = new Date().toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"});
+    const isoToday     = new Date().toISOString().slice(0,10);
+    const todayDisplay = fmtDate(isoToday);
     const isElig = cfg.isEligibility;
     const doc = new jsPDF({ orientation: isElig || actCols.length > 6 ? "landscape" : "portrait" });
     const w   = doc.internal.pageSize.getWidth();
@@ -545,12 +762,12 @@ export default function ReportPage() {
 
     doc.setTextColor(60,60,60); doc.setFontSize(8); doc.setFont("helvetica","normal");
     let y = 36;
-    doc.text(`Generated: ${today}`, 14, y); y += 5;
+    doc.text(`Generated: ${todayDisplay}`, 14, y); y += 5;
     doc.text(`Total Records: ${data.length}`, 14, y); y += 5;
     if (!isElig) {
       const activeFilters = Object.entries(filters).filter(([,v])=>v&&v!=="All").map(([k,v])=>`${k}: ${v}`).join("  |  ");
       if (activeFilters) { doc.text(`Filters: ${activeFilters}`, 14, y); y += 5; }
-      if (dateFrom||dateTo) { doc.text(`Date Range: ${dateFrom||"-"}  to  ${dateTo||"-"}`, 14, y); y += 5; }
+      if (dateFrom||dateTo) { doc.text(`Date Range: ${dateFrom?fmtDate(dateFrom):"-"}  to  ${dateTo?fmtDate(dateTo):"-"}`, 14, y); y += 5; }
     }
     doc.setFont("helvetica","bold"); doc.setTextColor(30,58,95);
     doc.text(summary.map(s=>`${s.label}: ${s.value}`).join("   |   "), 14, y); y += 4;
@@ -572,7 +789,7 @@ export default function ReportPage() {
             st.remarks || "",
           ];
         })
-      : data.map(row => actCols.map(c => { const v=row[c.key]; return (v===undefined||v===null||v==="")? "-" : String(v); }));
+      : data.map(row => actCols.map(c => { const v=formatCellValue(c, row[c.key]); return v===""? "-" : String(v); }));
 
     autoTable(doc, {
       startY: y + 2,
@@ -589,11 +806,11 @@ export default function ReportPage() {
         doc.line(14, ph-12, pw-14, ph-12);
         doc.setFontSize(7); doc.setTextColor(140,140,140); doc.setFont("helvetica","normal");
         doc.text("Satyam Stars International School  |  Surat, Gujarat  |  Confidential", 14, ph-7);
-        doc.text(`Page ${pn}  |  Generated: ${today}`, pw-14, ph-7, {align:"right"});
+        doc.text(`Page ${pn}  |  Generated: ${todayDisplay}`, pw-14, ph-7, {align:"right"});
       },
     });
 
-    doc.save(`${cfg.label.replace(/[\s/]+/g,"_")}_${today}.pdf`);
+    doc.save(`${cfg.label.replace(/[\s/]+/g,"_")}_${isoToday}.pdf`);
   }
 
   return (
@@ -606,7 +823,7 @@ export default function ReportPage() {
       </div>
 
       {/* Report type selector */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
         {Object.entries(REPORT_CONFIGS).map(([key, c]) => {
           const Icon = c.icon; const isA = rType === key;
           return (
@@ -658,17 +875,106 @@ export default function ReportPage() {
           </button>
         </div>
 
-        {/* Column selector — hidden for eligibility */}
-        {!cfg.isEligibility && (
+        {/* Column selector — hidden for eligibility and fixed-entry registers */}
+        {!cfg.isEligibility && !cfg.isFixedEntry && (
           <div>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Columns to Include in Report</p>
             <div className="flex flex-wrap gap-2">
-              {cfg.columns.map(col => (
-                <button key={col.key} onClick={()=>setSelCols(prev=>({...prev,[col.key]:!prev[col.key]}))}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold border-2 transition-all ${selCols[col.key]?"bg-school-navy border-school-navy text-white":"border-gray-200 text-gray-500 hover:border-gray-400"}`}>
-                  {col.label}
+              {cfg.columns.map(col => {
+                const orderIdx = selCols.indexOf(col.key);
+                const isSelected = orderIdx !== -1;
+                return (
+                  <button
+                    key={col.key}
+                    onClick={() => setSelCols(prev =>
+                      isSelected ? prev.filter(k => k !== col.key) : [...prev, col.key]
+                    )}
+                    className={`relative px-2.5 py-1 rounded-lg text-xs font-semibold border-2 transition-all ${
+                      isSelected
+                        ? "bg-school-navy border-school-navy text-white"
+                        : "border-gray-200 text-gray-500 hover:border-gray-400"
+                    }`}
+                  >
+                    {col.label}
+                    {isSelected && (
+                      <span className="absolute -top-2 -right-2 w-4 h-4 bg-yellow-400 text-school-navy text-[9px] font-bold rounded-full flex items-center justify-center leading-none shadow-sm">
+                        {orderIdx + 1}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Fixed-entry registers (GR / UDISE / PEN) — fields auto-selected in required order, plus optional extra field */}
+        {cfg.isFixedEntry && (
+          <div className="space-y-3">
+            <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                Fixed Fields — Auto-Selected in Required Order
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {actCols.map((col, i) => (
+                  <span key={`${col.key}-${i}`}
+                    className={`relative px-2.5 py-1 rounded-lg text-xs font-semibold ${col.isExtra ? "bg-amber-500 text-white" : "bg-school-navy text-white"}`}>
+                    {col.label}{col.isExtra && " (extra)"}
+                    <span className="absolute -top-2 -right-2 w-4 h-4 bg-yellow-400 text-school-navy text-[9px] font-bold rounded-full flex items-center justify-center leading-none shadow-sm">
+                      {i + 1}
+                    </span>
+                    {col.isExtra && (
+                      <button
+                        onClick={() => setExtraFields(prev => prev.filter(ef => ef.key !== col.key))}
+                        className="ml-1.5 text-white/80 hover:text-white font-bold"
+                      >×</button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="border border-dashed border-gray-300 rounded-lg p-3 bg-white">
+              {!showAddExtra ? (
+                <button onClick={() => setShowAddExtra(true)}
+                  className="text-xs font-semibold text-school-navy hover:underline">
+                  + Want to add an extra field to this register?
                 </button>
-              ))}
+              ) : (
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Extra Field</label>
+                    <select value={extraFieldKey} onChange={e => setExtraFieldKey(e.target.value)}
+                      className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white min-w-44 focus:outline-none focus:ring-2 focus:ring-school-navy">
+                      <option value="">Select field...</option>
+                      {cfg.extraFieldPool
+                        .filter(f => !extraFields.some(ef => ef.key === f.key))
+                        .map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">At Position</label>
+                    <input type="number" min={1} max={actCols.length + 1} value={extraFieldPos}
+                      onChange={e => setExtraFieldPos(Number(e.target.value))}
+                      className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white w-20 focus:outline-none focus:ring-2 focus:ring-school-navy"/>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const field = cfg.extraFieldPool.find(f => f.key === extraFieldKey);
+                      if (!field) { alert("Please select a field to add."); return; }
+                      setExtraFields(prev => [...prev, { ...field, position: extraFieldPos }]);
+                      setExtraFieldKey(""); setExtraFieldPos(1); setShowAddExtra(false);
+                    }}
+                    className="bg-school-navy text-white text-xs font-semibold px-3 py-1.5 rounded-lg hover:bg-school-navy/90"
+                  >
+                    Add Field
+                  </button>
+                  <button onClick={() => { setShowAddExtra(false); setExtraFieldKey(""); }}
+                    className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1.5">
+                    Cancel
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -752,8 +1058,8 @@ export default function ReportPage() {
                     <td key={c.key} className="px-3 py-2 text-gray-700 whitespace-nowrap">
                       {c.key==="status"
                         ? <StatusBadge value={row[c.key]}/>
-                        : (row[c.key]!==undefined&&row[c.key]!=="")
-                          ? String(row[c.key])
+                        : formatCellValue(c, row[c.key]) !== ""
+                          ? String(formatCellValue(c, row[c.key]))
                           : <span className="text-gray-300">-</span>}
                     </td>
                   ))}

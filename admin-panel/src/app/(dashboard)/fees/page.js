@@ -3,30 +3,20 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import useStore from "@/lib/store";
+import { isPositiveAmount } from "@/lib/validators";
 import {
   IndianRupee, Search, Send, Bell, CheckCircle2,
   Package, Phone, GraduationCap, ChevronDown, ChevronUp,
   X, MessageSquare, Users, Check, Lock, Eye, RotateCcw,
 } from "lucide-react";
 
-// ── Fees Structure ─────────────────────────────────────────────
-const FEES_STRUCTURE = [
-  { std: "JR.KG",           amount: 14500 },
-  { std: "SR.KG",           amount: 14500 },
-  { std: "Balvatika",       amount: 15000 },
-  { std: "1st",             amount: 15500 },
-  { std: "2nd",             amount: 15700 },
-  { std: "3rd",             amount: 15900 },
-  { std: "4th",             amount: 16200 },
-  { std: "5th",             amount: 16500 },
-  { std: "6th",             amount: 16800 },
-  { std: "7th",             amount: 17000 },
-  { std: "8th",             amount: 17300 },
-  { std: "9th",             amount: 17500 },
-  { std: "10th",            amount: 18000 },
-  { std: "11th - Commerce", amount: 19000 },
-  { std: "12th - Commerce", amount: 19000 },
-];
+// ── Default Fees Structure (fallback) ──────────────────────────
+const DEFAULT_FEES = {
+  "JR.KG":14500,"SR.KG":14500,"Balvatika":15000,
+  "1st":15500,"2nd":15700,"3rd":15900,"4th":16200,"5th":16500,
+  "6th":16800,"7th":17000,"8th":17300,"9th":17500,"10th":18000,
+  "11th - Commerce":19000,"12th - Commerce":19000,
+};
 
 const ADMINS = [
   "Sunil Pradhan",
@@ -124,24 +114,71 @@ const INITIAL_STUDENTS = [
 
 const todayStr = new Date().toISOString().split("T")[0];
 
-// ── Helpers ────────────────────────────────────────────────────
-function getStructureFee(std) {
-  return FEES_STRUCTURE.find((f) => f.std === std)?.amount ?? 0;
+// ── Session helpers ─────────────────────────────────────────────
+function getCurrentSession() {
+  const now = new Date();
+  const yr  = now.getFullYear();
+  const m   = now.getMonth() + 1;
+  const s   = m >= 4 ? yr : yr - 1;
+  return `${s}-${String(s + 1).slice(2)}`;
+}
+function buildSessionsList() {
+  const now = new Date();
+  const yr  = now.getFullYear();
+  const m   = now.getMonth() + 1;
+  const s   = m >= 4 ? yr : yr - 1;
+  return [0, 1, 2].map(i => { const x = s - i; return `${x}-${String(x + 1).slice(2)}`; });
+}
+const CURRENT_SESSION = getCurrentSession();
+
+const CLASS_ORDER = [
+  "JR.KG","SR.KG","Balvatika",
+  "1st","2nd","3rd","4th","5th",
+  "6th","7th","8th","9th","10th",
+  "11th - Commerce","12th - Commerce",
+];
+const ACTIVE_CLASS_MAP = {
+  "JR KG":"JR.KG","SR KG":"SR.KG","Balvatika":"Balvatika",
+  "1st":"1st","2nd":"2nd","3rd":"3rd","4th":"4th","5th":"5th",
+  "6th":"6th","7th":"7th","8th":"8th","9th":"9th","10th":"10th",
+  "11th Commerce":"11th - Commerce","12th Commerce":"12th - Commerce",
+};
+
+// Summary from Zustand store student (has fees.total, fees.paid, fees.discount)
+function calcStoreSummary(student, feesMap) {
+  const totalFees     = getStructureFee(student.std, feesMap);
+  const discount      = student.fees?.discount ?? 0;
+  const actualFees    = Math.max(totalFees - discount, 0);
+  const classPayments = (student.payments ?? []).filter(p => !p.std || p.std === student.std);
+  const paidFees      = student.fees?.paid ?? 0;
+  const dueFees       = Math.max(actualFees - paidFees, 0);
+  return { totalFees, discount, actualFees, paidFees, dueFees, classPayments };
+}
+function getStorePaymentStatus(student, feesMap) {
+  const { paidFees, dueFees, actualFees } = calcStoreSummary(student, feesMap);
+  if (paidFees === 0 && actualFees > 0) return "Not Paid";
+  if (dueFees <= 0) return "Full Paid";
+  return "Partial Paid";
 }
 
-function calcSummary(student) {
-  const totalFees  = getStructureFee(student.std);
+// ── Helpers ────────────────────────────────────────────────────
+function getStructureFee(std, feesMap) {
+  return (feesMap ?? DEFAULT_FEES)[std] ?? 0;
+}
+
+function calcSummary(student, feesMap) {
+  const totalFees  = getStructureFee(student.std, feesMap);
   const discount   = student.discount?.amount ?? 0;
   const actualFees = Math.max(totalFees - discount, 0);
   // Only count payments recorded for the student's current class
-  const classPayments = student.payments.filter(p => !p.std || p.std === student.std);
+  const classPayments = (student.payments ?? []).filter(p => !p.std || p.std === student.std);
   const paidFees   = classPayments.reduce((s, p) => s + p.amount, 0);
   const dueFees    = Math.max(actualFees - paidFees, 0);
   return { totalFees, discount, actualFees, paidFees, dueFees, classPayments };
 }
 
-function getPaymentStatus(student) {
-  const { paidFees, dueFees, actualFees } = calcSummary(student);
+function getPaymentStatus(student, feesMap) {
+  const { paidFees, dueFees, actualFees } = calcSummary(student, feesMap);
   if (paidFees === 0 && actualFees > 0) return "Not Paid";
   if (dueFees <= 0) return "Full Paid";
   return "Partial Paid";
@@ -341,9 +378,9 @@ function NotificationModal({ student, onClose }) {
 }
 
 // ── View Modal ─────────────────────────────────────────────────
-function ViewModal({ student, onClose }) {
-  const { totalFees, discount, actualFees, paidFees, dueFees, classPayments } = calcSummary(student);
-  const status = getPaymentStatus(student);
+function ViewModal({ student, onClose, feesMap }) {
+  const { totalFees, discount, actualFees, paidFees, dueFees, classPayments } = calcSummary(student, feesMap);
+  const status = getPaymentStatus(student, feesMap);
   const givenItems   = student.inventory.filter((i) => i.given);
   const pendingItems = student.inventory.filter((i) => !i.given);
 
@@ -450,7 +487,7 @@ function ViewModal({ student, onClose }) {
               </div>
             </div>
             <div className="divide-y divide-gray-50">
-              {student.inventory.map((inv, i) => (
+              {[...student.inventory].sort((a, b) => (b.given ? 1 : 0) - (a.given ? 1 : 0)).map((inv, i) => (
                 <div key={i} className={`flex items-center justify-between px-4 py-3 ${inv.given ? "" : "bg-amber-50/40"}`}>
                   <div className="flex items-center gap-2.5">
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${inv.given ? "bg-green-50 border border-green-200" : "bg-amber-50 border border-amber-200"}`}>
@@ -482,13 +519,30 @@ function ViewModal({ student, onClose }) {
 
 // ── Main Page ──────────────────────────────────────────────────
 export default function FeesPage() {
-  const searchParams    = useSearchParams();
-  const templates       = useStore(s => s.feeReminderTemplates);
-  const addFeePayment   = useStore(s => s.addFeePayment);
-  const storeStudents   = useStore(s => s.students);
+  const searchParams           = useSearchParams();
+  const templates              = useStore(s => s.feeReminderTemplates);
+  const addFeePayment          = useStore(s => s.addFeePayment);
+  const storeStudents          = useStore(s => s.students);
+  const setStoreStudents       = useStore(s => s.setStudents);
+  const activeClasses          = useStore(s => s.activeClasses);
+  const sessionFeesStructure   = useStore(s => s.sessionFeesStructure);
+  const setSessionFeesStructure = useStore(s => s.setSessionFeesStructure);
   const [students,      setStudents]      = useState(INITIAL_STUDENTS);
   const [notifyStudent, setNotifyStudent] = useState(null);
   const [viewStudent,   setViewStudent]   = useState(null);
+
+  // Session
+  const sessions        = buildSessionsList();
+  const [feeSession,    setFeeSession]   = useState(CURRENT_SESSION);
+  const sessionStudents = storeStudents.filter(s => s.session === feeSession && s.status !== "Left");
+
+  // Session-specific fees structure
+  const currentFeesMap  = sessionFeesStructure[feeSession] ?? DEFAULT_FEES;
+
+
+  // Active class list (from Settings)
+  const stdOrder   = CLASS_ORDER;
+  const allStdList = CLASS_ORDER.filter(c => activeClasses.some(ac => ACTIVE_CLASS_MAP[ac] === c));
 
   // Top toggle cards
   const [structureOpen, setStructureOpen] = useState(false);
@@ -501,18 +555,34 @@ export default function FeesPage() {
   // Auto-select student when redirected from Add Student or Promote
   useEffect(() => {
     const enrollment = searchParams.get("enrollment");
-    const std  = searchParams.get("std");
-    const roll = searchParams.get("roll");
+    const std      = searchParams.get("std");
+    const roll     = searchParams.get("roll");
+    const promoted = searchParams.get("promoted");
 
-    if (enrollment) {
-      // Promoted redirect: sync std/rollNo from Zustand store (which has the updated values)
-      const storeStudent = storeStudents.find(s => s.enrollment === enrollment);
-      if (storeStudent) {
+    if (enrollment && promoted) {
+      // Promoted redirect: read discount from Zustand store (stored at promotion time)
+      if (std) {
+        const storeRec = storeStudents.find(s => s.enrollment === enrollment && s.session && !s.promotedTo);
+        const discAmt    = storeRec?.fees?.discount ?? 0;
+        const discReason = storeRec?.fees?.discountReason ?? "";
         setStudents(prev => prev.map(s =>
           s.enrollment === enrollment
-            ? { ...s, std: storeStudent.std, rollNo: storeStudent.rollNo }
+            ? {
+                ...s,
+                std,
+                rollNo: roll ?? s.rollNo,
+                payments: [],
+                inventory: masterItems.map(name => ({ item: name, given: false, givenDate: "" })),
+                discount: { amount: discAmt, reason: discReason },
+              }
             : s
         ));
+        setEntryStd(std);
+        if (roll) setEntryRoll(roll);
+      }
+    } else if (enrollment) {
+      const storeStudent = storeStudents.find(s => s.enrollment === enrollment);
+      if (storeStudent) {
         setEntryStd(storeStudent.std);
         setEntryRoll(storeStudent.rollNo);
       } else if (std) {
@@ -536,21 +606,40 @@ export default function FeesPage() {
   const [newAdminCustom,   setNewAdminCustom]    = useState("");
   const [pendingInventory, setPendingInventory]  = useState(new Set());
 
-  const stdOrder    = FEES_STRUCTURE.map((f) => f.std);
-  const stdList     = [...new Set(students.map((s) => s.std))].sort(
-    (a, b) => stdOrder.indexOf(a) - stdOrder.indexOf(b)
-  );
-  const rollsForStd  = students.filter((s) => s.std === entryStd).map((s) => s.rollNo).sort();
-  const entryStudent = entryRoll
-    ? students.find((s) => s.std === entryStd && s.rollNo === entryRoll)
-    : null;
-
+  // stdList = all active classes (from Settings), in class order
+  const stdList     = allStdList.length > 0
+    ? allStdList
+    : [...new Set(students.map((s) => s.std))].sort((a, b) => stdOrder.indexOf(a) - stdOrder.indexOf(b));
+  // rolls come from Zustand store students in the selected session + class
+  const rollsForStd  = sessionStudents
+    .filter(s => s.std === entryStd)
+    .map(s => s.rollNo)
+    .sort((a, b) => parseInt(a) - parseInt(b));
   const masterItems = useStore(s => s.studentInventoryItems);
-  const pendingInvItems = entryStudent
+
+  // entry student — always from the store (session-scoped)
+  const entryStudent = entryRoll
+    ? (() => {
+        const sr = sessionStudents.find(s => s.std === entryStd && s.rollNo === entryRoll);
+        if (!sr) return null;
+        return {
+          ...sr,
+          name:     sr.name ?? sr.studentName ?? "",
+          discount: { amount: sr.fees?.discount ?? 0, reason: sr.fees?.discountReason ?? "" },
+          payments: sr.payments ?? [],
+          inventory: masterItems.map(name => {
+            const isPending = (sr.pendingInventory ?? []).includes(name);
+            return { item: name, given: !isPending, givenDate: !isPending ? "Previously given" : "" };
+          }),
+        };
+      })()
+    : null;
+  const allInvItems = entryStudent
     ? masterItems
         .map(name => entryStudent.inventory.find(i => i.item === name) || { item: name, givenDate: "", given: false })
-        .filter(i => !i.given)
+        .sort((a, b) => (b.given ? 1 : 0) - (a.given ? 1 : 0))
     : [];
+  const pendingInvItems = allInvItems.filter(i => !i.given);
 
   const togglePendingItem = (item) => {
     setPendingInventory((prev) => {
@@ -566,13 +655,17 @@ export default function FeesPage() {
       alert("Please fill amount and received by.");
       return;
     }
-    const { dueFees } = calcSummary(entryStudent);
+    const { dueFees } = calcStoreSummary(entryStudent, currentFeesMap);
     if (dueFees <= 0) {
       alert("All fees for this class are already paid. No further payment can be recorded.");
       return;
     }
+    if (!/^\d+(\.\d{1,2})?$/.test(String(newAmt).trim())) {
+      alert("Please enter a valid amount with at most 2 decimal places.");
+      return;
+    }
     const amt = Number(newAmt);
-    if (amt <= 0) {
+    if (!isPositiveAmount(amt, dueFees)) {
       alert("Please enter a valid amount greater than zero.");
       return;
     }
@@ -580,13 +673,15 @@ export default function FeesPage() {
       alert(`Amount ₹${amt.toLocaleString("en-IN")} exceeds the due balance of ₹${dueFees.toLocaleString("en-IN")}. Please enter a correct amount.`);
       return;
     }
-    setStudents((prev) =>
-      prev.map((s) =>
-        s.enrollment === entryStudent.enrollment
-          ? { ...s, payments: [...s.payments, { date: newDate, amount: amt, receivedBy, std: entryStudent.std }] }
-          : s
-      )
-    );
+    const newPayment = { date: newDate, amount: amt, receivedBy, std: entryStudent.std };
+    setStoreStudents(prev => prev.map(s => {
+      if (s.enrollment !== entryStudent.enrollment || s.session !== entryStudent.session) return s;
+      return {
+        ...s,
+        fees: { ...s.fees, paid: (s.fees?.paid ?? 0) + amt },
+        payments: [...(s.payments ?? []), newPayment],
+      };
+    }));
     addFeePayment({ date: newDate, amount: amt });
     setNewAmt(""); setNewDate(todayStr); setNewAdmin(""); setNewAdminCustom("");
     setPendingInventory(new Set());
@@ -598,18 +693,11 @@ export default function FeesPage() {
       alert("Select at least one inventory item to mark as given.");
       return;
     }
-    const givenDate = todayLong();
-    setStudents((prev) =>
-      prev.map((s) => {
-        if (s.enrollment !== entryStudent.enrollment) return s;
-        const updatedInventory = masterItems.map(name => {
-          const existing = s.inventory.find(i => i.item === name);
-          if (pendingInventory.has(name)) return { item: name, given: true, givenDate };
-          return existing || { item: name, givenDate: "", given: false };
-        });
-        return { ...s, inventory: updatedInventory };
-      })
-    );
+    setStoreStudents(prev => prev.map(s => {
+      if (s.enrollment !== entryStudent.enrollment || s.session !== entryStudent.session) return s;
+      const newPendingInv = (s.pendingInventory ?? []).filter(item => !pendingInventory.has(item));
+      return { ...s, pendingInventory: newPendingInv };
+    }));
     setPendingInventory(new Set());
     alert(`${pendingInventory.size} inventory item(s) marked as given!`);
   };
@@ -625,8 +713,9 @@ export default function FeesPage() {
   const [filterSearch, setFilterSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("All");
 
-  const filteredStudents = students.filter((s) => {
-    const status = getPaymentStatus(s);
+  // Overview uses Zustand store students filtered by selected session
+  const filteredStudents = sessionStudents.filter((s) => {
+    const status = getStorePaymentStatus(s, currentFeesMap);
     return (
       (filterClass  === "All Classes" || s.std === filterClass) &&
       (!filterSearch || s.name.toLowerCase().includes(filterSearch.toLowerCase()) || s.rollNo.includes(filterSearch)) &&
@@ -650,7 +739,7 @@ export default function FeesPage() {
     return first ? buildReminderMsg(first, initDate, templates) : "";
   });
 
-  const incompleteStudents = students.filter((s) => getPaymentStatus(s) !== "Full Paid");
+  const incompleteStudents = sessionStudents.filter((s) => getStorePaymentStatus(s, currentFeesMap) !== "Full Paid");
 
   const toggleIncomplete = (enr) => {
     setSelectedIncomplete((prev) => {
@@ -686,15 +775,30 @@ export default function FeesPage() {
         <NotificationModal student={notifyStudent} onClose={() => setNotifyStudent(null)} />
       )}
       {viewStudent && (
-        <ViewModal student={viewStudent} onClose={() => setViewStudent(null)} />
+        <ViewModal student={viewStudent} onClose={() => setViewStudent(null)} feesMap={currentFeesMap} />
       )}
 
       <div className="space-y-6">
 
         {/* ── Page Header ── */}
-        <div>
-          <h2 className="text-xl font-bold text-gray-800">Fees Management</h2>
-          <p className="text-sm text-gray-500 mt-0.5">Fee structure, collection, receipts & due reports</p>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h2 className="text-xl font-bold text-gray-800">Fees Management</h2>
+            <p className="text-sm text-gray-500 mt-0.5">Fee structure, collection, receipts & due reports</p>
+          </div>
+          {/* Session selector */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">Session</label>
+            <select
+              value={feeSession}
+              onChange={e => { setFeeSession(e.target.value); setEntryStd(""); setEntryRoll(""); }}
+              className="px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
+            >
+              {sessions.map(s => (
+                <option key={s} value={s}>{s}{s === CURRENT_SESSION ? " (Current)" : ""}</option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* ══ Top Toggle Cards ══ */}
@@ -711,22 +815,23 @@ export default function FeesPage() {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-gray-800">Fees Structure</p>
-                <p className="text-xs text-gray-400 mt-0.5">Academic Year 2026-27</p>
+                <p className="text-xs text-gray-400 mt-0.5">Session {feeSession}</p>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="hidden sm:inline-flex items-center gap-1 text-[10px] bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full font-semibold">
-                  <Lock className="w-2.5 h-2.5" /> Edit in Settings
-                </span>
-                {structureOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+{structureOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
               </div>
             </button>
             {structureOpen && (
               <div className="border-t border-gray-100">
+                <div className="flex items-center justify-between px-4 py-2.5 bg-gray-50 border-b border-gray-100">
+                  <span className="text-[11px] text-gray-500 font-semibold">Fee amounts for <b>{feeSession}</b></span>
+                  <span className="text-[10px] text-gray-400 italic">Edit in Settings</span>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-px bg-gray-100">
-                  {FEES_STRUCTURE.map((row) => (
-                    <div key={row.std} className="bg-white px-4 py-3">
-                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{row.std}</p>
-                      <p className="text-sm font-bold text-school-navy mt-0.5">₹{row.amount.toLocaleString("en-IN")}</p>
+                  {CLASS_ORDER.map((cls) => (
+                    <div key={cls} className="bg-white px-4 py-3">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{cls}</p>
+                      <p className="text-sm font-bold text-school-navy mt-0.5">₹{(currentFeesMap[cls] ?? 0).toLocaleString("en-IN")}</p>
                     </div>
                   ))}
                 </div>
@@ -815,7 +920,7 @@ export default function FeesPage() {
                         {studentListOpen && (
                           <div className="max-h-52 overflow-y-auto divide-y divide-gray-50">
                             {incompleteStudents.map((s) => {
-                              const { dueFees } = calcSummary(s);
+                              const { dueFees } = calcStoreSummary(s, currentFeesMap);
                               const checked = selectedIncomplete.has(s.enrollment);
                               return (
                                 <div
@@ -966,7 +1071,7 @@ export default function FeesPage() {
             )}
 
             {entryStudent && (() => {
-              const { totalFees, discount, actualFees, paidFees, dueFees, classPayments } = calcSummary(entryStudent);
+              const { totalFees, discount, actualFees, paidFees, dueFees, classPayments } = calcStoreSummary(entryStudent, currentFeesMap);
               const isFullyPaid = dueFees <= 0;
               return (
                 <div className="space-y-4">
@@ -1215,8 +1320,7 @@ export default function FeesPage() {
               <div className="w-full sm:w-44">
                 <SelectField value={filterClass} onChange={(e) => setFilterClass(e.target.value)}>
                   <option value="All Classes">All Classes</option>
-                  {[...new Set(students.map((s) => s.std))].sort((a, b) => stdOrder.indexOf(a) - stdOrder.indexOf(b))
-                    .map((s) => <option key={s}>{s}</option>)}
+                  {allStdList.map((s) => <option key={s}>{s}</option>)}
                 </SelectField>
               </div>
               <div className="flex-1 relative min-w-[180px]">
@@ -1270,8 +1374,8 @@ export default function FeesPage() {
                     </td>
                   </tr>
                 ) : filteredStudents.map((s) => {
-                  const { paidFees, dueFees } = calcSummary(s);
-                  const status = getPaymentStatus(s);
+                  const { paidFees, dueFees } = calcStoreSummary(s, currentFeesMap);
+                  const status = getStorePaymentStatus(s, currentFeesMap);
                   return (
                     <tr key={s.enrollment} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3.5">

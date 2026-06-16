@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import useStore from "@/lib/store";
 import { useRouter } from "next/navigation";
@@ -13,6 +13,7 @@ import {
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { isPositiveAmount, isValidLength } from "@/lib/validators";
 
 // ── Session helpers ────────────────────────────────────────────
 function getCurrentSession() {
@@ -43,14 +44,21 @@ const CLASS_ORDER = [
   "11th - Commerce","12th - Commerce",
 ];
 
+const CLASS_FEES = {
+  "JR.KG": 14500, "SR.KG": 14500, "Balvatika": 15000,
+  "1st": 15500, "2nd": 15700, "3rd": 15900, "4th": 16200, "5th": 16500,
+  "6th": 16800, "7th": 17000, "8th": 17300, "9th": 17500, "10th": 18000,
+  "11th - Commerce": 19000, "12th - Commerce": 19000,
+};
+
 function getNextClass(cls) {
   const idx = CLASS_ORDER.indexOf(cls);
   return idx < 0 || idx >= CLASS_ORDER.length - 1 ? null : CLASS_ORDER[idx + 1];
 }
 
-function nextRollNo(className, allStudents) {
+function nextRollNo(className, session, allStudents) {
   const nums = allStudents
-    .filter(s => s.std === className && s.status !== "Inactive" && s.status !== "Left")
+    .filter(s => s.std === className && s.session === session && s.status !== "Left")
     .map(s => parseInt(s.rollNo, 10) || 0);
   return nums.length ? Math.max(...nums) + 1 : 1;
 }
@@ -107,7 +115,8 @@ function DeactivateModal({ student, onClose, onConfirm }) {
   const [date, setDate]               = useState(todayVal);
 
   const finalReason = reason === "Other" ? customReason.trim() : reason;
-  const canSubmit   = finalReason && date;
+  const customReasonValid = reason !== "Other" || isValidLength(customReason, 200, 1);
+  const canSubmit   = finalReason && date && customReasonValid;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
@@ -146,8 +155,12 @@ function DeactivateModal({ student, onClose, onConfirm }) {
                 placeholder="Enter reason..."
                 value={customReason}
                 onChange={(e) => setCustomReason(e.target.value)}
+                maxLength={200}
                 className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-400"
               />
+              {!customReasonValid && (
+                <p className="text-xs text-red-500 mt-1">Reason must be 1-200 characters.</p>
+              )}
             </div>
           )}
 
@@ -215,13 +228,17 @@ function PromoteModal({ student, onClose, onPromote, router, students }) {
     (extraOn && extraAmount ? Number(extraAmount) : 0);
 
   const oldStudentValid = !oldStudentOn || oldStudentType === "fixed" || (oldStudentType === "custom" && !!oldStudentCustom);
-  const extraValid = oldStudentValid && (!extraOn || (extraAmount && extraReason && (extraReason !== "Other" || extraCustom)));
+  const extraAmountValid = !extraOn || isPositiveAmount(extraAmount, 100000);
+  const extraValid = oldStudentValid && extraAmountValid &&
+    (!extraOn || (extraAmount && extraReason && (extraReason !== "Other" || extraCustom)));
 
   const handleConfirmPromote = () => {
     if (!extraValid) return;
-    // Compute new roll BEFORE onPromote so we use the pre-update list
-    const newRoll = nextRollNo(nextClass, students);
-    onPromote();
+    const newRoll     = nextRollNo(nextClass, CURRENT_SESSION, students);
+    const discReason  = oldStudentOn
+      ? "Old Student Discount"
+      : extraOn ? (extraReason === "Other" ? extraCustom : extraReason) : "";
+    onPromote({ discount: totalDiscount, discountReason: discReason });
     const enr  = encodeURIComponent(student.enrollment);
     const std  = encodeURIComponent(nextClass);
     const roll = encodeURIComponent(String(newRoll));
@@ -442,9 +459,13 @@ function PromoteModal({ student, onClose, onPromote, router, students }) {
                           value={extraAmount}
                           onChange={(e) => setExtraAmount(e.target.value)}
                           min="0"
+                          max="100000"
                           className="w-full pl-7 pr-3.5 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
                         />
                       </div>
+                      {!extraAmountValid && (
+                        <p className="text-xs text-red-500">Enter a valid amount between ₹1 and ₹1,00,000.</p>
+                      )}
                       <div className="relative">
                         <select
                           value={extraReason}
@@ -513,8 +534,9 @@ export default function StudentPage() {
   const router           = useRouter();
   const sessions         = buildSessionsList();
   const readmissionDate  = useStore(s => s.readmissionDate);
-  const canPromote       = readmissionDate && new Date() >= new Date(readmissionDate);
+  const canPromote       = !!(readmissionDate && new Date() >= new Date(readmissionDate));
   const activeClasses    = useStore(s => s.activeClasses);
+  const masterItems      = useStore(s => s.studentInventoryItems);
 
   const [session, setSession]             = useState(CURRENT_SESSION);
   const [search, setSearch]               = useState("");
@@ -522,11 +544,11 @@ export default function StudentPage() {
   const [docFilter, setDocFilter]         = useState("All");
   const [govtIdFilter, setGovtIdFilter]   = useState([]);
   const [showPasswords, setShowPasswords] = useState({});
-  const [promotions, setPromotions]       = useState({});
   const students    = useStore(s => s.students);
   const setStudents = useStore(s => s.setStudents);
   const [promoteModal, setPromoteModal]       = useState(null);
   const [deactivateModal, setDeactivateModal] = useState(null);
+
 
   const togglePw = (enr) => setShowPasswords((p) => ({ ...p, [enr]: !p[enr] }));
 
@@ -556,18 +578,17 @@ export default function StudentPage() {
     { key: "apaar", label: "APAAR" },
   ];
 
-  const sessionActiveStudents = students.filter((s) =>
-    s.session === session && s.status !== "Left" && s.status !== "Inactive"
-  );
+  // All students belonging to the selected session (including manually deactivated for record keeping)
+  const sessionStudents = students.filter(s => s.session === session && s.status !== "Left");
 
-  const filtered = sessionActiveStudents.filter((s) => {
+  const filtered = sessionStudents.filter((s) => {
     const matchSearch =
       !search ||
       s.name.toLowerCase().includes(search.toLowerCase()) ||
       s.enrollment.includes(search) ||
       s.fatherName.toLowerCase().includes(search.toLowerCase());
-    const matchStd = stdFilter === "All Classes" || s.std === stdFilter;
-    const matchDoc    = docFilter    === "All" || (s.pendingDocs || []).includes(docFilter);
+    const matchStd    = stdFilter === "All Classes" || s.std === stdFilter;
+    const matchDoc    = docFilter === "All" || (s.pendingDocs || []).includes(docFilter);
     const matchGovtId = govtIdFilter.length === 0 || govtIdFilter.some(k => !(s[k] && s[k].trim()));
     return matchSearch && matchStd && matchDoc && matchGovtId;
   });
@@ -583,18 +604,39 @@ export default function StudentPage() {
     setDeactivateModal(null);
   };
 
-  const handlePromote = (student) => {
+  const handlePromote = (student, discountData = {}) => {
     const nextClass = getNextClass(student.std);
     if (!nextClass) return;
-    const newRoll = String(nextRollNo(nextClass, students));
-    setPromotions((p) => ({ ...p, [student.enrollment]: { session: CURRENT_SESSION, newClass: nextClass } }));
-    setStudents((prev) =>
-      prev.map((s) =>
+    const fTotal = student.fees?.total ?? 0;
+    const fDisc  = student.fees?.discount ?? 0;
+    const fPaid  = student.fees?.paid ?? 0;
+    if (Math.max(fTotal - fDisc, 0) > fPaid) return;
+    const newRoll = String(nextRollNo(nextClass, CURRENT_SESSION, students));
+    const { discount = 0, discountReason = "" } = discountData;
+    // 1. Mark original record as promoted (stays in its session for history)
+    setStudents((prev) => [
+      ...prev.map((s) =>
         s.enrollment === student.enrollment
-          ? { ...s, std: nextClass, session: CURRENT_SESSION, rollNo: newRoll }
+          ? { ...s, promotedTo: { session: CURRENT_SESSION, std: nextClass } }
           : s
-      )
-    );
+      ),
+      // 2. Create new record for the new session
+      {
+        ...student,
+        id: Date.now(),
+        session: CURRENT_SESSION,
+        std: nextClass,
+        rollNo: newRoll,
+        status: "Active",
+        fees: { total: CLASS_FEES[nextClass] ?? 0, paid: 0, discount, discountReason },
+        pendingInventory: [...masterItems],
+        promotedFrom: { session: student.session, std: student.std },
+        promotedTo: null,
+        deactivateReason: null,
+        deactivateDate: null,
+        admissionDate: new Date().toISOString().slice(0, 10),
+      },
+    ]);
     setPromoteModal(null);
   };
 
@@ -691,7 +733,7 @@ export default function StudentPage() {
         <PromoteModal
           student={promoteModal}
           onClose={() => setPromoteModal(null)}
-          onPromote={() => handlePromote(promoteModal)}
+          onPromote={(discountData) => handlePromote(promoteModal, discountData)}
           router={router}
           students={students}
         />
@@ -724,6 +766,21 @@ export default function StudentPage() {
             <Plus className="w-4 h-4" /> Add New Student
           </Link>
         </div>
+
+        {/* ── Promotion Period Banner ── */}
+        {canPromote && session !== CURRENT_SESSION && (
+          <div className="flex items-start gap-3 bg-amber-50 border border-amber-300 rounded-2xl px-5 py-4">
+            <div className="w-9 h-9 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5">
+              <Calendar className="w-5 h-5 text-amber-600" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-amber-800">Re-admission Period Open</p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                Re-admission date is <span className="font-semibold">{readmissionDate}</span>. Promote button is now visible on eligible student cards.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* ── Filters ── */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
@@ -772,7 +829,7 @@ export default function StudentPage() {
               All Students
             </button>
             {DOC_FILTER_OPTIONS.map(({ key, label }) => {
-              const count = sessionActiveStudents.filter((s) =>
+              const count = sessionStudents.filter((s) =>
                 (s.pendingDocs || []).includes(key)
               ).length;
               if (count === 0) return null;
@@ -812,7 +869,7 @@ export default function StudentPage() {
               Pending ID:
             </span>
             {GOVTID_FILTER_OPTIONS.map(({ key, label }) => {
-              const count  = sessionActiveStudents.filter((s) => !(s[key] && s[key].trim())).length;
+              const count  = sessionStudents.filter((s) => !(s[key] && s[key].trim())).length;
               const active = govtIdFilter.includes(key);
               return (
                 <button
@@ -878,10 +935,13 @@ export default function StudentPage() {
         ) : (
           <div className="space-y-4">
             {filtered.map((student, idx) => {
-              const a          = ACCENTS[idx % ACCENTS.length];
-              const pwVisible  = showPasswords[student.enrollment] || false;
-              const promotion  = promotions[student.enrollment];
-              const isPromoted = !!promotion;
+              const a             = ACCENTS[idx % ACCENTS.length];
+              const pwVisible     = showPasswords[student.enrollment] || false;
+              const isPromoted      = !!student.promotedTo;
+              const feeTotal        = student.fees?.total ?? 0;
+              const feeDiscount     = student.fees?.discount ?? 0;
+              const feePaid         = student.fees?.paid ?? 0;
+              const hasPendingFees  = Math.max(feeTotal - feeDiscount, 0) > feePaid;
 
               return (
                 <div
@@ -896,13 +956,17 @@ export default function StudentPage() {
                       <span className="text-white/25">·</span>
                       <span className="text-white/55 text-xs">Session {student.session}</span>
                     </div>
-                    <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                      student.status === "Active"
-                        ? "bg-green-400/20 text-green-300"
-                        : "bg-red-400/20 text-red-300"
-                    }`}>
-                      {student.status}
-                    </span>
+                    {isPromoted ? (
+                      <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-400/20 text-blue-200">
+                        Promoted → {student.promotedTo.std}
+                      </span>
+                    ) : (
+                      <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                        student.status === "Active" ? "bg-green-400/20 text-green-300" : "bg-red-400/20 text-red-300"
+                      }`}>
+                        {student.status}
+                      </span>
+                    )}
                   </div>
 
                   {/* ── 6-Column Grid Body ── */}
@@ -1081,10 +1145,12 @@ export default function StudentPage() {
 
                     {/* ── Column 5: Fee Summary ── */}
                     {(() => {
-                      const due      = student.fees.total - student.fees.paid;
-                      const paidPct  = student.fees.total > 0
-                        ? Math.round((student.fees.paid / student.fees.total) * 100)
-                        : 0;
+                      const gross    = student.fees?.total    ?? 0;
+                      const discount = student.fees?.discount ?? 0;
+                      const actual   = Math.max(gross - discount, 0);
+                      const paid     = student.fees?.paid     ?? 0;
+                      const due      = Math.max(actual - paid, 0);
+                      const paidPct  = actual > 0 ? Math.round((paid / actual) * 100) : 0;
                       const cleared  = due === 0;
                       return (
                         <div className="px-4 py-4 bg-gray-50/60 border-r border-gray-100 flex flex-col justify-between gap-3">
@@ -1093,13 +1159,18 @@ export default function StudentPage() {
                             <div>
                               <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">Total Fees</p>
                               <p className="text-[13px] font-bold text-gray-800 mt-0.5">
-                                ₹{student.fees.total.toLocaleString("en-IN")}
+                                ₹{actual.toLocaleString("en-IN")}
                               </p>
+                              {discount > 0 && (
+                                <p className="text-[10px] text-amber-600 font-semibold mt-0.5">
+                                  ₹{gross.toLocaleString("en-IN")} - ₹{discount.toLocaleString("en-IN")} discount
+                                </p>
+                              )}
                             </div>
                             <div>
                               <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide">Total Paid</p>
                               <p className="text-[13px] font-bold text-green-700 mt-0.5">
-                                ₹{student.fees.paid.toLocaleString("en-IN")}
+                                ₹{paid.toLocaleString("en-IN")}
                               </p>
                             </div>
                             <div>
@@ -1127,48 +1198,73 @@ export default function StudentPage() {
                     })()}
 
                     {/* ── Column 6: Actions ── */}
-                    <div className="px-4 py-4 flex flex-col gap-2 justify-between">
-                      <div className="space-y-2">
-                        <Link
-                          href={`/student/${student.enrollment}/edit`}
-                          className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-100 transition-colors"
-                        >
-                          <Edit className="w-4 h-4 flex-shrink-0" /> Update
-                        </Link>
-                        <Link
-                          href={`/student/${student.enrollment}`}
-                          className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-school-navy text-white hover:bg-school-navy-dark transition-colors"
-                        >
-                          <Eye className="w-4 h-4 flex-shrink-0" /> View
-                        </Link>
-                        <button
-                          onClick={() => setDeactivateModal(student)}
-                          className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-100 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4 flex-shrink-0" /> Deactivate
-                        </button>
-                      </div>
+                    <div className="px-4 py-4 flex flex-col gap-2">
 
-                      {/* Promote — only visible after re-admission date is reached */}
-                      {(canPromote || isPromoted) && (
-                        <div className="pt-2 border-t border-gray-100">
-                          {isPromoted ? (
-                            <div className="flex items-start gap-2 px-1">
-                              <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
-                              <div>
-                                <p className="text-sm font-bold text-green-700 leading-tight">Promoted</p>
-                                <p className="text-[11px] text-green-600 mt-0.5">{promotion.newClass} · {promotion.session}</p>
-                              </div>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setPromoteModal(student)}
-                              className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-bold bg-school-navy/10 text-school-navy hover:bg-school-navy hover:text-white border border-school-navy/20 transition-all"
-                            >
-                              <ArrowUpCircle className="w-4 h-4 flex-shrink-0" /> Promote
-                            </button>
-                          )}
+                      {isPromoted ? (
+                        /* ── Already promoted — show badge + View only ── */
+                        <div className="space-y-2">
+                          <div className="bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 text-center">
+                            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-wide">Promoted</p>
+                            <p className="text-[11px] text-blue-500 mt-0.5 font-semibold">
+                              {student.promotedTo.std} · {student.promotedTo.session}
+                            </p>
+                          </div>
+                          <Link
+                            href={`/student/${student.enrollment}?session=${student.session}`}
+                            className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-school-navy text-white hover:bg-school-navy-dark transition-colors"
+                          >
+                            <Eye className="w-4 h-4 flex-shrink-0" /> View Profile
+                          </Link>
                         </div>
+
+                      ) : (
+                        /* ── Active / normal student ── */
+                        <>
+                          <div className="space-y-2">
+                            <Link
+                              href={`/student/${student.enrollment}/edit`}
+                              className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-100 transition-colors"
+                            >
+                              <Edit className="w-4 h-4 flex-shrink-0" /> Update
+                            </Link>
+                            <Link
+                              href={`/student/${student.enrollment}?session=${student.session}`}
+                              className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-school-navy text-white hover:bg-school-navy-dark transition-colors"
+                            >
+                              <Eye className="w-4 h-4 flex-shrink-0" /> View
+                            </Link>
+                            <button
+                              onClick={() => setDeactivateModal(student)}
+                              className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-100 transition-colors"
+                            >
+                              <Trash2 className="w-4 h-4 flex-shrink-0" /> Deactivate
+                            </button>
+                          </div>
+                          {canPromote && student.session !== CURRENT_SESSION && getNextClass(student.std) && (
+                            <div className="pt-2 border-t border-gray-100 space-y-1.5">
+                              {hasPendingFees ? (
+                                <>
+                                  <button
+                                    disabled
+                                    className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-bold bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                                  >
+                                    <ArrowUpCircle className="w-4 h-4 flex-shrink-0" /> Promote to {getNextClass(student.std)}
+                                  </button>
+                                  <p className="text-[10px] text-red-500 font-semibold text-center">
+                                    Clear pending fees of session {student.session} to promote
+                                  </p>
+                                </>
+                              ) : (
+                                <button
+                                  onClick={() => setPromoteModal(student)}
+                                  className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-bold bg-green-600 hover:bg-green-700 text-white transition-colors"
+                                >
+                                  <ArrowUpCircle className="w-4 h-4 flex-shrink-0" /> Promote to {getNextClass(student.std)}
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
 

@@ -7,6 +7,10 @@ import {
   ChevronDown, Upload, X, Plus, FileText, AlertTriangle,
   ArrowLeft, Check, Camera, Lock, GraduationCap, Hash,
 } from "lucide-react";
+import {
+  isValidName, isValidPhone, isValidPincode, isValidAadhar,
+  isValidPercentage, isNonNegativeNumber, isValidUploadFile,
+} from "@/lib/validators";
 
 // ── Options ────────────────────────────────────────────────────
 const CURRENT_SESSION = "2026-27"; // controlled from Settings — not editable in form
@@ -56,6 +60,13 @@ const defaultDocTypes = [
 ];
 
 // ── Helpers ────────────────────────────────────────────────────
+function normalizeAadhar(v) {
+  return String(v || "").replace(/\s/g, "");
+}
+function isNonEmptyAadhar(v) {
+  return normalizeAadhar(v).length > 0;
+}
+
 function SectionHeader({ number, title }) {
   return (
     <div className="flex items-center gap-3 mb-5">
@@ -104,6 +115,11 @@ function SelectField({ children, value, onChange, disabled, required }) {
       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
     </div>
   );
+}
+
+function FieldError({ children }) {
+  if (!children) return null;
+  return <p className="text-xs text-red-500 mt-1">{children}</p>;
 }
 
 function YesNoToggle({ value, onChange }) {
@@ -158,8 +174,11 @@ export default function AddStudentPage() {
   const [discountReason, setDiscountReason]     = useState("");
   const [discountCustomReason, setDiscountCustomReason] = useState("");
   const [hasAadhar, setHasAadhar]               = useState(true);
+  const [lastExamGiven, setLastExamGiven]       = useState(false);
+  const [casteCertError, setCasteCertError]     = useState("");
   const [photo, setPhoto]                 = useState(null);
   const [photoPreview, setPhotoPreview]   = useState(null);
+  const [photoError, setPhotoError]       = useState("");
   const [casteCertFile, setCasteCertFile] = useState(null);
   const casteCertRef = useRef(null);
   const photoRef = useRef(null);
@@ -170,6 +189,9 @@ export default function AddStudentPage() {
   const [uploadedFiles, setUploadedFiles]   = useState({}); // { docName: fileName }
   const [uploadedFileUrls, setUploadedFileUrls] = useState({}); // { docName: { url, type } }
   const [customDocs, setCustomDocs]         = useState([]);
+  const [docErrors, setDocErrors]           = useState({}); // { docName: errorMsg }
+
+  const [errors, setErrors] = useState({});
 
   const [form, setForm] = useState({
     joinDate: todayStr,
@@ -184,7 +206,15 @@ export default function AddStudentPage() {
     gender: "",
     religion: "Hindu",   // default
     caste: "General",    // default
+    motherTongue: "",
+    subCaste: "",
+    height: "",
+    weight: "",
     roomPlotNo: "",
+    society: "",
+    landmark: "",
+    area: "",
+    pinCode: "",
     address: "",
     mobile1: "",
     mobile2: "",
@@ -193,6 +223,9 @@ export default function AddStudentPage() {
     lastSchoolClass: "",
     lastSchoolMedium: "",
     lastSchoolPlace: "",
+    lastSchoolGrNo: "",
+    prevPercentage: "",
+    prevAttendanceDays: "",
     aadharName: "",
     udise: "",
     pen: "",
@@ -226,6 +259,12 @@ export default function AddStudentPage() {
   const handlePhoto = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (!isValidUploadFile(file)) {
+      setPhotoError("Invalid file — only JPG/PNG/PDF up to 5MB allowed.");
+      e.target.value = "";
+      return;
+    }
+    setPhotoError("");
     setPhoto(file);
     setPhotoPreview(URL.createObjectURL(file));
   };
@@ -243,6 +282,12 @@ export default function AddStudentPage() {
   const handleDocFile = (name, e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (!isValidUploadFile(file)) {
+      setDocErrors((p) => ({ ...p, [name]: "Invalid file — only JPG/PNG/PDF up to 5MB allowed." }));
+      e.target.value = "";
+      return;
+    }
+    setDocErrors((p) => { const next = { ...p }; delete next[name]; return next; });
     setUploadedFiles((p) => ({ ...p, [name]: file.name }));
     setUploadedFileUrls((p) => ({
       ...p,
@@ -259,8 +304,47 @@ export default function AddStudentPage() {
   const removeCustomDoc = (id) =>
     setCustomDocs((p) => p.filter((d) => d.id !== id));
 
+  const validate = () => {
+    const errs = {};
+
+    if (!isValidName(form.firstName)) errs.firstName = "Enter a valid first name.";
+    if (!isValidName(form.lastName)) errs.lastName = "Enter a valid last name.";
+    if (!isValidName(form.fatherName)) errs.fatherName = "Enter a valid father's name.";
+    if (!isValidName(form.motherName)) errs.motherName = "Enter a valid mother's name.";
+
+    if (!isValidPhone(form.mobile1)) errs.mobile1 = "Enter a valid 10-digit mobile number.";
+    if (form.mobile2 && !isValidPhone(form.mobile2)) errs.mobile2 = "Enter a valid 10-digit mobile number.";
+
+    if (form.pinCode && !isValidPincode(form.pinCode)) errs.pinCode = "Enter a valid 6-digit pin code.";
+
+    if (hasAadhar) {
+      if (!form.aadharRaw) {
+        errs.aadhar = "Aadhar number is required.";
+      } else if (!isValidAadhar(form.aadharRaw)) {
+        errs.aadhar = "Enter a valid 12-digit Aadhar number.";
+      } else if (
+        students.some(
+          (s) => isNonEmptyAadhar(s.aadhar) && normalizeAadhar(s.aadhar) === form.aadharRaw
+        )
+      ) {
+        errs.aadhar = "This Aadhar number is already registered to another student.";
+      }
+    }
+
+    if (form.prevAttendanceDays && !isNonNegativeNumber(form.prevAttendanceDays, 365)) {
+      errs.prevAttendanceDays = "Enter a valid number of attendance days.";
+    }
+    if (lastExamGiven && form.prevPercentage && !isValidPercentage(form.prevPercentage)) {
+      errs.prevPercentage = "Enter a valid percentage (0-100).";
+    }
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!validate()) return;
     let finalCaste = form.caste;
     if (form.caste !== "General" && !casteCertFile) {
       finalCaste = "General";
@@ -295,6 +379,17 @@ export default function AddStudentPage() {
       gender: form.gender || "",
       religion: form.religion || "",
       caste: finalCaste,
+      motherTongue: form.motherTongue || "",
+      subCaste: form.subCaste || "",
+      height: form.height || "",
+      weight: form.weight || "",
+      roomPlotNo: form.roomPlotNo || "",
+      society: form.society || "",
+      landmark: form.landmark || "",
+      area: form.area || "",
+      pinCode: form.pinCode || "",
+      address: form.address || "",
+      mobile2: form.mobile2 || "",
       aadhar: aadharFormatted,
       udise: form.udise || "",
       pen: form.pen || "",
@@ -305,6 +400,14 @@ export default function AddStudentPage() {
       pendingInventory: [],
       password: ((form.firstName || "STU").slice(0, 3) + nextEnrollment).toUpperCase(),
       lastSchoolName: form.lastSchoolName || "",
+      lastSchoolGrNo: form.lastSchoolGrNo || "",
+      lastSchoolClass: form.lastSchoolClass || "",
+      lastSchoolMedium: form.lastSchoolMedium || "",
+      lastSchoolPlace: form.lastSchoolPlace || "",
+      prevPercentage: form.prevPercentage || "",
+      prevAttendanceDays: form.prevAttendanceDays || "",
+      lastExamGiven: lastExamGiven ? "Yes" : "No",
+      placeOfBirth: form.placeOfBirth || "",
       tcUploaded: false,
     };
     addStudent(newStudent);
@@ -405,6 +508,7 @@ export default function AddStudentPage() {
                 </button>
               )}
               <p className="text-xs text-gray-400 mt-2">Optional · JPG or PNG · Max 2MB</p>
+              <FieldError>{photoError}</FieldError>
             </div>
           </div>
         </div>
@@ -527,23 +631,27 @@ export default function AddStudentPage() {
             <div>
               <FieldLabel required>First Name</FieldLabel>
               <Input placeholder="Student's first name" value={form.firstName} onChange={set("firstName")} required />
+              <FieldError>{errors.firstName}</FieldError>
             </div>
 
             <div>
               <FieldLabel required>Last Name</FieldLabel>
               <Input placeholder="Student's last name" value={form.lastName} onChange={set("lastName")} required />
+              <FieldError>{errors.lastName}</FieldError>
             </div>
 
             <div>
               <FieldLabel required>Father&apos;s Name</FieldLabel>
               <Input placeholder="e.g. Rajesh" value={form.fatherName} onChange={set("fatherName")} required />
               <p className="text-xs text-amber-600 mt-1 font-medium">Note: Write first name only</p>
+              <FieldError>{errors.fatherName}</FieldError>
             </div>
 
             <div>
               <FieldLabel required>Mother&apos;s Name</FieldLabel>
               <Input placeholder="e.g. Meena" value={form.motherName} onChange={set("motherName")} required />
               <p className="text-xs text-amber-600 mt-1 font-medium">Note: Write first name only</p>
+              <FieldError>{errors.motherName}</FieldError>
             </div>
 
             <div>
@@ -572,6 +680,26 @@ export default function AddStudentPage() {
                 {castes.map((c) => <option key={c}>{c}</option>)}
               </SelectField>
             </div>
+
+            <div>
+              <FieldLabel>Sub Caste</FieldLabel>
+              <Input placeholder="e.g. Patel" value={form.subCaste} onChange={set("subCaste")} />
+            </div>
+
+            <div>
+              <FieldLabel>Mother Tongue</FieldLabel>
+              <Input placeholder="e.g. Gujarati" value={form.motherTongue} onChange={set("motherTongue")} />
+            </div>
+
+            <div>
+              <FieldLabel>Height (cm)</FieldLabel>
+              <Input type="number" placeholder="e.g. 140" value={form.height} onChange={set("height")} />
+            </div>
+
+            <div>
+              <FieldLabel>Weight (kg)</FieldLabel>
+              <Input type="number" placeholder="e.g. 35" value={form.weight} onChange={set("weight")} />
+            </div>
           </div>
 
           {/* Caste certificate — mandatory if non-General */}
@@ -595,8 +723,18 @@ export default function AddStudentPage() {
                 type="file"
                 accept=".pdf,.jpg,.jpeg,.png"
                 className="hidden"
-                onChange={(e) => setCasteCertFile(e.target.files[0] || null)}
+                onChange={(e) => {
+                  const file = e.target.files[0] || null;
+                  if (file && !isValidUploadFile(file)) {
+                    setCasteCertError("Invalid file — only JPG/PNG/PDF up to 5MB allowed.");
+                    e.target.value = "";
+                    return;
+                  }
+                  setCasteCertError("");
+                  setCasteCertFile(file);
+                }}
               />
+              <FieldError>{casteCertError}</FieldError>
               {casteCertFile ? (
                 <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
                   <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
@@ -633,6 +771,27 @@ export default function AddStudentPage() {
               <Input placeholder="e.g. 12, Block B" value={form.roomPlotNo} onChange={set("roomPlotNo")} required />
             </div>
 
+            <div>
+              <FieldLabel>Society</FieldLabel>
+              <Input placeholder="e.g. Shanti Nagar Society" value={form.society} onChange={set("society")} />
+            </div>
+
+            <div>
+              <FieldLabel>Landmark</FieldLabel>
+              <Input placeholder="e.g. Near Bus Stand" value={form.landmark} onChange={set("landmark")} />
+            </div>
+
+            <div>
+              <FieldLabel>Area</FieldLabel>
+              <Input placeholder="e.g. Vesu" value={form.area} onChange={set("area")} />
+            </div>
+
+            <div>
+              <FieldLabel>Pin Code</FieldLabel>
+              <Input placeholder="e.g. 395007" maxLength={6} value={form.pinCode} onChange={set("pinCode")} />
+              <FieldError>{errors.pinCode}</FieldError>
+            </div>
+
             <div className="sm:col-span-2">
               <FieldLabel required>Full Address</FieldLabel>
               <textarea
@@ -648,11 +807,13 @@ export default function AddStudentPage() {
             <div>
               <FieldLabel required>Mobile Number 1</FieldLabel>
               <Input type="tel" placeholder="Primary mobile number" maxLength={10} value={form.mobile1} onChange={set("mobile1")} required />
+              <FieldError>{errors.mobile1}</FieldError>
             </div>
 
             <div>
               <FieldLabel>Mobile Number 2</FieldLabel>
               <Input type="tel" placeholder="Alternate mobile number" maxLength={10} value={form.mobile2} onChange={set("mobile2")} />
+              <FieldError>{errors.mobile2}</FieldError>
             </div>
           </div>
         </div>
@@ -676,7 +837,10 @@ export default function AddStudentPage() {
                 value={hasPrevSchool}
                 onChange={(val) => {
                   setHasPrevSchool(val);
-                  if (!val) setForm(p => ({ ...p, lastSchoolName:"", lastSchoolClass:"", lastSchoolMedium:"", lastSchoolPlace:"" }));
+                  if (!val) {
+                    setForm(p => ({ ...p, lastSchoolName:"", lastSchoolClass:"", lastSchoolMedium:"", lastSchoolPlace:"", lastSchoolGrNo:"", prevAttendanceDays:"", prevPercentage:"" }));
+                    setLastExamGiven(false);
+                  }
                 }}
               />
             </div>
@@ -698,6 +862,10 @@ export default function AddStudentPage() {
                     <Input placeholder="Name of the last school attended" value={form.lastSchoolName} onChange={set("lastSchoolName")} />
                   </div>
                   <div>
+                    <FieldLabel>Last School GR No</FieldLabel>
+                    <Input placeholder="GR No at previous school" value={form.lastSchoolGrNo} onChange={set("lastSchoolGrNo")} />
+                  </div>
+                  <div>
                     <FieldLabel>Last Class Attended</FieldLabel>
                     <SelectField value={form.lastSchoolClass} onChange={set("lastSchoolClass")}>
                       <option value="">Select Standard</option>
@@ -715,6 +883,22 @@ export default function AddStudentPage() {
                     <FieldLabel>School Location</FieldLabel>
                     <Input placeholder="City / Town" value={form.lastSchoolPlace} onChange={set("lastSchoolPlace")} />
                   </div>
+                  <div>
+                    <FieldLabel>Previous Class Attendance Days</FieldLabel>
+                    <Input type="number" placeholder="e.g. 185" value={form.prevAttendanceDays} onChange={set("prevAttendanceDays")} />
+                    <FieldError>{errors.prevAttendanceDays}</FieldError>
+                  </div>
+                  <div>
+                    <FieldLabel>Last Exam Given or Not</FieldLabel>
+                    <YesNoToggle value={lastExamGiven} onChange={setLastExamGiven} />
+                  </div>
+                  {lastExamGiven && (
+                    <div>
+                      <FieldLabel>Previous Class Percentage</FieldLabel>
+                      <Input placeholder="e.g. 78%" value={form.prevPercentage} onChange={set("prevPercentage")} />
+                      <FieldError>{errors.prevPercentage}</FieldError>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
                   <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -750,6 +934,7 @@ export default function AddStudentPage() {
                     className="tracking-widest font-mono"
                     required
                   />
+                  <FieldError>{errors.aadhar}</FieldError>
                 </div>
                 <div>
                   <FieldLabel required>Name as per Aadhar</FieldLabel>
@@ -802,6 +987,7 @@ export default function AddStudentPage() {
                       {uploadedFiles[docName] ? "Change File" : "Upload File"}
                       <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => handleDocFile(docName, e)} />
                     </label>
+                    <FieldError>{docErrors[docName]}</FieldError>
                   </div>
                 )}
               </div>

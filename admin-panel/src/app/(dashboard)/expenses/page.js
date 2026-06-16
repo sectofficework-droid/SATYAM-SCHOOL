@@ -10,6 +10,7 @@ import {
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { isPositiveAmount, isValidLength } from "@/lib/validators";
 
 // ── Constants ──────────────────────────────────────────────────
 const CATEGORIES = ["Salary", "Infrastructure", "Supplies", "Utilities", "Events", "Maintenance", "Transport", "Other"];
@@ -64,7 +65,9 @@ function AddExpenseModal({ onClose, onSave }) {
   const [paidBy,   setPaidBy]   = useState(PAID_BY[0]);
   const [note,     setNote]     = useState("");
 
-  const valid = title.trim() && amount && Number(amount) > 0 && date;
+  const titleValid  = isValidLength(title, 100, 2);
+  const amountValid = isPositiveAmount(amount, 1000000);
+  const valid = titleValid && amountValid && date;
 
   function handleSave() {
     if (!valid) return;
@@ -83,6 +86,9 @@ function AddExpenseModal({ onClose, onSave }) {
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">Title *</label>
             <input className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
               placeholder="e.g. Electricity Bill — June 2026" value={title} onChange={e => setTitle(e.target.value)} />
+            {title.length > 0 && !titleValid && (
+              <p className="text-xs text-red-500 mt-1">Title must be 2-100 characters</p>
+            )}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -102,6 +108,9 @@ function AddExpenseModal({ onClose, onSave }) {
                 <input type="number" min="1" className="w-full border border-gray-200 rounded-xl pl-9 pr-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
                   placeholder="0" value={amount} onChange={e => setAmount(e.target.value)} />
               </div>
+              {amount.length > 0 && !amountValid && (
+                <p className="text-xs text-red-500 mt-1">Enter an amount between ₹1 and ₹10,00,000</p>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">

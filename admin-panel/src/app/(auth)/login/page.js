@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState } from "react";
 import { Eye, EyeOff, Lock, Mail, MapPin, BookOpen } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { isValidEmail, isStrongPassword } from "@/lib/validators";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -12,10 +13,18 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError("");
+
+    const errors = {};
+    if (!isValidEmail(email)) errors.email = "Enter a valid email address.";
+    if (!isStrongPassword(password, 6)) errors.password = "Password must be at least 6 characters.";
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
     setLoading(true);
 
     setTimeout(() => {
@@ -144,12 +153,15 @@ export default function LoginPage() {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => { setEmail(e.target.value); setFieldErrors(p => ({ ...p, email: "" })); }}
                   placeholder="admin@satyamstars.edu.in"
                   required
                   className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] transition-all placeholder:text-gray-300"
                 />
               </div>
+              {fieldErrors.email && (
+                <p className="text-xs text-red-500 mt-1">{fieldErrors.email}</p>
+              )}
             </div>
 
             {/* Password */}
@@ -162,7 +174,7 @@ export default function LoginPage() {
                 <input
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => { setPassword(e.target.value); setFieldErrors(p => ({ ...p, password: "" })); }}
                   placeholder="Enter your password"
                   required
                   className="w-full pl-10 pr-12 py-3 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#1e3a5f]/20 focus:border-[#1e3a5f] transition-all placeholder:text-gray-300"
@@ -178,6 +190,9 @@ export default function LoginPage() {
                   }
                 </button>
               </div>
+              {fieldErrors.password && (
+                <p className="text-xs text-red-500 mt-1">{fieldErrors.password}</p>
+              )}
             </div>
 
             {/* Remember + Forgot */}

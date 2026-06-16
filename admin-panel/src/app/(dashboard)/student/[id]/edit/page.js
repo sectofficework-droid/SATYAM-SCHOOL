@@ -6,6 +6,11 @@ import {
   ChevronDown, Upload, X, Plus, FileText, ArrowLeft,
   Check, Camera, Lock, GraduationCap, AlertTriangle,
 } from "lucide-react";
+import useStore from "@/lib/store";
+import {
+  isValidName, isValidPhone, isValidPincode, isValidAadhar,
+  isValidPercentage, isNonNegativeNumber, isValidUploadFile,
+} from "@/lib/validators";
 
 // ── Options ────────────────────────────────────────────────────
 const CURRENT_SESSION = "2026-27";
@@ -49,11 +54,14 @@ const studentEditDB = {
     firstName: "Arjun", lastName: "Patel",
     fatherName: "Rajesh Patel", motherName: "Meena Patel",
     dob: "2010-01-15", gender: "Male", religion: "Hindu", caste: "General",
-    roomPlotNo: "12, Block B", mobile1: "9876543210", mobile2: "9876500000",
+    motherTongue: "Gujarati", subCaste: "", height: "140", weight: "35",
+    roomPlotNo: "12, Block B", society: "Shree Society", landmark: "Near Bus Stand", area: "Varachha Road", pinCode: "395006",
+    mobile1: "9876543210", mobile2: "9876500000",
     address: "Shree Society, Varachha Road, Surat - 395006",
     placeOfBirth: "Surat",
-    lastSchoolName: "St. Xavier's Primary School",
+    lastSchoolName: "St. Xavier's Primary School", lastSchoolGrNo: "LS1001",
     lastSchoolClass: "9th", lastSchoolMedium: "English", lastSchoolPlace: "Surat",
+    prevPercentage: "82%", prevAttendanceDays: "190", lastExamGiven: "Yes",
     aadhar: "1234 5678 9012", aadharName: "Arjun Rajesh Patel",
     udise: "24180100101", pen: "", apaar: "",
     hasAadhar: true, hasSibling: false, siblings: [],
@@ -66,7 +74,20 @@ const studentEditDB = {
   },
 };
 
+// ── Helpers ────────────────────────────────────────────────────
+function normalizeAadhar(v) {
+  return String(v || "").replace(/\s/g, "");
+}
+function isNonEmptyAadhar(v) {
+  return normalizeAadhar(v).length > 0;
+}
+
 // ── Reusable UI components ─────────────────────────────────────
+function FieldError({ children }) {
+  if (!children) return null;
+  return <p className="text-xs text-red-500 mt-1">{children}</p>;
+}
+
 function SectionHeader({ number, title }) {
   return (
     <div className="flex items-center gap-3 mb-5">
@@ -164,9 +185,12 @@ function EditForm({ existing, id, router }) {
       p.map((s) => s.id === id ? { ...s, [field]: val, ...(field === "cls" ? { name: "" } : {}) } : s)
     );
   const [hasAadhar, setHasAadhar]         = useState(existing.hasAadhar);
+  const [lastExamGiven, setLastExamGiven] = useState(existing.lastExamGiven === "Yes");
   const [photo, setPhoto]                 = useState(null);
   const [photoPreview, setPhotoPreview]   = useState(null);
+  const [photoError, setPhotoError]       = useState("");
   const [casteCertFile, setCasteCertFile] = useState(null);
+  const [casteCertError, setCasteCertError] = useState("");
   const casteCertRef = useRef(null);
   const photoRef     = useRef(null);
   const [aadharDisplay, setAadharDisplay] = useState(existing.aadhar || "");
@@ -175,6 +199,9 @@ function EditForm({ existing, id, router }) {
   );
   const [uploadedFiles, setUploadedFiles] = useState({ ...existing.uploadedDocs });
   const [customDocs, setCustomDocs]     = useState([]);
+  const [docErrors, setDocErrors]       = useState({});
+  const [errors, setErrors]             = useState({});
+  const students = useStore(s => s.students);
   const [form, setForm] = useState({
     joinDate:         existing.joinDate,
     std:              existing.std,
@@ -188,7 +215,15 @@ function EditForm({ existing, id, router }) {
     gender:           existing.gender,
     religion:         existing.religion,
     caste:            existing.caste,
+    motherTongue:     existing.motherTongue || "",
+    subCaste:         existing.subCaste || "",
+    height:           existing.height || "",
+    weight:            existing.weight || "",
     roomPlotNo:       existing.roomPlotNo,
+    society:          existing.society || "",
+    landmark:         existing.landmark || "",
+    area:             existing.area || "",
+    pinCode:          existing.pinCode || "",
     address:          existing.address,
     mobile1:          existing.mobile1,
     mobile2:          existing.mobile2,
@@ -197,6 +232,9 @@ function EditForm({ existing, id, router }) {
     lastSchoolClass:  existing.lastSchoolClass,
     lastSchoolMedium: existing.lastSchoolMedium,
     lastSchoolPlace:  existing.lastSchoolPlace,
+    lastSchoolGrNo:   existing.lastSchoolGrNo || "",
+    prevPercentage:        existing.prevPercentage || "",
+    prevAttendanceDays:    existing.prevAttendanceDays || "",
     aadharName:       existing.aadharName,
     udise:            existing.udise,
     pen:              existing.pen,
@@ -215,6 +253,12 @@ function EditForm({ existing, id, router }) {
   const handlePhoto = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (!isValidUploadFile(file)) {
+      setPhotoError("Invalid file — only JPG/PNG/PDF up to 5MB allowed.");
+      e.target.value = "";
+      return;
+    }
+    setPhotoError("");
     setPhoto(file);
     setPhotoPreview(URL.createObjectURL(file));
   };
@@ -229,7 +273,14 @@ function EditForm({ existing, id, router }) {
 
   const handleDocFile = (name, e) => {
     const file = e.target.files[0];
-    if (file) setUploadedFiles((p) => ({ ...p, [name]: file.name }));
+    if (!file) return;
+    if (!isValidUploadFile(file)) {
+      setDocErrors((p) => ({ ...p, [name]: "Invalid file — only JPG/PNG/PDF up to 5MB allowed." }));
+      e.target.value = "";
+      return;
+    }
+    setDocErrors((p) => { const next = { ...p }; delete next[name]; return next; });
+    setUploadedFiles((p) => ({ ...p, [name]: file.name }));
   };
 
   const addCustomDoc = () => setCustomDocs((p) => [...p, { id: Date.now(), label: "" }]);
@@ -237,8 +288,49 @@ function EditForm({ existing, id, router }) {
     setCustomDocs((p) => p.map((d) => (d.id === docId ? { ...d, label } : d)));
   const removeCustomDoc = (docId) => setCustomDocs((p) => p.filter((d) => d.id !== docId));
 
+  const validate = () => {
+    const errs = {};
+
+    if (!isValidName(form.firstName)) errs.firstName = "Enter a valid first name.";
+    if (!isValidName(form.lastName)) errs.lastName = "Enter a valid last name.";
+    if (!isValidName(form.fatherName)) errs.fatherName = "Enter a valid father's name.";
+    if (!isValidName(form.motherName)) errs.motherName = "Enter a valid mother's name.";
+
+    if (!isValidPhone(form.mobile1)) errs.mobile1 = "Enter a valid 10-digit mobile number.";
+    if (form.mobile2 && !isValidPhone(form.mobile2)) errs.mobile2 = "Enter a valid 10-digit mobile number.";
+
+    if (form.pinCode && !isValidPincode(form.pinCode)) errs.pinCode = "Enter a valid 6-digit pin code.";
+
+    if (hasAadhar) {
+      const rawAadhar = form.aadharRaw !== undefined ? form.aadharRaw : normalizeAadhar(existing.aadhar);
+      if (!rawAadhar) {
+        errs.aadhar = "Aadhar number is required.";
+      } else if (!isValidAadhar(rawAadhar)) {
+        errs.aadhar = "Enter a valid 12-digit Aadhar number.";
+      } else if (
+        students.some(
+          (s) => String(s.enrollment) !== String(existing.enrollment) &&
+            isNonEmptyAadhar(s.aadhar) && normalizeAadhar(s.aadhar) === rawAadhar
+        )
+      ) {
+        errs.aadhar = "This Aadhar number is already registered to another student.";
+      }
+    }
+
+    if (form.prevAttendanceDays && !isNonNegativeNumber(form.prevAttendanceDays, 365)) {
+      errs.prevAttendanceDays = "Enter a valid number of attendance days.";
+    }
+    if (lastExamGiven && form.prevPercentage && !isValidPercentage(form.prevPercentage)) {
+      errs.prevPercentage = "Enter a valid percentage (0-100).";
+    }
+
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!validate()) return;
     if (form.caste !== "General" && !casteCertFile) {
       setForm((p) => ({ ...p, caste: "General" }));
       alert("No caste certificate uploaded — category has been reset to General.");
@@ -300,6 +392,7 @@ function EditForm({ existing, id, router }) {
                 className="ml-2 text-xs text-red-500 hover:text-red-700">Remove</button>
             )}
             <p className="text-xs text-gray-400 mt-2">Optional · JPG or PNG · Max 2MB</p>
+            <FieldError>{photoError}</FieldError>
           </div>
         </div>
       </div>
@@ -393,20 +486,24 @@ function EditForm({ existing, id, router }) {
           <div>
             <FieldLabel required>First Name</FieldLabel>
             <Input placeholder="Student's first name" value={form.firstName} onChange={set("firstName")} required />
+            <FieldError>{errors.firstName}</FieldError>
           </div>
           <div>
             <FieldLabel required>Last Name</FieldLabel>
             <Input placeholder="Student's last name" value={form.lastName} onChange={set("lastName")} required />
+            <FieldError>{errors.lastName}</FieldError>
           </div>
           <div>
             <FieldLabel required>Father&apos;s Name</FieldLabel>
             <Input placeholder="e.g. Rajesh" value={form.fatherName} onChange={set("fatherName")} required />
             <p className="text-xs text-amber-600 mt-1 font-medium">Note: Write first name only</p>
+            <FieldError>{errors.fatherName}</FieldError>
           </div>
           <div>
             <FieldLabel required>Mother&apos;s Name</FieldLabel>
             <Input placeholder="e.g. Meena" value={form.motherName} onChange={set("motherName")} required />
             <p className="text-xs text-amber-600 mt-1 font-medium">Note: Write first name only</p>
+            <FieldError>{errors.motherName}</FieldError>
           </div>
           <div>
             <ReadOnlyField label="Date of Birth" value={form.dob} />
@@ -429,6 +526,26 @@ function EditForm({ existing, id, router }) {
             >
               {castes.map((c) => <option key={c}>{c}</option>)}
             </SelectField>
+          </div>
+
+          <div>
+            <FieldLabel>Sub Caste</FieldLabel>
+            <Input placeholder="e.g. Patel" value={form.subCaste} onChange={set("subCaste")} />
+          </div>
+
+          <div>
+            <FieldLabel>Mother Tongue</FieldLabel>
+            <Input placeholder="e.g. Gujarati" value={form.motherTongue} onChange={set("motherTongue")} />
+          </div>
+
+          <div>
+            <FieldLabel>Height (cm)</FieldLabel>
+            <Input type="number" placeholder="e.g. 140" value={form.height} onChange={set("height")} />
+          </div>
+
+          <div>
+            <FieldLabel>Weight (kg)</FieldLabel>
+            <Input type="number" placeholder="e.g. 35" value={form.weight} onChange={set("weight")} />
           </div>
         </div>
 
@@ -453,8 +570,18 @@ function EditForm({ existing, id, router }) {
               type="file"
               accept=".pdf,.jpg,.jpeg,.png"
               className="hidden"
-              onChange={(e) => setCasteCertFile(e.target.files[0] || null)}
+              onChange={(e) => {
+                const file = e.target.files[0] || null;
+                if (file && !isValidUploadFile(file)) {
+                  setCasteCertError("Invalid file — only JPG/PNG/PDF up to 5MB allowed.");
+                  e.target.value = "";
+                  return;
+                }
+                setCasteCertError("");
+                setCasteCertFile(file);
+              }}
             />
+            <FieldError>{casteCertError}</FieldError>
             {casteCertFile ? (
               <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
                 <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
@@ -489,6 +616,23 @@ function EditForm({ existing, id, router }) {
             <FieldLabel required>Room No / Plot No</FieldLabel>
             <Input placeholder="e.g. 12, Block B" value={form.roomPlotNo} onChange={set("roomPlotNo")} required />
           </div>
+          <div>
+            <FieldLabel>Society</FieldLabel>
+            <Input placeholder="e.g. Shanti Nagar Society" value={form.society} onChange={set("society")} />
+          </div>
+          <div>
+            <FieldLabel>Landmark</FieldLabel>
+            <Input placeholder="e.g. Near Bus Stand" value={form.landmark} onChange={set("landmark")} />
+          </div>
+          <div>
+            <FieldLabel>Area</FieldLabel>
+            <Input placeholder="e.g. Vesu" value={form.area} onChange={set("area")} />
+          </div>
+          <div>
+            <FieldLabel>Pin Code</FieldLabel>
+            <Input placeholder="e.g. 395007" maxLength={6} value={form.pinCode} onChange={set("pinCode")} />
+            <FieldError>{errors.pinCode}</FieldError>
+          </div>
           <div className="sm:col-span-2">
             <FieldLabel required>Full Address</FieldLabel>
             <textarea
@@ -500,10 +644,12 @@ function EditForm({ existing, id, router }) {
           <div>
             <FieldLabel required>Mobile Number 1</FieldLabel>
             <Input type="tel" placeholder="Primary mobile" maxLength={10} value={form.mobile1} onChange={set("mobile1")} required />
+            <FieldError>{errors.mobile1}</FieldError>
           </div>
           <div>
             <FieldLabel>Mobile Number 2</FieldLabel>
             <Input type="tel" placeholder="Alternate mobile" maxLength={10} value={form.mobile2} onChange={set("mobile2")} />
+            <FieldError>{errors.mobile2}</FieldError>
           </div>
         </div>
       </div>
@@ -526,7 +672,10 @@ function EditForm({ existing, id, router }) {
               value={hasPrevSchool}
               onChange={(val) => {
                 setHasPrevSchool(val);
-                if (!val) setForm(p => ({ ...p, lastSchoolName:"", lastSchoolClass:"", lastSchoolMedium:"", lastSchoolPlace:"" }));
+                if (!val) {
+                  setForm(p => ({ ...p, lastSchoolName:"", lastSchoolClass:"", lastSchoolMedium:"", lastSchoolPlace:"", lastSchoolGrNo:"", prevAttendanceDays:"", prevPercentage:"" }));
+                  setLastExamGiven(false);
+                }
               }}
             />
           </div>
@@ -548,6 +697,10 @@ function EditForm({ existing, id, router }) {
                   <Input placeholder="Name of the last school attended" value={form.lastSchoolName} onChange={set("lastSchoolName")} />
                 </div>
                 <div>
+                  <FieldLabel>Last School GR No</FieldLabel>
+                  <Input placeholder="GR No at previous school" value={form.lastSchoolGrNo} onChange={set("lastSchoolGrNo")} />
+                </div>
+                <div>
                   <FieldLabel>Last Class Attended</FieldLabel>
                   <SelectField value={form.lastSchoolClass} onChange={set("lastSchoolClass")}>
                     <option value="">Select Standard</option>
@@ -565,6 +718,22 @@ function EditForm({ existing, id, router }) {
                   <FieldLabel>School Location</FieldLabel>
                   <Input placeholder="City / Town" value={form.lastSchoolPlace} onChange={set("lastSchoolPlace")} />
                 </div>
+                <div>
+                  <FieldLabel>Previous Class Attendance Days</FieldLabel>
+                  <Input type="number" placeholder="e.g. 185" value={form.prevAttendanceDays} onChange={set("prevAttendanceDays")} />
+                  <FieldError>{errors.prevAttendanceDays}</FieldError>
+                </div>
+                <div>
+                  <FieldLabel>Last Exam Given or Not</FieldLabel>
+                  <YesNoToggle value={lastExamGiven} onChange={setLastExamGiven} />
+                </div>
+                {lastExamGiven && (
+                  <div>
+                    <FieldLabel>Previous Class Percentage</FieldLabel>
+                    <Input placeholder="e.g. 78%" value={form.prevPercentage} onChange={set("prevPercentage")} />
+                    <FieldError>{errors.prevPercentage}</FieldError>
+                  </div>
+                )}
               </div>
               <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
                 <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -598,6 +767,7 @@ function EditForm({ existing, id, router }) {
                   onChange={handleAadharInput} maxLength={14}
                   className="tracking-widest font-mono" required
                 />
+                <FieldError>{errors.aadhar}</FieldError>
               </div>
               <div>
                 <FieldLabel required>Name as per Aadhar</FieldLabel>
@@ -645,6 +815,7 @@ function EditForm({ existing, id, router }) {
                     {uploadedFiles[docName] ? "Change File" : "Upload File"}
                     <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={(e) => handleDocFile(docName, e)} />
                   </label>
+                  <FieldError>{docErrors[docName]}</FieldError>
                 </div>
               )}
             </div>

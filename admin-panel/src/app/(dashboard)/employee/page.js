@@ -5,6 +5,10 @@ import { createPortal } from "react-dom";
 import useStore from "@/lib/store";
 import * as XLSX from "xlsx";
 import {
+  isValidName, isValidPhone, isValidEmail, isValidAadhar,
+  isNonEmpty, isPastOrTodayDate, isValidUploadFile,
+} from "@/lib/validators";
+import {
   Users, Plus, Search, X, Phone, Mail, MapPin,
   Calendar, GraduationCap, Briefcase,
   User, FileText, Check, Eye, BookOpen,
@@ -71,6 +75,13 @@ const AVATAR_BG = [
 ];
 
 const ADD_TABS = ["Personal", "Job", "Academic", "Documents"];
+
+// PAN format: 5 letters, 4 digits, 1 letter (e.g. ABCDE1234F)
+const PAN_RE = /^[A-Z]{5}\d{4}[A-Z]$/;
+function isValidPan(v) {
+  if (!isNonEmpty(v)) return false;
+  return PAN_RE.test(String(v).trim().toUpperCase());
+}
 
 // ── Dummy Data ─────────────────────────────────────────────────────────────────
 // subjectMappings: [{ subject: "Mathematics", classes: ["8th","9th","10th"] }]
@@ -431,7 +442,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
 
   // Documents — selected: checkbox toggled; file uploaded only when fileName set
   const [docs, setDocs] = useState(
-    REQUIRED_DOCS.map((n) => ({ name: n, selected: false, file: null, fileName: "" }))
+    REQUIRED_DOCS.map((n) => ({ name: n, selected: false, file: null, fileName: "", error: "" }))
   );
 
   const [mounted, setMounted] = useState(false);
@@ -442,9 +453,29 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
     Math.max(0, ...employees.map((e) => parseInt(e.empId.replace("EMP", ""), 10))) + 1
   ).padStart(3, "0")}`;
 
-  const tab0Valid = name.trim().length > 0 && phone.trim().length > 0;
-  const tab1Valid = !!(type && designation && department && joining);
-  const canGoNext = () => { if (tab === 0) return tab0Valid; if (tab === 1) return tab1Valid; return true; };
+  // Personal tab — field-level format validation
+  const nameValid     = isValidName(name);
+  const phoneValid    = isValidPhone(phone);
+  const altPhoneValid = !isNonEmpty(altPhone) || isValidPhone(altPhone);
+  const emailValid    = !isNonEmpty(email) || isValidEmail(email);
+  const aadharValid   = !isNonEmpty(aadharDisplay) || isValidAadhar(aadharDisplay);
+  const panValid      = !isNonEmpty(pan) || isValidPan(pan);
+
+  const tab0Valid = nameValid && phoneValid && altPhoneValid && emailValid && aadharValid && panValid;
+
+  // Job tab — joining date must not be in the future
+  const joiningValid = !!joining && isPastOrTodayDate(joining);
+  const tab1Valid = !!(type && designation && department) && joiningValid;
+
+  // Documents tab — every uploaded file must pass type/size checks
+  const docsValid = docs.every((d) => isValidUploadFile(d.file));
+
+  const canGoNext = () => {
+    if (tab === 0) return tab0Valid;
+    if (tab === 1) return tab1Valid;
+    if (tab === 3) return docsValid;
+    return true;
+  };
 
   // Aadhar: format as XXXX XXXX XXXX
   const handleAadhar = (e) => setAadharDisplay(fmtAadhar(e.target.value));
@@ -454,21 +485,28 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
     setDocs((prev) => prev.map((d) => {
       if (d.name !== docName) return d;
       const next = !d.selected;
-      return { ...d, selected: next, ...(next ? {} : { file: null, fileName: "" }) };
+      return { ...d, selected: next, ...(next ? {} : { file: null, fileName: "", error: "" }) };
     }));
 
   const handleFileSelect = (docName, e) => {
     const file = e.target.files[0];
     if (!file) return;
+    if (!isValidUploadFile(file)) {
+      setDocs((prev) => prev.map((d) =>
+        d.name === docName ? { ...d, file: null, fileName: "", error: "Only JPG/PNG/PDF up to 5MB allowed" } : d
+      ));
+      e.target.value = "";
+      return;
+    }
     setDocs((prev) => prev.map((d) =>
-      d.name === docName ? { ...d, file, fileName: file.name } : d
+      d.name === docName ? { ...d, file, fileName: file.name, error: "" } : d
     ));
     e.target.value = "";
   };
 
   const removeFile = (docName) =>
     setDocs((prev) => prev.map((d) =>
-      d.name === docName ? { ...d, file: null, fileName: "" } : d
+      d.name === docName ? { ...d, file: null, fileName: "", error: "" } : d
     ));
 
   // Subject-class mappings
@@ -484,7 +522,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
     }));
 
   const handleSave = () => {
-    if (!tab0Valid || !tab1Valid) return;
+    if (!tab0Valid || !tab1Valid || !docsValid) return;
     onSave({
       id: Date.now(),
       empId: nextEmpId,
@@ -548,6 +586,9 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name *</label>
                 <input className={IPT} placeholder="e.g. Anita Sharma" value={name}
                   onChange={(e) => setName(e.target.value)} />
+                {name.length > 0 && !nameValid && (
+                  <p className="text-xs text-red-500 mt-1">Enter a valid name (letters only, 2-60 chars)</p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -566,17 +607,26 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Phone *</label>
                   <input className={IPT} placeholder="10-digit mobile" value={phone}
                     onChange={(e) => setPhone(e.target.value)} maxLength={10} />
+                  {phone.length > 0 && !phoneValid && (
+                    <p className="text-xs text-red-500 mt-1">Enter a valid 10-digit mobile number</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Alt. Phone</label>
                   <input className={IPT} placeholder="Optional" value={altPhone}
                     onChange={(e) => setAlt(e.target.value)} maxLength={10} />
+                  {altPhone.length > 0 && !altPhoneValid && (
+                    <p className="text-xs text-red-500 mt-1">Enter a valid 10-digit mobile number</p>
+                  )}
                 </div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email</label>
                 <input type="email" className={IPT} placeholder="name@satyamstars.edu.in"
                   value={email} onChange={(e) => setEmail(e.target.value)} />
+                {email.length > 0 && !emailValid && (
+                  <p className="text-xs text-red-500 mt-1">Enter a valid email address</p>
+                )}
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Address</label>
@@ -591,11 +641,17 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
                     value={aadharDisplay}
                     onChange={handleAadhar}
                     maxLength={14} />
+                  {aadharDisplay.length > 0 && !aadharValid && (
+                    <p className="text-xs text-red-500 mt-1">Enter a valid 12-digit Aadhar number</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">PAN No.</label>
                   <input className={IPT} placeholder="ABCDE1234F"
-                    value={pan} onChange={(e) => setPan(e.target.value)} />
+                    value={pan} onChange={(e) => setPan(e.target.value.toUpperCase())} maxLength={10} />
+                  {pan.length > 0 && !panValid && (
+                    <p className="text-xs text-red-500 mt-1">Enter a valid PAN (e.g. ABCDE1234F)</p>
+                  )}
                 </div>
               </div>
             </>
@@ -637,6 +693,9 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Joining Date *</label>
                   <input type="date" className={IPT} value={joining}
                     onChange={(e) => setJoining(e.target.value)} />
+                  {joining.length > 0 && !joiningValid && (
+                    <p className="text-xs text-red-500 mt-1">Joining date cannot be in the future</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Employment Type</label>
@@ -792,9 +851,12 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
                               <Upload className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
                               <span className="text-xs text-amber-600 font-medium">Upload file to confirm submission</span>
                               <input type="file" className="hidden"
-                                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                                accept=".pdf,.jpg,.jpeg,.png"
                                 onChange={(e) => handleFileSelect(d.name, e)} />
                             </label>
+                          )}
+                          {d.error && (
+                            <p className="text-xs text-red-500 mt-1">{d.error}</p>
                           )}
                         </div>
                       )}
@@ -825,7 +887,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
               Next <ChevronRight className="w-4 h-4" />
             </button>
           ) : (
-            <button onClick={handleSave} disabled={!tab0Valid || !tab1Valid}
+            <button onClick={handleSave} disabled={!tab0Valid || !tab1Valid || !docsValid}
               className="flex-1 py-2.5 rounded-xl bg-school-navy text-white text-sm font-semibold hover:bg-school-navy-dark transition-colors disabled:opacity-40">
               Add Employee
             </button>
