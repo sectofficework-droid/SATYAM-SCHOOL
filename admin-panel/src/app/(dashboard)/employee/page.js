@@ -8,6 +8,8 @@ import {
   isValidName, isValidPhone, isValidEmail, isValidAadhar,
   isNonEmpty, isPastOrTodayDate, isValidUploadFile,
 } from "@/lib/validators";
+import { getActiveClasses } from "@/lib/settingsService";
+import { getEmployees, addEmployee } from "@/lib/employeeService";
 import {
   Users, Plus, Search, X, Phone, Mail, MapPin,
   Calendar, GraduationCap, Briefcase,
@@ -39,15 +41,7 @@ const SUBJECTS_LIST = [
   "Physical Education", "Drawing", "Sanskrit", "Gujarati", "EVS", "Odia",
 ];
 
-const CLASS_LIST = [
-  "JR.KG", "SR.KG", "Balvatika",
-  "1st", "2nd", "3rd", "4th", "5th",
-  "6th", "7th", "8th", "9th", "10th",
-  "11th - Commerce", "12th - Commerce",
-];
-
 const SECTIONS = ["A", "B", "C", "D"];
-const CLASSES_WITH_SECTIONS = CLASS_LIST.flatMap((c) => SECTIONS.map((s) => `${c}-${s}`));
 
 const REQUIRED_DOCS = [
   "Aadhar Card", "PAN Card", "Degree Certificate",
@@ -83,125 +77,6 @@ function isValidPan(v) {
   return PAN_RE.test(String(v).trim().toUpperCase());
 }
 
-// ── Dummy Data ─────────────────────────────────────────────────────────────────
-// subjectMappings: [{ subject: "Mathematics", classes: ["8th","9th","10th"] }]
-const INITIAL_EMPLOYEES = [
-  {
-    id: 1, empId: "EMP001", name: "Sunil Pradhan", photo: null,
-    type: "management", designation: "Principal", department: "Administration",
-    gender: "Male", dob: "1970-03-15", phone: "9876543210", altPhone: "",
-    email: "sunil@satyamstars.edu.in", address: "12, Rander Road, Surat, Gujarat - 395009",
-    aadhar: "1234 5678 9012", pan: "ABCDE1234F",
-    joiningDate: "2015-06-01", employmentType: "Permanent", status: "Active",
-    classTeacherOf: null, subjectMappings: [],
-    documents: [
-      { name: "Aadhar Card",       uploaded: true,  fileName: "" },
-      { name: "PAN Card",          uploaded: true,  fileName: "" },
-      { name: "Degree Certificate",uploaded: true,  fileName: "" },
-      { name: "Experience Letter", uploaded: true,  fileName: "" },
-      { name: "Photo",             uploaded: true,  fileName: "" },
-      { name: "Address Proof",     uploaded: true,  fileName: "" },
-    ],
-  },
-  // ── Admin Staff ───────────────────────────────────────────────
-  ...([
-    { id:2,  empId:"EMP002", name:"Rajesh Biswal",     desig:"Admin", gender:"Male"   },
-    { id:3,  empId:"EMP003", name:"BK Debiprasad Das", desig:"Admin", gender:"Male"   },
-    { id:4,  empId:"EMP004", name:"Sandeep Pradhan",   desig:"Admin", gender:"Male"   },
-    { id:5,  empId:"EMP005", name:"Gaurang Polai",     desig:"Admin", gender:"Male"   },
-    { id:7,  empId:"EMP007", name:"Rudra Prasad Muni", desig:"Admin", gender:"Male"   },
-    { id:8,  empId:"EMP008", name:"Ayeshkant Rout",    desig:"Admin", gender:"Male"   },
-  ].map(({ id, empId, name, desig, gender }) => ({
-    id, empId, name, photo: null,
-    type: "non-teaching", designation: desig, department: "Administration",
-    gender, dob: "", phone: "", altPhone: "", email: "", address: "",
-    aadhar: "", pan: "",
-    joiningDate: "2026-06-01", employmentType: "Permanent", status: "Active",
-    classTeacherOf: null, subjectMappings: [],
-    documents: [
-      { name:"Aadhar Card",        uploaded:false, fileName:"" },
-      { name:"PAN Card",           uploaded:false, fileName:"" },
-      { name:"Degree Certificate", uploaded:false, fileName:"" },
-      { name:"Experience Letter",  uploaded:false, fileName:"" },
-      { name:"Photo",              uploaded:false, fileName:"" },
-      { name:"Address Proof",      uploaded:false, fileName:"" },
-    ],
-  }))),
-
-  // ── Teachers ───────────────────────────────────────────────────
-  ...([
-    // Teachers (first batch)
-    { id:11, empId:"EMP011", name:"Pami Pradhan"    },
-    { id:12, empId:"EMP012", name:"Rashmita Patra"  },
-    { id:13, empId:"EMP013", name:"Priti Singh"     },
-    { id:14, empId:"EMP014", name:"Janki Das"       },
-    // Teachers (new batch)
-    { id:15, empId:"EMP015", name:"Shivani Pradhan"  },
-    { id:16, empId:"EMP016", name:"Smurti Panda"     },
-    { id:17, empId:"EMP017", name:"Manisha Biswal"   },
-    { id:18, empId:"EMP018", name:"Parvati Polai"    },
-    { id:19, empId:"EMP019", name:"Sita Gouda"       },
-    { id:20, empId:"EMP020", name:"Kabita Panigrahi" },
-    { id:21, empId:"EMP021", name:"Barsha Pradhan"   },
-    { id:22, empId:"EMP022", name:"Liza Patra"       },
-    { id:23, empId:"EMP023", name:"Laxmi Behera"     },
-    { id:24, empId:"EMP024", name:"Pragyan Panda"    },
-    { id:25, empId:"EMP025", name:"Priyanka Bisoyi"  },
-    { id:26, empId:"EMP026", name:"Priyanka Padhi"   },
-  ].map(({ id, empId, name }) => ({
-    id, empId, name, photo: null,
-    type: "teaching", designation: "Class Teacher", department: "Primary",
-    gender: "Female", dob: "", phone: "", altPhone: "", email: "", address: "",
-    aadhar: "", pan: "",
-    joiningDate: "2026-06-01", employmentType: "Permanent", status: "Active",
-    classTeacherOf: null, subjectMappings: [],
-    documents: [
-      { name:"Aadhar Card",        uploaded:false, fileName:"" },
-      { name:"PAN Card",           uploaded:false, fileName:"" },
-      { name:"Degree Certificate", uploaded:false, fileName:"" },
-      { name:"Experience Letter",  uploaded:false, fileName:"" },
-      { name:"Photo",              uploaded:false, fileName:"" },
-      { name:"Address Proof",      uploaded:false, fileName:"" },
-    ],
-  }))),
-
-  // Care Taker
-  {
-    id:27, empId:"EMP027", name:"Rina Gouda", photo: null,
-    type: "non-teaching", designation: "Care Taker", department: "Non-Teaching",
-    gender: "Female", dob: "", phone: "", altPhone: "", email: "", address: "",
-    aadhar: "", pan: "",
-    joiningDate: "2026-06-01", employmentType: "Permanent", status: "Active",
-    classTeacherOf: null, subjectMappings: [],
-    documents: [
-      { name:"Aadhar Card",        uploaded:false, fileName:"" },
-      { name:"PAN Card",           uploaded:false, fileName:"" },
-      { name:"Degree Certificate", uploaded:false, fileName:"" },
-      { name:"Experience Letter",  uploaded:false, fileName:"" },
-      { name:"Photo",              uploaded:false, fileName:"" },
-      { name:"Address Proof",      uploaded:false, fileName:"" },
-    ],
-  },
-
-  // ── Media & Communications ─────────────────────────────────────
-  {
-    id:6, empId:"EMP006", name:"Kishan Swain", photo: null,
-    type: "media", designation: "Social Media Manager", department: "Media & Communications",
-    gender: "Male", dob: "", phone: "", altPhone: "", email: "", address: "",
-    aadhar: "", pan: "",
-    joiningDate: "2026-06-01", employmentType: "Permanent", status: "Active",
-    classTeacherOf: null, subjectMappings: [],
-    documents: [
-      { name:"Aadhar Card",        uploaded:false, fileName:"" },
-      { name:"PAN Card",           uploaded:false, fileName:"" },
-      { name:"Degree Certificate", uploaded:false, fileName:"" },
-      { name:"Experience Letter",  uploaded:false, fileName:"" },
-      { name:"Photo",              uploaded:false, fileName:"" },
-      { name:"Address Proof",      uploaded:false, fileName:"" },
-    ],
-  },
-
-];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function initials(name) {
@@ -226,7 +101,7 @@ function calcAge(dob) {
   } catch { return null; }
 }
 
-function avatarBg(id) { return AVATAR_BG[Math.abs(id) % AVATAR_BG.length]; }
+function avatarBg(empId) { const n = parseInt(String(empId).replace(/\D/g,""),10)||0; return AVATAR_BG[n % AVATAR_BG.length]; }
 function docsDone(emp) { return (emp.documents || []).filter((d) => d.uploaded).length; }
 function fmtAadhar(val) {
   const digits = val.replace(/\D/g, "").slice(0, 12);
@@ -254,7 +129,7 @@ function ViewEmployeeModal({ emp, onClose }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  const bg        = avatarBg(emp.id);
+  const bg        = avatarBg(emp.empId);
   const age       = calcAge(emp.dob);
   const done      = docsDone(emp);
   const allDocsOk = done === (emp.documents || []).length;
@@ -416,6 +291,21 @@ function ViewEmployeeModal({ emp, onClose }) {
 // "selected" = checkbox toggled; a doc is only "uploaded" when fileName is set
 function AddEmployeeModal({ employees, onClose, onSave }) {
   const [tab, setTab]         = useState(0);
+
+  const [classList,          setClassList]          = useState([]);
+  const [classesWithSections, setClassesWithSections] = useState([]);
+
+  useEffect(() => {
+    getActiveClasses().then(cls => {
+      const names = cls.map(c => c.name);
+      setClassList(names);
+      const withSec = cls.flatMap(c => {
+        const secs = (c.sections || []).map(s => s.name);
+        return (secs.length > 0 ? secs : SECTIONS).map(s => `${c.name}-${s}`);
+      });
+      setClassesWithSections(withSec);
+    }).catch(() => {});
+  }, []);
 
   // Personal
   const [name, setName]         = useState("");
@@ -730,7 +620,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Class Teacher Of</label>
                   <select className={IPT} value={ctOf} onChange={(e) => setCtOf(e.target.value)}>
                     <option value="">None / Not a class teacher</option>
-                    {CLASSES_WITH_SECTIONS.map((c) => <option key={c}>{c}</option>)}
+                    {classesWithSections.map((c) => <option key={c}>{c}</option>)}
                   </select>
                 </div>
 
@@ -774,7 +664,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
                         <div>
                           <p className="text-[10px] font-semibold text-gray-400 mb-1.5">Teaches this subject in:</p>
                           <div className="flex flex-wrap gap-1.5">
-                            {CLASS_LIST.map((c) => (
+                            {classList.map((c) => (
                               <button key={c} onClick={() => toggleClass(i, c)}
                                 className={`px-2 py-0.5 rounded-lg text-xs font-semibold border transition-colors ${
                                   m.classes.includes(c)
@@ -1221,23 +1111,20 @@ function AttendanceSection({ employees, salaries, addSalaryPayments, setStoreExp
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function EmployeePage() {
-  const storeEmployees    = useStore(s => s.employees);
   const setStoreEmployees = useStore(s => s.setEmployees);
 
-  const [employees, setEmployeesLocal] = useState(() =>
-    storeEmployees.length > 0 ? storeEmployees : INITIAL_EMPLOYEES
-  );
+  const [employees, setEmployeesLocal] = useState([]);
+  const [empLoading, setEmpLoading]    = useState(true);
 
   function setEmployees(updated) {
     setEmployeesLocal(updated);
-    setStoreEmployees(updated);
+    setStoreEmployees(updated); // keep Zustand in sync for Super Admin salary panel
   }
 
-  // Populate store on first visit so other modules (Super Admin Salary) can read it
   useEffect(() => {
-    if (storeEmployees.length === 0) {
-      setStoreEmployees(INITIAL_EMPLOYEES);
-    }
+    getEmployees()
+      .then(data => { setEmployees(data); setEmpLoading(false); })
+      .catch(() => setEmpLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [view, setView]             = useState("staff"); // "staff" | "attendance"
@@ -1269,8 +1156,13 @@ export default function EmployeePage() {
     return ms && mt && md;
   });
 
-  const handleAdd = (emp) => {
-    setEmployees((prev) => [...prev, emp]);
+  const handleAdd = async (emp) => {
+    try {
+      const saved = await addEmployee(emp);
+      setEmployees(prev => [...prev, saved]);
+    } catch {
+      // silently fail — employee was not saved
+    }
     setAddOpen(false);
   };
 
@@ -1313,7 +1205,10 @@ export default function EmployeePage() {
       )}
 
       {/* Staff list view */}
-      {view === "staff" && <>
+      {view === "staff" && empLoading && (
+        <div className="flex items-center justify-center py-24 text-gray-400 text-sm">Loading employees…</div>
+      )}
+      {view === "staff" && !empLoading && <>
 
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
@@ -1388,7 +1283,7 @@ export default function EmployeePage() {
                 </tr>
               )}
               {filtered.map((emp) => {
-                const bg     = avatarBg(emp.id);
+                const bg     = avatarBg(emp.empId);
                 const done   = docsDone(emp);
                 const docsOk = done === (emp.documents || []).length;
                 return (

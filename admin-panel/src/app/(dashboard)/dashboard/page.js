@@ -12,6 +12,7 @@ import {
   X, ShieldAlert,
 } from "lucide-react";
 import useStore from "@/lib/store";
+import { getDashboardStats, getRecentNotices } from "@/lib/dashboardService";
 
 // ── Dummy Data ────────────────────────────────────────────────
 
@@ -37,12 +38,20 @@ const employeeAttendanceData = weekDays.map((day) => ({
   Absent:  [4, 2, 6, 3, 4, 8][weekDays.indexOf(day)],
 }));
 
-const recentNotices = [
-  { title: "Annual Sports Day — 20th May 2025",          date: "13 May", type: "Event",    dot: "bg-blue-400" },
-  { title: "Unit Test Schedule Released for Class 9–12", date: "12 May", type: "Academic", dot: "bg-purple-400" },
-  { title: "Summer Vacation from 1st June 2025",         date: "10 May", type: "Holiday",  dot: "bg-green-400" },
-  { title: "Parent-Teacher Meeting on Saturday",         date: "8 May",  type: "Meeting",  dot: "bg-amber-400" },
-];
+const NOTICE_DOT = {
+  Event:    "bg-blue-400",
+  Academic: "bg-purple-400",
+  Holiday:  "bg-green-400",
+  Meeting:  "bg-amber-400",
+  General:  "bg-gray-400",
+  Circular: "bg-indigo-400",
+};
+
+function fmtNoticeDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
 
 const inventoryAlerts = [
   { item: "A4 Paper Reams",       stock: 12, min: 50 },
@@ -199,8 +208,24 @@ export default function DashboardPage() {
   const [selectedDate,  setSelectedDate]  = useState(todayStr);
   const [selectedClass, setSelectedClass] = useState("All Classes");
 
-  const { pendingTasks, toggleTask, feePayments, expenses: storeExpenses } = useStore();
-  const [showPopup, setShowPopup]   = useState(false);
+  const { pendingTasks, toggleTask } = useStore();
+  const [showPopup, setShowPopup] = useState(false);
+
+  const [dbTotalStudents, setDbTotalStudents] = useState(null);
+  const [dbTotalStaff,    setDbTotalStaff]    = useState(null);
+  const [dbFeePayments,   setDbFeePayments]   = useState([]);
+  const [dbExpenses,      setDbExpenses]      = useState([]);
+  const [dbNotices,       setDbNotices]       = useState([]);
+
+  useEffect(() => {
+    getDashboardStats().then(s => {
+      setDbTotalStudents(s.totalStudents);
+      setDbTotalStaff(s.totalStaff);
+      setDbFeePayments(s.feePayments);
+      setDbExpenses(s.expenses);
+    }).catch(() => {});
+    getRecentNotices().then(setDbNotices).catch(() => {});
+  }, []);
 
   const pendingOnly = pendingTasks.filter(t => !t.done);
 
@@ -218,10 +243,10 @@ export default function DashboardPage() {
   const curMonth = new Date().toISOString().slice(0, 7);
   function fmtAmt(n) { return n === 0 ? "₹0" : "₹" + n.toLocaleString("en-IN"); }
 
-  const feeMonthTotal = feePayments.filter(p => p.date.startsWith(curMonth)).reduce((s, p) => s + p.amount, 0);
-  const feeDateTotal  = feePayments.filter(p => p.date === selectedDate).reduce((s, p) => s + p.amount, 0);
-  const expMonthTotal = storeExpenses.filter(e => e.date.startsWith(curMonth)).reduce((s, e) => s + e.amount, 0);
-  const expDateTotal  = storeExpenses.filter(e => e.date === selectedDate).reduce((s, e) => s + e.amount, 0);
+  const feeMonthTotal = dbFeePayments.filter(p => p.date?.startsWith(curMonth)).reduce((s, p) => s + p.amount, 0);
+  const feeDateTotal  = dbFeePayments.filter(p => p.date === selectedDate).reduce((s, p) => s + p.amount, 0);
+  const expMonthTotal = dbExpenses.filter(e => e.date?.startsWith(curMonth)).reduce((s, e) => s + e.amount, 0);
+  const expDateTotal  = dbExpenses.filter(e => e.date === selectedDate).reduce((s, e) => s + e.amount, 0);
 
   const studentChartData = useMemo(
     () => genStudentAttendance(selectedClass),
@@ -273,9 +298,11 @@ export default function DashboardPage() {
             </div>
             <TrendingUp className="w-4 h-4 text-green-500" />
           </div>
-          <p className="text-2xl font-bold text-gray-800">1,247</p>
+          <p className="text-2xl font-bold text-gray-800">
+            {dbTotalStudents !== null ? dbTotalStudents.toLocaleString("en-IN") : "—"}
+          </p>
           <p className="text-xs font-medium text-gray-500 mt-1">Total Students</p>
-          <p className="text-xs mt-1.5 text-green-600">+12 this month</p>
+          <p className="text-xs mt-1.5 text-gray-400">Current academic year</p>
         </div>
 
         {/* 2 — Total Staff */}
@@ -286,9 +313,11 @@ export default function DashboardPage() {
             </div>
             <TrendingUp className="w-4 h-4 text-green-500" />
           </div>
-          <p className="text-2xl font-bold text-gray-800">68</p>
+          <p className="text-2xl font-bold text-gray-800">
+            {dbTotalStaff !== null ? dbTotalStaff : "—"}
+          </p>
           <p className="text-xs font-medium text-gray-500 mt-1">Total Staff</p>
-          <p className="text-xs mt-1.5 text-green-600">+2 this month</p>
+          <p className="text-xs mt-1.5 text-gray-400">Active employees</p>
         </div>
 
         {/* 3 — Fee Collection */}
@@ -373,15 +402,17 @@ export default function DashboardPage() {
             </button>
           </div>
           <div className="divide-y divide-gray-50">
-            {recentNotices.map((notice) => (
-              <div key={notice.title} className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors">
-                <div className={`w-2 h-2 rounded-full ${notice.dot} flex-shrink-0`} />
+            {dbNotices.length === 0 ? (
+              <div className="px-5 py-8 text-center text-gray-400 text-sm">No notices posted yet</div>
+            ) : dbNotices.map((notice) => (
+              <div key={notice.id} className="flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors">
+                <div className={`w-2 h-2 rounded-full ${NOTICE_DOT[notice.type] || "bg-gray-400"} flex-shrink-0`} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-gray-800 truncate font-medium">{notice.title}</p>
                   <span className="text-xs text-gray-400">{notice.type}</span>
                 </div>
                 <span className="text-xs text-gray-400 flex-shrink-0 bg-gray-100 px-2 py-0.5 rounded-full">
-                  {notice.date}
+                  {fmtNoticeDate(notice.posted_date)}
                 </span>
               </div>
             ))}

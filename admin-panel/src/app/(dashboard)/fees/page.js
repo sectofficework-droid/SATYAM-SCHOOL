@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import useStore from "@/lib/store";
 import { isPositiveAmount } from "@/lib/validators";
@@ -9,8 +9,16 @@ import {
   Package, Phone, GraduationCap, ChevronDown, ChevronUp,
   X, MessageSquare, Users, Check, Lock, Eye, RotateCcw,
 } from "lucide-react";
+import supabase from "@/lib/supabase";
+import {
+  getStudentsForFees,
+  getFeeStructure,
+  saveFeePayment,
+  markInventoryGiven,
+} from "@/lib/feesService";
+import { getActiveClasses } from "@/lib/settingsService";
 
-// ── Default Fees Structure (fallback) ──────────────────────────
+// ── Default Fees Structure (fallback when DB has no fee_structures rows) ──
 const DEFAULT_FEES = {
   "JR.KG":14500,"SR.KG":14500,"Balvatika":15000,
   "1st":15500,"2nd":15700,"3rd":15900,"4th":16200,"5th":16500,
@@ -29,107 +37,7 @@ const ADMINS = [
   "Other",
 ];
 
-
-const INITIAL_STUDENTS = [
-  {
-    enrollment: "1001", name: "Arjun Patel", fatherName: "Rajesh",
-    std: "10th", section: "A", rollNo: "1", mobile: "9876543210",
-    discount: { amount: 5000, reason: "Financial Weak" },
-    payments: [
-      { date: "2026-06-05", amount: 8500, receivedBy: "Principal", std: "10th" },
-      { date: "2026-10-12", amount: 5000, receivedBy: "Admin",     std: "10th" },
-    ],
-    inventory: [
-      { item: "Bag",   givenDate: "05 Jun 2026", given: true  },
-      { item: "Uniform Set",      givenDate: "05 Jun 2026", given: true  },
-      { item: "Book Set",    givenDate: "10 Jun 2026", given: true  },
-      { item: "Notebook Set",    givenDate: "",            given: false },
-      { item: "School Diary", givenDate: "05 Jun 2026", given: true  },
-      { item: "ID Card",      givenDate: "15 Jun 2026", given: true  },
-    ],
-  },
-  {
-    enrollment: "1002", name: "Priya Shah", fatherName: "Amit",
-    std: "9th", section: "B", rollNo: "1", mobile: "9765432100",
-    discount: { amount: 0, reason: "" },
-    payments: [
-      { date: "2026-06-10", amount: 17500, receivedBy: "Admin", std: "9th" },
-    ],
-    inventory: [
-      { item: "Bag",   givenDate: "10 Jun 2026", given: true },
-      { item: "Uniform Set",      givenDate: "10 Jun 2026", given: true },
-      { item: "Book Set",    givenDate: "12 Jun 2026", given: true },
-      { item: "Notebook Set",    givenDate: "12 Jun 2026", given: true },
-      { item: "School Diary", givenDate: "10 Jun 2026", given: true },
-      { item: "ID Card",      givenDate: "15 Jun 2026", given: true },
-    ],
-  },
-  {
-    enrollment: "1003", name: "Rohan Mehta", fatherName: "Suresh",
-    std: "11th - Commerce", section: "A", rollNo: "1", mobile: "9654321098",
-    discount: { amount: 1000, reason: "Old Student" },
-    payments: [
-      { date: "2026-06-08", amount: 9000, receivedBy: "Admin", std: "11th - Commerce" },
-    ],
-    inventory: [
-      { item: "Bag",   givenDate: "08 Jun 2026", given: true  },
-      { item: "Uniform Set",      givenDate: "",            given: false },
-      { item: "Book Set",    givenDate: "10 Jun 2026", given: true  },
-      { item: "Notebook Set",    givenDate: "",            given: false },
-      { item: "School Diary", givenDate: "",            given: false },
-      { item: "ID Card",      givenDate: "15 Jun 2026", given: true  },
-    ],
-  },
-  {
-    enrollment: "1004", name: "Sneha Desai", fatherName: "Kishore",
-    std: "8th", section: "C", rollNo: "1", mobile: "9543210987",
-    discount: { amount: 2500, reason: "3 Kids" },
-    payments: [],
-    inventory: [
-      { item: "Bag",   givenDate: "", given: false },
-      { item: "Uniform Set",      givenDate: "", given: false },
-      { item: "Book Set",    givenDate: "", given: false },
-      { item: "Notebook Set",    givenDate: "", given: false },
-      { item: "School Diary", givenDate: "", given: false },
-      { item: "ID Card",      givenDate: "", given: false },
-    ],
-  },
-  {
-    enrollment: "1005", name: "Dev Joshi", fatherName: "Prakash",
-    std: "JR.KG", section: "A", rollNo: "1", mobile: "9432109876",
-    discount: { amount: 0, reason: "" },
-    payments: [
-      { date: "2026-06-12", amount: 14500, receivedBy: "Admin", std: "JR.KG" },
-    ],
-    inventory: [
-      { item: "Bag",   givenDate: "12 Jun 2026", given: true  },
-      { item: "Uniform Set",      givenDate: "12 Jun 2026", given: true  },
-      { item: "Book Set",    givenDate: "",            given: false },
-      { item: "Notebook Set",    givenDate: "",            given: false },
-      { item: "School Diary", givenDate: "12 Jun 2026", given: true  },
-      { item: "ID Card",      givenDate: "20 Jun 2026", given: true  },
-    ],
-  },
-];
-
 const todayStr = new Date().toISOString().split("T")[0];
-
-// ── Session helpers ─────────────────────────────────────────────
-function getCurrentSession() {
-  const now = new Date();
-  const yr  = now.getFullYear();
-  const m   = now.getMonth() + 1;
-  const s   = m >= 4 ? yr : yr - 1;
-  return `${s}-${String(s + 1).slice(2)}`;
-}
-function buildSessionsList() {
-  const now = new Date();
-  const yr  = now.getFullYear();
-  const m   = now.getMonth() + 1;
-  const s   = m >= 4 ? yr : yr - 1;
-  return [0, 1, 2].map(i => { const x = s - i; return `${x}-${String(x + 1).slice(2)}`; });
-}
-const CURRENT_SESSION = getCurrentSession();
 
 const CLASS_ORDER = [
   "JR.KG","SR.KG","Balvatika",
@@ -137,30 +45,6 @@ const CLASS_ORDER = [
   "6th","7th","8th","9th","10th",
   "11th - Commerce","12th - Commerce",
 ];
-const ACTIVE_CLASS_MAP = {
-  "JR KG":"JR.KG","SR KG":"SR.KG","Balvatika":"Balvatika",
-  "1st":"1st","2nd":"2nd","3rd":"3rd","4th":"4th","5th":"5th",
-  "6th":"6th","7th":"7th","8th":"8th","9th":"9th","10th":"10th",
-  "11th Commerce":"11th - Commerce","12th Commerce":"12th - Commerce",
-};
-
-// Summary from Zustand store student (has fees.total, fees.paid, fees.discount)
-function calcStoreSummary(student, feesMap) {
-  const totalFees     = getStructureFee(student.std, feesMap);
-  const discount      = student.fees?.discount ?? 0;
-  const actualFees    = Math.max(totalFees - discount, 0);
-  const classPayments = (student.payments ?? []).filter(p => !p.std || p.std === student.std);
-  const paidFees      = student.fees?.paid ?? 0;
-  const dueFees       = Math.max(actualFees - paidFees, 0);
-  return { totalFees, discount, actualFees, paidFees, dueFees, classPayments };
-}
-function getStorePaymentStatus(student, feesMap) {
-  const { paidFees, dueFees, actualFees } = calcStoreSummary(student, feesMap);
-  if (paidFees === 0 && actualFees > 0) return "Not Paid";
-  if (dueFees <= 0) return "Full Paid";
-  return "Partial Paid";
-}
-
 // ── Helpers ────────────────────────────────────────────────────
 function getStructureFee(std, feesMap) {
   return (feesMap ?? DEFAULT_FEES)[std] ?? 0;
@@ -519,30 +403,24 @@ function ViewModal({ student, onClose, feesMap }) {
 
 // ── Main Page ──────────────────────────────────────────────────
 export default function FeesPage() {
-  const searchParams           = useSearchParams();
-  const templates              = useStore(s => s.feeReminderTemplates);
-  const addFeePayment          = useStore(s => s.addFeePayment);
-  const storeStudents          = useStore(s => s.students);
-  const setStoreStudents       = useStore(s => s.setStudents);
-  const activeClasses          = useStore(s => s.activeClasses);
-  const sessionFeesStructure   = useStore(s => s.sessionFeesStructure);
-  const setSessionFeesStructure = useStore(s => s.setSessionFeesStructure);
-  const [students,      setStudents]      = useState(INITIAL_STUDENTS);
+  const searchParams = useSearchParams();
+  const templates    = useStore(s => s.feeReminderTemplates);
+  const [activeClassNames, setActiveClassNames] = useState([]);
+
+  // ── DB state ────────────────────────────────────────────────
+  const [students,       setStudents]      = useState([]);
+  const [loading,        setLoading]       = useState(true);
+  const [loadError,      setLoadError]     = useState(null);
+  const [academicYears,  setAcademicYears] = useState([]);
+  const [selectedYearId, setSelectedYearId] = useState(null);
+  const [feeSession,     setFeeSession]    = useState("");
+  const [feesMap,        setFeesMap]       = useState(DEFAULT_FEES);
+
   const [notifyStudent, setNotifyStudent] = useState(null);
   const [viewStudent,   setViewStudent]   = useState(null);
 
-  // Session
-  const sessions        = buildSessionsList();
-  const [feeSession,    setFeeSession]   = useState(CURRENT_SESSION);
-  const sessionStudents = storeStudents.filter(s => s.session === feeSession && s.status !== "Left");
-
-  // Session-specific fees structure
-  const currentFeesMap  = sessionFeesStructure[feeSession] ?? DEFAULT_FEES;
-
-
-  // Active class list (from Settings)
   const stdOrder   = CLASS_ORDER;
-  const allStdList = CLASS_ORDER.filter(c => activeClasses.some(ac => ACTIVE_CLASS_MAP[ac] === c));
+  const allStdList = CLASS_ORDER.filter(c => activeClassNames.includes(c));
 
   // Top toggle cards
   const [structureOpen, setStructureOpen] = useState(false);
@@ -551,111 +429,163 @@ export default function FeesPage() {
   // Fee Entry
   const [entryStd,         setEntryStd]         = useState("");
   const [entryRoll,        setEntryRoll]         = useState("");
-
-  // Auto-select student when redirected from Add Student or Promote
-  useEffect(() => {
-    const enrollment = searchParams.get("enrollment");
-    const std      = searchParams.get("std");
-    const roll     = searchParams.get("roll");
-    const promoted = searchParams.get("promoted");
-
-    if (enrollment && promoted) {
-      // Promoted redirect: read discount from Zustand store (stored at promotion time)
-      if (std) {
-        const storeRec = storeStudents.find(s => s.enrollment === enrollment && s.session && !s.promotedTo);
-        const discAmt    = storeRec?.fees?.discount ?? 0;
-        const discReason = storeRec?.fees?.discountReason ?? "";
-        setStudents(prev => prev.map(s =>
-          s.enrollment === enrollment
-            ? {
-                ...s,
-                std,
-                rollNo: roll ?? s.rollNo,
-                payments: [],
-                inventory: masterItems.map(name => ({ item: name, given: false, givenDate: "" })),
-                discount: { amount: discAmt, reason: discReason },
-              }
-            : s
-        ));
-        setEntryStd(std);
-        if (roll) setEntryRoll(roll);
-      }
-    } else if (enrollment) {
-      const storeStudent = storeStudents.find(s => s.enrollment === enrollment);
-      if (storeStudent) {
-        setEntryStd(storeStudent.std);
-        setEntryRoll(storeStudent.rollNo);
-      } else if (std) {
-        setEntryStd(std);
-        if (roll) setEntryRoll(roll);
-      }
-    } else {
-      if (std)  setEntryStd(std);
-      if (roll) setEntryRoll(roll);
-    }
-
-    if (std || enrollment) {
-      setTimeout(() => {
-        document.getElementById("fee-entry-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 300);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [newAmt,           setNewAmt]            = useState("");
   const [newDate,          setNewDate]           = useState(todayStr);
   const [newAdmin,         setNewAdmin]          = useState("");
   const [newAdminCustom,   setNewAdminCustom]    = useState("");
   const [pendingInventory, setPendingInventory]  = useState(new Set());
+  const [saving,           setSaving]            = useState(false);
 
-  // stdList = all active classes (from Settings), in class order
-  const stdList     = allStdList.length > 0
+  // Overview filters
+  const [filterClass,  setFilterClass]  = useState("All Classes");
+  const [filterSearch, setFilterSearch] = useState("");
+  const [filterStatus, setFilterStatus] = useState("All");
+
+  // Reminder state
+  const [msgRecipient,       setMsgRecipient]      = useState("incomplete");
+  const [msgLastDate,        setMsgLastDate]        = useState(
+    () => new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0]
+  );
+  const [customMsg,          setCustomMsg]          = useState("");
+  const [selectedIncomplete, setSelectedIncomplete] = useState(new Set());
+  const [studentListOpen,    setStudentListOpen]    = useState(false);
+  const [reminderMsg,        setReminderMsg]        = useState("");
+
+  const autoSelectDone = useRef(false);
+
+  // ── Load academic years + active classes on mount ──────────
+  useEffect(() => {
+    supabase
+      .from("academic_years")
+      .select("id, label, is_current, start_date")
+      .order("start_date", { ascending: false })
+      .then(({ data }) => {
+        if (data?.length > 0) {
+          setAcademicYears(data);
+          const current = data.find(y => y.is_current) || data[0];
+          setSelectedYearId(current.id);
+          setFeeSession(current.label);
+        }
+      });
+    getActiveClasses().then(cls => setActiveClassNames(cls.map(c => c.name))).catch(() => {});
+  }, []);
+
+  // ── Load students + fee structure when year changes ─────────
+  useEffect(() => {
+    if (!selectedYearId) return;
+    setLoading(true);
+    Promise.all([
+      getStudentsForFees(selectedYearId),
+      getFeeStructure(selectedYearId),
+    ])
+      .then(([fetchedStudents, fetchedFees]) => {
+        setStudents(fetchedStudents);
+        setFeesMap(Object.keys(fetchedFees).length > 0 ? fetchedFees : DEFAULT_FEES);
+        setLoading(false);
+      })
+      .catch(err => { setLoadError(err.message); setLoading(false); });
+  }, [selectedYearId]);
+
+  // ── Init reminder selection once students load ──────────────
+  useEffect(() => {
+    if (!students.length) return;
+    const incomplete = students.filter(s => getPaymentStatus(s, feesMap) !== "Full Paid");
+    setSelectedIncomplete(new Set(incomplete.map(s => s.enrollment)));
+    const first = incomplete[0];
+    if (first) setReminderMsg(buildReminderMsg(first, msgLastDate, templates));
+  }, [students, feesMap]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Auto-select student from URL params (after students load) ─
+  useEffect(() => {
+    if (!students.length || autoSelectDone.current) return;
+    const enrollment = searchParams.get("enrollment");
+    const std        = searchParams.get("std");
+    const roll       = searchParams.get("roll");
+
+    if (enrollment) {
+      const found = students.find(s => s.enrollment === enrollment);
+      if (found) {
+        setEntryStd(found.std);
+        setEntryRoll(found.rollNo);
+      } else if (std) {
+        setEntryStd(std);
+        if (roll) setEntryRoll(roll);
+      }
+      setTimeout(() => {
+        document.getElementById("fee-entry-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 300);
+      autoSelectDone.current = true;
+    } else if (std) {
+      setEntryStd(std);
+      if (roll) setEntryRoll(roll);
+      setTimeout(() => {
+        document.getElementById("fee-entry-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 300);
+      autoSelectDone.current = true;
+    }
+  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Derived data ────────────────────────────────────────────
+  const stdList = allStdList.length > 0
     ? allStdList
-    : [...new Set(students.map((s) => s.std))].sort((a, b) => stdOrder.indexOf(a) - stdOrder.indexOf(b));
-  // rolls come from Zustand store students in the selected session + class
-  const rollsForStd  = sessionStudents
+    : [...new Set(students.map(s => s.std))].sort((a, b) => stdOrder.indexOf(a) - stdOrder.indexOf(b));
+
+  const rollsForStd = students
     .filter(s => s.std === entryStd)
     .map(s => s.rollNo)
     .sort((a, b) => parseInt(a) - parseInt(b));
-  const masterItems = useStore(s => s.studentInventoryItems);
 
-  // entry student — always from the store (session-scoped)
   const entryStudent = entryRoll
-    ? (() => {
-        const sr = sessionStudents.find(s => s.std === entryStd && s.rollNo === entryRoll);
-        if (!sr) return null;
-        return {
-          ...sr,
-          name:     sr.name ?? sr.studentName ?? "",
-          discount: { amount: sr.fees?.discount ?? 0, reason: sr.fees?.discountReason ?? "" },
-          payments: sr.payments ?? [],
-          inventory: masterItems.map(name => {
-            const isPending = (sr.pendingInventory ?? []).includes(name);
-            return { item: name, given: !isPending, givenDate: !isPending ? "Previously given" : "" };
-          }),
-        };
-      })()
+    ? students.find(s => s.std === entryStd && s.rollNo === entryRoll) || null
     : null;
+
   const allInvItems = entryStudent
-    ? masterItems
-        .map(name => entryStudent.inventory.find(i => i.item === name) || { item: name, givenDate: "", given: false })
-        .sort((a, b) => (b.given ? 1 : 0) - (a.given ? 1 : 0))
+    ? [...entryStudent.inventory].sort((a, b) => (b.given ? 1 : 0) - (a.given ? 1 : 0))
     : [];
   const pendingInvItems = allInvItems.filter(i => !i.given);
 
+  const filteredStudents = students.filter(s => {
+    const status = getPaymentStatus(s, feesMap);
+    return (
+      (filterClass  === "All Classes" || s.std === filterClass) &&
+      (!filterSearch || s.name.toLowerCase().includes(filterSearch.toLowerCase()) || s.rollNo.includes(filterSearch)) &&
+      (filterStatus === "All"         || status === filterStatus)
+    );
+  });
+
+  const incompleteStudents = students.filter(s => getPaymentStatus(s, feesMap) !== "Full Paid");
+
+  // ── Interaction helpers ─────────────────────────────────────
   const togglePendingItem = (item) => {
-    setPendingInventory((prev) => {
+    setPendingInventory(prev => {
       const next = new Set(prev);
       next.has(item) ? next.delete(item) : next.add(item);
       return next;
     });
   };
 
-  const handleSavePayment = () => {
+  const clearEntryStudent = () => {
+    setEntryStd(""); setEntryRoll("");
+    setNewAmt(""); setNewDate(todayStr); setNewAdmin(""); setNewAdminCustom("");
+    setPendingInventory(new Set());
+  };
+
+  const refreshStudents = async () => {
+    const [fresh, freshFees] = await Promise.all([
+      getStudentsForFees(selectedYearId),
+      getFeeStructure(selectedYearId),
+    ]);
+    setStudents(fresh);
+    if (Object.keys(freshFees).length > 0) setFeesMap(freshFees);
+  };
+
+  const handleSavePayment = async () => {
     const receivedBy = newAdmin === "Other" ? newAdminCustom.trim() : newAdmin;
     if (!entryStudent || !newAmt || !receivedBy) {
       alert("Please fill amount and received by.");
       return;
     }
-    const { dueFees } = calcStoreSummary(entryStudent, currentFeesMap);
+    const { dueFees } = calcSummary(entryStudent, feesMap);
     if (dueFees <= 0) {
       alert("All fees for this class are already paid. No further payment can be recorded.");
       return;
@@ -673,79 +603,55 @@ export default function FeesPage() {
       alert(`Amount ₹${amt.toLocaleString("en-IN")} exceeds the due balance of ₹${dueFees.toLocaleString("en-IN")}. Please enter a correct amount.`);
       return;
     }
-    const newPayment = { date: newDate, amount: amt, receivedBy, std: entryStudent.std };
-    setStoreStudents(prev => prev.map(s => {
-      if (s.enrollment !== entryStudent.enrollment || s.session !== entryStudent.session) return s;
-      return {
-        ...s,
-        fees: { ...s.fees, paid: (s.fees?.paid ?? 0) + amt },
-        payments: [...(s.payments ?? []), newPayment],
-      };
-    }));
-    addFeePayment({ date: newDate, amount: amt });
-    setNewAmt(""); setNewDate(todayStr); setNewAdmin(""); setNewAdminCustom("");
-    setPendingInventory(new Set());
-    alert("Payment recorded successfully!");
+    setSaving(true);
+    try {
+      await saveFeePayment(entryStudent._enrollmentId, entryStudent._studentId, {
+        amount:      amt,
+        paymentDate: newDate,
+        receivedBy,
+      });
+      await refreshStudents();
+      setNewAmt(""); setNewDate(todayStr); setNewAdmin(""); setNewAdminCustom("");
+      setPendingInventory(new Set());
+      alert("Payment recorded successfully!");
+    } catch (err) {
+      alert("Failed to save payment: " + err.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleSaveInventory = () => {
+  const handleSaveInventory = async () => {
     if (!entryStudent || pendingInventory.size === 0) {
       alert("Select at least one inventory item to mark as given.");
       return;
     }
-    setStoreStudents(prev => prev.map(s => {
-      if (s.enrollment !== entryStudent.enrollment || s.session !== entryStudent.session) return s;
-      const newPendingInv = (s.pendingInventory ?? []).filter(item => !pendingInventory.has(item));
-      return { ...s, pendingInventory: newPendingInv };
-    }));
-    setPendingInventory(new Set());
-    alert(`${pendingInventory.size} inventory item(s) marked as given!`);
+    const assignmentIds = entryStudent.inventory
+      .filter(i => pendingInventory.has(i.item) && i._assignmentId)
+      .map(i => i._assignmentId);
+    if (assignmentIds.length === 0) {
+      alert("No valid inventory assignments found. Items may not have been assigned at admission.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await markInventoryGiven(assignmentIds, todayStr);
+      await refreshStudents();
+      const count = pendingInventory.size;
+      setPendingInventory(new Set());
+      alert(`${count} inventory item(s) marked as given!`);
+    } catch (err) {
+      alert("Failed to update inventory: " + err.message);
+    } finally {
+      setSaving(false);
+    }
   };
-
-  const clearEntryStudent = () => {
-    setEntryStd(""); setEntryRoll("");
-    setNewAmt(""); setNewDate(todayStr); setNewAdmin("");
-    setPendingInventory(new Set());
-  };
-
-  // Fee Overview filters
-  const [filterClass,  setFilterClass]  = useState("All Classes");
-  const [filterSearch, setFilterSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState("All");
-
-  // Overview uses Zustand store students filtered by selected session
-  const filteredStudents = sessionStudents.filter((s) => {
-    const status = getStorePaymentStatus(s, currentFeesMap);
-    return (
-      (filterClass  === "All Classes" || s.std === filterClass) &&
-      (!filterSearch || s.name.toLowerCase().includes(filterSearch.toLowerCase()) || s.rollNo.includes(filterSearch)) &&
-      (filterStatus === "All"         || status === filterStatus)
-    );
-  });
-
-  // Send Reminder (incomplete first by default)
-  const [msgRecipient,       setMsgRecipient]      = useState("incomplete");
-  const [msgLastDate,        setMsgLastDate]        = useState(
-    () => new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0]
-  );
-  const [customMsg,          setCustomMsg]          = useState("");
-  const [selectedIncomplete, setSelectedIncomplete] = useState(
-    () => new Set(INITIAL_STUDENTS.filter((s) => calcSummary(s).dueFees > 0).map((s) => s.enrollment))
-  );
-  const [studentListOpen,    setStudentListOpen]    = useState(false);
-  const [reminderMsg,        setReminderMsg]        = useState(() => {
-    const initDate = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
-    const first    = INITIAL_STUDENTS.find((s) => calcSummary(s).dueFees > 0);
-    return first ? buildReminderMsg(first, initDate, templates) : "";
-  });
-
-  const incompleteStudents = sessionStudents.filter((s) => getStorePaymentStatus(s, currentFeesMap) !== "Full Paid");
 
   const toggleIncomplete = (enr) => {
-    setSelectedIncomplete((prev) => {
+    setSelectedIncomplete(prev => {
       const next = new Set(prev);
       next.has(enr) ? next.delete(enr) : next.add(enr);
-      const newFirst = incompleteStudents.find((s) => next.has(s.enrollment));
+      const newFirst = incompleteStudents.find(s => next.has(s.enrollment));
       if (newFirst) setReminderMsg(buildReminderMsg(newFirst, msgLastDate, templates));
       return next;
     });
@@ -753,7 +659,7 @@ export default function FeesPage() {
 
   const handleReminderDateChange = (d) => {
     setMsgLastDate(d);
-    const first = incompleteStudents.find((s) => selectedIncomplete.has(s.enrollment));
+    const first = incompleteStudents.find(s => selectedIncomplete.has(s.enrollment));
     if (first) setReminderMsg(buildReminderMsg(first, d, templates));
   };
 
@@ -769,16 +675,32 @@ export default function FeesPage() {
 
   const todayDisplay = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" });
 
+  if (loadError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <p className="text-red-500 font-medium text-sm">{loadError}</p>
+        <button onClick={() => window.location.reload()} className="text-school-navy text-sm underline">Retry</button>
+      </div>
+    );
+  }
+
   return (
     <>
       {notifyStudent && (
         <NotificationModal student={notifyStudent} onClose={() => setNotifyStudent(null)} />
       )}
       {viewStudent && (
-        <ViewModal student={viewStudent} onClose={() => setViewStudent(null)} feesMap={currentFeesMap} />
+        <ViewModal student={viewStudent} onClose={() => setViewStudent(null)} feesMap={feesMap} />
       )}
 
       <div className="space-y-6">
+
+        {loading && (
+          <div className="flex items-center gap-3 bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 text-sm text-blue-700">
+            <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin flex-shrink-0" />
+            Loading fees data…
+          </div>
+        )}
 
         {/* ── Page Header ── */}
         <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -791,11 +713,18 @@ export default function FeesPage() {
             <label className="text-xs font-bold text-gray-500 uppercase tracking-wide whitespace-nowrap">Session</label>
             <select
               value={feeSession}
-              onChange={e => { setFeeSession(e.target.value); setEntryStd(""); setEntryRoll(""); }}
+              onChange={e => {
+                const label = e.target.value;
+                const yr = academicYears.find(y => y.label === label);
+                setFeeSession(label);
+                if (yr) setSelectedYearId(yr.id);
+                setEntryStd(""); setEntryRoll("");
+                autoSelectDone.current = false;
+              }}
               className="px-3 py-2 border border-gray-200 rounded-xl text-sm font-semibold text-gray-800 bg-white focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
             >
-              {sessions.map(s => (
-                <option key={s} value={s}>{s}{s === CURRENT_SESSION ? " (Current)" : ""}</option>
+              {academicYears.map(y => (
+                <option key={y.id} value={y.label}>{y.label}{y.is_current ? " (Current)" : ""}</option>
               ))}
             </select>
           </div>
@@ -831,7 +760,7 @@ export default function FeesPage() {
                   {CLASS_ORDER.map((cls) => (
                     <div key={cls} className="bg-white px-4 py-3">
                       <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide">{cls}</p>
-                      <p className="text-sm font-bold text-school-navy mt-0.5">₹{(currentFeesMap[cls] ?? 0).toLocaleString("en-IN")}</p>
+                      <p className="text-sm font-bold text-school-navy mt-0.5">₹{(feesMap[cls] ?? 0).toLocaleString("en-IN")}</p>
                     </div>
                   ))}
                 </div>
@@ -920,7 +849,7 @@ export default function FeesPage() {
                         {studentListOpen && (
                           <div className="max-h-52 overflow-y-auto divide-y divide-gray-50">
                             {incompleteStudents.map((s) => {
-                              const { dueFees } = calcStoreSummary(s, currentFeesMap);
+                              const { dueFees } = calcSummary(s, feesMap);
                               const checked = selectedIncomplete.has(s.enrollment);
                               return (
                                 <div
@@ -1071,7 +1000,7 @@ export default function FeesPage() {
             )}
 
             {entryStudent && (() => {
-              const { totalFees, discount, actualFees, paidFees, dueFees, classPayments } = calcStoreSummary(entryStudent, currentFeesMap);
+              const { totalFees, discount, actualFees, paidFees, dueFees, classPayments } = calcSummary(entryStudent, feesMap);
               const isFullyPaid = dueFees <= 0;
               return (
                 <div className="space-y-4">
@@ -1211,10 +1140,11 @@ export default function FeesPage() {
                         <div className="px-4 py-3 bg-amber-50 border-t border-amber-100 flex justify-end">
                           <button
                             onClick={handleSaveInventory}
-                            className="inline-flex items-center gap-2 px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white text-sm font-semibold rounded-xl transition-colors"
+                            disabled={saving}
+                            className="inline-flex items-center gap-2 px-5 py-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white text-sm font-semibold rounded-xl transition-colors"
                           >
                             <Package className="w-4 h-4" />
-                            Save Inventory ({pendingInventory.size} item{pendingInventory.size !== 1 ? "s" : ""})
+                            {saving ? "Saving…" : `Save Inventory (${pendingInventory.size} item${pendingInventory.size !== 1 ? "s" : ""})`}
                           </button>
                         </div>
                       )}
@@ -1294,9 +1224,10 @@ export default function FeesPage() {
                         </button>
                         <button
                           onClick={handleSavePayment}
-                          className="inline-flex items-center gap-2 px-6 py-2.5 bg-school-navy hover:bg-school-navy-dark text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
+                          disabled={saving}
+                          className="inline-flex items-center gap-2 px-6 py-2.5 bg-school-navy hover:bg-school-navy-dark disabled:opacity-60 text-white text-sm font-semibold rounded-xl transition-colors shadow-sm"
                         >
-                          <Check className="w-4 h-4" /> Save Payment
+                          <Check className="w-4 h-4" /> {saving ? "Saving…" : "Save Payment"}
                         </button>
                       </div>
                     </div>
@@ -1374,8 +1305,8 @@ export default function FeesPage() {
                     </td>
                   </tr>
                 ) : filteredStudents.map((s) => {
-                  const { paidFees, dueFees } = calcStoreSummary(s, currentFeesMap);
-                  const status = getStorePaymentStatus(s, currentFeesMap);
+                  const { paidFees, dueFees } = calcSummary(s, feesMap);
+                  const status = getPaymentStatus(s, feesMap);
                   return (
                     <tr key={s.enrollment} className="hover:bg-gray-50 transition-colors">
                       <td className="px-4 py-3.5">

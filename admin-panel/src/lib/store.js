@@ -89,8 +89,9 @@ const useStore = create(
         "JR KG","SR KG","Balvatika",
         "1st","2nd","3rd","4th","5th","6th","7th","8th","9th",
       ],
-      activateClass:   (cls) => set(s => ({ activeClasses: s.activeClasses.includes(cls) ? s.activeClasses : [...s.activeClasses, cls] })),
-      deactivateClass: (cls) => set(s => ({ activeClasses: s.activeClasses.filter(c => c !== cls) })),
+      activateClass:    (cls)  => set(s => ({ activeClasses: s.activeClasses.includes(cls) ? s.activeClasses : [...s.activeClasses, cls] })),
+      deactivateClass:  (cls)  => set(s => ({ activeClasses: s.activeClasses.filter(c => c !== cls) })),
+      setActiveClasses: (list) => set({ activeClasses: list }),
 
       // ── Timetable ──────────────────────────────────────────────
       timetables: {},

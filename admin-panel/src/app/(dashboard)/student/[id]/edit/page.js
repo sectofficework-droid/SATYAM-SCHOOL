@@ -1,27 +1,20 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ChevronDown, Upload, X, Plus, FileText, ArrowLeft,
   Check, Camera, Lock, GraduationCap, AlertTriangle,
 } from "lucide-react";
-import useStore from "@/lib/store";
 import {
   isValidName, isValidPhone, isValidPincode, isValidAadhar,
   isValidPercentage, isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
+import { getStudentByEnrollment, updateStudent as svcUpdate } from "@/lib/studentService";
+import { getActiveClasses } from "@/lib/settingsService";
 
 // ── Options ────────────────────────────────────────────────────
 const CURRENT_SESSION = "2026-27";
-
-
-const standards = [
-  "JR.KG", "SR.KG", "Balvatika",
-  "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th",
-  "11th - Commerce",
-  "12th - Commerce",
-];
 const prevStandards = [
   "Nursery / KG", "1st", "2nd", "3rd", "4th", "5th",
   "6th", "7th", "8th", "9th", "10th", "11th", "12th",
@@ -46,33 +39,65 @@ const defaultDocTypes = [
   "Marksheet",
 ];
 
-// ── Dummy student data (form-ready format) ─────────────────────
-const studentEditDB = {
-  "1001": {
-    enrollment: "1001", session: "2025-26",
-    joinDate: "2025-06-01", std: "10th", section: "A", rollNo: "101",
-    firstName: "Arjun", lastName: "Patel",
-    fatherName: "Rajesh Patel", motherName: "Meena Patel",
-    dob: "2010-01-15", gender: "Male", religion: "Hindu", caste: "General",
-    motherTongue: "Gujarati", subCaste: "", height: "140", weight: "35",
-    roomPlotNo: "12, Block B", society: "Shree Society", landmark: "Near Bus Stand", area: "Varachha Road", pinCode: "395006",
-    mobile1: "9876543210", mobile2: "9876500000",
-    address: "Shree Society, Varachha Road, Surat - 395006",
-    placeOfBirth: "Surat",
-    lastSchoolName: "St. Xavier's Primary School", lastSchoolGrNo: "LS1001",
-    lastSchoolClass: "9th", lastSchoolMedium: "English", lastSchoolPlace: "Surat",
-    prevPercentage: "82%", prevAttendanceDays: "190", lastExamGiven: "Yes",
-    aadhar: "1234 5678 9012", aadharName: "Arjun Rajesh Patel",
-    udise: "24180100101", pen: "", apaar: "",
-    hasAadhar: true, hasSibling: false, siblings: [],
-    photo: null,
-    uploadedDocs: {
-      "Birth Certificate":   "birth_cert.pdf",
-      "Student Aadhar Card": "aadhar_student.jpg",
-      "Leaving Certificate": "leaving_cert.pdf",
-    },
-  },
-};
+// ── Map DB student to EditForm format ─────────────────────────
+function mapToEditForm(student) {
+  const uploadedDocs = {};
+  (student.documents || []).filter(d => d.uploaded).forEach(d => {
+    uploadedDocs[d.name] = d.file || d.name;
+  });
+  return {
+    _studentId:    student._studentId,
+    _enrollmentId: student._enrollmentId,
+    enrollment:    student.enrollment,
+    joinDate:      student.dateOfJoin || "",
+    std:           student.std || "",
+    section:       student.section || "",
+    rollNo:        student.rollNo || "",
+    firstName:     student.firstName || "",
+    lastName:      student.lastName || "",
+    fatherName:    student.fatherName || "",
+    motherName:    student.motherName || "",
+    dob:           student.dob || "",
+    gender:        student.gender || "",
+    religion:      student.religion || "Hindu",
+    caste:         student.caste || "General",
+    motherTongue:  student.motherTongue || "",
+    subCaste:      student.subCaste || "",
+    height:        student.height || "",
+    weight:        student.weight || "",
+    roomPlotNo:    student.roomPlotNo || "",
+    society:       student.society || "",
+    landmark:      student.landmark || "",
+    area:          student.area || "",
+    pinCode:       student.pinCode || "",
+    address:       student.address || "",
+    mobile1:       student.mobile || "",
+    mobile2:       student.mobile2 || "",
+    placeOfBirth:  student.placeOfBirth || "",
+    lastSchoolName:   student.lastSchoolName || "",
+    lastSchoolGrNo:   student.lastSchoolGrNo || "",
+    lastSchoolClass:  student.lastSchoolClass || "",
+    lastSchoolMedium: student.lastSchoolMedium || "",
+    lastSchoolPlace:  student.lastSchoolPlace || "",
+    prevPercentage:      student.prevPercentage || "",
+    prevAttendanceDays:  student.prevAttendanceDays || "",
+    lastExamGiven:       student.lastExamGiven || "No",
+    aadhar:       student.aadhar || "",
+    aadharName:   student.aadharName || "",
+    udise:        student.udise || "",
+    pen:          student.pen || "",
+    apaar:        student.apaar || "",
+    hasAadhar:    !!student.aadhar,
+    hasSibling:   (student.siblings?.length || 0) > 0,
+    siblings:     student.siblings?.map(sib => ({
+      id: sib.id || Date.now(),
+      name: sib.name || "",
+      cls: sib.cls || "",
+    })) || [],
+    uploadedDocs,
+    photo: student.photo || null,
+  };
+}
 
 // ── Helpers ────────────────────────────────────────────────────
 function normalizeAadhar(v) {
@@ -172,6 +197,12 @@ function ReadOnlyField({ label, value }) {
 
 // ── Edit Form — receives pre-loaded student ────────────────────
 function EditForm({ existing, id, router }) {
+  const [standards, setStandards] = useState([]);
+
+  useEffect(() => {
+    getActiveClasses().then(cls => setStandards(cls.map(c => c.name))).catch(() => {});
+  }, []);
+
   const [hasPrevSchool, setHasPrevSchool] = useState(!!(existing.lastSchoolName));
   const [hasSibling, setHasSibling] = useState(existing.hasSibling);
   const [siblings, setSiblings]     = useState(
@@ -201,7 +232,7 @@ function EditForm({ existing, id, router }) {
   const [customDocs, setCustomDocs]     = useState([]);
   const [docErrors, setDocErrors]       = useState({});
   const [errors, setErrors]             = useState({});
-  const students = useStore(s => s.students);
+  const [submitting, setSubmitting]     = useState(false);
   const [form, setForm] = useState({
     joinDate:         existing.joinDate,
     std:              existing.std,
@@ -307,13 +338,6 @@ function EditForm({ existing, id, router }) {
         errs.aadhar = "Aadhar number is required.";
       } else if (!isValidAadhar(rawAadhar)) {
         errs.aadhar = "Enter a valid 12-digit Aadhar number.";
-      } else if (
-        students.some(
-          (s) => String(s.enrollment) !== String(existing.enrollment) &&
-            isNonEmptyAadhar(s.aadhar) && normalizeAadhar(s.aadhar) === rawAadhar
-        )
-      ) {
-        errs.aadhar = "This Aadhar number is already registered to another student.";
       }
     }
 
@@ -328,15 +352,63 @@ function EditForm({ existing, id, router }) {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
+    let finalCaste = form.caste;
     if (form.caste !== "General" && !casteCertFile) {
-      setForm((p) => ({ ...p, caste: "General" }));
+      finalCaste = "General";
+      setForm(p => ({ ...p, caste: "General" }));
       alert("No caste certificate uploaded — category has been reset to General.");
     }
-    alert("Student profile updated successfully! (Dummy — will save to Supabase later)");
-    router.replace(`/student/${id}`);
+    const rawAadhar = form.aadharRaw !== undefined
+      ? form.aadharRaw
+      : normalizeAadhar(existing.aadhar);
+
+    setSubmitting(true);
+    try {
+      await svcUpdate(existing._studentId, {
+        grNo:         existing.grNo || "",
+        firstName:    form.firstName,
+        lastName:     form.lastName,
+        photo:        null,
+        fatherName:   form.fatherName,
+        motherName:   form.motherName,
+        mobile:       form.mobile1,
+        mobile2:      form.mobile2,
+        religion:     form.religion,
+        caste:        finalCaste,
+        subCaste:     form.subCaste,
+        motherTongue: form.motherTongue,
+        height:       form.height,
+        weight:       form.weight,
+        roomPlotNo:   form.roomPlotNo,
+        society:      form.society,
+        landmark:     form.landmark,
+        area:         form.area,
+        pinCode:      form.pinCode,
+        address:      form.address,
+        aadhar:       rawAadhar || null,
+        aadharName:   form.aadharName,
+        udise:        form.udise,
+        pen:          form.pen,
+        apaar:        form.apaar,
+        lastSchoolName:     hasPrevSchool ? form.lastSchoolName : "",
+        lastSchoolGrNo:     form.lastSchoolGrNo,
+        lastSchoolClass:    form.lastSchoolClass,
+        lastSchoolMedium:   form.lastSchoolMedium,
+        lastSchoolPlace:    form.lastSchoolPlace,
+        prevAttendanceDays: form.prevAttendanceDays,
+        lastExamGiven:      lastExamGiven ? "Yes" : "No",
+        prevPercentage:     form.prevPercentage,
+      });
+      alert("Student profile updated successfully!");
+      router.replace(`/student/${id}`);
+    } catch (err) {
+      alert("Failed to update: " + err.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -874,9 +946,10 @@ function EditForm({ existing, id, router }) {
         </button>
         <button
           type="submit"
-          className="px-8 py-2.5 rounded-xl bg-school-navy hover:bg-school-navy-dark text-white text-sm font-semibold transition-colors shadow-sm"
+          disabled={submitting}
+          className="px-8 py-2.5 rounded-xl bg-school-navy hover:bg-school-navy-dark text-white text-sm font-semibold transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          Save Changes
+          {submitting ? "Saving..." : "Save Changes"}
         </button>
       </div>
     </form>
@@ -885,19 +958,35 @@ function EditForm({ existing, id, router }) {
 
 // ── Page Entry Point ───────────────────────────────────────────
 export default function EditStudentPage() {
-  const { id } = useParams();
-  const router = useRouter();
+  const { id }     = useParams();
+  const router     = useRouter();
+  const [existing, setExisting] = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [loadErr,  setLoadErr]  = useState(null);
 
-  const existing = studentEditDB[id];
+  useEffect(() => {
+    if (!id) return;
+    getStudentByEnrollment(id)
+      .then(s => { setExisting(mapToEditForm(s)); setLoading(false); })
+      .catch(err => { setLoadErr(err.message); setLoading(false); });
+  }, [id]);
 
-  if (!existing) {
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <div className="w-10 h-10 border-4 border-school-navy/20 border-t-school-navy rounded-full animate-spin" />
+        <p className="text-gray-500 font-medium">Loading student data...</p>
+      </div>
+    );
+  }
+
+  if (loadErr || !existing) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <GraduationCap className="w-12 h-12 text-gray-200" />
-        <p className="text-gray-500 font-medium">Student not found</p>
-        <button onClick={() => router.back()} className="text-school-navy text-sm font-medium hover:underline">
-          Go Back
-        </button>
+        <p className="text-gray-500 font-medium">{loadErr ? "Failed to load student" : "Student not found"}</p>
+        {loadErr && <p className="text-xs text-red-400">{loadErr}</p>}
+        <button onClick={() => router.back()} className="text-school-navy text-sm font-medium hover:underline">Go Back</button>
       </div>
     );
   }

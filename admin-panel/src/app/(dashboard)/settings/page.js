@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import useStore from "@/lib/store";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -18,6 +18,12 @@ import {
   isNonEmpty, isValidEmail, isValidPhone, isValidPincode, isValidName,
   isValidAddressText, isValidLength, isPositiveAmount, isDateOnOrAfter, hasNoErrors,
 } from "@/lib/validators";
+import {
+  getSchoolProfile, saveSchoolProfile,
+  getAcademicYears, addAcademicYear, deleteAcademicYear, saveCurrentYear,
+  getFeeStructuresForYear, saveFeeStructuresForYear,
+  getClassesWithSections, setClassActiveInDB, insertSection, deleteSectionFromDB, updateSectionTeacher,
+} from "@/lib/settingsService";
 
 function FieldError({ msg }) {
   if (!msg) return null;
@@ -225,6 +231,25 @@ function SchoolProfileTab() {
   const [errors,   setErrors]   = useState({});
   const set = k => e => { setForm(p => ({ ...p, [k]: e.target.value })); setErrors(p => ({ ...p, [k]: "" })); };
 
+  useEffect(() => {
+    getSchoolProfile().then(p => {
+      if (!p) return;
+      setForm({
+        name:    p.name    || DEF_SCHOOL.name,
+        address: p.address || DEF_SCHOOL.address,
+        city:    p.city    || DEF_SCHOOL.city,
+        state:   p.state   || DEF_SCHOOL.state,
+        pin:     p.pincode || DEF_SCHOOL.pin,
+        phone:   p.phone   || DEF_SCHOOL.phone,
+        email:   p.email   || DEF_SCHOOL.email,
+        board:   p.board   || DEF_SCHOOL.board,
+        medium:  p.medium  || DEF_SCHOOL.medium,
+        udise:   p.udise   || DEF_SCHOOL.udise,
+        website: p.website || DEF_SCHOOL.website,
+      });
+    }).catch(() => {});
+  }, []);
+
   function startEdit() { setBackup({ ...form }); setEditMode(true); setErrors({}); }
   function cancel()    { setForm(backup); setEditMode(false); setErrors({}); }
 
@@ -242,11 +267,16 @@ function SchoolProfileTab() {
     return e;
   }
 
-  function save() {
+  async function save() {
     const e = validate();
     setErrors(e);
     if (!hasNoErrors(e)) return;
-    setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2500);
+    try {
+      await saveSchoolProfile(form);
+      setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2500);
+    } catch {
+      setErrors(prev => ({ ...prev, _save: "Save failed. Try again." }));
+    }
   }
 
   return (
@@ -345,7 +375,7 @@ function SchoolProfileTab() {
 function AcademicYearTab() {
   const setReadmissionDate = useStore(s => s.setReadmissionDate);
 
-  const [yearsList, setYearsList] = useState(INIT_YEARS);
+  const [yearsData, setYearsData] = useState([]); // [{id, label, is_current, admission_date, readmission_date}]
   const [form,      setForm]      = useState(DEF_YEAR);
   const [saved,     setSaved]     = useState(false);
   const [editMode,  setEditMode]  = useState(false);
@@ -353,11 +383,25 @@ function AcademicYearTab() {
   const [newYear,   setNewYear]   = useState("");
   const [addError,  setAddError]  = useState("");
   const [dateError, setDateError] = useState("");
+  const [saving,    setSaving]    = useState(false);
 
+  const yearsList = yearsData.map(y => y.label);
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
+  useEffect(() => {
+    getAcademicYears().then(years => {
+      setYearsData(years);
+      const cur = years.find(y => y.is_current) || years[years.length - 1];
+      if (cur) setForm({
+        current:          cur.label,
+        newAdmissionDate: cur.admission_date   || "",
+        readmissionDate:  cur.readmission_date || "",
+      });
+    }).catch(() => {});
+  }, []);
+
   function startEdit() {
-    setBackup({ form: { ...form }, yearsList: [...yearsList] });
+    setBackup({ form: { ...form }, yearsData: yearsData.map(y => ({ ...y })) });
     setEditMode(true);
     setNewYear("");
     setAddError("");
@@ -365,28 +409,42 @@ function AcademicYearTab() {
 
   function cancel() {
     setForm(backup.form);
-    setYearsList(backup.yearsList);
+    setYearsData(backup.yearsData);
     setNewYear("");
     setAddError("");
     setDateError("");
     setEditMode(false);
   }
 
-  function save() {
+  async function save() {
     if (form.newAdmissionDate && form.readmissionDate && !isDateOnOrAfter(form.readmissionDate, form.newAdmissionDate)) {
       setDateError("Re-admission date must be on or after the new admission start date.");
       return;
     }
     setDateError("");
-    setReadmissionDate(form.readmissionDate);
-    setSaved(true);
-    setEditMode(false);
-    setNewYear("");
-    setAddError("");
-    setTimeout(() => setSaved(false), 2500);
+    setSaving(true);
+    try {
+      const yr = yearsData.find(y => y.label === form.current);
+      if (yr) {
+        await saveCurrentYear(yr.id, { admissionDate: form.newAdmissionDate, readmissionDate: form.readmissionDate });
+        setYearsData(prev => prev.map(y => ({
+          ...y,
+          is_current:       y.id === yr.id,
+          admission_date:   y.id === yr.id ? form.newAdmissionDate : y.admission_date,
+          readmission_date: y.id === yr.id ? form.readmissionDate  : y.readmission_date,
+        })));
+      }
+      setReadmissionDate(form.readmissionDate);
+      setSaved(true);
+      setEditMode(false);
+      setNewYear("");
+      setAddError("");
+      setTimeout(() => setSaved(false), 2500);
+    } catch { /* silently fail */ }
+    finally { setSaving(false); }
   }
 
-  function addYear() {
+  async function addYear() {
     const trimmed = newYear.trim();
     if (!trimmed) return;
     if (!/^\d{4}-\d{2}$/.test(trimmed)) {
@@ -404,14 +462,26 @@ function AcademicYearTab() {
       setAddError("Year already exists.");
       return;
     }
-    setYearsList(prev => [...prev, trimmed].sort());
-    setNewYear("");
-    setAddError("");
+    try {
+      const row = await addAcademicYear(trimmed);
+      setYearsData(prev => [...prev, row].sort((a, b) => a.label.localeCompare(b.label)));
+      setNewYear("");
+      setAddError("");
+    } catch {
+      setAddError("Failed to add year. Try again.");
+    }
   }
 
-  function removeYear(y) {
-    if (y === form.current) return;
-    setYearsList(prev => prev.filter(yr => yr !== y));
+  async function removeYear(label) {
+    if (label === form.current) return;
+    const yr = yearsData.find(y => y.label === label);
+    if (!yr) return;
+    try {
+      await deleteAcademicYear(yr.id);
+      setYearsData(prev => prev.filter(y => y.id !== yr.id));
+    } catch {
+      setAddError("Failed to remove year. It may have student data.");
+    }
   }
 
   const fmt = d => d ? new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"long",year:"numeric"}) : "—";
@@ -534,65 +604,52 @@ function AcademicYearTab() {
 }
 
 // ── Tab: Fee Structure ─────────────────────────────────────────────────────────
-const FEE_COL_KEYS = ["tuition","admission","transport","lab","sports","library"];
-
-function buildDefaultRows() {
-  return CLASSES.map(cls => {
-    const base = DEF_FEE.find(r => r.cls === cls);
-    const tuition = base ? FEE_COL_KEYS.reduce((s, k) => s + base[k], 0) : 0;
-    return { cls, tuition, uniform: 1500 };
-  });
-}
-
-const TOTALS_2026_27 = {
-  "JR KG":           14500,
-  "SR KG":           14500,
-  "Balvatika":       15000,
-  "1st":             15500,
-  "2nd":             15700,
-  "3rd":             15900,
-  "4th":             16200,
-  "5th":             16500,
-  "6th":             16800,
-  "7th":             17000,
-  "8th":             17300,
-  "9th":             17500,
-  "10th":            18000,
-  "11th Commerce":   19000,
-  "12th Commerce":   19000,
-};
-
-function buildRows2026_27() {
-  return CLASSES.map(cls => {
-    const total   = TOTALS_2026_27[cls] ?? 0;
-    const uniform = 1500;
-    return { cls, tuition: total - uniform, uniform };
-  });
-}
-
 function FeeStructureTab() {
-  const setUniformFeesStore      = useStore(s => s.setUniformFees);
-  const storedOldDiscount        = useStore(s => s.oldStudentDiscount);
+  const setUniformFeesStore        = useStore(s => s.setUniformFees);
   const setOldStudentDiscountStore = useStore(s => s.setOldStudentDiscount);
 
-  const [selectedYear, setSelectedYear] = useState("2026-27");
-  const [feeData,      setFeeData]      = useState(() => {
-    const init = {};
-    INIT_YEARS.forEach(y => {
-      init[y] = y === "2026-27" ? buildRows2026_27() : buildDefaultRows();
-    });
-    return init;
-  });
+  const [years,          setYears]          = useState([]);
+  const [allClasses,     setAllClasses]     = useState([]);
+  const [selectedYearId, setSelectedYearId] = useState(null);
+  const [rows,           setRows]           = useState([]); // [{classId, cls, tuition, uniform}]
+  const [loadingRows,    setLoadingRows]    = useState(false);
   const [editMode,       setEditMode]       = useState(false);
   const [backup,         setBackup]         = useState(null);
   const [editing,        setEditing]        = useState(null);
   const [saved,          setSaved]          = useState(false);
   const [bulkUniform,    setBulkUniform]    = useState("");
-  const [oldDiscount,    setOldDiscount]    = useState(() => storedOldDiscount ?? 1000);
-
-  const rows = feeData[selectedYear] ?? buildDefaultRows();
-
+  const [oldDiscount,    setOldDiscount]    = useState(1000);
   const backupDiscountRef = useRef(null);
+
+  // Load years + class list on mount
+  useEffect(() => {
+    Promise.all([getAcademicYears(), getClassesWithSections()]).then(([yrs, cls]) => {
+      setYears(yrs);
+      setAllClasses(cls);
+      const cur = yrs.find(y => y.is_current) || yrs[yrs.length - 1];
+      if (cur) setSelectedYearId(cur.id);
+    }).catch(() => {});
+  }, []);
+
+  // Load fee structures when year or allClasses changes
+  useEffect(() => {
+    if (!selectedYearId || allClasses.length === 0) return;
+    setLoadingRows(true);
+    getFeeStructuresForYear(selectedYearId).then(fsRows => {
+      if (fsRows.length > 0) {
+        setRows(fsRows.map(r => ({
+          classId: r.class_id,
+          cls:     r.classes?.name || "",
+          tuition: Number(r.tuition_amount) || 0,
+          uniform: Number(r.uniform_amount) || 0,
+        })));
+        setOldDiscount(Number(fsRows[0].old_student_discount) || 1000);
+      } else {
+        setRows(allClasses.map(c => ({ classId: c.id, cls: c.name, tuition: 0, uniform: 0 })));
+        setOldDiscount(1000);
+      }
+    }).catch(() => {}).finally(() => setLoadingRows(false));
+  }, [selectedYearId, allClasses]);
 
   function startEdit() {
     setBackup(rows.map(r => ({ ...r })));
@@ -602,18 +659,21 @@ function FeeStructureTab() {
   }
 
   function cancel() {
-    setFeeData(p => ({ ...p, [selectedYear]: backup }));
+    setRows(backup);
     setOldDiscount(backupDiscountRef.current);
     setEditing(null);
     setBulkUniform("");
     setEditMode(false);
   }
 
-  function save() {
-    const map = {};
-    rows.forEach(r => { map[r.cls] = r.uniform; });
-    setUniformFeesStore(map);
-    setOldStudentDiscountStore(oldDiscount);
+  async function save() {
+    try {
+      await saveFeeStructuresForYear(selectedYearId, rows, oldDiscount);
+      const uniformMap = {};
+      rows.forEach(r => { uniformMap[r.cls] = r.uniform; });
+      setUniformFeesStore(uniformMap);
+      setOldStudentDiscountStore(oldDiscount);
+    } catch { /* silently fail */ }
     setEditing(null);
     setBulkUniform("");
     setSaved(true);
@@ -624,28 +684,14 @@ function FeeStructureTab() {
   function applyBulkUniform() {
     const num = parseInt(bulkUniform);
     if (!isPositiveAmount(num, 100000)) return;
-    setFeeData(p => ({
-      ...p,
-      [selectedYear]: p[selectedYear].map(r => ({ ...r, uniform: num })),
-    }));
+    setRows(prev => prev.map(r => ({ ...r, uniform: num })));
     setBulkUniform("");
   }
 
   function setCell(cls, key, val) {
     const num = parseInt(val) || 0;
     const clamped = Math.min(Math.max(num, 0), 1000000);
-    setFeeData(p => ({
-      ...p,
-      [selectedYear]: p[selectedYear].map(r => r.cls === cls ? { ...r, [key]: clamped } : r),
-    }));
-  }
-
-  function handleYearChange(y) {
-    if (editMode) return;
-    if (!feeData[y]) {
-      setFeeData(p => ({ ...p, [y]: buildDefaultRows() }));
-    }
-    setSelectedYear(y);
+    setRows(prev => prev.map(r => r.cls === cls ? { ...r, [key]: clamped } : r));
   }
 
   return (
@@ -661,16 +707,15 @@ function FeeStructureTab() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            {/* Year selector */}
             <div className="flex items-center gap-2">
               <Calendar className="w-4 h-4 text-gray-400 flex-shrink-0"/>
               <select
                 className="border border-gray-200 rounded-xl px-3 py-2 text-sm font-semibold text-school-navy focus:outline-none focus:ring-2 focus:ring-school-navy/20 cursor-pointer disabled:opacity-50"
-                value={selectedYear}
-                onChange={e => handleYearChange(e.target.value)}
+                value={selectedYearId || ""}
+                onChange={e => { if (!editMode) setSelectedYearId(e.target.value); }}
                 disabled={editMode}
               >
-                {INIT_YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                {years.map(y => <option key={y.id} value={y.id}>{y.label}</option>)}
               </select>
             </div>
             <EditBar editMode={editMode} saved={saved} onEdit={startEdit} onSave={save} onCancel={cancel}/>
@@ -712,74 +757,80 @@ function FeeStructureTab() {
 
         {/* Table */}
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-school-navy text-white">
-                <th className="px-4 py-3 text-left font-semibold text-xs whitespace-nowrap">Class</th>
-                <th className="px-4 py-3 text-right font-semibold text-xs whitespace-nowrap">Tuition Fees</th>
-                <th className="px-4 py-3 text-right font-semibold text-xs whitespace-nowrap">Uniform Fees</th>
-                <th className="px-4 py-3 text-right font-semibold text-xs whitespace-nowrap">Total Fees</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, idx) => {
-                const total   = row.tuition + row.uniform;
-                const isEven  = idx % 2 === 0;
-                return (
-                  <tr key={row.cls} className={`border-b border-gray-100 transition-colors ${isEven ? "bg-white" : "bg-gray-50/40"} ${editMode ? "hover:bg-blue-50/20" : ""}`}>
-                    <td className="px-4 py-2.5">
-                      <span className="font-semibold text-school-navy text-xs">{row.cls}</span>
-                    </td>
+          {loadingRows ? (
+            <div className="flex items-center justify-center py-12 text-gray-400 text-sm">
+              Loading fee structure…
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-school-navy text-white">
+                  <th className="px-4 py-3 text-left font-semibold text-xs whitespace-nowrap">Class</th>
+                  <th className="px-4 py-3 text-right font-semibold text-xs whitespace-nowrap">Tuition Fees</th>
+                  <th className="px-4 py-3 text-right font-semibold text-xs whitespace-nowrap">Uniform Fees</th>
+                  <th className="px-4 py-3 text-right font-semibold text-xs whitespace-nowrap">Total Fees</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, idx) => {
+                  const total  = row.tuition + row.uniform;
+                  const isEven = idx % 2 === 0;
+                  return (
+                    <tr key={row.cls} className={`border-b border-gray-100 transition-colors ${isEven ? "bg-white" : "bg-gray-50/40"} ${editMode ? "hover:bg-blue-50/20" : ""}`}>
+                      <td className="px-4 py-2.5">
+                        <span className="font-semibold text-school-navy text-xs">{row.cls}</span>
+                      </td>
 
-                    {/* Tuition — editable */}
-                    <td className="px-4 py-2 text-right">
-                      {editMode && editing === `${row.cls}-tuition` ? (
-                        <input
-                          type="number" min="0" autoFocus
-                          className="w-28 border border-school-navy rounded-lg px-2 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-school-navy"
-                          value={row.tuition}
-                          onChange={e => setCell(row.cls, "tuition", e.target.value)}
-                          onBlur={() => setEditing(null)}
-                        />
-                      ) : editMode ? (
-                        <button className="text-xs text-gray-700 hover:text-school-navy hover:underline font-medium w-28 text-right"
-                          onClick={() => setEditing(`${row.cls}-tuition`)}>
-                          ₹{row.tuition.toLocaleString("en-IN")}
-                        </button>
-                      ) : (
-                        <span className="text-xs text-gray-700 font-medium">₹{row.tuition.toLocaleString("en-IN")}</span>
-                      )}
-                    </td>
+                      {/* Tuition — editable */}
+                      <td className="px-4 py-2 text-right">
+                        {editMode && editing === `${row.cls}-tuition` ? (
+                          <input
+                            type="number" min="0" autoFocus
+                            className="w-28 border border-school-navy rounded-lg px-2 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-school-navy"
+                            value={row.tuition}
+                            onChange={e => setCell(row.cls, "tuition", e.target.value)}
+                            onBlur={() => setEditing(null)}
+                          />
+                        ) : editMode ? (
+                          <button className="text-xs text-gray-700 hover:text-school-navy hover:underline font-medium w-28 text-right"
+                            onClick={() => setEditing(`${row.cls}-tuition`)}>
+                            ₹{row.tuition.toLocaleString("en-IN")}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-gray-700 font-medium">₹{row.tuition.toLocaleString("en-IN")}</span>
+                        )}
+                      </td>
 
-                    {/* Uniform — editable, amber tint */}
-                    <td className="px-4 py-2 text-right">
-                      {editMode && editing === `${row.cls}-uniform` ? (
-                        <input
-                          type="number" min="0" autoFocus
-                          className="w-28 border border-amber-500 rounded-lg px-2 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-amber-400"
-                          value={row.uniform}
-                          onChange={e => setCell(row.cls, "uniform", e.target.value)}
-                          onBlur={() => setEditing(null)}
-                        />
-                      ) : editMode ? (
-                        <button className="text-xs text-amber-700 hover:text-amber-600 hover:underline font-semibold w-28 text-right"
-                          onClick={() => setEditing(`${row.cls}-uniform`)}>
-                          ₹{row.uniform.toLocaleString("en-IN")}
-                        </button>
-                      ) : (
-                        <span className="text-xs text-amber-700 font-semibold">₹{row.uniform.toLocaleString("en-IN")}</span>
-                      )}
-                    </td>
+                      {/* Uniform — editable, amber tint */}
+                      <td className="px-4 py-2 text-right">
+                        {editMode && editing === `${row.cls}-uniform` ? (
+                          <input
+                            type="number" min="0" autoFocus
+                            className="w-28 border border-amber-500 rounded-lg px-2 py-1 text-xs text-right focus:outline-none focus:ring-2 focus:ring-amber-400"
+                            value={row.uniform}
+                            onChange={e => setCell(row.cls, "uniform", e.target.value)}
+                            onBlur={() => setEditing(null)}
+                          />
+                        ) : editMode ? (
+                          <button className="text-xs text-amber-700 hover:text-amber-600 hover:underline font-semibold w-28 text-right"
+                            onClick={() => setEditing(`${row.cls}-uniform`)}>
+                            ₹{row.uniform.toLocaleString("en-IN")}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-amber-700 font-semibold">₹{row.uniform.toLocaleString("en-IN")}</span>
+                        )}
+                      </td>
 
-                    {/* Total — auto-calc, read-only */}
-                    <td className="px-4 py-2.5 text-right">
-                      <span className="font-bold text-school-navy text-xs">₹{total.toLocaleString("en-IN")}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      {/* Total — auto-calc, read-only */}
+                      <td className="px-4 py-2.5 text-right">
+                        <span className="font-bold text-school-navy text-xs">₹{total.toLocaleString("en-IN")}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {/* Old Student Discount */}
@@ -812,45 +863,130 @@ function FeeStructureTab() {
 }
 
 // ── Tab: Classes & Sections ────────────────────────────────────────────────────
-function ClassSectionsTab() {
-  const activeClasses  = useStore(s => s.activeClasses);
-  const activateClass  = useStore(s => s.activateClass);
-  const deactivateClass = useStore(s => s.deactivateClass);
+// DB class name → Zustand store name (for timetable/student page compat)
+const DB_TO_STORE = { "JR.KG":"JR KG","SR.KG":"SR KG","11th - Commerce":"11th Commerce","12th - Commerce":"12th Commerce" };
+function dbToStore(name) { return DB_TO_STORE[name] || name; }
 
-  const [rows,     setRows]     = useState(DEF_SECTIONS);
+function ClassSectionsTab() {
+  const setActiveClassesInStore = useStore(s => s.setActiveClasses);
+
+  // rows: [{id, cls, isActive, sections:[{id,name}], sectionTeachers:{}}]
+  const [rows,     setRows]     = useState([]);
+  const [loading,  setLoading]  = useState(true);
   const [saved,    setSaved]    = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [backup,   setBackup]   = useState(null);
   const [expanded, setExpanded] = useState(null);
 
-  const inactiveClasses = CLASSES.filter(c => !activeClasses.includes(c));
+  useEffect(() => {
+    getClassesWithSections().then(data => {
+      const mapped = data.map(c => ({
+        id:      c.id,
+        cls:     c.name,
+        isActive: c.is_active,
+        sections: (c.sections || []).sort((a, b) => a.name.localeCompare(b.name)),
+        sectionTeachers: Object.fromEntries(
+          (c.sections || []).map(s => [s.name, s.class_teacher || ""])
+        ),
+      }));
+      setRows(mapped);
+      setActiveClassesInStore(mapped.filter(r => r.isActive).map(r => dbToStore(r.cls)));
+      setLoading(false);
+    }).catch(() => setLoading(false));
+  }, [setActiveClassesInStore]);
+
+  const activeRows   = rows.filter(r => r.isActive);
+  const inactiveRows = rows.filter(r => !r.isActive);
 
   function startEdit() {
-    setBackup(rows.map(r => ({ ...r, sections: [...r.sections], sectionTeachers: { ...r.sectionTeachers } })));
+    setBackup(rows.map(r => ({
+      ...r,
+      sections:        r.sections.map(s => ({ ...s })),
+      sectionTeachers: { ...r.sectionTeachers },
+    })));
     setEditMode(true);
   }
-  function cancel() { setRows(backup); setEditMode(false); }
-  function save()   { setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2500); }
 
-  function addSection(cls) {
+  function cancel() { setRows(backup); setEditMode(false); }
+
+  async function save() {
+    const ops = [];
+    for (const row of rows) {
+      const orig = backup.find(b => b.id === row.id);
+      if (!orig) continue;
+      for (const sec of row.sections) {
+        const origSec = orig.sections.find(s => s.name === sec.name);
+        if (!origSec) {
+          // New section — insert with teacher name
+          ops.push(insertSection(row.id, sec.name, row.sectionTeachers?.[sec.name] || null));
+        } else {
+          // Existing section — save teacher if changed
+          const newTeacher  = row.sectionTeachers?.[sec.name]  || null;
+          const origTeacher = orig.sectionTeachers?.[sec.name] || null;
+          if (newTeacher !== origTeacher)
+            ops.push(updateSectionTeacher(sec.id, newTeacher));
+        }
+      }
+      for (const sec of orig.sections) {
+        if (!row.sections.find(s => s.name === sec.name))
+          ops.push(deleteSectionFromDB(sec.id));
+      }
+    }
+    try {
+      await Promise.all(ops);
+      // Reload to get real ids for new sections and confirm saved teachers
+      const fresh = await getClassesWithSections();
+      setRows(prev => prev.map(r => {
+        const f = fresh.find(c => c.id === r.id);
+        if (!f) return r;
+        return {
+          ...r,
+          sections: (f.sections || []).sort((a, b) => a.name.localeCompare(b.name)),
+          sectionTeachers: Object.fromEntries(
+            (f.sections || []).map(s => [s.name, s.class_teacher || ""])
+          ),
+        };
+      }));
+    } catch { /* silently fail — local state remains */ }
+    setSaved(true);
+    setEditMode(false);
+    setTimeout(() => setSaved(false), 2500);
+  }
+
+  async function handleActivate(row) {
+    try {
+      await setClassActiveInDB(row.id, true);
+      const updated = rows.map(r => r.id === row.id ? { ...r, isActive: true } : r);
+      setRows(updated);
+      setActiveClassesInStore(updated.filter(r => r.isActive).map(r => dbToStore(r.cls)));
+    } catch { /* silently fail */ }
+  }
+
+  async function handleDeactivate(row) {
+    try {
+      await setClassActiveInDB(row.id, false);
+      const updated = rows.map(r => r.id === row.id ? { ...r, isActive: false } : r);
+      setRows(updated);
+      setActiveClassesInStore(updated.filter(r => r.isActive).map(r => dbToStore(r.cls)));
+      setExpanded(null);
+    } catch { /* silently fail */ }
+  }
+
+  function addSectionLocal(cls) {
     setRows(prev => prev.map(r => {
       if (r.cls !== cls) return r;
       const next = String.fromCharCode(65 + r.sections.length);
-      if (r.sections.includes(next)) return r;
-      return {
-        ...r,
-        sections: [...r.sections, next],
-        sectionTeachers: { ...r.sectionTeachers, [next]: "" },
-      };
+      if (r.sections.find(s => s.name === next)) return r;
+      return { ...r, sections: [...r.sections, { id: null, name: next }], sectionTeachers: { ...r.sectionTeachers, [next]: "" } };
     }));
   }
 
-  function removeSection(cls, sec) {
+  function removeSectionLocal(cls, secName) {
     setRows(prev => prev.map(r => {
       if (r.cls !== cls) return r;
       const st = { ...r.sectionTeachers };
-      delete st[sec];
-      return { ...r, sections: r.sections.filter(s => s !== sec), sectionTeachers: st };
+      delete st[secName];
+      return { ...r, sections: r.sections.filter(s => s.name !== secName), sectionTeachers: st };
     }));
   }
 
@@ -859,6 +995,10 @@ function ClassSectionsTab() {
       r.cls === cls ? { ...r, sectionTeachers: { ...r.sectionTeachers, [sec]: val } } : r
     ));
   }
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16 text-gray-400 text-sm">Loading classes…</div>
+  );
 
   return (
     <div className="space-y-4">
@@ -869,13 +1009,13 @@ function ClassSectionsTab() {
           <div>
             <h3 className="text-sm font-bold text-gray-700">Active Classes</h3>
             <p className="text-xs text-gray-400 mt-0.5">
-              {editMode ? "Managing sections and class teachers" : `${activeClasses.length} classes currently running · Click Edit to manage sections and teachers`}
+              {editMode ? "Managing sections and class teachers" : `${activeRows.length} classes currently running · Click Edit to manage sections and teachers`}
             </p>
           </div>
           <EditBar editMode={editMode} saved={saved} onEdit={startEdit} onSave={save} onCancel={cancel}/>
         </div>
         <div className="divide-y divide-gray-100">
-          {rows.filter(row => activeClasses.includes(row.cls)).map(row => {
+          {activeRows.map(row => {
             const isOpen = expanded === row.cls;
             return (
               <div key={row.cls}>
@@ -892,8 +1032,8 @@ function ClassSectionsTab() {
                         <p className="text-xs text-gray-400">
                           {row.sections.length} Section{row.sections.length !== 1 ? "s" : ""} &nbsp;·&nbsp;
                           {row.sections.map(s => {
-                            const t = row.sectionTeachers?.[s];
-                            return t ? `${row.cls}-${s} (${t.split(" ")[0]})` : `${row.cls}-${s}`;
+                            const t = row.sectionTeachers?.[s.name];
+                            return t ? `${row.cls}-${s.name} (${t.split(" ")[0]})` : `${row.cls}-${s.name}`;
                           }).join("  ·  ")}
                         </p>
                       </div>
@@ -901,7 +1041,7 @@ function ClassSectionsTab() {
                     {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400"/> : <ChevronDown className="w-4 h-4 text-gray-400"/>}
                   </button>
                   <button
-                    onClick={() => { deactivateClass(row.cls); setExpanded(null); }}
+                    onClick={() => handleDeactivate(row)}
                     title="Deactivate this class"
                     className="mr-4 px-3 py-1.5 rounded-lg border border-orange-200 text-orange-600 text-xs font-semibold hover:bg-orange-50 hover:border-orange-400 transition-colors flex-shrink-0">
                     Deactivate
@@ -913,38 +1053,35 @@ function ClassSectionsTab() {
                     <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Sections & Class Teachers</p>
                     <div className="space-y-2.5">
                       {row.sections.map(sec => (
-                        <div key={sec} className="flex items-center gap-3">
-                          {/* Section badge */}
+                        <div key={sec.name} className="flex items-center gap-3">
                           <div className="flex items-center gap-1 bg-school-navy text-white text-xs font-bold px-3 py-2 rounded-lg flex-shrink-0 min-w-[64px] justify-between">
-                            <span>{row.cls}-{sec}</span>
+                            <span>{row.cls}-{sec.name}</span>
                             {editMode && row.sections.length > 1 && (
-                              <button onClick={() => removeSection(row.cls, sec)}
+                              <button onClick={() => removeSectionLocal(row.cls, sec.name)}
                                 className="ml-1.5 hover:text-red-300 transition-colors">
                                 <X className="w-3 h-3"/>
                               </button>
                             )}
                           </div>
-                          {/* Teacher for this section */}
                           {editMode ? (
                             <select
                               className={`${sel} flex-1 max-w-xs`}
-                              value={row.sectionTeachers?.[sec] || ""}
-                              onChange={e => setSectionTeacher(row.cls, sec, e.target.value)}
+                              value={row.sectionTeachers?.[sec.name] || ""}
+                              onChange={e => setSectionTeacher(row.cls, sec.name, e.target.value)}
                             >
                               <option value="">— Not Assigned —</option>
                               {TEACHERS_TT.map(t => <option key={t} value={t}>{t}</option>)}
                             </select>
                           ) : (
-                            <span className={`text-sm font-medium ${row.sectionTeachers?.[sec] ? "text-gray-700" : "text-gray-300"}`}>
-                              {row.sectionTeachers?.[sec] || "Not assigned"}
+                            <span className={`text-sm font-medium ${row.sectionTeachers?.[sec.name] ? "text-gray-700" : "text-gray-300"}`}>
+                              {row.sectionTeachers?.[sec.name] || "Not assigned"}
                             </span>
                           )}
                         </div>
                       ))}
 
-                      {/* Add Section button */}
                       {editMode && row.sections.length < 5 && (
-                        <button onClick={() => addSection(row.cls)}
+                        <button onClick={() => addSectionLocal(row.cls)}
                           className="flex items-center gap-1.5 border-2 border-dashed border-gray-300 text-gray-400 hover:border-school-navy hover:text-school-navy text-xs font-semibold px-3 py-2 rounded-lg transition-colors mt-1">
                           <Plus className="w-3 h-3"/> Add Section
                         </button>
@@ -959,7 +1096,7 @@ function ClassSectionsTab() {
       </div>
 
       {/* ── Upcoming / Inactive Classes ── */}
-      {inactiveClasses.length > 0 && (
+      {inactiveRows.length > 0 && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-gray-100">
             <h3 className="text-sm font-bold text-gray-700">Upcoming Classes</h3>
@@ -968,19 +1105,19 @@ function ClassSectionsTab() {
             </p>
           </div>
           <div className="divide-y divide-gray-100">
-            {inactiveClasses.map(cls => (
-              <div key={cls} className="flex items-center justify-between px-5 py-3.5">
+            {inactiveRows.map(row => (
+              <div key={row.cls} className="flex items-center justify-between px-5 py-3.5">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
                     <GraduationCap className="w-4 h-4 text-gray-400"/>
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-gray-500">{cls}</p>
+                    <p className="text-sm font-semibold text-gray-500">{row.cls}</p>
                     <p className="text-xs text-gray-400">Not yet started</p>
                   </div>
                 </div>
                 <button
-                  onClick={() => activateClass(cls)}
+                  onClick={() => handleActivate(row)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-school-navy text-white text-xs font-bold hover:bg-school-navy/90 transition-colors shadow-sm"
                 >
                   <Plus className="w-3.5 h-3.5"/> Activate

@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import useStore from "@/lib/store";
+import supabase from "@/lib/supabase";
+import { addStudent as svcAddStudent, getNextEnrollmentNo } from "@/lib/studentService";
+import { getActiveClasses } from "@/lib/settingsService";
 import {
   ChevronDown, Upload, X, Plus, FileText, AlertTriangle,
   ArrowLeft, Check, Camera, Lock, GraduationCap, Hash,
@@ -14,13 +16,6 @@ import {
 
 // ── Options ────────────────────────────────────────────────────
 const CURRENT_SESSION = "2026-27"; // controlled from Settings — not editable in form
-
-const standards = [
-  "JR.KG", "SR.KG", "Balvatika",
-  "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th",
-  "11th - Commerce",
-  "12th - Commerce",
-];
 
 const prevStandards = [
   "Nursery / KG", "1st", "2nd", "3rd", "4th", "5th",
@@ -147,13 +142,17 @@ function YesNoToggle({ value, onChange }) {
 export default function AddStudentPage() {
   const router = useRouter();
 
-  const students      = useStore(s => s.students);
-  const addStudent    = useStore(s => s.addStudent);
-  const nextEnrollment = String(
-    Math.max(...students.map(s => parseInt(s.enrollment) || 0), 1000) + 1
-  );
+  const [standards, setStandards]           = useState([]);
+  const [nextEnrollment, setNextEnrollment] = useState("...");
+  const [autoRollNo, setAutoRollNo]         = useState(null);
+  const [feeTotal, setFeeTotal]             = useState(0);
+  const [submitting, setSubmitting]         = useState(false);
 
-  const [autoRollNo, setAutoRollNo] = useState(null);
+  // Fetch next enrollment number from DB on mount
+  useEffect(() => {
+    getNextEnrollmentNo().then(n => setNextEnrollment(n)).catch(() => {});
+    getActiveClasses().then(cls => setStandards(cls.map(c => c.name))).catch(() => {});
+  }, []);
 
   const [hasPrevSchool, setHasPrevSchool] = useState(false);
   const [hasSibling, setHasSibling] = useState(false);
@@ -234,16 +233,49 @@ export default function AddStudentPage() {
 
   const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value.toUpperCase() }));
 
-  const handleStdChange = (e) => {
+  const handleStdChange = async (e) => {
     const val = e.target.value;
     setForm((p) => ({ ...p, std: val, admissionClass: val }));
+    setAutoRollNo(null);
     if (val) {
-      const nums = students
-        .filter(s => s.std === val && s.status !== "Inactive" && s.status !== "Left")
-        .map(s => parseInt(s.rollNo, 10) || 0);
-      setAutoRollNo(nums.length ? Math.max(...nums) + 1 : 1);
+      const { data: cls } = await supabase.from("classes").select("id").eq("name", val).single();
+      if (cls) {
+        const { data: yr } = await supabase.from("academic_years").select("id").eq("is_current", true).single();
+        if (yr) {
+          // Fee structure
+          const { data: fs } = await supabase
+            .from("fee_structures")
+            .select("tuition_amount, uniform_amount")
+            .eq("class_id", cls.id)
+            .eq("academic_year_id", yr.id)
+            .single();
+          setFeeTotal(fs ? (Number(fs.tuition_amount) || 0) + (Number(fs.uniform_amount) || 0) : 0);
+
+          // Next roll number (section "A" is the default)
+          const { data: sec } = await supabase
+            .from("sections")
+            .select("id")
+            .eq("class_id", cls.id)
+            .eq("name", "A")
+            .maybeSingle();
+          if (sec) {
+            const { data: rolls } = await supabase
+              .from("student_enrollments")
+              .select("roll_no")
+              .eq("class_id", cls.id)
+              .eq("section_id", sec.id)
+              .eq("academic_year_id", yr.id)
+              .order("roll_no", { ascending: false })
+              .limit(1);
+            const last = rolls?.[0]?.roll_no || 0;
+            setAutoRollNo(last + 1);
+          } else {
+            setAutoRollNo(1);
+          }
+        }
+      }
     } else {
-      setAutoRollNo(null);
+      setFeeTotal(0);
     }
   };
 
@@ -322,12 +354,6 @@ export default function AddStudentPage() {
         errs.aadhar = "Aadhar number is required.";
       } else if (!isValidAadhar(form.aadharRaw)) {
         errs.aadhar = "Enter a valid 12-digit Aadhar number.";
-      } else if (
-        students.some(
-          (s) => isNonEmptyAadhar(s.aadhar) && normalizeAadhar(s.aadhar) === form.aadharRaw
-        )
-      ) {
-        errs.aadhar = "This Aadhar number is already registered to another student.";
       }
     }
 
@@ -342,77 +368,100 @@ export default function AddStudentPage() {
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
+
     let finalCaste = form.caste;
     if (form.caste !== "General" && !casteCertFile) {
       finalCaste = "General";
       alert("No caste certificate uploaded — category has been set to General automatically.");
     }
-    // Re-compute roll number at submit time (authoritative)
-    const classStudents = students.filter(
-      s => s.std === form.std && s.status !== "Inactive" && s.status !== "Left"
-    );
-    const rollNums = classStudents.map(s => parseInt(s.rollNo, 10) || 0);
-    const assignedRoll = String(rollNums.length ? Math.max(...rollNums) + 1 : 1);
 
-    const aadharFormatted = form.aadharRaw
-      ? form.aadharRaw.replace(/(\d{4})(?=\d)/g, "$1 ").trim()
-      : "";
+    // Build documents array from checked docs
+    const allDocNames = [
+      ...defaultDocTypes,
+      ...customDocs.filter(d => d.label.trim()).map(d => d.label),
+    ];
+    const documents = allDocNames
+      .filter(name => checkedDocs[name])
+      .map(name => ({
+        name,
+        uploaded: !!uploadedFiles[name],
+        fileUrl:  null, // S3 upload not yet configured
+      }));
 
-    const newStudent = {
-      enrollment: nextEnrollment,
-      name: (form.firstName + " " + form.lastName).trim(),
-      photo: photoPreview || null,
-      grNo: form.grNo || "",
-      dateOfJoin: form.joinDate,
-      admissionClass: form.std,
-      std: form.std,
-      section: "A",
-      rollNo: assignedRoll,
-      session: CURRENT_SESSION,
-      fatherName: form.fatherName || "",
-      motherName: form.motherName || "",
-      mobile: form.mobile1 || "",
-      dob: form.dob || "",
-      gender: form.gender || "",
-      religion: form.religion || "",
-      caste: finalCaste,
-      motherTongue: form.motherTongue || "",
-      subCaste: form.subCaste || "",
-      height: form.height || "",
-      weight: form.weight || "",
-      roomPlotNo: form.roomPlotNo || "",
-      society: form.society || "",
-      landmark: form.landmark || "",
-      area: form.area || "",
-      pinCode: form.pinCode || "",
-      address: form.address || "",
-      mobile2: form.mobile2 || "",
-      aadhar: aadharFormatted,
-      udise: form.udise || "",
-      pen: form.pen || "",
-      apaar: form.apaar || "",
-      status: "Active",
-      fees: { total: 0, paid: 0 },
-      pendingDocs: Object.keys(checkedDocs).filter(k => checkedDocs[k]),
-      pendingInventory: [],
-      password: ((form.firstName || "STU").slice(0, 3) + nextEnrollment).toUpperCase(),
-      lastSchoolName: form.lastSchoolName || "",
-      lastSchoolGrNo: form.lastSchoolGrNo || "",
-      lastSchoolClass: form.lastSchoolClass || "",
-      lastSchoolMedium: form.lastSchoolMedium || "",
-      lastSchoolPlace: form.lastSchoolPlace || "",
-      prevPercentage: form.prevPercentage || "",
-      prevAttendanceDays: form.prevAttendanceDays || "",
-      lastExamGiven: lastExamGiven ? "Yes" : "No",
-      placeOfBirth: form.placeOfBirth || "",
-      tcUploaded: false,
+    const finalDiscountReason = discountReason === "Other" ? discountCustomReason : discountReason;
+
+    const payload = {
+      // Identity
+      firstName:      form.firstName,
+      lastName:       form.lastName,
+      grNo:           form.grNo,
+      dob:            form.dob,
+      gender:         form.gender,
+      placeOfBirth:   form.placeOfBirth,
+      // Photo (S3 upload not yet; store nothing)
+      photo:          null,
+      // Academic
+      std:            form.std,
+      section:        "A",
+      admissionClass: form.admissionClass || form.std,
+      dateOfJoin:     form.joinDate,
+      // Family
+      fatherName:     form.fatherName,
+      motherName:     form.motherName,
+      mobile:         form.mobile1,
+      mobile2:        form.mobile2,
+      // Personal
+      religion:       form.religion,
+      caste:          finalCaste,
+      subCaste:       form.subCaste,
+      motherTongue:   form.motherTongue,
+      height:         form.height,
+      weight:         form.weight,
+      // Address
+      roomPlotNo:     form.roomPlotNo,
+      society:        form.society,
+      landmark:       form.landmark,
+      area:           form.area,
+      pinCode:        form.pinCode,
+      address:        form.address,
+      // Govt IDs
+      aadhar:         form.aadharRaw || null,
+      aadharName:     form.aadharName,
+      udise:          form.udise,
+      pen:            form.pen,
+      apaar:          form.apaar,
+      // Fees
+      feeTotal:       feeTotal,
+      discountAmount: hasDiscount ? Number(discountAmount) || 0 : 0,
+      discountReason: hasDiscount ? finalDiscountReason : null,
+      // Documents
+      documents,
+      // Previous school
+      lastSchoolName:     hasPrevSchool ? form.lastSchoolName : "",
+      lastSchoolGrNo:     form.lastSchoolGrNo,
+      lastSchoolClass:    form.lastSchoolClass,
+      lastSchoolMedium:   form.lastSchoolMedium,
+      lastSchoolPlace:    form.lastSchoolPlace,
+      prevAttendanceDays: form.prevAttendanceDays,
+      lastExamGiven:      lastExamGiven ? "Yes" : "No",
+      prevPercentage:     form.prevPercentage,
+      // Siblings
+      siblings: hasSibling ? siblings.filter(s => s.name) : [],
     };
-    addStudent(newStudent);
-    alert("Student added successfully! Roll No. " + assignedRoll + " assigned for " + form.std + ".");
-    router.push("/fees?std=" + encodeURIComponent(form.std) + "&new=1");
+
+    setSubmitting(true);
+    try {
+      const { rollNo, enrollmentNo } = await svcAddStudent(payload);
+      alert(`Student added! Enrollment: #${enrollmentNo} · Roll No: ${rollNo} for ${form.std}.`);
+      router.push("/student");
+    } catch (err) {
+      alert("Failed to add student: " + err.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -1126,9 +1175,12 @@ export default function AddStudentPage() {
             className="px-6 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
             Cancel
           </button>
-          <button type="submit"
-            className="px-8 py-2.5 rounded-xl bg-school-navy hover:bg-school-navy-dark text-white text-sm font-semibold transition-colors shadow-sm">
-            Add Student
+          <button
+            type="submit"
+            disabled={submitting}
+            className="px-8 py-2.5 rounded-xl bg-school-navy hover:bg-school-navy-dark text-white text-sm font-semibold transition-colors shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {submitting ? "Saving..." : "Add Student"}
           </button>
         </div>
       </form>

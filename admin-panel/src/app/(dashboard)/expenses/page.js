@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import useStore from "@/lib/store";
+import { useState, useMemo, useEffect } from "react";
+import { getExpenses, addExpense, deleteExpense } from "@/lib/expensesService";
 import {
   IndianRupee, Plus, Search, Trash2, X, Check,
   ChevronDown, Download, FileSpreadsheet, TrendingDown,
@@ -33,21 +33,6 @@ const PAID_BY = [
 
 const TODAY = new Date().toISOString().split("T")[0];
 
-let _nextId = 100;
-function uid() { return _nextId++; }
-
-const INITIAL_EXPENSES = [
-  { id: uid(), title: "Staff Salary — June 2026",      category: "Salary",         amount: 185000, date: "2026-06-01", paidBy: "Sunil Pradhan",  note: "Monthly salary for all staff" },
-  { id: uid(), title: "Electricity Bill — May 2026",   category: "Utilities",      amount: 12400,  date: "2026-05-28", paidBy: "Gaurang Polai",   note: "" },
-  { id: uid(), title: "Annual Sports Day Setup",       category: "Events",         amount: 28000,  date: "2026-05-15", paidBy: "Sandeep Pradhan", note: "Stage, decoration & prizes" },
-  { id: uid(), title: "Classroom Furniture Repair",    category: "Maintenance",    amount: 9500,   date: "2026-05-10", paidBy: "Rajesh Biswal",   note: "6 desks repaired" },
-  { id: uid(), title: "Stationery & Office Supplies",  category: "Supplies",       amount: 6200,   date: "2026-05-05", paidBy: "Gaurang Polai",   note: "" },
-  { id: uid(), title: "Water & Sewage Bill",           category: "Utilities",      amount: 3800,   date: "2026-04-30", paidBy: "Gaurang Polai",   note: "" },
-  { id: uid(), title: "Projector Installation",        category: "Infrastructure", amount: 42000,  date: "2026-04-20", paidBy: "Sunil Pradhan",   note: "2 classrooms" },
-  { id: uid(), title: "School Bus Fuel — April",       category: "Transport",      amount: 15600,  date: "2026-04-30", paidBy: "Rudra Prasad Muni", note: "" },
-  { id: uid(), title: "PTM Refreshments",              category: "Events",         amount: 4200,   date: "2026-04-15", paidBy: "BK Debiprasad Das", note: "" },
-  { id: uid(), title: "Cleaning Material",             category: "Supplies",       amount: 2800,   date: "2026-04-10", paidBy: "Ayeshkant Rout",  note: "" },
-];
 
 function fmtDate(d) {
   try { return new Date(d).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" }); }
@@ -71,7 +56,7 @@ function AddExpenseModal({ onClose, onSave }) {
 
   function handleSave() {
     if (!valid) return;
-    onSave({ id: uid(), title: title.trim(), category, amount: Number(amount), date, paidBy, note: note.trim() });
+    onSave({ title: title.trim(), category, amount: Number(amount), date, paidBy, note: note.trim() });
   }
 
   return (
@@ -150,17 +135,18 @@ function AddExpenseModal({ onClose, onSave }) {
 
 // ── Main Page ───────────────────────────────────────────────────
 export default function ExpensesPage() {
-  const storeExpenses    = useStore(s => s.expenses);
-  const setStoreExpenses = useStore(s => s.setExpenses);
-  const [expenses, setExpensesLocal] = useState(() =>
-    storeExpenses.length > 0 ? storeExpenses : INITIAL_EXPENSES
-  );
-  function setExpenses(updated) { setExpensesLocal(updated); setStoreExpenses(updated); }
-
-  const [search,   setSearch]   = useState("");
-  const [catFilter, setCatFilter] = useState("all");
+  const [expenses,    setExpenses]    = useState([]);
+  const [loading,     setLoading]     = useState(true);
+  const [search,      setSearch]      = useState("");
+  const [catFilter,   setCatFilter]   = useState("all");
   const [monthFilter, setMonthFilter] = useState("all");
-  const [addOpen,  setAddOpen]  = useState(false);
+  const [addOpen,     setAddOpen]     = useState(false);
+
+  useEffect(() => {
+    getExpenses()
+      .then(data => { setExpenses(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
 
   const months = useMemo(() => {
     const set = new Set(expenses.map(e => e.date.slice(0, 7)));
@@ -180,8 +166,21 @@ export default function ExpensesPage() {
   const catTotals    = CATEGORIES.map(c => ({ cat: c, total: expenses.filter(e => e.category === c).reduce((s, e) => s + e.amount, 0) }));
   const topCat       = catTotals.sort((a, b) => b.total - a.total)[0];
 
-  function handleAdd(exp) { setExpenses(prev => [exp, ...prev]); setAddOpen(false); }
-  function handleDelete(id) { if (confirm("Delete this expense?")) setExpenses(prev => prev.filter(e => e.id !== id)); }
+  async function handleAdd(exp) {
+    try {
+      const saved = await addExpense(exp);
+      setExpenses(prev => [saved, ...prev]);
+    } catch { }
+    setAddOpen(false);
+  }
+
+  async function handleDelete(id) {
+    if (!confirm("Delete this expense?")) return;
+    try {
+      await deleteExpense(id);
+      setExpenses(prev => prev.filter(e => e.id !== id));
+    } catch { }
+  }
 
   function exportExcel() {
     const rows = filtered.map(e => ({
@@ -314,7 +313,10 @@ export default function ExpensesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
-                {filtered.length === 0 && (
+                {loading && (
+                  <tr><td colSpan={7} className="text-center py-12 text-gray-400 text-sm">Loading expenses…</td></tr>
+                )}
+                {!loading && filtered.length === 0 && (
                   <tr><td colSpan={7} className="text-center py-12 text-gray-400 text-sm">No expenses found.</td></tr>
                 )}
                 {filtered.map(e => (

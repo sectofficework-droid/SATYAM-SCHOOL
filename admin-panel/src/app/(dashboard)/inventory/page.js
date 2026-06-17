@@ -1,9 +1,14 @@
 "use client";
 
-import { Fragment, useState, useEffect } from "react";
+import { Fragment, useState, useEffect, useCallback } from "react";
 import useStore from "@/lib/store";
 import { createPortal } from "react-dom";
 import { isPositiveAmount, isValidLength } from "@/lib/validators";
+import {
+  getInventoryItems, addInventoryItem, updateItemAddress, addBatch, addUsage,
+  getAssets, addAsset, takeAsset, returnAsset,
+} from "@/lib/inventoryService";
+import supabase from "@/lib/supabase";
 import {
   Package, Plus, AlertTriangle, Search, TrendingDown,
   Users, Archive, X, ArrowUpCircle, MinusCircle, Info,
@@ -14,141 +19,6 @@ import {
 const RECEIVERS = ["Sunil Pradhan", "Rajesh Biswal", "BK Debiprasad Das", "Sandeep Pradhan", "Gaurang Polai", "Rudra Prasad Muni", "Ayeshkant Rout", "Other"];
 const TODAY     = new Date().toISOString().split("T")[0];
 
-// ── Stock Inventory Data ──────────────────────────────────────────────────────
-const INITIAL_INVENTORY = [
-  {
-    id: 1, name: "Bag", category: "student", unit: "Pcs", lowStockAt: 10,
-    storageAddress: "Store Room 1, Rack A",
-    batches: [{ id: 1, qty: 150, date: "2026-05-01", by: "Sunil Pradhan", note: "Opening stock 2026-27" }],
-    usages:  [{ id: 1, qty: 98,  date: "2026-06-05", purpose: "student", note: "Distributed Std 1–5", by: "Sunil Pradhan" }],
-    studentsTotal: 110, studentsGiven: 98,
-  },
-  {
-    id: 2, name: "Uniform Set", category: "student", unit: "Sets", lowStockAt: 10,
-    storageAddress: "Store Room 1, Rack B",
-    batches: [{ id: 1, qty: 200, date: "2026-05-03", by: "Rajesh Pradhan", note: "Summer uniform 2026-27" }],
-    usages:  [{ id: 1, qty: 105, date: "2026-06-01", purpose: "student", note: "Distributed", by: "Rajesh Pradhan" }],
-    studentsTotal: 110, studentsGiven: 105,
-  },
-  {
-    id: 3, name: "Book Set", category: "student", unit: "Sets", lowStockAt: 8,
-    storageAddress: "Store Room 2, Shelf 1",
-    batches: [
-      { id: 1, qty: 120, date: "2026-05-10", by: "Sunil Pradhan", note: "Academic year 2026-27" },
-      { id: 2, qty: 30,  date: "2026-05-20", by: "Sunil Pradhan", note: "Additional stock" },
-    ],
-    usages: [{ id: 1, qty: 110, date: "2026-06-07", purpose: "student", note: "All classes", by: "Sunil Pradhan" }],
-    studentsTotal: 110, studentsGiven: 110,
-  },
-  {
-    id: 4, name: "Notebook Set", category: "student", unit: "Sets", lowStockAt: 15,
-    storageAddress: "Store Room 2, Shelf 2",
-    batches: [{ id: 1, qty: 130, date: "2026-05-10", by: "Sunil Pradhan", note: "" }],
-    usages:  [{ id: 1, qty: 108, date: "2026-06-05", purpose: "student", note: "", by: "Rajesh Pradhan" }],
-    studentsTotal: 110, studentsGiven: 108,
-  },
-  {
-    id: 5, name: "School Diary", category: "student", unit: "Pcs", lowStockAt: 5,
-    storageAddress: "Store Room 1, Rack C",
-    batches: [{ id: 1, qty: 115, date: "2026-05-15", by: "Sunil Pradhan", note: "" }],
-    usages:  [{ id: 1, qty: 110, date: "2026-06-05", purpose: "student", note: "", by: "Sunil Pradhan" }],
-    studentsTotal: 110, studentsGiven: 110,
-  },
-  {
-    id: 6, name: "ID Card", category: "student", unit: "Pcs", lowStockAt: 10,
-    storageAddress: "Admin Office, Drawer 2",
-    batches: [{ id: 1, qty: 120, date: "2026-05-20", by: "Rajesh Pradhan", note: "" }],
-    usages:  [{ id: 1, qty: 95,  date: "2026-06-10", purpose: "student", note: "", by: "Rajesh Pradhan" }],
-    studentsTotal: 110, studentsGiven: 95,
-  },
-  {
-    id: 7, name: "Whiteboard Marker", category: "office", unit: "Box", lowStockAt: 3,
-    storageAddress: "Store Room 3, Box 1",
-    batches: [{ id: 1, qty: 20, date: "2026-05-01", by: "Sunil Pradhan", note: "" }],
-    usages:  [{ id: 1, qty: 18, date: "2026-06-01", purpose: "office", note: "Staff room + classrooms", by: "Sunil Pradhan" }],
-    studentsTotal: 0, studentsGiven: 0,
-  },
-  {
-    id: 8, name: "Chalk Box", category: "office", unit: "Box", lowStockAt: 5,
-    storageAddress: "Store Room 3, Box 2",
-    batches: [{ id: 1, qty: 30, date: "2026-05-01", by: "Sunil Pradhan", note: "" }],
-    usages:  [{ id: 1, qty: 24, date: "2026-06-01", purpose: "office", note: "All classrooms", by: "Rajesh Pradhan" }],
-    studentsTotal: 0, studentsGiven: 0,
-  },
-  {
-    id: 9, name: "Printer Paper", category: "office", unit: "Ream", lowStockAt: 5,
-    storageAddress: "Admin Office, Cabinet 1",
-    batches: [{ id: 1, qty: 50, date: "2026-05-05", by: "Rajesh Pradhan", note: "" }],
-    usages:  [{ id: 1, qty: 48, date: "2026-06-10", purpose: "office", note: "Office use", by: "Rajesh Pradhan" }],
-    studentsTotal: 0, studentsGiven: 0,
-  },
-];
-
-// ── Asset Data ────────────────────────────────────────────────────────────────
-const INITIAL_ASSETS = [
-  {
-    id: 1, name: "Wireless Microphone", brand: "Boya BY-WM8",
-    storageAddress: "AV Room, Cabinet 1",
-    currentCheckout: null,
-    checkouts: [
-      { id: 1, takenBy: "Sunil Pradhan", purpose: "Annual Day 2025", takenDate: "2025-12-15", returnDate: "2025-12-16" },
-    ],
-  },
-  {
-    id: 2, name: "Recording Microphone", brand: "Blue Yeti",
-    storageAddress: "AV Room, Cabinet 1",
-    currentCheckout: { takenBy: "Rajesh Pradhan", purpose: "PTM Recording", takenDate: "2026-05-14" },
-    checkouts: [
-      { id: 1, takenBy: "Sunil Pradhan",  purpose: "Sports Day",     takenDate: "2025-11-10", returnDate: "2025-11-11" },
-      { id: 2, takenBy: "Rajesh Pradhan", purpose: "PTM Recording",  takenDate: "2026-05-14", returnDate: null },
-    ],
-  },
-  {
-    id: 3, name: "Camera Tripod", brand: "Simpex Pro 700",
-    storageAddress: "AV Room, Shelf 2",
-    currentCheckout: null,
-    checkouts: [
-      { id: 1, takenBy: "Sunil Pradhan", purpose: "Annual Day Photography", takenDate: "2025-12-15", returnDate: "2025-12-16" },
-    ],
-  },
-  {
-    id: 4, name: "Gimbal Stabilizer", brand: "DJI OM 5",
-    storageAddress: "AV Room, Cabinet 2",
-    currentCheckout: null,
-    checkouts: [],
-  },
-  {
-    id: 5, name: "School Phone", brand: "Samsung Galaxy A35",
-    storageAddress: "Principal Office, Drawer 1",
-    currentCheckout: { takenBy: "Rajesh Pradhan", purpose: "Parent Communication", takenDate: "2026-05-15" },
-    checkouts: [
-      { id: 1, takenBy: "Rajesh Pradhan", purpose: "Parent Communication", takenDate: "2026-05-15", returnDate: null },
-    ],
-  },
-  {
-    id: 6, name: "USB Charging Hub", brand: "Anker 10-Port",
-    storageAddress: "Office Room, Desk 3",
-    currentCheckout: null,
-    checkouts: [
-      { id: 1, takenBy: "Sunil Pradhan", purpose: "Event Setup", takenDate: "2026-04-20", returnDate: "2026-04-21" },
-    ],
-  },
-  {
-    id: 7, name: "Projector", brand: "Epson EB-X51",
-    storageAddress: "Store Room, Shelf 1",
-    currentCheckout: null,
-    checkouts: [
-      { id: 1, takenBy: "Sunil Pradhan",  purpose: "Parent Meeting", takenDate: "2026-05-10", returnDate: "2026-05-10" },
-      { id: 2, takenBy: "Rajesh Pradhan", purpose: "Staff Training", takenDate: "2026-05-13", returnDate: "2026-05-13" },
-    ],
-  },
-  {
-    id: 8, name: "Laptop (Events)", brand: "HP ProBook 450",
-    storageAddress: "Computer Lab, Cabinet 2",
-    currentCheckout: null,
-    checkouts: [],
-  },
-];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const totalIn   = (item) => item.batches.reduce((s, b) => s + b.qty, 0);
@@ -904,9 +774,12 @@ function ReturnAssetModal({ asset, onClose, onSave }) {
 export default function InventoryPage() {
   const masterItems = useStore(s => s.studentInventoryItems);
 
-  const [assets, setAssets]               = useState(INITIAL_ASSETS);
+  const [items,    setItems]   = useState([]);
+  const [assets,   setAssets]  = useState([]);
+  const [loading,  setLoading] = useState(true);
+  const [totalStudents, setTotalStudents] = useState(0);
+
   const [assetPanelOpen, setAssetPanelOpen] = useState(false);
-  const [items, setItems]                 = useState(INITIAL_INVENTORY);
   const [search, setSearch]               = useState("");
   const [catFilter, setCatFilter]         = useState("all");
   const [stFilter, setStFilter]           = useState("all");
@@ -914,6 +787,36 @@ export default function InventoryPage() {
   const [expanded, setExpanded]           = useState({});
   const [addOpen, setAddOpen]             = useState(false);
   const [useOpen, setUseOpen]             = useState(false);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [itemsData, assetsData, yearData] = await Promise.all([
+        getInventoryItems(),
+        getAssets(),
+        supabase.from("academic_years").select("id").eq("is_current", true).single(),
+      ]);
+      let studentCount = 0;
+      if (yearData.data?.id) {
+        const { count } = await supabase
+          .from("student_enrollments")
+          .select("id", { count: "exact", head: true })
+          .eq("academic_year_id", yearData.data.id);
+        studentCount = count || 0;
+      }
+      setTotalStudents(studentCount);
+      setItems(itemsData.map(it =>
+        it.category === "student" ? { ...it, studentsTotal: studentCount } : it
+      ));
+      setAssets(assetsData);
+    } catch {
+      // keep empty state
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   const assetsAvailable = assets.filter((a) => !a.currentCheckout).length;
   const assetsInUse     = assets.filter((a) => !!a.currentCheckout).length;
@@ -939,64 +842,74 @@ export default function InventoryPage() {
   const toggleExpand = (itemId, key) =>
     setExpanded((prev) => ({ ...prev, [itemId]: prev[itemId] === key ? null : key }));
 
-  const handleAddAsset = (data) =>
-    setAssets((prev) => [...prev, { id: Date.now(), ...data }]);
+  const handleAddAsset = async (data) => {
+    try {
+      const created = await addAsset(data);
+      setAssets(prev => [...prev, created]);
+    } catch (err) { alert("Failed to add asset: " + err.message); }
+  };
 
-  const handleTake = (assetId, checkout) =>
-    setAssets((prev) =>
-      prev.map((a) => {
+  const handleTake = async (assetId, checkout) => {
+    try {
+      const co = await takeAsset(assetId, checkout);
+      setAssets(prev => prev.map(a => {
         if (a.id !== assetId) return a;
-        return { ...a, currentCheckout: checkout, checkouts: [...a.checkouts, { id: Date.now(), ...checkout, returnDate: null }] };
-      })
-    );
+        return { ...a, currentCheckout: co, checkouts: [...a.checkouts, co] };
+      }));
+    } catch (err) { alert("Failed to record checkout: " + err.message); }
+  };
 
-  const handleReturn = (assetId, returnDate, note) =>
-    setAssets((prev) =>
-      prev.map((a) => {
+  const handleReturn = async (assetId, returnDate) => {
+    try {
+      const asset = assets.find(a => a.id === assetId);
+      const co    = asset?.currentCheckout;
+      if (!co) return;
+      await returnAsset(co.id, returnDate);
+      setAssets(prev => prev.map(a => {
         if (a.id !== assetId) return a;
         return {
           ...a,
           currentCheckout: null,
-          checkouts: a.checkouts.map((co, i) =>
-            i === a.checkouts.length - 1 ? { ...co, returnDate, note } : co
-          ),
+          checkouts: a.checkouts.map(c => c.id === co.id ? { ...c, returnDate } : c),
         };
-      })
-    );
-
-  const handleAddStock = (payload) => {
-    setItems((prev) => {
-      if (payload.tab === "existing") {
-        return prev.map((item) =>
-          item.id === payload.selId
-            ? {
-                ...item,
-                storageAddress: payload.location || item.storageAddress,
-                batches: [...item.batches, { id: Date.now(), ...payload.batch }],
-              }
-            : item
-        );
-      }
-      const newId = Math.max(...prev.map((i) => i.id)) + 1;
-      return [...prev, { id: newId, ...payload.newItem, studentsGiven: 0, studentsTotal: 0, batches: [{ id: Date.now(), ...payload.batch }], usages: [] }];
-    });
-    setAddOpen(false);
+      }));
+    } catch (err) { alert("Failed to record return: " + err.message); }
   };
 
-  const handleUseStock = (payload) => {
-    setItems((prev) =>
-      prev.map((item) => {
+  const handleAddStock = async (payload) => {
+    try {
+      if (payload.tab === "existing") {
+        const [newBatch] = await Promise.all([
+          addBatch(payload.selId, payload.batch),
+          payload.location ? updateItemAddress(payload.selId, payload.location) : Promise.resolve(),
+        ]);
+        setItems(prev => prev.map(item =>
+          item.id === payload.selId
+            ? { ...item, storageAddress: payload.location || item.storageAddress, batches: [...item.batches, newBatch] }
+            : item
+        ));
+      } else {
+        const newItem = await addInventoryItem(payload.newItem);
+        const newBatch = await addBatch(newItem.id, payload.batch);
+        const withTotal = newItem.category === "student" ? { ...newItem, studentsTotal: totalStudents } : newItem;
+        setItems(prev => [...prev, { ...withTotal, batches: [newBatch], usages: [] }]);
+      }
+      setAddOpen(false);
+    } catch (err) { alert("Failed to add stock: " + err.message); }
+  };
+
+  const handleUseStock = async (payload) => {
+    try {
+      const newUsage = await addUsage(payload.itemId, payload.usage);
+      setItems(prev => prev.map(item => {
         if (item.id !== payload.itemId) return item;
-        return {
-          ...item,
-          usages: [...item.usages, { id: Date.now(), ...payload.usage }],
-          studentsGiven: payload.isStudentDist
-            ? Math.min(item.studentsTotal, item.studentsGiven + payload.usage.qty)
-            : item.studentsGiven,
-        };
-      })
-    );
-    setUseOpen(false);
+        const newStudentsGiven = payload.isStudentDist
+          ? item.studentsGiven + payload.usage.qty
+          : item.studentsGiven;
+        return { ...item, usages: [...item.usages, newUsage], studentsGiven: newStudentsGiven };
+      }));
+      setUseOpen(false);
+    } catch (err) { alert("Failed to record usage: " + err.message); }
   };
 
   const CAT_COLOR = {
@@ -1009,6 +922,14 @@ export default function InventoryPage() {
     office:  "bg-purple-50 text-purple-600",
     other:   "bg-gray-100 text-gray-500",
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <p className="text-sm text-gray-400">Loading inventory…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5">

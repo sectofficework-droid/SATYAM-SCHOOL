@@ -15,15 +15,17 @@ import {
   isValidName, isValidPhone, isValidEmail, isValidAadhar, isValidPincode,
   isNonNegativeNumber,
 } from "@/lib/validators";
+import { getStudents, addStudent as dbAddStudent, updateStudent as dbUpdateStudent } from "@/lib/studentService";
+import { getEmployees } from "@/lib/employeeService";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 // â"€â"€ Constants â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 const CLASSES = [
-  "JR KG","SR KG","Balvatika",
+  "JR.KG","SR.KG","Balvatika",
   "1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th",
-  "11th Commerce","12th Commerce",
+  "11th - Commerce","12th - Commerce",
 ];
 const GENDERS   = ["Male","Female","Other"];
 const RELIGIONS = ["Hindu","Muslim","Christian","Jain","Sikh","Buddhist","Parsi","Other"];
@@ -238,6 +240,49 @@ const DUMMY_EMPLOYEES = [
   { id:11,name:"Vinod Prajapati", role:"Guard",       subject:"—",           qualification:"10th",       mobile:"9876541011",email:"",               salary:14000,joinDate:"2019-06-01",status:"Active"   },
   { id:12,name:"Savita Nair",     role:"Teacher",     subject:"Music",       qualification:"B.Mus",      mobile:"9876541012",email:"savita@satyam.in",salary:20000,joinDate:"2021-06-15",status:"Active"   },
 ];
+
+// Maps the shape returned by getStudents() to what super-admin components expect
+function mapStudentForSuperAdmin(st) {
+  return {
+    ...st,
+    id:       st._enrollmentId || st._studentId,
+    enrollNo: st.enrollment,
+    cls:      st.std,
+    roll:     st.rollNo,
+    mobile1:  st.mobile,
+    aadharNo: st.aadhar,
+    joinDate: st.dateOfJoin,
+  };
+}
+
+// Reverse-maps super-admin form data to the shape updateStudent() expects
+function mapFormForUpdate(form) {
+  return {
+    grNo:             form.grNo,
+    firstName:        form.firstName,
+    lastName:         form.lastName,
+    fatherName:       form.fatherName,
+    motherName:       form.motherName,
+    dob:              form.dob,
+    gender:           form.gender,
+    religion:         form.religion,
+    caste:            form.caste,
+    placeOfBirth:     form.placeOfBirth,
+    mobile:           form.mobile1,
+    mobile2:          form.mobile2,
+    roomPlotNo:       form.roomPlotNo,
+    address:          form.address,
+    aadhar:           form.aadharNo?.replace(/\s/g, "") || null,
+    aadharName:       form.aadharName,
+    udise:            form.udise,
+    pen:              form.pen,
+    apaar:            form.apaar,
+    lastSchoolName:   form.lastSchoolName,
+    lastSchoolClass:  form.lastSchoolClass,
+    lastSchoolMedium: form.lastSchoolMedium,
+    lastSchoolPlace:  form.lastSchoolPlace,
+  };
+}
 
 // â"€â"€ Shared cell renderer â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 // Detects the semantic type of a free-text field from its key/label so the
@@ -456,7 +501,7 @@ function validateStudentForm(form) {
   return errors;
 }
 
-function SingleStudentTool({ students }) {
+function SingleStudentTool({ students, onStudentUpdated }) {
   const [selClass, setSelClass] = useState("");
   const [search,   setSearch]   = useState("");
   const [selected, setSelected] = useState(null);
@@ -478,11 +523,15 @@ function SingleStudentTool({ students }) {
   function selectStudent(st) { setSelected(st); setForm({...st}); setSaved(false); setErrors({}); resetMedia(); }
   function goBack()           { setSelected(null); resetMedia(); }
 
-  function handleSave() {
+  async function handleSave() {
     const errs = validateStudentForm(form);
     setErrors(errs);
     if (Object.keys(errs).length > 0) return;
-    setSaved(true); setTimeout(()=>setSaved(false),2500);
+    try {
+      await dbUpdateStudent(selected._studentId, mapFormForUpdate(form));
+      if (onStudentUpdated) onStudentUpdated(selected._studentId, form);
+    } catch { }
+    setSaved(true); setTimeout(() => setSaved(false), 2500);
   }
 
   function handlePhoto(e) {
@@ -1243,8 +1292,8 @@ function InventoryPanel() {
 // â"€â"€ Employee Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 // -- Salary Panel (Management Head only) -------------------------------------------
-function SalaryPanel() {
-  const employees      = useStore(s => s.employees);
+function SalaryPanel({ employees: propEmployees }) {
+  const employees      = propEmployees || [];
   const salaries       = useStore(s => s.employeeSalaries);
   const updateSal      = useStore(s => s.updateEmployeeSalary);
   const salPayments    = useStore(s => s.salaryPayments);
@@ -1504,13 +1553,16 @@ function AllMonthsHistory({ salPayments, monthLabel, fmtAmt, fmtDate }) {
   );
 }
 
-function EmployeePanel() {
-  const storeEmployees    = useStore(s => s.employees);
+function EmployeePanel({ employees: propEmployees }) {
   const setStoreEmployees = useStore(s => s.setEmployees);
   const salaries          = useStore(s => s.employeeSalaries);
   const updateSal         = useStore(s => s.updateEmployeeSalary);
 
-  const employees = storeEmployees;
+  const [employees, setEmployeesLocal] = useState(propEmployees || []);
+  function setEmployees(updated) { setEmployeesLocal(updated); setStoreEmployees(updated); }
+
+  // Sync when prop changes (initial load)
+  useState(() => { if (propEmployees?.length) setEmployeesLocal(propEmployees); }, [propEmployees]);
 
   const [search, setSearch] = useState("");
   const [typeF,  setTypeF]  = useState("All");
@@ -1532,11 +1584,15 @@ function EmployeePanel() {
     return matchType && matchSearch;
   });
 
-  function saveEdit() {
+  async function saveEdit() {
     const { salary: salVal, ...empFields } = form;
-    const updated = employees.map(e => e.id === editId ? { ...e, ...empFields } : e);
-    setStoreEmployees(updated);
     const emp = employees.find(e => e.id === editId);
+    try {
+      const { updateEmployee } = await import("@/lib/employeeService");
+      await updateEmployee(editId, { ...emp, ...empFields });
+    } catch { }
+    const updated = employees.map(e => e.id === editId ? { ...e, ...empFields } : e);
+    setEmployees(updated);
     if (emp && salVal && !isNaN(Number(salVal)) && Number(salVal) > 0) {
       updateSal(emp.empId, Number(salVal));
     }
@@ -1857,10 +1913,8 @@ const EXAMPLE_ROW = [
 
 const IMPORT_SESSION = "2026-27"; // controlled from Settings — matches the single Add Student form
 
-function ImportStudentsPanel() {
+function ImportStudentsPanel({ onImportDone }) {
   const fileRef = useRef(null);
-  const students    = useStore(s => s.students);
-  const addStudent  = useStore(s => s.addStudent);
   const [step,      setStep]      = useState("idle"); // idle | preview | done
   const [parsed,    setParsed]    = useState([]);
   const [rowErrors, setRowErrors] = useState([]);
@@ -1929,69 +1983,41 @@ function ImportStudentsPanel() {
     e.target.value = "";
   }
 
-  function confirmImport() {
+  async function confirmImport() {
     setImporting(true);
-    setTimeout(() => {
-      let nextEnrollment = Math.max(...students.map(s => parseInt(s.enrollment) || 0), 1000);
-      const rollByClass = {};
-
-      valid.forEach(s => {
-        nextEnrollment += 1;
-        const enrollment = String(nextEnrollment);
-
-        const classKey = s.cls;
-        if (rollByClass[classKey] === undefined) {
-          const existingRolls = students
-            .filter(st => st.std === classKey && st.status !== "Inactive" && st.status !== "Left")
-            .map(st => parseInt(st.rollNo, 10) || 0);
-          rollByClass[classKey] = existingRolls.length ? Math.max(...existingRolls) : 0;
-        }
-        rollByClass[classKey] += 1;
-        const assignedRoll = s.rollNo || String(rollByClass[classKey]);
-
-        const aadharFormatted = s.aadharNo
-          ? s.aadharNo.replace(/\D/g, "").replace(/(\d{4})(?=\d)/g, "$1 ").trim()
-          : "";
-
-        const newStudent = {
-          enrollment,
-          name: `${s.firstName} ${s.lastName}`.trim(),
-          photo: null,
-          grNo: s.grNo || "",
-          dateOfJoin: s.joinDate || "",
-          admissionClass: s.cls,
-          std: s.cls,
-          section: s.section || "A",
-          rollNo: assignedRoll,
-          session: IMPORT_SESSION,
-          fatherName: s.fatherName || "",
-          motherName: s.motherName || "",
-          mobile: s.mobile1 || "",
-          mobile2: s.mobile2 || "",
-          dob: s.dob || "",
-          gender: s.gender || "",
-          religion: s.religion || "",
-          caste: s.caste || "General",
-          address: s.address || "",
-          aadhar: aadharFormatted,
-          udise: s.udise || "",
-          pen: s.pen || "",
-          apaar: s.apaar || "",
-          status: "Active",
-          fees: { total: 0, paid: 0 },
-          pendingDocs: [],
-          pendingInventory: [],
-          password: ((s.firstName || "STU").slice(0, 3) + enrollment).toUpperCase(),
-          lastSchoolName: s.lastSchoolName || "",
-          lastSchoolClass: s.lastSchoolClass || "",
-        };
-        addStudent(newStudent);
-      });
-
-      setImportedCount(valid.length);
-      setImporting(false);
-      setStep("done");
-    }, 1200);
+    let count = 0;
+    for (const s of valid) {
+      try {
+        await dbAddStudent({
+          firstName:       s.firstName,
+          lastName:        s.lastName,
+          grNo:            s.grNo || "",
+          dob:             s.dob || "2000-01-01",
+          gender:          s.gender || "Male",
+          fatherName:      s.fatherName || "—",
+          motherName:      s.motherName || "—",
+          mobile:          s.mobile1 || null,
+          mobile2:         s.mobile2 || null,
+          religion:        s.religion || null,
+          caste:           s.caste || "General",
+          address:         s.address || null,
+          aadhar:          s.aadharNo ? s.aadharNo.replace(/\D/g, "") : null,
+          udise:           s.udise || null,
+          pen:             s.pen || null,
+          apaar:           s.apaar || null,
+          std:             s.cls,
+          section:         s.section || "A",
+          dateOfJoin:      s.joinDate || new Date().toISOString().split("T")[0],
+          lastSchoolName:  s.lastSchoolName || null,
+          lastSchoolClass: s.lastSchoolClass || null,
+        });
+        count++;
+      } catch { }
+    }
+    setImportedCount(count);
+    setImporting(false);
+    setStep("done");
+    if (onImportDone) onImportDone();
   }
 
   function reset() { setParsed([]); setRowErrors([]); setImportedCount(0); setStep("idle"); }
@@ -2298,10 +2324,28 @@ function PendingTasksPanel({ createdBy }) {
 
 // â"€â"€ Super Admin Page â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 export default function SuperAdminPage() {
-  const [authUser,     setAuthUser]     = useState(null);
-  const [activeTab,    setActiveTab]    = useState("single");
-  const [mgmtTab,      setMgmtTab]      = useState("students");
+  const [authUser,       setAuthUser]       = useState(null);
+  const [activeTab,      setActiveTab]      = useState("single");
+  const [mgmtTab,        setMgmtTab]        = useState("students");
   const [studentsSubTab, setStudentsSubTab] = useState("spreadsheet");
+
+  const [dbStudents,  setDbStudents]  = useState([]);
+  const [dbEmployees, setDbEmployees] = useState([]);
+  const [dataLoading, setDataLoading] = useState(false);
+
+  const setStoreEmployees = useStore(s => s.setEmployees);
+
+  function loadData() {
+    setDataLoading(true);
+    Promise.all([
+      getStudents().then(data => setDbStudents(data.map(mapStudentForSuperAdmin))).catch(() => {}),
+      getEmployees().then(data => { setDbEmployees(data); setStoreEmployees(data); }).catch(() => {}),
+    ]).finally(() => setDataLoading(false));
+  }
+
+  // Load DB data once after login
+  const [loaded, setLoaded] = useState(false);
+  if (authUser && !loaded) { setLoaded(true); loadData(); }
 
   if (!authUser) return <LoginView onLogin={setAuthUser} />;
 
@@ -2344,10 +2388,11 @@ export default function SuperAdminPage() {
             })}
           </div>
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
-            {activeTab==="single"  && <SingleStudentTool students={DUMMY_STUDENTS}/>}
-            {activeTab==="bulk"    && <SpreadsheetEditor students={DUMMY_STUDENTS} title="Bulk Edit Students"/>}
-            {activeTab==="pending" && <PendingDetailsPanel students={DUMMY_STUDENTS}/>}
-            {activeTab==="import"  && <ImportStudentsPanel/>}
+            {dataLoading && <div className="text-center py-8 text-sm text-gray-400">Loading data…</div>}
+            {!dataLoading && activeTab==="single"  && <SingleStudentTool students={dbStudents} onStudentUpdated={() => loadData()}/>}
+            {!dataLoading && activeTab==="bulk"    && <SpreadsheetEditor students={dbStudents} title="Bulk Edit Students"/>}
+            {!dataLoading && activeTab==="pending" && <PendingDetailsPanel students={dbStudents}/>}
+            {activeTab==="import"  && <ImportStudentsPanel onImportDone={loadData}/>}
           </div>
         </>
       )}
@@ -2404,16 +2449,17 @@ export default function SuperAdminPage() {
                     return <button key={t.key} onClick={()=>setStudentsSubTab(t.key)} className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold border-2 transition-all ${isA?"bg-blue-600 text-white border-blue-600 shadow":"border-gray-200 text-gray-600 hover:border-blue-400 bg-white"}`}><Icon className="w-3.5 h-3.5"/>{t.label}</button>;
                   })}
                 </div>
-                {studentsSubTab==="spreadsheet" && <SpreadsheetEditor students={DUMMY_STUDENTS} title="Student Records"/>}
-                {studentsSubTab==="single"      && <SingleStudentTool students={DUMMY_STUDENTS}/>}
-                {studentsSubTab==="pending"     && <PendingDetailsPanel students={DUMMY_STUDENTS}/>}
-                {studentsSubTab==="import"      && <ImportStudentsPanel/>}
+                {dataLoading && <div className="text-center py-8 text-sm text-gray-400">Loading data…</div>}
+                {!dataLoading && studentsSubTab==="spreadsheet" && <SpreadsheetEditor students={dbStudents} title="Student Records"/>}
+                {!dataLoading && studentsSubTab==="single"      && <SingleStudentTool students={dbStudents} onStudentUpdated={() => loadData()}/>}
+                {!dataLoading && studentsSubTab==="pending"     && <PendingDetailsPanel students={dbStudents}/>}
+                {studentsSubTab==="import"      && <ImportStudentsPanel onImportDone={loadData}/>}
               </>
             )}
             {mgmtTab==="fees"      && <FeesPanel/>}
             {mgmtTab==="inventory" && <InventoryPanel/>}
-            {mgmtTab==="employee"  && <EmployeePanel/>}
-            {mgmtTab==="salary"    && <SalaryPanel/>}
+            {mgmtTab==="employee"  && <EmployeePanel employees={dbEmployees}/>}
+            {mgmtTab==="salary"    && <SalaryPanel employees={dbEmployees}/>}
           </div>
         </>
       )}

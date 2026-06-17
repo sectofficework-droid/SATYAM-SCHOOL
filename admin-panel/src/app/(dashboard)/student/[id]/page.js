@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import useStore from "@/lib/store";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { getStudentByEnrollment } from "@/lib/studentService";
 import {
   ArrowLeft, User, Phone, Calendar, BookOpen,
   FileText, IndianRupee, ClipboardCheck, Award, Edit,
@@ -11,61 +12,6 @@ import {
   Package, Clock, AlertTriangle, Bell, Send, X,
 } from "lucide-react";
 
-// ── Dummy Student Data ─────────────────────────────────────────
-const studentDB = {
-  "1001": {
-    enrollment: "1001", password: "ARJ1001", session: "2026-27",
-    grNo: "GR-001",
-    joinDate: "01 Jun 2025", std: "10th", section: "A", rollNo: "101",
-    studentName: "Arjun Rajesh Patel", fatherName: "Rajesh Patel",
-    motherName: "Meena Patel", dob: "15 Jan 2010", gender: "Male",
-    religion: "Hindu", caste: "General", mobile1: "9876543210", mobile2: "9876500000",
-    roomPlotNo: "12, Block B", address: "Shree Society, Varachha Road, Surat - 395006",
-    placeOfBirth: "Surat", photo: null,
-    lastSchoolName: "St. Xavier's Primary School", lastSchoolClass: "9th",
-    lastSchoolMedium: "English", lastSchoolPlace: "Surat",
-    aadhar: "1234 5678 9012", aadharName: "Arjun Rajesh Patel",
-    udise: "24180100101", pen: "", apaar: "",
-    siblingName: "", siblingClass: "",
-    discount: { applied: true, amount: 5000, reason: "Financial Weak" },
-    documents: [
-      { name: "Birth Certificate", uploaded: true, file: "birth_cert.pdf" },
-      { name: "Student Aadhar Card", uploaded: true, file: "aadhar_student.jpg" },
-      { name: "Father's Aadhar Card", uploaded: false, file: "" },
-      { name: "Mother's Aadhar Card", uploaded: false, file: "" },
-      { name: "Leaving Certificate", uploaded: false, file: "" },
-    ],
-    fees: [
-      { term: "Term 1 - 2026-27", amount: 8500, paid: true,  date: "05 Jun 2025", receipt: "RCP001" },
-      { term: "Term 2 - 2026-27", amount: 8500, paid: true,  date: "12 Oct 2025", receipt: "RCP042" },
-      { term: "Term 3 - 2026-27", amount: 8500, paid: false, date: "",            receipt: "" },
-    ],
-    inventory: [
-      { item: "Bag",    givenDate: "05 Jun 2025", given: true  },
-      { item: "Uniform Set",       givenDate: "05 Jun 2025", given: true  },
-      { item: "Book Set",     givenDate: "10 Jun 2025", given: true  },
-      { item: "Notebook Set",     givenDate: "",            given: false },
-      { item: "School Diary",  givenDate: "05 Jun 2025", given: true  },
-      { item: "ID Card",       givenDate: "15 Jun 2025", given: true  },
-      { item: "Assignment - 1", givenDate: "",           given: false },
-      { item: "Assignment - 2", givenDate: "",           given: false },
-      { item: "Assignment - 3", givenDate: "",           given: false },
-    ],
-    attendance: [
-      { month: "June 2025",    present: 22, absent: 2, total: 24, pct: 92 },
-      { month: "July 2025",    present: 25, absent: 1, total: 26, pct: 96 },
-      { month: "August 2025",  present: 23, absent: 3, total: 26, pct: 88 },
-      { month: "September 2025", present: 24, absent: 2, total: 26, pct: 92 },
-      { month: "October 2025", present: 20, absent: 4, total: 24, pct: 83 },
-    ],
-    results: [
-      { exam: "Unit Test 1",      math: 45, science: 42, english: 38, gujarati: 47, social: 40, total: 212, max: 250 },
-      { exam: "Mid-Term Exam",    math: 88, science: 82, english: 76, gujarati: 90, social: 78, total: 414, max: 500 },
-      { exam: "Unit Test 2",      math: 44, science: 46, english: 40, gujarati: 48, social: 43, total: 221, max: 250 },
-      { exam: "Final Exam",       math: 86, science: 80, english: 74, gujarati: 88, social: 76, total: 404, max: 500 },
-    ],
-  },
-};
 
 const TABS = [
   { id: "personal",   label: "Personal Details", icon: User },
@@ -797,86 +743,36 @@ function generateAdmissionFormHTML(s, logoUrl) {
 }
 
 export default function StudentDetailPage() {
-  const { id }      = useParams();
-  const router      = useRouter();
-  const searchParams = useSearchParams();
-  const sessionParam = searchParams.get("session");
-  const [activeTab, setActiveTab] = useState("personal");
-  const storeStudents = useStore(s => s.students);
+  const { id }       = useParams();
+  const router       = useRouter();
+  const [activeTab,  setActiveTab]  = useState("personal");
+  const [rawStudent, setRawStudent] = useState(null);
+  const [loading,    setLoading]    = useState(true);
+  const [loadError,  setLoadError]  = useState(null);
 
-  // Standard document names used across all student records
-  const ALL_DOC_NAMES = [
-    "Birth Certificate",
-    "Student Aadhar Card",
-    "Father's Aadhar Card",
-    "Mother's Aadhar Card",
-    "Leaving Certificate",
-  ];
+  useEffect(() => {
+    if (!id) return;
+    setLoading(true);
+    getStudentByEnrollment(id)
+      .then(data => { setRawStudent(data); setLoading(false); })
+      .catch(err  => { setLoadError(err.message); setLoading(false); });
+  }, [id]);
 
-  // Find the exact session's record; store students take priority over hardcoded dummy data
-  const student = (() => {
-    const allForEnrollment = storeStudents.filter(s => s.enrollment === id);
-    // Prefer store record when session param is present, otherwise fall back to dummy
-    const rec = sessionParam
-      ? (allForEnrollment.find(s => s.session === sessionParam) ?? allForEnrollment[0])
-      : allForEnrollment[0] ?? studentDB[id];
-    if (!rec) return studentDB[id] ?? null;
-
-    // If it's the hardcoded dummy student and no store record exists, return as-is
-    if (!allForEnrollment.length) return studentDB[id] ?? null;
-
-    // Personal details are the same across all sessions — pull from the earliest record
-    const base = [...allForEnrollment].sort((a, b) => (a.session ?? "").localeCompare(b.session ?? ""))[0];
-
-    // Build documents array — prefer rec.documents, then any session that has them,
-    // otherwise derive from pendingDocs (store field: array of pending doc name strings)
-    const docsSource = allForEnrollment.find(s => Array.isArray(s.documents) && s.documents.length > 0);
-    const pendingDocNames = base.pendingDocs ?? rec.pendingDocs ?? [];
-    const derivedDocs = ALL_DOC_NAMES.map(name => ({
-      name,
-      uploaded: !pendingDocNames.includes(name),
-      file: "",
-    }));
-    const resolvedDocs = rec.documents ?? docsSource?.documents ?? derivedDocs;
-
-    return {
-      ...rec,
-      // normalise field names: store uses `name`/`mobile`, profile expects `studentName`/`mobile1`
-      studentName:      rec.studentName      ?? rec.name              ?? base.studentName      ?? base.name      ?? "",
-      mobile1:          rec.mobile1          ?? rec.mobile             ?? base.mobile1          ?? base.mobile    ?? "",
-      mobile2:          rec.mobile2          ?? base.mobile2           ?? "",
-      fatherName:       rec.fatherName       ?? base.fatherName        ?? "",
-      motherName:       rec.motherName       ?? base.motherName        ?? "",
-      dob:              rec.dob              ?? base.dob               ?? "",
-      gender:           rec.gender           ?? base.gender            ?? "",
-      religion:         rec.religion         ?? base.religion          ?? "",
-      caste:            rec.caste            ?? base.caste             ?? "",
-      motherTongue:     rec.motherTongue     ?? base.motherTongue      ?? "",
-      subCaste:         rec.subCaste         ?? base.subCaste          ?? "",
-      height:           rec.height           ?? base.height            ?? "",
-      weight:           rec.weight           ?? base.weight            ?? "",
-      address:          rec.address          ?? base.address           ?? "",
-      roomPlotNo:       rec.roomPlotNo       ?? base.roomPlotNo        ?? "",
-      society:          rec.society          ?? base.society           ?? "",
-      landmark:         rec.landmark         ?? base.landmark          ?? "",
-      area:             rec.area             ?? base.area              ?? "",
-      pinCode:          rec.pinCode          ?? base.pinCode           ?? "",
-      placeOfBirth:     rec.placeOfBirth     ?? base.placeOfBirth      ?? "",
-      aadhar:           rec.aadhar           ?? base.aadhar            ?? "",
-      aadharName:       rec.aadharName       ?? base.aadharName        ?? "",
-      lastSchoolName:   rec.lastSchoolName   ?? base.lastSchoolName    ?? "",
-      lastSchoolGrNo:   rec.lastSchoolGrNo   ?? base.lastSchoolGrNo    ?? "",
-      lastSchoolClass:  rec.lastSchoolClass  ?? base.lastSchoolClass   ?? "",
-      lastSchoolMedium: rec.lastSchoolMedium ?? base.lastSchoolMedium  ?? "",
-      lastSchoolPlace:  rec.lastSchoolPlace  ?? base.lastSchoolPlace   ?? "",
-      prevPercentage:        rec.prevPercentage        ?? base.prevPercentage        ?? "",
-      prevAttendanceDays:    rec.prevAttendanceDays    ?? base.prevAttendanceDays    ?? "",
-      lastExamGiven:         rec.lastExamGiven         ?? base.lastExamGiven         ?? "",
-      siblingName:      rec.siblingName      ?? base.siblingName       ?? "",
-      siblingClass:     rec.siblingClass     ?? base.siblingClass      ?? "",
-      documents:        resolvedDocs,
-    };
-  })();
+  // Map DB result to the field names used throughout this page's rendering code
+  const student = rawStudent ? {
+    ...rawStudent,
+    studentName: rawStudent.name,
+    mobile1:     rawStudent.mobile,
+    joinDate:    rawStudent.dateOfJoin,
+    discount: rawStudent.fees.discount > 0 ? {
+      applied: true,
+      amount:  rawStudent.fees.discount,
+      reason:  rawStudent.fees.discountReason,
+    } : { applied: false, amount: 0, reason: "" },
+    fees:      rawStudent.feePayments,
+    attendance: [],
+    results:    [],
+  } : null;
 
   const handleDownloadPDF = () => {
     if (!student) return;
@@ -890,11 +786,21 @@ export default function StudentDetailPage() {
     setTimeout(() => win.print(), 600);
   };
 
-  if (!student) {
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <div className="w-10 h-10 border-4 border-school-navy/20 border-t-school-navy rounded-full animate-spin" />
+        <p className="text-gray-500 font-medium">Loading student profile...</p>
+      </div>
+    );
+  }
+
+  if (loadError || !student) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <GraduationCap className="w-12 h-12 text-gray-200" />
-        <p className="text-gray-500 font-medium">Student not found</p>
+        <p className="text-gray-500 font-medium">{loadError ? "Failed to load student" : "Student not found"}</p>
+        {loadError && <p className="text-xs text-red-400">{loadError}</p>}
         <button onClick={() => router.back()} className="text-school-navy text-sm font-medium hover:underline">
           Go Back
         </button>

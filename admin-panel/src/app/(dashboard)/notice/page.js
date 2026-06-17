@@ -1,7 +1,10 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { isValidLength, isDateOnOrAfter } from "@/lib/validators";
+import {
+  getNotices, addNotice, updateNotice, deleteNotice as dbDeleteNotice,
+} from "@/lib/noticeService";
 import {
   Bell, Plus, Search, Trash2, X, Pin, PinOff,
   ChevronDown, Pencil, Archive, ArchiveRestore,
@@ -33,41 +36,6 @@ const POSTED_BY_LIST = [
 ];
 
 const TODAY = new Date().toISOString().split("T")[0];
-let _nextId = 200;
-function uid() { return _nextId++; }
-
-const INITIAL_NOTICES = [
-  {
-    id: uid(), title: "Annual Sports Day — 25th June 2026",
-    content: "The Annual Sports Day will be held on 25th June 2026 at the school ground. All students must report by 8:00 AM in their house colour T-shirts. Parents are cordially invited.",
-    type: "Event", audience: "Everyone", date: "2026-06-10", expiryDate: "2026-06-25",
-    postedBy: "Sunil Pradhan", pinned: true, archived: false,
-  },
-  {
-    id: uid(), title: "Fee Payment Reminder — Last Date 20th June",
-    content: "This is a reminder that the last date for fee payment for the academic year 2026-27 is 20th June 2026. Students with pending fees will not receive admit cards.",
-    type: "Fee", audience: "Parents", date: "2026-06-08", expiryDate: "2026-06-20",
-    postedBy: "Gaurang Polai", pinned: false, archived: false,
-  },
-  {
-    id: uid(), title: "Summer Vacation from 1st July 2026",
-    content: "School will remain closed for summer vacation from 1st July 2026 to 31st July 2026. School will reopen on 1st August 2026 as per academic schedule.",
-    type: "Holiday", audience: "Everyone", date: "2026-06-05", expiryDate: "2026-07-31",
-    postedBy: "Sunil Pradhan", pinned: false, archived: false,
-  },
-  {
-    id: uid(), title: "Staff Meeting — 15th June 2026",
-    content: "All teaching and non-teaching staff are required to attend the monthly staff meeting on 15th June 2026 at 4:00 PM in the conference hall. Attendance is mandatory.",
-    type: "Circular", audience: "All Staff", date: "2026-06-03", expiryDate: "2026-06-15",
-    postedBy: "Rajesh Biswal", pinned: false, archived: false,
-  },
-  {
-    id: uid(), title: "New Academic Timetable Effective 12th June",
-    content: "The revised timetable for the academic year 2026-27 will be effective from 12th June 2026. Class teachers will distribute printed copies to students.",
-    type: "Academic", audience: "Everyone", date: "2026-06-01", expiryDate: "2026-06-12",
-    postedBy: "BK Debiprasad Das", pinned: false, archived: false,
-  },
-];
 
 function fmtDate(d) {
   try { return new Date(d).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" }); }
@@ -83,28 +51,34 @@ function daysUntil(dateStr) {
 // ── Notice Form Modal ───────────────────────────────────────────
 function NoticeModal({ initial, onClose, onSave }) {
   const editing = !!initial;
-  const [title,    setTitle]    = useState(initial?.title    ?? "");
-  const [content,  setContent]  = useState(initial?.content  ?? "");
-  const [type,     setType]     = useState(initial?.type     ?? NOTICE_TYPES[0]);
-  const [audience, setAudience] = useState(initial?.audience ?? AUDIENCES[0]);
+  const [title,      setTitle]      = useState(initial?.title      ?? "");
+  const [content,    setContent]    = useState(initial?.content    ?? "");
+  const [type,       setType]       = useState(initial?.type       ?? NOTICE_TYPES[0]);
+  const [audience,   setAudience]   = useState(initial?.audience   ?? AUDIENCES[0]);
   const [date,       setDate]       = useState(initial?.date       ?? TODAY);
   const [expiryDate, setExpiryDate] = useState(initial?.expiryDate ?? "");
   const [postedBy,   setPostedBy]   = useState(initial?.postedBy   ?? POSTED_BY_LIST[0]);
   const [pinned,     setPinned]     = useState(initial?.pinned     ?? false);
+  const [saving,     setSaving]     = useState(false);
 
   const titleValid      = isValidLength(title, 100, 3);
   const contentValid    = isValidLength(content, 2000, 5);
   const expiryDateValid = !expiryDate || isDateOnOrAfter(expiryDate, date);
   const valid = titleValid && contentValid && !!date && expiryDateValid;
 
-  function handleSave() {
-    if (!valid) return;
-    onSave({
-      id: initial?.id ?? uid(),
-      title: title.trim(), content: content.trim(),
-      type, audience, date, expiryDate: expiryDate || null, postedBy, pinned,
-      archived: initial?.archived ?? false,
-    });
+  async function handleSave() {
+    if (!valid || saving) return;
+    setSaving(true);
+    try {
+      await onSave({
+        ...(initial || {}),
+        title: title.trim(), content: content.trim(),
+        type, audience, date, expiryDate: expiryDate || null, postedBy, pinned,
+        archived: initial?.archived ?? false,
+      });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -193,9 +167,9 @@ function NoticeModal({ initial, onClose, onSave }) {
         </div>
         <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">Cancel</button>
-          <button onClick={handleSave} disabled={!valid}
+          <button onClick={handleSave} disabled={!valid || saving}
             className="flex-1 py-2.5 rounded-xl bg-school-navy text-white text-sm font-semibold hover:bg-school-navy-dark transition-colors disabled:opacity-40">
-            {editing ? "Save Changes" : "Post Notice"}
+            {saving ? "Saving…" : editing ? "Save Changes" : "Post Notice"}
           </button>
         </div>
       </div>
@@ -216,10 +190,10 @@ function NoticeCard({ notice, onEdit, onDelete, onTogglePin, onToggleArchive }) 
       )}
       <div className="p-5">
         <div className="flex items-start gap-3">
-          <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${TYPE_DOT[notice.type]}`}/>
+          <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${TYPE_DOT[notice.type] || "bg-gray-400"}`}/>
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1.5">
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${TYPE_COLOR[notice.type]}`}>{notice.type}</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${TYPE_COLOR[notice.type] || TYPE_COLOR.General}`}>{notice.type}</span>
               <span className="text-[10px] font-semibold bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{notice.audience}</span>
             </div>
             <h3 className="text-sm font-bold text-gray-900 leading-snug">{notice.title}</h3>
@@ -253,10 +227,10 @@ function NoticeCard({ notice, onEdit, onDelete, onTogglePin, onToggleArchive }) 
         <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-50">
           <div className="flex items-center gap-3 text-[11px] text-gray-400">
             <span className="flex items-center gap-1"><Calendar className="w-3 h-3"/>{fmtDate(notice.date)}</span>
-            <span className="flex items-center gap-1"><Users className="w-3 h-3"/>{notice.postedBy.split(" ")[0]}</span>
+            {notice.postedBy && <span className="flex items-center gap-1"><Users className="w-3 h-3"/>{notice.postedBy.split(" ")[0]}</span>}
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={() => onTogglePin(notice.id)} title={notice.pinned ? "Unpin" : "Pin"}
+            <button onClick={() => onTogglePin(notice)} title={notice.pinned ? "Unpin" : "Pin"}
               className="p-1.5 rounded-lg text-gray-400 hover:text-school-navy hover:bg-school-navy/5 transition-colors">
               {notice.pinned ? <PinOff className="w-3.5 h-3.5"/> : <Pin className="w-3.5 h-3.5"/>}
             </button>
@@ -264,7 +238,7 @@ function NoticeCard({ notice, onEdit, onDelete, onTogglePin, onToggleArchive }) 
               className="p-1.5 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
               <Pencil className="w-3.5 h-3.5"/>
             </button>
-            <button onClick={() => onToggleArchive(notice.id)} title={notice.archived ? "Restore" : "Archive"}
+            <button onClick={() => onToggleArchive(notice)} title={notice.archived ? "Restore" : "Archive"}
               className="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors">
               {notice.archived ? <ArchiveRestore className="w-3.5 h-3.5"/> : <Archive className="w-3.5 h-3.5"/>}
             </button>
@@ -281,24 +255,34 @@ function NoticeCard({ notice, onEdit, onDelete, onTogglePin, onToggleArchive }) 
 
 // ── Main Page ───────────────────────────────────────────────────
 export default function NoticePage() {
-  const [notices,    setNotices]    = useState(INITIAL_NOTICES);
-  const [tab,        setTab]        = useState("active");   // active | archived
-
-  // Auto-archive notices whose expiryDate has passed
-  useEffect(() => {
-    setNotices(prev => {
-      const updated = prev.map(n =>
-        !n.archived && n.expiryDate && n.expiryDate < TODAY
-          ? { ...n, archived: true, pinned: false }
-          : n
-      );
-      const changed = updated.some((n, i) => n.archived !== prev[i].archived);
-      return changed ? updated : prev;
-    });
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [notices, setNotices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [tab,        setTab]        = useState("active");
   const [search,     setSearch]     = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [modal,      setModal]      = useState(null);       // null | "new" | notice-object (edit)
+  const [modal,      setModal]      = useState(null);
+
+  const loadNotices = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await getNotices();
+      // Auto-archive expired notices in DB
+      const toArchive = data.filter(n => !n.archived && n.expiryDate && n.expiryDate < TODAY);
+      if (toArchive.length > 0) {
+        await Promise.all(toArchive.map(n => updateNotice(n.id, { archived: true, pinned: false })));
+        const refreshed = await getNotices();
+        setNotices(refreshed);
+      } else {
+        setNotices(data);
+      }
+    } catch {
+      setNotices([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadNotices(); }, [loadNotices]);
 
   const visible = useMemo(() => {
     const base = notices.filter(n => tab === "archived" ? n.archived : !n.archived);
@@ -315,20 +299,48 @@ export default function NoticePage() {
   const archivedCount = notices.filter(n =>  n.archived).length;
   const pinnedCount   = notices.filter(n => !n.archived && n.pinned).length;
 
-  function saveNotice(data) {
-    setNotices(prev => {
-      const exists = prev.find(n => n.id === data.id);
-      return exists ? prev.map(n => n.id === data.id ? data : n) : [data, ...prev];
-    });
-    setModal(null);
+  async function saveNotice(data) {
+    try {
+      if (data.id) {
+        const updated = await updateNotice(data.id, data);
+        setNotices(prev => prev.map(n => n.id === updated.id ? updated : n));
+      } else {
+        const created = await addNotice(data);
+        setNotices(prev => [created, ...prev]);
+      }
+      setModal(null);
+    } catch (err) {
+      alert("Failed to save notice: " + err.message);
+    }
   }
 
-  function deleteNotice(id) {
-    if (confirm("Delete this notice permanently?")) setNotices(prev => prev.filter(n => n.id !== id));
+  async function handleDelete(id) {
+    if (!confirm("Delete this notice permanently?")) return;
+    try {
+      await dbDeleteNotice(id);
+      setNotices(prev => prev.filter(n => n.id !== id));
+    } catch (err) {
+      alert("Failed to delete: " + err.message);
+    }
   }
 
-  function togglePin(id)     { setNotices(prev => prev.map(n => n.id === id ? { ...n, pinned: !n.pinned } : n)); }
-  function toggleArchive(id) { setNotices(prev => prev.map(n => n.id === id ? { ...n, archived: !n.archived, pinned: false } : n)); }
+  async function handleTogglePin(notice) {
+    try {
+      const updated = await updateNotice(notice.id, { pinned: !notice.pinned });
+      setNotices(prev => prev.map(n => n.id === updated.id ? updated : n));
+    } catch (err) {
+      alert("Failed to update: " + err.message);
+    }
+  }
+
+  async function handleToggleArchive(notice) {
+    try {
+      const updated = await updateNotice(notice.id, { archived: !notice.archived, pinned: false });
+      setNotices(prev => prev.map(n => n.id === updated.id ? updated : n));
+    } catch (err) {
+      alert("Failed to update: " + err.message);
+    }
+  }
 
   return (
     <>
@@ -357,9 +369,9 @@ export default function NoticePage() {
         {/* Stats */}
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: "Active",   value: activeCount,   icon: Bell,         bg: "bg-blue-50",   color: "text-blue-600"  },
-            { label: "Pinned",   value: pinnedCount,   icon: Pin,          bg: "bg-amber-50",  color: "text-amber-600" },
-            { label: "Archived", value: archivedCount, icon: Archive,      bg: "bg-gray-100",  color: "text-gray-500"  },
+            { label: "Active",   value: activeCount,   icon: Bell,    bg: "bg-blue-50",  color: "text-blue-600"  },
+            { label: "Pinned",   value: pinnedCount,   icon: Pin,     bg: "bg-amber-50", color: "text-amber-600" },
+            { label: "Archived", value: archivedCount, icon: Archive, bg: "bg-gray-100", color: "text-gray-500"  },
           ].map(({ label, value, icon: Icon, bg, color }) => (
             <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
               <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center flex-shrink-0`}>
@@ -375,9 +387,8 @@ export default function NoticePage() {
 
         {/* Filters + Tabs */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-          {/* Active / Archived tabs */}
           <div className="flex gap-2 border-b border-gray-100 pb-3">
-            {[["active","Active","text-blue-600"],["archived","Archived","text-gray-500"]].map(([k, l]) => (
+            {[["active","Active"],["archived","Archived"]].map(([k, l]) => (
               <button key={k} onClick={() => setTab(k)}
                 className={`px-4 py-1.5 rounded-xl text-sm font-semibold transition-colors ${
                   tab === k ? "bg-school-navy text-white" : "text-gray-500 hover:bg-gray-100"
@@ -403,7 +414,11 @@ export default function NoticePage() {
         </div>
 
         {/* Notice Cards */}
-        {visible.length === 0 ? (
+        {loading ? (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex items-center justify-center py-16">
+            <p className="text-sm text-gray-400">Loading notices…</p>
+          </div>
+        ) : visible.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center justify-center py-16 text-center gap-3">
             <Bell className="w-10 h-10 text-gray-200"/>
             <p className="text-gray-400 font-medium text-sm">No notices found.</p>
@@ -415,9 +430,9 @@ export default function NoticePage() {
               <NoticeCard
                 key={n.id} notice={n}
                 onEdit={setModal}
-                onDelete={deleteNotice}
-                onTogglePin={togglePin}
-                onToggleArchive={toggleArchive}
+                onDelete={handleDelete}
+                onTogglePin={handleTogglePin}
+                onToggleArchive={handleToggleArchive}
               />
             ))}
           </div>

@@ -4,6 +4,13 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import useStore from "@/lib/store";
 import { useRouter } from "next/navigation";
+import supabase from "@/lib/supabase";
+import {
+  getStudents as fetchStudentsFromDB,
+  deactivateStudent as svcDeactivate,
+  promoteStudent as svcPromote,
+} from "@/lib/studentService";
+import { getActiveClasses } from "@/lib/settingsService";
 import {
   Plus, Search, GraduationCap, Phone, Calendar, Edit, Trash2,
   LogOut, Eye, EyeOff, User, ChevronDown, ArrowUpCircle,
@@ -22,17 +29,6 @@ function getCurrentSession() {
   const month = now.getMonth() + 1;
   const start = month >= 4 ? yr : yr - 1;
   return `${start}-${String(start + 1).slice(2)}`;
-}
-
-function buildSessionsList() {
-  const now   = new Date();
-  const yr    = now.getFullYear();
-  const month = now.getMonth() + 1;
-  const start = month >= 4 ? yr : yr - 1;
-  return [0, 1, 2].map((i) => {
-    const s = start - i;
-    return `${s}-${String(s + 1).slice(2)}`;
-  });
 }
 
 const CURRENT_SESSION = getCurrentSession();
@@ -54,13 +50,6 @@ const CLASS_FEES = {
 function getNextClass(cls) {
   const idx = CLASS_ORDER.indexOf(cls);
   return idx < 0 || idx >= CLASS_ORDER.length - 1 ? null : CLASS_ORDER[idx + 1];
-}
-
-function nextRollNo(className, session, allStudents) {
-  const nums = allStudents
-    .filter(s => s.std === className && s.session === session && s.status !== "Left")
-    .map(s => parseInt(s.rollNo, 10) || 0);
-  return nums.length ? Math.max(...nums) + 1 : 1;
 }
 
 function calcAge(dobStr) {
@@ -200,7 +189,7 @@ const PROMOTE_DISCOUNT_REASONS = [
   "Early Fees Complete", "Early Admission", "Old Student", "Other",
 ];
 
-function PromoteModal({ student, onClose, onPromote, router, students }) {
+function PromoteModal({ student, onClose, onPromote, router }) {
   const nextClass          = getNextClass(student.std);
   const uniformFees        = useStore(s => s.uniformFees);
   const uniformFee         = (nextClass && uniformFees[nextClass]) ? uniformFees[nextClass] : 1500;
@@ -232,17 +221,19 @@ function PromoteModal({ student, onClose, onPromote, router, students }) {
   const extraValid = oldStudentValid && extraAmountValid &&
     (!extraOn || (extraAmount && extraReason && (extraReason !== "Other" || extraCustom)));
 
-  const handleConfirmPromote = () => {
+  const handleConfirmPromote = async () => {
     if (!extraValid) return;
-    const newRoll     = nextRollNo(nextClass, CURRENT_SESSION, students);
-    const discReason  = oldStudentOn
+    const discReason = oldStudentOn
       ? "Old Student Discount"
       : extraOn ? (extraReason === "Other" ? extraCustom : extraReason) : "";
-    onPromote({ discount: totalDiscount, discountReason: discReason });
-    const enr  = encodeURIComponent(student.enrollment);
-    const std  = encodeURIComponent(nextClass);
-    const roll = encodeURIComponent(String(newRoll));
-    router.push("/fees?enrollment=" + enr + "&std=" + std + "&roll=" + roll + "&promoted=1");
+    try {
+      await onPromote({ discount: totalDiscount, discountReason: discReason });
+      const enr = encodeURIComponent(student.enrollment);
+      const std = encodeURIComponent(nextClass);
+      router.push("/fees?enrollment=" + enr + "&std=" + std + "&promoted=1");
+    } catch {
+      // error already shown via alert in handlePromote
+    }
   };
 
   return (
@@ -532,35 +523,57 @@ function PromoteModal({ student, onClose, onPromote, router, students }) {
 // ── Main Page ──────────────────────────────────────────────────
 export default function StudentPage() {
   const router           = useRouter();
-  const sessions         = buildSessionsList();
   const readmissionDate  = useStore(s => s.readmissionDate);
   const canPromote       = !!(readmissionDate && new Date() >= new Date(readmissionDate));
-  const activeClasses    = useStore(s => s.activeClasses);
-  const masterItems      = useStore(s => s.studentInventoryItems);
 
+  const [activeClassNames, setActiveClassNames] = useState([]);
   const [session, setSession]             = useState(CURRENT_SESSION);
   const [search, setSearch]               = useState("");
   const [stdFilter, setStdFilter]         = useState("All Classes");
   const [docFilter, setDocFilter]         = useState("All");
   const [govtIdFilter, setGovtIdFilter]   = useState([]);
   const [showPasswords, setShowPasswords] = useState({});
-  const students    = useStore(s => s.students);
-  const setStudents = useStore(s => s.setStudents);
+  const [students, setStudents]               = useState([]);
+  const [loading, setLoading]                 = useState(true);
+  const [loadError, setLoadError]             = useState(null);
+  const [academicYears, setAcademicYears]     = useState([]);
+  const [selectedYearId, setSelectedYearId]   = useState(null);
   const [promoteModal, setPromoteModal]       = useState(null);
   const [deactivateModal, setDeactivateModal] = useState(null);
 
 
   const togglePw = (enr) => setShowPasswords((p) => ({ ...p, [enr]: !p[enr] }));
 
-  const ACTIVE_CLASS_MAP = {
-    "JR KG":"JR.KG", "SR KG":"SR.KG", "Balvatika":"Balvatika",
-    "1st":"1st","2nd":"2nd","3rd":"3rd","4th":"4th","5th":"5th",
-    "6th":"6th","7th":"7th","8th":"8th","9th":"9th","10th":"10th",
-    "11th Commerce":"11th - Commerce","12th Commerce":"12th - Commerce",
-  };
+  // Load academic years + active classes on mount
+  useEffect(() => {
+    supabase
+      .from("academic_years")
+      .select("id, label, is_current, start_date")
+      .order("start_date", { ascending: false })
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setAcademicYears(data);
+          const current = data.find(y => y.is_current) || data[0];
+          setSelectedYearId(current.id);
+          setSession(current.label);
+        }
+      });
+    getActiveClasses().then(cls => setActiveClassNames(cls.map(c => c.name))).catch(() => {});
+  }, []);
+
+  // Fetch students when year changes
+  useEffect(() => {
+    if (!selectedYearId) return;
+    setLoading(true);
+    setLoadError(null);
+    fetchStudentsFromDB(selectedYearId)
+      .then(data => { setStudents(data); setLoading(false); })
+      .catch(err  => { setLoadError(err.message); setLoading(false); });
+  }, [selectedYearId]);
+
   const allStandards = [
     "All Classes",
-    ...CLASS_ORDER.filter(c => activeClasses.some(ac => ACTIVE_CLASS_MAP[ac] === c)),
+    ...CLASS_ORDER.filter(c => activeClassNames.includes(c)),
   ];
 
   const DOC_FILTER_OPTIONS = [
@@ -578,8 +591,8 @@ export default function StudentPage() {
     { key: "apaar", label: "APAAR" },
   ];
 
-  // All students belonging to the selected session (including manually deactivated for record keeping)
-  const sessionStudents = students.filter(s => s.session === session && s.status !== "Left");
+  // Students are already filtered by year from DB; just exclude Left status
+  const sessionStudents = students.filter(s => s.status !== "Left");
 
   const filtered = sessionStudents.filter((s) => {
     const matchSearch =
@@ -593,51 +606,41 @@ export default function StudentPage() {
     return matchSearch && matchStd && matchDoc && matchGovtId;
   });
 
-  const handleDeactivate = (student, { reason, date }) => {
-    setStudents((prev) =>
-      prev.map((s) =>
-        s.enrollment === student.enrollment
-          ? { ...s, status: "Inactive", deactivateReason: reason, deactivateDate: date }
-          : s
-      )
-    );
-    setDeactivateModal(null);
+  const handleDeactivate = async (student, { reason, date }) => {
+    try {
+      await svcDeactivate(student._studentId, student._enrollmentId, reason, date);
+      setDeactivateModal(null);
+      if (selectedYearId) {
+        const data = await fetchStudentsFromDB(selectedYearId);
+        setStudents(data);
+      }
+    } catch (err) {
+      alert("Could not deactivate student: " + err.message);
+    }
   };
 
-  const handlePromote = (student, discountData = {}) => {
+  const handlePromote = async (student, discountData = {}) => {
     const nextClass = getNextClass(student.std);
     if (!nextClass) return;
     const fTotal = student.fees?.total ?? 0;
     const fDisc  = student.fees?.discount ?? 0;
     const fPaid  = student.fees?.paid ?? 0;
     if (Math.max(fTotal - fDisc, 0) > fPaid) return;
-    const newRoll = String(nextRollNo(nextClass, CURRENT_SESSION, students));
     const { discount = 0, discountReason = "" } = discountData;
-    // 1. Mark original record as promoted (stays in its session for history)
-    setStudents((prev) => [
-      ...prev.map((s) =>
-        s.enrollment === student.enrollment
-          ? { ...s, promotedTo: { session: CURRENT_SESSION, std: nextClass } }
-          : s
-      ),
-      // 2. Create new record for the new session
-      {
-        ...student,
-        id: Date.now(),
-        session: CURRENT_SESSION,
-        std: nextClass,
-        rollNo: newRoll,
-        status: "Active",
-        fees: { total: CLASS_FEES[nextClass] ?? 0, paid: 0, discount, discountReason },
-        pendingInventory: [...masterItems],
-        promotedFrom: { session: student.session, std: student.std },
-        promotedTo: null,
-        deactivateReason: null,
-        deactivateDate: null,
-        admissionDate: new Date().toISOString().slice(0, 10),
-      },
-    ]);
-    setPromoteModal(null);
+    try {
+      await svcPromote(student._studentId, student._enrollmentId, nextClass, {
+        feeTotal:      CLASS_FEES[nextClass] ?? 0,
+        totalDiscount: discount,
+        reason:        discountReason,
+      });
+      setPromoteModal(null);
+      if (selectedYearId) {
+        fetchStudentsFromDB(selectedYearId).then(data => setStudents(data));
+      }
+    } catch (err) {
+      alert("Could not promote student: " + err.message);
+      throw err;
+    }
   };
 
   function doExportExcel() {
@@ -735,7 +738,6 @@ export default function StudentPage() {
           onClose={() => setPromoteModal(null)}
           onPromote={(discountData) => handlePromote(promoteModal, discountData)}
           router={router}
-          students={students}
         />
       )}
       {deactivateModal && (
@@ -803,10 +805,17 @@ export default function StudentPage() {
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
             </div>
             <div className="relative">
-              <select value={session} onChange={(e) => setSession(e.target.value)}
+              <select
+                value={session}
+                onChange={(e) => {
+                  const yr = academicYears.find(y => y.label === e.target.value);
+                  if (yr) { setSession(yr.label); setSelectedYearId(yr.id); }
+                }}
                 className="appearance-none pl-3 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white cursor-pointer font-medium text-school-navy">
-                {sessions.map((s) => (
-                  <option key={s} value={s}>Session {s}{s === CURRENT_SESSION ? " (Current)" : ""}</option>
+                {academicYears.map((yr) => (
+                  <option key={yr.id} value={yr.label}>
+                    Session {yr.label}{yr.is_current ? " (Current)" : ""}
+                  </option>
                 ))}
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-school-navy pointer-events-none" />
@@ -926,7 +935,18 @@ export default function StudentPage() {
         </div>
 
         {/* ── Student Cards ── */}
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-16 text-center">
+            <div className="w-10 h-10 border-4 border-school-navy/20 border-t-school-navy rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-gray-500 font-medium">Loading students...</p>
+          </div>
+        ) : loadError ? (
+          <div className="bg-white rounded-2xl border border-red-100 shadow-sm p-16 text-center">
+            <AlertTriangle className="w-12 h-12 text-red-300 mx-auto mb-3" />
+            <p className="text-red-600 font-medium">Failed to load students</p>
+            <p className="text-sm text-red-400 mt-1">{loadError}</p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-16 text-center">
             <GraduationCap className="w-12 h-12 text-gray-200 mx-auto mb-3" />
             <p className="text-gray-500 font-medium">No students found</p>

@@ -1,66 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft, GraduationCap, CheckCircle2, Printer, FileText,
   ChevronDown, Lock,
 } from "lucide-react";
 import { isDateOnOrAfter, isValidLength } from "@/lib/validators";
-
-// ── Dummy student DB ───────────────────────────────────────────
-const studentDB = {
-  "1001": {
-    enrollment: "1001", name: "Arjun Patel", std: "10th", section: "A",
-    rollNo: "101", session: "2026-27",
-    fatherName: "Rajesh Patel", motherName: "Meena Patel",
-    dob: "15 Jan 2010", gender: "Male",
-    address: "12, Shree Society, Varachha Road, Surat - 395006",
-    mobile: "9876543210", aadhar: "1234 5678 9012",
-    admissionDate: "01 Jun 2023", admissionClass: "8th",
-    caste: "General", religion: "Hindu",
-  },
-  "1002": {
-    enrollment: "1002", name: "Priya Shah", std: "9th", section: "B",
-    rollNo: "204", session: "2026-27",
-    fatherName: "Amit Shah", motherName: "Kavita Shah",
-    dob: "22 Mar 2011", gender: "Female",
-    address: "45, Ganesh Nagar, Adajan, Surat - 395009",
-    mobile: "9765432100", aadhar: "",
-    admissionDate: "15 Jun 2023", admissionClass: "8th",
-    caste: "OBC", religion: "Hindu",
-  },
-  "1003": {
-    enrollment: "1003", name: "Rohan Mehta", std: "11th - Commerce", section: "A",
-    rollNo: "312", session: "2026-27",
-    fatherName: "Suresh Mehta", motherName: "Asha Mehta",
-    dob: "08 Jul 2009", gender: "Male",
-    address: "78, Silver Park, Katargam, Surat - 395004",
-    mobile: "9654321098", aadhar: "9876 5432 1098",
-    admissionDate: "10 Apr 2022", admissionClass: "9th",
-    caste: "General", religion: "Jain",
-  },
-  "1004": {
-    enrollment: "1004", name: "Sneha Desai", std: "8th", section: "C",
-    rollNo: "418", session: "2026-27",
-    fatherName: "Kishore Desai", motherName: "Hetal Desai",
-    dob: "30 Nov 2011", gender: "Female",
-    address: "23, Krishna Society, Piplod, Surat - 395007",
-    mobile: "9543210987", aadhar: "",
-    admissionDate: "05 Jun 2024", admissionClass: "8th",
-    caste: "SC", religion: "Hindu",
-  },
-  "1005": {
-    enrollment: "1005", name: "Dev Joshi", std: "JR.KG", section: "A",
-    rollNo: "501", session: "2026-27",
-    fatherName: "Prakash Joshi", motherName: "Ruchita Joshi",
-    dob: "14 Sep 2020", gender: "Male",
-    address: "5, Swaminarayan Society, Dindoli, Surat - 395010",
-    mobile: "9432109876", aadhar: "",
-    admissionDate: "12 Jun 2024", admissionClass: "JR.KG",
-    caste: "General", religion: "Hindu",
-  },
-};
+import {
+  getStudentByEnrollment,
+  saveTransferCertificate,
+} from "@/lib/studentService";
 
 const todayStr = new Date().toISOString().split("T")[0];
 
@@ -184,11 +134,14 @@ function TcCertificate({ student, tcData }) {
 
 // ── Main TC Page ───────────────────────────────────────────────
 export default function TcPage() {
-  const { id }   = useParams();
-  const router   = useRouter();
-  const student  = studentDB[id];
+  const { id }  = useParams();
+  const router  = useRouter();
 
-  const [submitted, setSubmitted] = useState(false);
+  const [rawStudent, setRawStudent] = useState(null);
+  const [loading, setLoading]       = useState(true);
+  const [loadError, setLoadError]   = useState(null);
+  const [submitted, setSubmitted]   = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     tcNumber:     generateTcNumber(id),
     tcDate:       todayStr,
@@ -200,13 +153,30 @@ export default function TcPage() {
     remarks:      "",
   });
 
+  useEffect(() => {
+    if (!id) return;
+    setLoading(true);
+    getStudentByEnrollment(id)
+      .then(data => { setRawStudent(data); setLoading(false); })
+      .catch(err  => { setLoadError(err.message); setLoading(false); });
+  }, [id]);
+
   const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
 
-  if (!student) {
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <div className="w-8 h-8 border-4 border-school-navy border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-gray-500">Loading student details…</p>
+      </div>
+    );
+  }
+
+  if (loadError || !rawStudent) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <GraduationCap className="w-12 h-12 text-gray-200" />
-        <p className="text-gray-500 font-medium">Student not found</p>
+        <p className="text-gray-500 font-medium">{loadError || "Student not found"}</p>
         <button onClick={() => router.back()} className="text-school-navy text-sm font-medium hover:underline">
           Go Back
         </button>
@@ -214,7 +184,12 @@ export default function TcPage() {
     );
   }
 
-  const handleSubmit = (e) => {
+  const student = {
+    ...rawStudent,
+    admissionDate: rawStudent.dateOfJoin,
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!form.reason) { alert("Please select a reason for leaving."); return; }
     if (form.reason === "Other" && !form.customReason.trim()) {
@@ -229,7 +204,23 @@ export default function TcPage() {
     if (!isDateOnOrAfter(form.leavingDate, form.tcDate)) {
       alert("Date of Leaving cannot be before the TC Issue Date."); return;
     }
-    setSubmitted(true);
+    setSubmitting(true);
+    try {
+      await saveTransferCertificate(student._studentId, {
+        tcNumber:    form.tcNumber,
+        tcDate:      form.tcDate,
+        leavingDate: form.leavingDate,
+        reason:      form.reason === "Other" ? form.customReason : form.reason,
+        conduct:     form.conduct,
+        duesCleared: form.duesCleared,
+        remarks:     form.remarks,
+      });
+      setSubmitted(true);
+    } catch (err) {
+      alert("Failed to save TC: " + err.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (submitted) {
@@ -423,9 +414,10 @@ export default function TcPage() {
           </button>
           <button
             type="submit"
-            className="px-8 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-sm font-semibold transition-colors shadow-sm"
+            disabled={submitting}
+            className="px-8 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-semibold transition-colors shadow-sm"
           >
-            Generate TC & Mark as Deactive
+            {submitting ? "Saving…" : "Generate TC & Mark as Left"}
           </button>
         </div>
       </form>
