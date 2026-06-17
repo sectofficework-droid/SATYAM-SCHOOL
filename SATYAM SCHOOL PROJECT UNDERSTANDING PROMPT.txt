@@ -9,7 +9,7 @@ Database relationships
 User roles
 Security
 Scalability
-Mobile + Web ecyyyosystem
+Mobile + Web ecosystem
 Real-world school operations
 The system should NOT be treated like a college mini-project.
 It must be treated as:

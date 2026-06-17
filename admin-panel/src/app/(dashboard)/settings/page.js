@@ -82,15 +82,33 @@ const DEF_USERS = [
 // ── Timetable Constants ────────────────────────────────────────────────────────
 const DAY_GROUPS = ["Mon – Wed", "Thu – Fri", "Saturday"];
 
-const TIME_SLOTS = [
-  { id:"prayer", label:"PRAYER",  time:"9:00 – 9:20",   special:true  },
-  { id:"p1",     label:"Period 1", time:"9:20 – 10:20"                 },
-  { id:"p2",     label:"Period 2", time:"10:20 – 11:10"                },
-  { id:"recess", label:"RECESS",  time:"11:10 – 11:40", special:true  },
-  { id:"p3",     label:"Period 3", time:"11:40 – 12:30"                },
-  { id:"p4",     label:"Period 4", time:"12:30 – 1:20"                 },
-  { id:"p5",     label:"Period 5", time:"1:20 – 2:00"                  },
-];
+const DEF_PERIOD_DEFS = {
+  "Mon – Wed": [
+    { id:"prayer", label:"Prayer",   startTime:"09:00", endTime:"09:20", isBreak:true  },
+    { id:"p1",     label:"Period 1", startTime:"09:20", endTime:"10:20", isBreak:false },
+    { id:"p2",     label:"Period 2", startTime:"10:20", endTime:"11:10", isBreak:false },
+    { id:"recess", label:"Recess",   startTime:"11:10", endTime:"11:40", isBreak:true  },
+    { id:"p3",     label:"Period 3", startTime:"11:40", endTime:"12:30", isBreak:false },
+    { id:"p4",     label:"Period 4", startTime:"12:30", endTime:"13:20", isBreak:false },
+    { id:"p5",     label:"Period 5", startTime:"13:20", endTime:"14:00", isBreak:false },
+  ],
+  "Thu – Fri": [
+    { id:"prayer", label:"Prayer",   startTime:"09:00", endTime:"09:20", isBreak:true  },
+    { id:"p1",     label:"Period 1", startTime:"09:20", endTime:"10:20", isBreak:false },
+    { id:"p2",     label:"Period 2", startTime:"10:20", endTime:"11:10", isBreak:false },
+    { id:"recess", label:"Recess",   startTime:"11:10", endTime:"11:40", isBreak:true  },
+    { id:"p3",     label:"Period 3", startTime:"11:40", endTime:"12:30", isBreak:false },
+    { id:"p4",     label:"Period 4", startTime:"12:30", endTime:"13:20", isBreak:false },
+    { id:"p5",     label:"Period 5", startTime:"13:20", endTime:"14:00", isBreak:false },
+  ],
+  "Saturday": [
+    { id:"prayer",  label:"Prayer",   startTime:"09:00", endTime:"09:20", isBreak:true  },
+    { id:"p1",      label:"Period 1", startTime:"09:20", endTime:"10:20", isBreak:false },
+    { id:"p2",      label:"Period 2", startTime:"10:20", endTime:"11:10", isBreak:false },
+    { id:"recess",  label:"Recess",   startTime:"11:10", endTime:"11:40", isBreak:true  },
+    { id:"p3",      label:"Period 3", startTime:"11:40", endTime:"12:30", isBreak:false },
+  ],
+};
 
 const SUBJECTS_TT = [
   "Mathematics","Science","English","Hindi","Social Studies","Computer",
@@ -1300,151 +1318,166 @@ function UsersRolesTab() {
   );
 }
 
-// ── Saturday uses only morning slots ──────────────────────────────────────────
-const SAT_SLOT_IDS = new Set(["prayer","p1","p2","recess","p3"]);
-function slotsForGroup(group, slots) {
-  return group === "Saturday" ? slots.filter(s => SAT_SLOT_IDS.has(s.id)) : slots;
-}
-
 // ── Tab: Timetable ─────────────────────────────────────────────────────────────
 function TimetableTab() {
+  const periodDefs      = useStore(s => s.periodDefs);
+  const setPeriodDefs   = useStore(s => s.setPeriodDefs);
   const storedTT        = useStore(s => s.timetables);
   const saveTT          = useStore(s => s.setTimetables);
   const ttActiveClasses = useStore(s => s.activeClasses);
-  const storedSlots     = useStore(s => s.timeSlots);
-  const saveSlots       = useStore(s => s.setTimeSlots);
   const backupRef       = useRef(null);
+  const periodsBackup   = useRef(null);
 
-  const [selYear,    setSelYear]    = useState(DEF_YEAR.current);
-  const [editMode,   setEditMode]   = useState(false);
-  const [saved,      setSaved]      = useState(false);
-  const [activeCell, setActiveCell] = useState(null); // { group, slotId, cls }
-  const [ttData,     setTtData]     = useState(() => storedTT || {});
+  const [selYear,          setSelYear]          = useState(DEF_YEAR.current);
+  const [editMode,         setEditMode]         = useState(false);
+  const [saved,            setSaved]            = useState(false);
+  const [activeCell,       setActiveCell]       = useState(null);
+  const [ttData,           setTtData]           = useState(() => storedTT || {});
+  const [periodsEditMode,  setPeriodsEditMode]  = useState(false);
+  const [periodsForm,      setPeriodsForm]      = useState(() => JSON.parse(JSON.stringify(periodDefs || DEF_PERIOD_DEFS)));
+  const [periodsSaved,     setPeriodsSaved]     = useState(false);
+  const [activeGroup,      setActiveGroup]      = useState(DAY_GROUPS[0]);
 
-  // ── Period Times edit ──
-  const [timesEditMode, setTimesEditMode] = useState(false);
-  const [timesSaved,    setTimesSaved]    = useState(false);
-  const [slotsForm,     setSlotsForm]     = useState(() => storedSlots.map(s => ({ ...s })));
-  const slotsBackup = useRef(null);
+  const activeDefs = periodsEditMode ? periodsForm : (periodDefs || DEF_PERIOD_DEFS);
+  function groupSlots(group) { return activeDefs[group] ?? []; }
 
-  const currentSlots = timesEditMode ? slotsForm : storedSlots;
+  function fmtTime(t) { if (!t) return ""; const [h,m] = t.split(":"); return `${parseInt(h)}:${m}`; }
+  function fmtSlotTime(slot) { return `${fmtTime(slot.startTime)} – ${fmtTime(slot.endTime)}`; }
 
-  function startTimesEdit() { slotsBackup.current = storedSlots.map(s => ({ ...s })); setSlotsForm(storedSlots.map(s => ({ ...s }))); setTimesEditMode(true); }
-  function cancelTimesEdit() { setSlotsForm(slotsBackup.current); setTimesEditMode(false); }
-  function saveTimesEdit()   { saveSlots(slotsForm); setTimesSaved(true); setTimesEditMode(false); setTimeout(() => setTimesSaved(false), 2500); }
+  // ── Period management ──
+  function startPeriodsEdit() {
+    periodsBackup.current = JSON.parse(JSON.stringify(periodDefs || DEF_PERIOD_DEFS));
+    setPeriodsForm(JSON.parse(JSON.stringify(periodDefs || DEF_PERIOD_DEFS)));
+    setPeriodsEditMode(true);
+  }
+  function cancelPeriodsEdit() { setPeriodsForm(periodsBackup.current); setPeriodsEditMode(false); }
+  function savePeriodsEdit()   { setPeriodDefs(periodsForm); setPeriodsSaved(true); setPeriodsEditMode(false); setTimeout(() => setPeriodsSaved(false), 2500); }
 
+  function moveSlot(group, idx, dir) {
+    setPeriodsForm(prev => {
+      const slots = [...(prev[group] ?? [])];
+      const ni = idx + dir;
+      if (ni < 0 || ni >= slots.length) return prev;
+      [slots[idx], slots[ni]] = [slots[ni], slots[idx]];
+      return { ...prev, [group]: slots };
+    });
+  }
+  function updateSlot(group, idx, key, val) {
+    setPeriodsForm(prev => ({ ...prev, [group]: prev[group].map((s,i) => i===idx ? {...s,[key]:val} : s) }));
+  }
+  function deleteSlot(group, idx) {
+    setPeriodsForm(prev => ({ ...prev, [group]: prev[group].filter((_,i) => i!==idx) }));
+  }
+  function addSlot(group, isBreak) {
+    const existing = periodsForm[group] ?? [];
+    const last = existing[existing.length - 1];
+    const periodCount = existing.filter(s => !s.isBreak).length;
+    setPeriodsForm(prev => ({
+      ...prev,
+      [group]: [...(prev[group] ?? []), {
+        id: "slot_" + Date.now(),
+        label: isBreak ? "Break" : `Period ${periodCount + 1}`,
+        startTime: last?.endTime ?? "09:00",
+        endTime:   last?.endTime ?? "09:45",
+        isBreak,
+      }],
+    }));
+  }
+
+  // ── Timetable grid ──
   const activeColClasses = CLASSES.filter(c => ttActiveClasses.includes(c));
 
   function getSlot(group, slotId, cls) {
     return ttData?.[selYear]?.[group]?.[slotId]?.[cls] ?? { subject:"", teacher:"" };
   }
-
   function setSlotVal(group, slotId, cls, key, value) {
     setTtData(prev => {
       const next = JSON.parse(JSON.stringify(prev));
-      if (!next[selYear])                              next[selYear]                    = {};
-      if (!next[selYear][group])                       next[selYear][group]             = {};
-      if (!next[selYear][group][slotId])               next[selYear][group][slotId]     = {};
-      if (!next[selYear][group][slotId][cls])          next[selYear][group][slotId][cls] = { subject:"", teacher:"" };
+      if (!next[selYear])                     next[selYear]                     = {};
+      if (!next[selYear][group])              next[selYear][group]              = {};
+      if (!next[selYear][group][slotId])      next[selYear][group][slotId]      = {};
+      if (!next[selYear][group][slotId][cls]) next[selYear][group][slotId][cls] = { subject:"", teacher:"" };
       next[selYear][group][slotId][cls][key] = value;
       return next;
     });
   }
-
   function getBusyTeachers(group, slotId, currentCls) {
     const busy = new Set();
-    const slotData = ttData?.[selYear]?.[group]?.[slotId] ?? {};
-    Object.entries(slotData).forEach(([cls, cell]) => {
+    Object.entries(ttData?.[selYear]?.[group]?.[slotId] ?? {}).forEach(([cls, cell]) => {
       if (cls !== currentCls && cell?.teacher) busy.add(cell.teacher);
     });
     return busy;
   }
-
   function startEdit() { backupRef.current = JSON.parse(JSON.stringify(ttData)); setEditMode(true); setActiveCell(null); }
   function cancel()    { if (backupRef.current) setTtData(backupRef.current); setEditMode(false); setActiveCell(null); }
   function save()      { saveTT(ttData); setSaved(true); setEditMode(false); setActiveCell(null); setTimeout(() => setSaved(false), 2500); }
-
   const isCellActive = (group, slotId, cls) =>
     activeCell?.group === group && activeCell?.slotId === slotId && activeCell?.cls === cls;
 
-  // ── PDF Export ────────────────────────────────────────────────
+  // ── PDF Export ──
   function exportPDF() {
     const doc = new jsPDF({ orientation:"landscape", unit:"pt", format:"a3" });
     const pw = doc.internal.pageSize.width;
-
     doc.setFontSize(16); doc.setTextColor(30,58,95);
     doc.text(`Staff Time Table — ${selYear}`, pw/2, 32, { align:"center" });
     doc.setFontSize(9); doc.setTextColor(100,100,100);
     doc.text("Satyam Stars International School  ·  Surat, Gujarat", pw/2, 46, { align:"center" });
-
     let y = 58;
-
     DAY_GROUPS.forEach((group) => {
-      const slots = slotsForGroup(group, currentSlots);
+      const slots = groupSlots(group);
       const isSat = group === "Saturday";
-
       doc.setFillColor(...(isSat ? [180,72,0] : [30,58,95]));
       doc.setTextColor(255,255,255); doc.setFontSize(11);
       doc.rect(30, y, pw-60, 18, "F");
       doc.text(`  ${group}${isSat ? "  —  Half Day" : ""}`, 34, y+13);
       y += 22;
-
       const head = [["TIME", ...activeColClasses]];
       const body = slots.map(slot => {
-        if (slot.special) return [{ content:slot.time }, { content:slot.label, colSpan:activeColClasses.length, styles:{ halign:"center", fontStyle:"bold", textColor:[80,80,80], fillColor:[240,240,240] } }];
+        if (slot.isBreak) return [{ content: fmtSlotTime(slot) }, { content:slot.label, colSpan:activeColClasses.length, styles:{ halign:"center", fontStyle:"bold", textColor:[80,80,80], fillColor:[240,240,240] } }];
         return [
-          slot.time,
+          fmtSlotTime(slot),
           ...activeColClasses.map(cls => {
             const cell = getSlot(group, slot.id, cls);
             return cell.subject ? `${cell.subject}\n${shortName(cell.teacher)||""}` : "";
           }),
         ];
       });
-
       autoTable(doc, {
-        head, body, startY: y,
-        theme:"grid",
+        head, body, startY: y, theme:"grid",
         styles: { fontSize:7, cellPadding:3, overflow:"linebreak" },
         headStyles: { fillColor:[30,58,95], textColor:[255,255,255], fontStyle:"bold", fontSize:7.5 },
         columnStyles: { 0:{ cellWidth:58, fontStyle:"bold", textColor:[30,58,95] } },
         didParseCell(data) {
           if (data.section !== "body" || data.column.index === 0) return;
           const slot = slots[data.row.index];
-          if (slot?.special) return;
+          if (slot?.isBreak) return;
           const cls = activeColClasses[data.column.index - 1];
           if (!cls) return;
           const cell = getSlot(group, slot.id, cls);
           if (cell?.teacher) {
-            const idx = TEACHERS_TT.indexOf(cell.teacher);
-            if (idx >= 0) {
-              data.cell.styles.fillColor = TEACHER_RGB_PALETTE[idx % TEACHER_RGB_PALETTE.length];
-              data.cell.styles.textColor = [40,40,40];
-            }
+            const tidx = TEACHERS_TT.indexOf(cell.teacher);
+            if (tidx >= 0) { data.cell.styles.fillColor = TEACHER_RGB_PALETTE[tidx % TEACHER_RGB_PALETTE.length]; data.cell.styles.textColor = [40,40,40]; }
           }
         },
         margin: { left:30, right:30 },
       });
-
       y = (doc.lastAutoTable?.finalY ?? y) + 14;
-      if (y > doc.internal.pageSize.height - 60 && group !== DAY_GROUPS[DAY_GROUPS.length-1]) {
-        doc.addPage(); y = 30;
-      }
+      if (y > doc.internal.pageSize.height - 60 && group !== DAY_GROUPS[DAY_GROUPS.length-1]) { doc.addPage(); y = 30; }
     });
-
     doc.save(`Timetable_${selYear}.pdf`);
   }
 
-  // ── Excel Export ──────────────────────────────────────────────
+  // ── Excel Export ──
   function exportExcel() {
     const wb = XLSX.utils.book_new();
     DAY_GROUPS.forEach(group => {
-      const slots = slotsForGroup(group, currentSlots);
-      const data  = [
+      const slots = groupSlots(group);
+      const data = [
         ["TIME", ...activeColClasses],
         ...slots.map(slot => {
-          if (slot.special) return [slot.time, ...activeColClasses.map(() => `── ${slot.label} ──`)];
+          if (slot.isBreak) return [fmtSlotTime(slot), ...activeColClasses.map(() => `── ${slot.label} ──`)];
           return [
-            slot.time,
+            fmtSlotTime(slot),
             ...activeColClasses.map(cls => {
               const cell = getSlot(group, slot.id, cls);
               return cell.subject ? `${cell.subject} / ${shortName(cell.teacher) || ""}` : "";
@@ -1462,49 +1495,126 @@ function TimetableTab() {
   return (
     <div className="space-y-4">
 
-      {/* ── Period Times ── */}
+      {/* ── Manage Periods ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <p className="text-sm font-bold text-gray-800">Period Times</p>
-            <p className="text-xs text-gray-400 mt-0.5">Set the start and end time for each period and special slot</p>
+            <p className="text-sm font-bold text-gray-800">Period Schedule</p>
+            <p className="text-xs text-gray-400 mt-0.5">Add, remove, reorder periods and breaks for each day group independently</p>
           </div>
-          {!timesEditMode ? (
-            <button onClick={startTimesEdit}
+          {!periodsEditMode ? (
+            <button onClick={startPeriodsEdit}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-school-navy text-white hover:bg-school-navy/90 transition-colors shadow-sm">
-              <Pencil className="w-3.5 h-3.5"/> Edit Times
+              <Pencil className="w-3.5 h-3.5"/> Edit Schedule
             </button>
           ) : (
             <div className="flex gap-2">
-              <button onClick={cancelTimesEdit}
+              <button onClick={cancelPeriodsEdit}
                 className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">
                 <X className="w-3.5 h-3.5"/> Cancel
               </button>
-              <button onClick={saveTimesEdit}
-                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold shadow-sm transition-all ${timesSaved ? "bg-green-500 text-white" : "bg-school-navy text-white hover:bg-school-navy/90"}`}>
-                {timesSaved ? <Check className="w-3.5 h-3.5"/> : <Save className="w-3.5 h-3.5"/>}
-                {timesSaved ? "Saved!" : "Save"}
+              <button onClick={savePeriodsEdit}
+                className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold shadow-sm transition-all ${periodsSaved ? "bg-green-500 text-white" : "bg-school-navy text-white hover:bg-school-navy/90"}`}>
+                {periodsSaved ? <Check className="w-3.5 h-3.5"/> : <Save className="w-3.5 h-3.5"/>}
+                {periodsSaved ? "Saved!" : "Save"}
               </button>
             </div>
           )}
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {(timesEditMode ? slotsForm : storedSlots).map((slot, idx) => (
-            <div key={slot.id} className={`rounded-xl border px-3.5 py-3 ${slot.special ? "border-amber-200 bg-amber-50" : "border-gray-100 bg-gray-50"}`}>
-              <p className={`text-[10px] font-bold uppercase tracking-wider mb-1.5 ${slot.special ? "text-amber-600" : "text-gray-400"}`}>{slot.label}</p>
-              {timesEditMode ? (
-                <input
-                  value={slot.time}
-                  onChange={e => setSlotsForm(prev => prev.map((s, i) => i === idx ? { ...s, time: e.target.value } : s))}
-                  className="w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white"
-                  placeholder="e.g. 9:00 – 9:20"
-                />
-              ) : (
-                <p className="text-sm font-bold text-gray-800">{slot.time}</p>
-              )}
-            </div>
+
+        {/* Day group tab selector */}
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-4">
+          {DAY_GROUPS.map(g => (
+            <button key={g} onClick={() => setActiveGroup(g)}
+              className={`flex-1 text-xs font-semibold py-1.5 px-2 rounded-lg transition-colors ${
+                activeGroup === g ? "bg-white text-school-navy shadow-sm" : "text-gray-500 hover:text-gray-700"
+              }`}>
+              {g}
+            </button>
           ))}
         </div>
+
+        {/* Period rows for selected day group */}
+        <div className="space-y-2">
+          {groupSlots(activeGroup).map((slot, idx) => {
+            const slots = groupSlots(activeGroup);
+            const periodNum = slots.slice(0, idx + 1).filter(s => !s.isBreak).length;
+            return (
+              <div key={slot.id} className={`flex items-center gap-2 p-2.5 rounded-xl border ${
+                slot.isBreak ? "bg-amber-50 border-amber-200" : "bg-gray-50 border-gray-100"
+              }`}>
+                {/* Reorder arrows */}
+                {periodsEditMode && (
+                  <div className="flex flex-col gap-0.5 flex-shrink-0">
+                    <button disabled={idx === 0} onClick={() => moveSlot(activeGroup, idx, -1)}
+                      className="p-0.5 rounded text-gray-400 hover:text-school-navy disabled:opacity-20 disabled:cursor-not-allowed transition-colors">
+                      <ChevronUp className="w-3.5 h-3.5"/>
+                    </button>
+                    <button disabled={idx === slots.length - 1} onClick={() => moveSlot(activeGroup, idx, 1)}
+                      className="p-0.5 rounded text-gray-400 hover:text-school-navy disabled:opacity-20 disabled:cursor-not-allowed transition-colors">
+                      <ChevronDown className="w-3.5 h-3.5"/>
+                    </button>
+                  </div>
+                )}
+                {/* Type badge */}
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md flex-shrink-0 ${
+                  slot.isBreak ? "bg-amber-200 text-amber-800" : "bg-school-navy/10 text-school-navy"
+                }`}>
+                  {slot.isBreak ? "BREAK" : `P${periodNum}`}
+                </span>
+
+                {periodsEditMode ? (
+                  <>
+                    <input value={slot.label} onChange={e => updateSlot(activeGroup, idx, "label", e.target.value)}
+                      className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm flex-1 min-w-0 focus:outline-none focus:ring-1 focus:ring-school-navy/30 bg-white"
+                      placeholder="Label"/>
+                    <input type="time" value={slot.startTime} onChange={e => updateSlot(activeGroup, idx, "startTime", e.target.value)}
+                      className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-[7.5rem] flex-shrink-0 focus:outline-none focus:ring-1 focus:ring-school-navy/30 bg-white"/>
+                    <span className="text-gray-400 text-xs flex-shrink-0">–</span>
+                    <input type="time" value={slot.endTime} onChange={e => updateSlot(activeGroup, idx, "endTime", e.target.value)}
+                      className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-[7.5rem] flex-shrink-0 focus:outline-none focus:ring-1 focus:ring-school-navy/30 bg-white"/>
+                    <button onClick={() => updateSlot(activeGroup, idx, "isBreak", !slot.isBreak)}
+                      className={`text-[10px] px-2.5 py-1.5 rounded-lg font-semibold border transition-colors whitespace-nowrap flex-shrink-0 ${
+                        slot.isBreak
+                          ? "bg-amber-100 text-amber-700 border-amber-300 hover:bg-amber-200"
+                          : "bg-gray-100 text-gray-500 border-gray-200 hover:border-amber-300 hover:text-amber-600"
+                      }`}>
+                      {slot.isBreak ? "Break ✓" : "Set Break"}
+                    </button>
+                    <button onClick={() => deleteSlot(activeGroup, idx)}
+                      className="text-red-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors flex-shrink-0">
+                      <Trash2 className="w-3.5 h-3.5"/>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-sm font-semibold text-gray-700 flex-1">{slot.label}</span>
+                    <span className="text-xs text-gray-400 font-mono tabular-nums">{fmtSlotTime(slot)}</span>
+                  </>
+                )}
+              </div>
+            );
+          })}
+
+          {periodsEditMode && (
+            <div className="flex gap-2 pt-1">
+              <button onClick={() => addSlot(activeGroup, false)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border-2 border-dashed border-school-navy/30 text-school-navy text-xs font-semibold hover:border-school-navy hover:bg-school-navy/5 transition-colors">
+                <Plus className="w-3.5 h-3.5"/> Add Period
+              </button>
+              <button onClick={() => addSlot(activeGroup, true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border-2 border-dashed border-amber-300 text-amber-700 text-xs font-semibold hover:border-amber-500 hover:bg-amber-50 transition-colors">
+                <Plus className="w-3.5 h-3.5"/> Add Break
+              </button>
+            </div>
+          )}
+        </div>
+
+        {periodsSaved && (
+          <div className="mt-3 flex items-center gap-2 text-green-600 text-sm font-medium">
+            <Check className="w-4 h-4"/> Period schedule saved.
+          </div>
+        )}
       </div>
 
       {/* ── Top Controls ── */}
@@ -1543,7 +1653,7 @@ function TimetableTab() {
 
       {/* ── One table per day group, stacked ── */}
       {DAY_GROUPS.map(group => {
-        const slots  = slotsForGroup(group, currentSlots);
+        const slots  = groupSlots(group);
         const isSat  = group === "Saturday";
         const hdrBg  = isSat ? "bg-amber-600" : "bg-school-navy";
         const colLen = activeColClasses.length;
@@ -1576,11 +1686,11 @@ function TimetableTab() {
                 </thead>
                 <tbody>
                   {slots.map((slot, idx) => {
-                    if (slot.special) {
+                    if (slot.isBreak) {
                       return (
                         <tr key={slot.id} className="bg-gray-100 border-b border-gray-200">
                           <td className="px-3 py-2 border-r border-gray-300 text-center sticky left-0 bg-gray-100 z-10">
-                            <p className="text-[10px] font-bold text-gray-500 whitespace-nowrap">{slot.time}</p>
+                            <p className="text-[10px] font-bold text-gray-500 whitespace-nowrap">{fmtSlotTime(slot)}</p>
                           </td>
                           <td colSpan={colLen} className="py-2 text-center">
                             <span className="text-xs font-black text-gray-500 uppercase tracking-[0.2em]">{slot.label}</span>
@@ -1593,7 +1703,7 @@ function TimetableTab() {
                     return (
                       <tr key={slot.id} className={`border-b border-gray-100 ${rowBg}`}>
                         <td className={`px-3 py-2 border-r border-gray-200 text-center sticky left-0 z-10 ${rowBg}`}>
-                          <p className="text-[10px] font-bold text-school-navy whitespace-nowrap">{slot.time}</p>
+                          <p className="text-[10px] font-bold text-school-navy whitespace-nowrap">{fmtSlotTime(slot)}</p>
                         </td>
                         {activeColClasses.map(cls => {
                           const cell   = getSlot(group, slot.id, cls);
