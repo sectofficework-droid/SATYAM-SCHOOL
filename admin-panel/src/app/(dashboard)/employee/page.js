@@ -792,7 +792,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
 }
 
 // ── Attendance Section ─────────────────────────────────────────────────────────
-function AttendanceSection({ employees, salaries, addSalaryPayments, setStoreExpenses, storeExpenses }) {
+function AttendanceSection({ employees, salaries, addSalaryPayments, setStoreExpenses, storeExpenses, setAttendanceSummary }) {
   const today = new Date().toISOString().split("T")[0];
   const [periodType, setPeriodType] = useState("fullmonth");
   const [fromDate,   setFromDate]   = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0]);
@@ -875,6 +875,23 @@ function AttendanceSection({ employees, salaries, addSalaryPayments, setStoreExp
 
         if (parsed.length === 0) { setStatus("error"); setStatusMsg("No valid rows found. Check that Emp ID or Name column exists."); return; }
         setRecords(parsed);
+        if (setAttendanceSummary) {
+          const grouped = {};
+          parsed.forEach(r => {
+            const t = r.emp && r.emp.type ? r.emp.type : "other";
+            if (!grouped[t]) grouped[t] = { Present: 0, Absent: 0, count: 0 };
+            grouped[t].Present += r.present || 0;
+            grouped[t].Absent  += r.absent  || 0;
+            grouped[t].count++;
+          });
+          const fmtPeriod = d => { try { return new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}); } catch { return d; } };
+          setAttendanceSummary({
+            period:     fmtPeriod(fromDate) + " – " + fmtPeriod(toDate),
+            periodDays,
+            records:    parsed.map(r => ({ empId: r.empId, name: r.name, type: r.emp && r.emp.type ? r.emp.type : "other", present: r.present || 0, absent: r.absent || 0 })),
+            grouped,
+          });
+        }
         setStatus("success");
         setStatusMsg(parsed.length + " record" + (parsed.length !== 1 ? "s" : "") + " imported from \"" + wb.SheetNames[0] + "\". Review the calculation below.");
         setSavedKey(null);
@@ -1138,6 +1155,7 @@ export default function EmployeePage() {
   const addSalaryPay   = useStore(s => s.addSalaryPayments);
   const storeExpenses  = useStore(s => s.expenses);
   const setStoreExp    = useStore(s => s.setExpenses);
+  const setAttendanceSummary = useStore(s => s.setAttendanceSummary);
 
   const total       = employees.length;
   const teaching    = employees.filter((e) => e.type === "teaching").length;
@@ -1201,6 +1219,7 @@ export default function EmployeePage() {
           addSalaryPayments={addSalaryPay}
           setStoreExpenses={setStoreExp}
           storeExpenses={storeExpenses}
+          setAttendanceSummary={setAttendanceSummary}
         />
       )}
 

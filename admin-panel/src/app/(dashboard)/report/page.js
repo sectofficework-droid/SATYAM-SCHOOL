@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   GraduationCap, IndianRupee, Users, Package, Search,
   RefreshCw, Download, FileText, ShieldCheck, BookOpen, Landmark, IdCard,
@@ -8,9 +8,14 @@ import {
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import {
+  getStudentsForReport, getFeesForReport,
+  getEmployeesForReport, getInventoryForReport,
+  getPaymentsForReport,
+} from "@/lib/reportService";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const CLASSES   = ["JR KG","SR KG","Balvatika","1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th","11th Commerce","12th Commerce"];
+const CLASSES   = ["JR.KG","SR.KG","Balvatika","1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th","11th - Commerce","12th - Commerce"];
 const GENDERS   = ["Male","Female","Other"];
 const RELIGIONS = ["Hindu","Muslim","Christian","Jain","Sikh","Buddhist","Parsi","Other"];
 const CASTES    = ["General","OBC","SC","ST","EWS","SEBC","Other"];
@@ -74,159 +79,35 @@ function computeElig(st) {
   };
 }
 
-// ── Dummy Students ────────────────────────────────────────────────────────────
-let _sid = 0;
-function mkSt(cls, roll, fn, ln, gender, opts) {
-  _sid++;
-  const o  = opts || {};
-  const fa = o.fatherName || `${ln}bhai Kumar`;
-  const mo = o.motherName || `Smt. ${fn}ben`;
-  const an = o.aadharNo   !== undefined ? o.aadharNo   : `${2000+_sid} ${3000+_sid} ${4000+_sid}`;
-  const am = o.aadharName !== undefined ? o.aadharName : `${fn} ${fa} ${ln}`;
-  return {
-    id:_sid, enrollNo:`SS-${String(_sid).padStart(4,"0")}`,
-    firstName:fn, lastName:ln, surname:ln, name:`${fn} ${ln}`,
-    cls, roll, gender, joinClass: o.joinClass || cls,
-    joinDate:      o.joinDate      || "2024-06-01",
-    dob:           o.dob           || `201${3+(_sid%5)}-${String(1+(_sid%9)).padStart(2,"0")}-${String(10+(_sid%20)).padStart(2,"0")}`,
-    religion:      o.religion      || RELIGIONS[_sid % RELIGIONS.length],
-    caste:         o.caste         || CASTES[_sid % CASTES.length],
-    fatherName:fa, motherName:mo,
-    mobile1:       o.mobile1       || `9${8-(_sid%2)}${String(76540000+_sid*1137).slice(-8)}`,
-    mobile2:       o.mobile2       || "",
-    placeOfBirth:  o.placeOfBirth  || "Surat",
-    hasBirthCert:  o.hasBirthCert  !== undefined ? o.hasBirthCert : true,
-    aadharNo:an, aadharName:am,
-    udise: o.udise || "", pen: o.pen || "", apaar: o.apaar || "",
-    grNo:`GR${2000+_sid}`,
-    lastSchoolName: o.lastSchoolName || "City Primary School",
-    lastSchoolGrNo: o.lastSchoolGrNo || `LS${1000+_sid}`,
-    remarks:  o.remarks  || "",
-    followUp: o.followUp || "",
-    status:  o.status  || "Active",
-    session: o.session || "2025-26",
-    // ── GR/UDISE/PEN register fields ──
-    prevPercentage:     o.prevPercentage     || `${60+(_sid%35)}%`,
-    prevAttendanceDays: o.prevAttendanceDays !== undefined ? o.prevAttendanceDays : (180+(_sid%20)),
-    height:        o.height        || `${130+(_sid%30)}`,
-    weight:        o.weight        || `${30+(_sid%25)}`,
-    plotNo:        o.plotNo        || `${100+_sid}`,
-    society:       o.society       || "Shanti Nagar Society",
-    landmark:      o.landmark      || "Near Bus Stand",
-    area:          o.area          || "Vesu",
-    pinCode:       o.pinCode       || "395007",
-    motherTongue:  o.motherTongue  || "Gujarati",
-    subCaste:      o.subCaste      || "-",
-    lastExamGiven: o.lastExamGiven !== undefined ? o.lastExamGiven : "Yes",
-  };
+
+// ── Fee Collection Period Summaries ──────────────────────────────────────────
+function computeCollectionSummary(payments) {
+  const now      = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+
+  // Start of this week (Monday)
+  const day = now.getDay(); // 0=Sun
+  const diffToMon = (day === 0 ? -6 : 1 - day);
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() + diffToMon);
+  const weekStartStr = weekStart.toISOString().slice(0, 10);
+
+  const monthStartStr = todayStr.slice(0, 7) + "-01";
+  const yearStartStr  = todayStr.slice(0, 4) + "-01-01";
+
+  function sumFrom(from) {
+    return (payments || [])
+      .filter(p => p.date >= from && p.date <= todayStr)
+      .reduce((s, p) => s + p.amount, 0);
+  }
+
+  return [
+    { label: "Today",      period: todayStr,      value: sumFrom(todayStr),      color: "blue"    },
+    { label: "This Week",  period: weekStartStr,  value: sumFrom(weekStartStr),  color: "indigo"  },
+    { label: "This Month", period: monthStartStr, value: sumFrom(monthStartStr), color: "emerald" },
+    { label: "This Year",  period: yearStartStr,  value: sumFrom(yearStartStr),  color: "green"   },
+  ];
 }
-
-const DUMMY_STUDENTS = [
-  // ── Active students — 2025-26 ─────────────────────────────────
-  mkSt("JR KG","1","Arjun","Patel","Male",{dob:"2018-03-15",religion:"Hindu",caste:"General",mobile2:"9876540002"}),
-  mkSt("SR KG","1","Diya","Shah","Female",{dob:"2017-07-22",religion:"Hindu",caste:"General",
-    udise:"GJ220101234567"}),
-  mkSt("Balvatika","1","Vivaan","Mehta","Male",{dob:"2016-11-08",religion:"Hindu",caste:"OBC",
-    udise:"GJ220101234568",pen:"PEN10012345678"}),
-  mkSt("1st","1","Anaya","Desai","Female",{dob:"2016-04-25",religion:"Hindu",caste:"General",
-    udise:"GJ220101234569",pen:"PEN10012345679",apaar:"APAAR12345678901"}),
-  mkSt("8th","1","Pooja","Singh","Female",{dob:"2011-09-18",religion:"Hindu",caste:"General"}),
-  mkSt("9th","1","Rahul","Kumar","Male",{dob:"2010-12-05",religion:"Hindu",caste:"OBC",
-    udise:"GJ220101234570",pen:"PEN10012345680"}),
-  mkSt("12th Commerce","1","Neha","Pandey","Female",{dob:"2007-05-22",religion:"Hindu",caste:"General",
-    udise:"GJ220101234571",pen:"PEN10012345681",apaar:"APAAR12345678902"}),
-  mkSt("SR KG","2","Dev","Shah","Male",{dob:"2017-08-14",religion:"Hindu",caste:"General",
-    udise:"GJ220101234572"}),
-  mkSt("3rd","2","Yash","Desai","Male",{dob:"2015-02-17",religion:"Hindu",caste:"SC"}),
-  mkSt("5th","2","Om","Rao","Male",{dob:"2013-10-30",religion:"Hindu",caste:"General"}),
-  mkSt("7th","2","Jay","Nair","Male",{dob:"2011-06-09",religion:"Hindu",caste:"General",
-    udise:"GJ220101234573",pen:"PEN10012345682",apaar:"APAAR12345678903"}),
-  mkSt("2nd","1","Rohan","Joshi","Male",{dob:"2016-01-12",religion:"Hindu",caste:"General",
-    aadharName:"Rohan Joshi",udise:"GJ220101234574"}),
-  mkSt("10th","1","Anjali","Mishra","Female",{dob:"2009-03-14",religion:"Hindu",caste:"General",
-    aadharName:"Anjali Mishra",udise:"GJ220101234575",pen:"PEN10012345683"}),
-  mkSt("4th","1","Priya","Verma","Female",{dob:"2014-05-19",religion:"Hindu",caste:"General",aadharNo:""}),
-  mkSt("5th","1","Aditya","Rao","Male",{dob:"2013-09-07",religion:"Hindu",caste:"OBC",
-    aadharNo:"",udise:"GJ220101234577"}),
-
-  // ── Leave (left school) — 2025-26 ────────────────────────────
-  mkSt("3rd","1","Ishaan","Trivedi","Male",{dob:"2015-06-28",religion:"Jain",caste:"General",
-    aadharName:"Ishaan Trivedi",status:"Leave",remarks:"TC issued - family shifted to Ahmedabad"}),
-  mkSt("6th","2","Nisha","Gupta","Female",{dob:"2012-08-05",religion:"Hindu",caste:"General",
-    aadharName:"Nisha Gupta",status:"Leave",remarks:"Left school - admitted to another school"}),
-  mkSt("11th Commerce","1","Varun","Pillai","Male",{dob:"2007-12-15",religion:"Hindu",caste:"General",
-    aadharNo:"",status:"Leave",remarks:"TC issued - transferred out"}),
-
-  // ── Inactive — 2025-26 ────────────────────────────────────────
-  mkSt("6th","1","Sneha","Gupta","Female",{dob:"2012-02-14",religion:"Hindu",caste:"General",
-    hasBirthCert:false,aadharNo:"",status:"Inactive",
-    remarks:"Left school — TC issued",followUp:""}),
-  mkSt("JR KG","2","Riya","Patel","Female",{dob:"2018-10-05",religion:"Hindu",caste:"General",
-    hasBirthCert:false,aadharNo:"",status:"Inactive",remarks:"Admission cancelled"}),
-
-  // ── Active — 2024-25 ─────────────────────────────────────────
-  mkSt("1st","2","Aarav","Joshi","Male",{dob:"2016-11-22",religion:"Hindu",caste:"OBC",
-    aadharName:"Aarav Joshi",udise:"GJ220101234576",session:"2024-25"}),
-  mkSt("2nd","2","Shreya","Mehta","Female",{dob:"2016-04-01",religion:"Hindu",caste:"General",
-    aadharNo:"",udise:"GJ220101234578",session:"2024-25"}),
-  mkSt("8th","2","Tanu","Singh","Female",{dob:"2010-07-23",religion:"Hindu",caste:"SC",
-    aadharNo:"",session:"2024-25"}),
-
-  // ── Inactive — 2024-25 ───────────────────────────────────────
-  mkSt("7th","1","Karan","Nair","Male",{dob:"2011-08-30",religion:"Hindu",caste:"General",
-    hasBirthCert:false,aadharNo:"",status:"Inactive",session:"2024-25",
-    remarks:"TC issued - transferred to another school"}),
-  mkSt("4th","2","Kavya","Trivedi","Female",{dob:"2014-08-11",religion:"Hindu",caste:"General",
-    hasBirthCert:false,aadharNo:"",status:"Inactive",session:"2024-25",
-    remarks:"Left mid-year"}),
-
-  // ── Active — 2023-24 ─────────────────────────────────────────
-  mkSt("9th","2","Manav","Sharma","Male",{dob:"2009-04-12",religion:"Hindu",caste:"General",
-    session:"2023-24"}),
-  mkSt("10th","2","Pooja","Rao","Female",{dob:"2008-09-25",religion:"Hindu",caste:"OBC",
-    session:"2023-24"}),
-];
-
-let _payId = 1;
-const mkPay = (label, amount, dueDate, paid, paidDate) => ({ id:_payId++, label, amount, dueDate, paid, paidDate });
-const mkFee = (id, enrollNo, name, cls, totalFee, discount, payments) => ({ id, enrollNo, name, cls, totalFee, discount, payments });
-
-const DUMMY_FEE_RECORDS = [
-  mkFee(1,"SS-0001","Arjun Patel",   "JR KG",         16200,0,   [mkPay("Term 1",5400,"2026-04-15",5400,"2026-04-10"),mkPay("Term 2",5400,"2026-07-15",5400,"2026-07-08"),mkPay("Term 3",5400,"2026-10-15",0,"")]),
-  mkFee(2,"SS-0002","Diya Shah",     "SR KG",         16200,500, [mkPay("Full Payment",15700,"2026-04-15",15700,"2026-04-05")]),
-  mkFee(3,"SS-0003","Vivaan Mehta",  "Balvatika",     17000,0,   [mkPay("Term 1",5666,"2026-04-15",5666,"2026-04-12"),mkPay("Term 2",5667,"2026-07-15",0,""),mkPay("Term 3",5667,"2026-10-15",0,"")]),
-  mkFee(4,"SS-0004","Anaya Desai",   "1st",           18000,1000,[mkPay("Half Yearly 1",8500,"2026-04-15",8500,"2026-04-08"),mkPay("Half Yearly 2",8500,"2026-10-15",8500,"2026-10-10")]),
-  mkFee(5,"SS-0005","Rohan Joshi",   "2nd",           18200,0,   [mkPay("Term 1",6066,"2026-04-15",6066,"2026-04-15"),mkPay("Term 2",6067,"2026-07-15",0,""),mkPay("Term 3",6067,"2026-10-15",0,"")]),
-  mkFee(6,"SS-0006","Ishaan Trivedi","3rd",           18500,0,   [mkPay("Full Payment",18500,"2026-04-15",18500,"2026-04-02")]),
-  mkFee(7,"SS-0007","Priya Verma",   "4th",           18800,500, [mkPay("Term 1",6100,"2026-04-15",6100,"2026-04-20"),mkPay("Term 2",6100,"2026-07-15",6100,"2026-07-15"),mkPay("Term 3",6100,"2026-10-15",0,"")]),
-  mkFee(8,"SS-0008","Aditya Rao",    "5th",           19500,0,   [mkPay("Term 1",6500,"2026-04-15",6500,"2026-04-18"),mkPay("Term 2",6500,"2026-07-15",0,""),mkPay("Term 3",6500,"2026-10-15",0,"")]),
-];
-
-const DUMMY_EMPLOYEES = [
-  { id:1,  name:"Rajesh Patel",    role:"Teacher",     subject:"Mathematics", qualification:"B.Ed, M.Sc", mobile:"9876541001", email:"rajesh@satyam.in",  salary:28000, joinDate:"2020-06-01", status:"Active"   },
-  { id:2,  name:"Meena Desai",     role:"Teacher",     subject:"English",     qualification:"B.Ed, M.A",  mobile:"9876541002", email:"meena@satyam.in",   salary:26000, joinDate:"2019-04-15", status:"Active"   },
-  { id:3,  name:"Suresh Shah",     role:"Teacher",     subject:"Science",     qualification:"B.Ed, B.Sc", mobile:"9876541003", email:"suresh@satyam.in",  salary:27000, joinDate:"2021-07-01", status:"Active"   },
-  { id:4,  name:"Priya Trivedi",   role:"Teacher",     subject:"Social Sc",   qualification:"B.Ed",       mobile:"9876541004", email:"priya@satyam.in",   salary:25000, joinDate:"2022-06-15", status:"Active"   },
-  { id:5,  name:"Amit Kumar",      role:"Teacher",     subject:"Hindi",       qualification:"B.Ed, M.A",  mobile:"9876541005", email:"amit@satyam.in",    salary:24000, joinDate:"2020-08-01", status:"Active"   },
-  { id:6,  name:"Kavita Joshi",    role:"Teacher",     subject:"Gujarati",    qualification:"B.Ed",       mobile:"9876541006", email:"kavita@satyam.in",  salary:24000, joinDate:"2021-06-01", status:"Active"   },
-  { id:7,  name:"Ramesh Verma",    role:"Admin Staff", subject:"-",           qualification:"B.Com",      mobile:"9876541007", email:"ramesh@satyam.in",  salary:22000, joinDate:"2018-03-01", status:"Active"   },
-  { id:8,  name:"Sunita Rao",      role:"Teacher",     subject:"Computer",    qualification:"MCA",        mobile:"9876541008", email:"sunita@satyam.in",  salary:25000, joinDate:"2023-06-01", status:"Active"   },
-  { id:9,  name:"Dinesh Mehta",    role:"Peon",        subject:"-",           qualification:"10th",       mobile:"9876541009", email:"",                  salary:15000, joinDate:"2017-06-01", status:"Active"   },
-  { id:10, name:"Aarti Sharma",    role:"Teacher",     subject:"Drawing",     qualification:"B.F.A",      mobile:"9876541010", email:"aarti@satyam.in",   salary:20000, joinDate:"2022-01-15", status:"Active"   },
-  { id:11, name:"Vinod Prajapati", role:"Guard",       subject:"-",           qualification:"10th",       mobile:"9876541011", email:"",                  salary:14000, joinDate:"2019-06-01", status:"Active"   },
-  { id:12, name:"Savita Nair",     role:"Teacher",     subject:"Music",       qualification:"B.Mus",      mobile:"9876541012", email:"savita@satyam.in",  salary:20000, joinDate:"2021-06-15", status:"Active"   },
-];
-
-const DUMMY_ASSETS = [
-  { id:1, name:"HP LaserJet Printer",    category:"Electronics", location:"Office",        status:"Active",      assignedTo:"Admin",     purchaseDate:"2023-01-15", value:18500 },
-  { id:2, name:"Dell Laptop",            category:"Electronics", location:"Lab",           status:"Active",      assignedTo:"Lab Staff", purchaseDate:"2022-06-10", value:55000 },
-  { id:3, name:"Projector Epson X41+",   category:"Electronics", location:"Hall",          status:"Active",      assignedTo:"AV Team",   purchaseDate:"2021-08-20", value:42000 },
-  { id:4, name:"Classroom Chairs (30)",  category:"Furniture",   location:"Classroom 4",   status:"Active",      assignedTo:"Class 4",   purchaseDate:"2020-04-01", value:24000 },
-  { id:5, name:"Science Lab Kit",        category:"Lab Equip",   location:"Science Lab",   status:"Maintenance", assignedTo:"Lab Asst",  purchaseDate:"2023-03-12", value:32000 },
-  { id:6, name:"Sports Equipment Set",   category:"Sports",      location:"Ground",        status:"Active",      assignedTo:"PE Teacher",purchaseDate:"2024-01-05", value:15000 },
-  { id:7, name:"Water Purifier",         category:"Appliance",   location:"Canteen",       status:"Active",      assignedTo:"Cook",      purchaseDate:"2022-11-30", value:12500 },
-  { id:8, name:"CCTV Camera Set",        category:"Security",    location:"Entire School", status:"Active",      assignedTo:"Admin",     purchaseDate:"2023-07-01", value:38000 },
-];
 
 // ── Fixed-Structure Register Entries (GR / UDISE / PEN) ───────────────────────
 function decorateStudentForEntry(st) {
@@ -240,8 +121,8 @@ function decorateStudentForEntry(st) {
   };
 }
 
-function entryGetData(f, df, dt, s) {
-  let d = DUMMY_STUDENTS.map(decorateStudentForEntry);
+function entryGetData(sourceData, f, df, dt, s) {
+  let d = (sourceData || []).map(decorateStudentForEntry);
   if (f.cls     && f.cls     !== "All") d = d.filter(x => x.cls     === f.cls);
   if (f.session && f.session !== "All") d = d.filter(x => x.session === f.session);
   if (s) d = d.filter(x => x.name.toLowerCase().includes(s.toLowerCase()) || x.enrollNo.toLowerCase().includes(s.toLowerCase()));
@@ -411,8 +292,8 @@ const REPORT_CONFIGS = {
       {key:"remarks",        label:"Issue/Remarks",   dflt:false },
       {key:"followUp",       label:"Follow Up",       dflt:false },
     ],
-    getData(f, df, dt, s) {
-      let d = DUMMY_STUDENTS.map(st => ({ ...st, dobInWords: dobToWords(st.dob) }));
+    getData(sourceData, f, df, dt, s) {
+      let d = (sourceData || []).map(st => ({ ...st, dobInWords: dobToWords(st.dob) }));
       if (f.cls      && f.cls      !== "All") d = d.filter(x => x.cls      === f.cls);
       if (f.status   && f.status   !== "All") d = d.filter(x => x.status   === f.status);
       if (f.session  && f.session  !== "All") d = d.filter(x => x.session  === f.session);
@@ -432,43 +313,75 @@ const REPORT_CONFIGS = {
     ];},
   },
   fees: {
-    label:"Fees Report", icon:IndianRupee,
-    quickFilters:[
-      {key:"cls",    label:"Class",  options:["All",...CLASSES]                       },
-      {key:"status", label:"Status", options:["All","Fully Paid","Partial","Pending"] },
-    ],
-    dateField:null, dateLabel:null,
-    columns:[
-      {key:"enrollNo",  label:"Enroll No",      dflt:true },
-      {key:"name",      label:"Student Name",   dflt:true },
-      {key:"cls",       label:"Class",          dflt:true },
-      {key:"totalFee",  label:"Annual Fee (Rs)", dflt:true },
-      {key:"discount",  label:"Discount (Rs)",   dflt:false},
-      {key:"totalPaid", label:"Paid (Rs)",       dflt:true },
-      {key:"pending",   label:"Pending (Rs)",    dflt:true },
-      {key:"status",    label:"Status",         dflt:true },
-    ],
-    getData(f, df, dt, s) {
-      let d = DUMMY_FEE_RECORDS.map(r => {
-        const totalPaid = r.payments.reduce((sum,p)=>sum+p.paid,0);
-        const pending   = r.totalFee - r.discount - totalPaid;
-        const status    = pending<=0?"Fully Paid":totalPaid===0?"Pending":"Partial";
-        return {...r, totalPaid, pending, status};
-      });
-      if (f.cls    && f.cls    !== "All") d = d.filter(x => x.cls    === f.cls);
-      if (f.status && f.status !== "All") d = d.filter(x => x.status === f.status);
-      if (s) d = d.filter(x => x.name.toLowerCase().includes(s.toLowerCase()));
-      return d;
+    label:"Fees", icon:IndianRupee,
+    isFeesModule:true,
+    collectionConfig: {
+      label:"Fee Collection",
+      isCollection:true,
+      quickFilters:[
+        {key:"cls",     label:"Class",         options:["All",...CLASSES]  },
+        {key:"session", label:"Academic Year",  options:["All",...SESSIONS] },
+      ],
+      dateField:"date", dateLabel:"Payment Date",
+      columns:[
+        {key:"date",        label:"Payment Date",  dflt:true, isDate:true },
+        {key:"enrollNo",    label:"Enroll No",     dflt:true              },
+        {key:"studentName", label:"Student Name",  dflt:true              },
+        {key:"cls",         label:"Class",         dflt:true              },
+        {key:"session",     label:"Academic Year", dflt:false             },
+        {key:"amount",      label:"Amount (Rs)",   dflt:true              },
+      ],
+      getData(sourceData, f, df, dt, s) {
+        let d = (sourceData || []);
+        if (f.cls     && f.cls     !== "All") d = d.filter(x => x.cls     === f.cls);
+        if (f.session && f.session !== "All") d = d.filter(x => x.session === f.session);
+        if (df) d = d.filter(x => x.date >= df);
+        if (dt) d = d.filter(x => x.date <= dt);
+        if (s)  d = d.filter(x => x.studentName.toLowerCase().includes(s.toLowerCase()) || x.enrollNo.toLowerCase().includes(s.toLowerCase()));
+        return d;
+      },
+      getSummary(d) {
+        const total = d.reduce((s,x) => s + x.amount, 0);
+        return [
+          {label:"Transactions",    value:d.length,                                     color:"blue"   },
+          {label:"Total Collected", value:`Rs ${total.toLocaleString("en-IN")}`,         color:"emerald"},
+        ];
+      },
     },
-    getSummary(d) {
-      const coll = d.reduce((s,x)=>s+x.totalPaid,0);
-      const pend = d.reduce((s,x)=>s+x.pending,0);
-      return [
-        {label:"Students",   value:d.length,                                                          color:"emerald"},
-        {label:"Total Fees", value:`Rs ${d.reduce((s,x)=>s+x.totalFee-x.discount,0).toLocaleString("en-IN")}`, color:"blue"},
-        {label:"Collected",  value:`Rs ${coll.toLocaleString("en-IN")}`,                               color:"green" },
-        {label:"Pending",    value:`Rs ${pend.toLocaleString("en-IN")}`,                               color:"red"   },
-      ];
+    statusConfig: {
+      label:"Fee Status",
+      quickFilters:[
+        {key:"cls",    label:"Class",  options:["All",...CLASSES]                       },
+        {key:"status", label:"Status", options:["All","Fully Paid","Partial","Pending"] },
+      ],
+      dateField:null, dateLabel:null,
+      columns:[
+        {key:"enrollNo",  label:"Enroll No",       dflt:true },
+        {key:"name",      label:"Student Name",    dflt:true },
+        {key:"cls",       label:"Class",           dflt:true },
+        {key:"totalFee",  label:"Annual Fee (Rs)", dflt:true },
+        {key:"discount",  label:"Discount (Rs)",   dflt:false},
+        {key:"totalPaid", label:"Paid (Rs)",        dflt:true },
+        {key:"pending",   label:"Pending (Rs)",     dflt:true },
+        {key:"status",    label:"Status",          dflt:true },
+      ],
+      getData(sourceData, f, df, dt, s) {
+        let d = (sourceData || []);
+        if (f.cls    && f.cls    !== "All") d = d.filter(x => x.cls    === f.cls);
+        if (f.status && f.status !== "All") d = d.filter(x => x.status === f.status);
+        if (s) d = d.filter(x => x.name.toLowerCase().includes(s.toLowerCase()));
+        return d;
+      },
+      getSummary(d) {
+        const coll = d.reduce((s,x)=>s+x.totalPaid,0);
+        const pend = d.reduce((s,x)=>s+x.pending,0);
+        return [
+          {label:"Students",   value:d.length,                                                                   color:"emerald"},
+          {label:"Total Fees", value:`Rs ${d.reduce((s,x)=>s+x.totalFee-x.discount,0).toLocaleString("en-IN")}`, color:"blue"   },
+          {label:"Collected",  value:`Rs ${coll.toLocaleString("en-IN")}`,                                        color:"green"  },
+          {label:"Pending",    value:`Rs ${pend.toLocaleString("en-IN")}`,                                        color:"red"    },
+        ];
+      },
     },
   },
   employee: {
@@ -489,8 +402,8 @@ const REPORT_CONFIGS = {
       {key:"joinDate",      label:"Join Date",      dflt:false, isDate:true},
       {key:"status",        label:"Status",         dflt:true },
     ],
-    getData(f, df, dt, s) {
-      let d = [...DUMMY_EMPLOYEES];
+    getData(sourceData, f, df, dt, s) {
+      let d = (sourceData || []);
       if (f.role   && f.role   !== "All") d = d.filter(x => x.role   === f.role);
       if (f.status && f.status !== "All") d = d.filter(x => x.status === f.status);
       if (df) d = d.filter(x => x.joinDate >= df);
@@ -521,8 +434,8 @@ const REPORT_CONFIGS = {
       {key:"purchaseDate", label:"Purchase Date", dflt:false, isDate:true},
       {key:"value",        label:"Value (Rs)",    dflt:true },
     ],
-    getData(f, df, dt, s) {
-      let d = [...DUMMY_ASSETS];
+    getData(sourceData, f, df, dt, s) {
+      let d = (sourceData || []);
       if (f.category && f.category !== "All") d = d.filter(x => x.category === f.category);
       if (f.status   && f.status   !== "All") d = d.filter(x => x.status   === f.status);
       if (df) d = d.filter(x => x.purchaseDate >= df);
@@ -546,8 +459,8 @@ const REPORT_CONFIGS = {
     ],
     dateField:null, dateLabel:null,
     columns:[],
-    getData(f, df, dt, s) {
-      let d = DUMMY_STUDENTS.map(st => ({ ...st, elig: computeElig(st) }));
+    getData(sourceData, f, df, dt, s) {
+      let d = (sourceData || []).map(st => ({ ...st, elig: computeElig(st) }));
       if (f.cls && f.cls !== "All") d = d.filter(x => x.cls === f.cls);
       if (s) d = d.filter(x => x.name.toLowerCase().includes(s.toLowerCase()) || x.enrollNo.toLowerCase().includes(s.toLowerCase()));
       if (f.eligFilter && f.eligFilter !== "All") {
@@ -660,25 +573,72 @@ export default function ReportPage() {
   const [extraFieldKey, setExtraFieldKey] = useState("");
   const [extraFieldPos, setExtraFieldPos] = useState(1);
 
-  const cfg = REPORT_CONFIGS[rType];
+  // DB data
+  const [dbStudents,  setDbStudents]  = useState([]);
+  const [dbFees,      setDbFees]      = useState([]);
+  const [dbPayments,  setDbPayments]  = useState([]);
+  const [dbEmployees, setDbEmployees] = useState([]);
+  const [dbInventory, setDbInventory] = useState([]);
+  const [dbLoading,   setDbLoading]   = useState(true);
+
+  const loadAll = useCallback(async () => {
+    setDbLoading(true);
+    try {
+      const [students, fees, payments, employees, inventory] = await Promise.all([
+        getStudentsForReport(),
+        getFeesForReport(),
+        getPaymentsForReport(),
+        getEmployeesForReport(),
+        getInventoryForReport(),
+      ]);
+      setDbStudents(students);
+      setDbFees(fees);
+      setDbPayments(payments);
+      setDbEmployees(employees);
+      setDbInventory(inventory);
+    } catch (e) {
+      console.error("Report loadAll error:", e);
+    } finally {
+      setDbLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const [feesView, setFeesView] = useState("collection"); // "collection" | "status"
+
+  const cfg  = REPORT_CONFIGS[rType];
+  const ecfg = cfg.isFeesModule
+    ? (feesView === "collection" ? cfg.collectionConfig : cfg.statusConfig)
+    : cfg;
 
   useEffect(() => {
-    // Initialise with default columns in their original definition order
-    const init = cfg.columns.filter(c => c.dflt).map(c => c.key);
+    const activeCols = cfg.isFeesModule
+      ? (feesView === "collection" ? cfg.collectionConfig.columns : cfg.statusConfig.columns)
+      : cfg.columns;
+    const init = activeCols.filter(c => c.dflt).map(c => c.key);
     setSelCols(init);
     setExtraFields([]);
     setShowAddExtra(false);
     setExtraFieldKey(""); setExtraFieldPos(1);
     setFilters({});
     setDateFrom(""); setDateTo(""); setSearch("");
-  }, [rType]);
+    if (!cfg.isFeesModule) setFeesView("collection");
+  }, [rType, feesView]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const data    = cfg.getData(filters, dateFrom, dateTo, search);
-  // actCols follows selection order (not definition order); fixed-entry types use the locked order + any inserted extra field
-  const actCols = cfg.isFixedEntry
-    ? buildFixedCols(cfg.fixedColumns, extraFields)
-    : selCols.map(key => cfg.columns.find(c => c.key === key)).filter(Boolean);
-  const summary = cfg.getSummary(data);
+  const sourceData =
+    rType === "fees" && feesView === "collection" ? dbPayments  :
+    rType === "fees"                              ? dbFees      :
+    rType === "employee"                          ? dbEmployees :
+    rType === "inventory"                         ? dbInventory :
+    /* student, eligibility, grRegister, udiseEntry, penEntry */ dbStudents;
+
+  const data    = ecfg.getData(sourceData, filters, dateFrom, dateTo, search);
+  // actCols follows selection order; fixed-entry types use locked order + inserted extra fields
+  const actCols = ecfg.isFixedEntry
+    ? buildFixedCols(ecfg.fixedColumns, extraFields)
+    : selCols.map(key => ecfg.columns.find(c => c.key === key)).filter(Boolean);
+  const summary = ecfg.getSummary(data);
 
   function eligStatusText(eligible, done) {
     if (!eligible) return "Not Eligible";
@@ -690,7 +650,7 @@ export default function ReportPage() {
     const isoToday     = new Date().toISOString().slice(0,10);
     const todayDisplay = fmtDate(isoToday);
     let rows;
-    if (cfg.isEligibility) {
+    if (ecfg.isEligibility) {
       rows = [
         ["Satyam Stars International School"],
         ["Surat, Gujarat  |  GSEB Board  |  English Medium"],
@@ -720,7 +680,7 @@ export default function ReportPage() {
       rows = [
         ["Satyam Stars International School"],
         ["Surat, Gujarat  |  GSEB Board  |  English Medium"],
-        [cfg.label],
+        [ecfg.label],
         [`Generated: ${todayDisplay}`, "", `Total Records: ${data.length}`],
         filterStr ? [`Filters Applied: ${filterStr}`] : null,
         (dateFrom||dateTo) ? [`Date Range: ${dateFrom?fmtDate(dateFrom):"-"} to ${dateTo?fmtDate(dateTo):"-"}`] : null,
@@ -733,17 +693,17 @@ export default function ReportPage() {
     }
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    const colCount = cfg.isEligibility ? 12 : actCols.length;
+    const colCount = ecfg.isEligibility ? 12 : actCols.length;
     ws["!cols"] = Array.from({length:colCount}, () => ({ wch: 18 }));
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, cfg.label.slice(0,31));
-    XLSX.writeFile(wb, `${cfg.label.replace(/[\s/]+/g,"_")}_${isoToday}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, ecfg.label.slice(0,31));
+    XLSX.writeFile(wb, `${ecfg.label.replace(/[\s/]+/g,"_")}_${isoToday}.xlsx`);
   }
 
   function doExportPDF() {
     const isoToday     = new Date().toISOString().slice(0,10);
     const todayDisplay = fmtDate(isoToday);
-    const isElig = cfg.isEligibility;
+    const isElig = ecfg.isEligibility;
     const doc = new jsPDF({ orientation: isElig || actCols.length > 6 ? "landscape" : "portrait" });
     const w   = doc.internal.pageSize.getWidth();
 
@@ -758,7 +718,7 @@ export default function ReportPage() {
     doc.rect(0, 22, w, 7, "F");
     doc.setTextColor(255,255,255);
     doc.setFontSize(9); doc.setFont("helvetica","bold");
-    doc.text(cfg.label.toUpperCase(), w/2, 27, {align:"center"});
+    doc.text(ecfg.label.toUpperCase(), w/2, 27, {align:"center"});
 
     doc.setTextColor(60,60,60); doc.setFontSize(8); doc.setFont("helvetica","normal");
     let y = 36;
@@ -810,16 +770,28 @@ export default function ReportPage() {
       },
     });
 
-    doc.save(`${cfg.label.replace(/[\s/]+/g,"_")}_${isoToday}.pdf`);
+    doc.save(`${ecfg.label.replace(/[\s/]+/g,"_")}_${isoToday}.pdf`);
   }
+
+  if (dbLoading) return (
+    <div className="flex items-center justify-center py-24 text-sm text-gray-400">
+      Loading report data…
+    </div>
+  );
 
   return (
     <div className="space-y-5">
 
       {/* Page header */}
-      <div>
-        <h2 className="text-xl font-bold text-gray-800">Reports & Export</h2>
-        <p className="text-sm text-gray-500 mt-0.5">Generate, filter and export reports for any module</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Reports & Export</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Generate, filter and export reports for any module</p>
+        </div>
+        <button onClick={loadAll}
+          className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
+          <RefreshCw className="w-3 h-3"/>Refresh
+        </button>
       </div>
 
       {/* Report type selector */}
@@ -838,8 +810,23 @@ export default function ReportPage() {
 
       {/* Filters */}
       <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-4">
+
+        {/* Fees module sub-tabs */}
+        {cfg.isFeesModule && (
+          <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+            <button onClick={() => setFeesView("collection")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${feesView === "collection" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              Collection
+            </button>
+            <button onClick={() => setFeesView("status")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${feesView === "status" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              Fee Status
+            </button>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-3 items-end">
-          {cfg.quickFilters.map(f => (
+          {ecfg.quickFilters.map(f => (
             <div key={f.key} className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{f.label}</label>
               <select className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28"
@@ -849,14 +836,23 @@ export default function ReportPage() {
               </select>
             </div>
           ))}
-          {cfg.dateField && (<>
+          {ecfg.isCollection && (
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{cfg.dateLabel} From</label>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Exact Date</label>
+              <input type="date"
+                value={dateFrom === dateTo && dateFrom ? dateFrom : ""}
+                onChange={e => { setDateFrom(e.target.value); setDateTo(e.target.value); }}
+                className="border-2 border-school-navy rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy"/>
+            </div>
+          )}
+          {ecfg.dateField && (<>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{ecfg.dateLabel} From</label>
               <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
                 className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy"/>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{cfg.dateLabel} To</label>
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{ecfg.dateLabel} To</label>
               <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}
                 className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy"/>
             </div>
@@ -876,11 +872,11 @@ export default function ReportPage() {
         </div>
 
         {/* Column selector — hidden for eligibility and fixed-entry registers */}
-        {!cfg.isEligibility && !cfg.isFixedEntry && (
+        {!ecfg.isEligibility && !ecfg.isFixedEntry && (
           <div>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Columns to Include in Report</p>
             <div className="flex flex-wrap gap-2">
-              {cfg.columns.map(col => {
+              {ecfg.columns.map(col => {
                 const orderIdx = selCols.indexOf(col.key);
                 const isSelected = orderIdx !== -1;
                 return (
@@ -909,7 +905,7 @@ export default function ReportPage() {
         )}
 
         {/* Fixed-entry registers (GR / UDISE / PEN) — fields auto-selected in required order, plus optional extra field */}
-        {cfg.isFixedEntry && (
+        {ecfg.isFixedEntry && (
           <div className="space-y-3">
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
@@ -947,7 +943,7 @@ export default function ReportPage() {
                     <select value={extraFieldKey} onChange={e => setExtraFieldKey(e.target.value)}
                       className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white min-w-44 focus:outline-none focus:ring-2 focus:ring-school-navy">
                       <option value="">Select field...</option>
-                      {cfg.extraFieldPool
+                      {ecfg.extraFieldPool
                         .filter(f => !extraFields.some(ef => ef.key === f.key))
                         .map(f => <option key={f.key} value={f.key}>{f.label}</option>)}
                     </select>
@@ -960,7 +956,7 @@ export default function ReportPage() {
                   </div>
                   <button
                     onClick={() => {
-                      const field = cfg.extraFieldPool.find(f => f.key === extraFieldKey);
+                      const field = ecfg.extraFieldPool.find(f => f.key === extraFieldKey);
                       if (!field) { alert("Please select a field to add."); return; }
                       setExtraFields(prev => [...prev, { ...field, position: extraFieldPos }]);
                       setExtraFieldKey(""); setExtraFieldPos(1); setShowAddExtra(false);
@@ -980,7 +976,7 @@ export default function ReportPage() {
         )}
 
         {/* Eligibility criteria info */}
-        {cfg.isEligibility && (
+        {ecfg.isEligibility && (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="flex items-start gap-2.5 bg-indigo-50 border border-indigo-200 rounded-lg p-3">
               <span className="mt-0.5 text-base">📄</span>
@@ -1007,6 +1003,32 @@ export default function ReportPage() {
         )}
       </div>
 
+      {/* Collection period cards — only for Fee Collection view */}
+      {ecfg.isCollection && (() => {
+        const cols = computeCollectionSummary(sourceData);
+        return (
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Collection Overview</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {cols.map((c, i) => {
+                const cm = COLOR_MAP[c.color] || COLOR_MAP.blue;
+                return (
+                  <div key={i} className={`${cm.bg} border-2 ${cm.border} rounded-xl p-4`}>
+                    <p className={`text-[10px] font-bold uppercase tracking-wider ${cm.label}`}>{c.label}</p>
+                    <p className={`text-2xl font-extrabold mt-1 ${cm.val}`}>
+                      Rs {c.value.toLocaleString("en-IN")}
+                    </p>
+                    <p className={`text-[10px] mt-1 ${cm.label} opacity-70`}>
+                      {(sourceData || []).filter(p => p.date >= c.period && p.date <= new Date().toISOString().slice(0,10)).length} transactions
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {summary.map((s,i) => {
@@ -1024,7 +1046,7 @@ export default function ReportPage() {
       <div className="flex items-center justify-between flex-wrap gap-3 bg-white border border-gray-200 rounded-xl px-4 py-3">
         <p className="text-sm text-gray-500">
           <span className="font-semibold text-gray-800">{data.length}</span> records
-          {!cfg.isEligibility && (<>&nbsp;&nbsp;·&nbsp;&nbsp;<span className="font-semibold text-school-navy">{actCols.length}</span> columns selected</>)}
+          {!ecfg.isEligibility && (<>&nbsp;&nbsp;·&nbsp;&nbsp;<span className="font-semibold text-school-navy">{actCols.length}</span> columns selected</>)}
         </p>
         <div className="flex gap-2">
           <button onClick={doExportExcel}
@@ -1039,7 +1061,7 @@ export default function ReportPage() {
       </div>
 
       {/* Standard table */}
-      {!cfg.isEligibility && (
+      {!ecfg.isEligibility && (
         <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
           <table className="text-xs w-full">
             <thead>
@@ -1074,7 +1096,7 @@ export default function ReportPage() {
       )}
 
       {/* Eligibility table */}
-      {cfg.isEligibility && (
+      {ecfg.isEligibility && (
         <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
           <table className="text-xs w-full">
             <thead>

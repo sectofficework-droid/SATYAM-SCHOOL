@@ -1095,18 +1095,30 @@ export default function StudentPage() {
                     <div className="px-3 py-4 border-r border-gray-100 space-y-2.5 bg-white">
                       <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Alerts</p>
 
-                      {/* TC Warning — special prominent alert */}
-                      {student.lastSchoolName && !student.tcUploaded && (
-                        <div className="flex items-start gap-1.5 bg-red-50 border border-red-300 rounded-lg px-2 py-1.5">
-                          <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0 mt-0.5" />
-                          <div className="min-w-0">
-                            <p className="text-[10px] font-bold text-red-600 leading-tight uppercase tracking-wide">TC Not Uploaded</p>
-                            <p className="text-[9px] text-red-500 leading-tight mt-0.5 truncate">Transfer Certificate required</p>
+                      {/* Critical doc warning — TC for transfer students, Birth Cert for fresh */}
+                      {student.lastSchoolName ? (
+                        !student.tcUploaded && (
+                          <div className="flex items-start gap-1.5 bg-red-50 border border-red-300 rounded-lg px-2 py-1.5">
+                            <AlertTriangle className="w-3 h-3 text-red-500 flex-shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold text-red-600 leading-tight uppercase tracking-wide">TC Not Uploaded</p>
+                              <p className="text-[9px] text-red-500 leading-tight mt-0.5">Transfer Certificate required</p>
+                            </div>
                           </div>
-                        </div>
+                        )
+                      ) : (
+                        !student.birthCertUploaded && (
+                          <div className="flex items-start gap-1.5 bg-amber-50 border border-amber-300 rounded-lg px-2 py-1.5">
+                            <AlertTriangle className="w-3 h-3 text-amber-500 flex-shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold text-amber-700 leading-tight uppercase tracking-wide">Birth Cert Missing</p>
+                              <p className="text-[9px] text-amber-600 leading-tight mt-0.5">Birth Certificate required</p>
+                            </div>
+                          </div>
+                        )
                       )}
 
-                      {/* Document alerts */}
+                      {/* Document status */}
                       {student.pendingDocs.length > 0 ? (
                         <div className="space-y-1">
                           <div className="flex items-center gap-1">
@@ -1116,49 +1128,47 @@ export default function StudentPage() {
                               {student.pendingDocs.length}
                             </span>
                           </div>
-                          {student.pendingDocs.slice(0, 2).map((d) => (
+                          {student.pendingDocs.map((d) => (
                             <p key={d} className="text-[11px] text-gray-500 leading-tight truncate pl-0.5">· {d}</p>
                           ))}
-                          {student.pendingDocs.length > 2 && (
-                            <p className="text-[10px] text-red-400 pl-0.5">+{student.pendingDocs.length - 2} more</p>
-                          )}
+                        </div>
+                      ) : student.documents.length === 0 ? (
+                        <div className="flex items-center gap-1.5">
+                          <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                          <span className="text-[10px] font-semibold text-gray-400">No Docs</span>
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5">
                           <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
-                          <span className="text-[10px] font-semibold text-green-600">Docs OK</span>
+                          <span className="text-[10px] font-semibold text-green-600">All Docs OK</span>
                         </div>
                       )}
 
                       <div className="w-full h-px bg-gray-100" />
 
-                      {/* Inventory alerts */}
+                      {/* Inventory status */}
                       {student.pendingInventory.length > 0 ? (
                         <div className="space-y-1">
                           <div className="flex items-center gap-1">
                             <Package className="w-3 h-3 text-amber-500 flex-shrink-0" />
-                            <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wide leading-none">Inventory Pending</span>
+                            <span className="text-[10px] font-bold text-amber-600 uppercase tracking-wide leading-none">Items Pending</span>
                             <span className="ml-auto text-[10px] font-bold bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded-full flex-shrink-0">
                               {student.pendingInventory.length}
                             </span>
                           </div>
-                          {student.pendingInventory.slice(0, 4).map((d) => (
+                          {student.pendingInventory.map((d) => (
                             <p key={d} className="text-[11px] text-gray-500 leading-tight truncate pl-0.5">· {d}</p>
                           ))}
-                          {student.pendingInventory.length > 4 && (
-                            <p className="text-[10px] text-amber-500 pl-0.5">+{student.pendingInventory.length - 4} more</p>
-                          )}
+                        </div>
+                      ) : student.inventory.length === 0 ? (
+                        <div className="flex items-center gap-1.5">
+                          <Package className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                          <span className="text-[10px] font-semibold text-gray-400">No Inventory</span>
                         </div>
                       ) : (
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-1">
-                            <Package className="w-3 h-3 text-green-500 flex-shrink-0" />
-                            <span className="text-[10px] font-bold text-green-600 uppercase tracking-wide leading-none">Inventory Pending</span>
-                            <span className="ml-auto text-[10px] font-bold bg-green-100 text-green-600 px-1.5 py-0.5 rounded-full flex-shrink-0">
-                              0
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-green-500 pl-0.5">· All items distributed</p>
+                        <div className="flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
+                          <span className="text-[10px] font-semibold text-green-600">All Given</span>
                         </div>
                       )}
                     </div>

@@ -1,44 +1,19 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import {
   ClipboardList, Plus, Search, Calendar, User,
   CheckCircle2, Clock, AlertCircle, X,
   Pencil, Trash2, ArrowRight, CheckCheck, TrendingUp,
-  ChevronDown, Check,
+  ChevronDown, Check, RefreshCw,
 } from "lucide-react";
 import { isValidLength } from "@/lib/validators";
+import {
+  getTasks, addTask, updateTask, deleteTask,
+  updateTaskStatus, getEmployeesForTasks,
+} from "@/lib/taskService";
 
 // ── Constants ──────────────────────────────────────────────────
-const STAFF_MEMBERS = [
-  // Admin
-  "Rajesh Biswal",
-  "BK Debiprasad Das",
-  "Sandeep Pradhan",
-  "Gaurang Polai",
-  "Rudra Prasad Muni",
-  "Ayeshkant Rout",
-  // Teachers
-  "Pami Pradhan",
-  "Rashmita Patra",
-  "Priti Singh",
-  "Janki Das",
-  "Shivani Pradhan",
-  "Smurti Panda",
-  "Manisha Biswal",
-  "Parvati Polai",
-  "Sita Gouda",
-  "Kabita Panigrahi",
-  "Barsha Pradhan",
-  "Liza Patra",
-  "Laxmi Behera",
-  "Pragyan Panda",
-  "Priyanka Bisoyi",
-  "Priyanka Padhi",
-  // Care Taker
-  "Rina Gouda",
-];
-
 const PRIORITIES = ["High", "Medium", "Low"];
 const STATUSES   = ["Pending", "In Progress", "Completed"];
 
@@ -54,8 +29,6 @@ const STATUS_STYLES = {
   "Completed":   { badge:"bg-green-100 text-green-700",   Icon: CheckCircle2  },
   "Overdue":     { badge:"bg-red-100 text-red-700",       Icon: AlertCircle   },
 };
-
-const TODAY = new Date().toISOString().split("T")[0];
 
 // ── Helpers ────────────────────────────────────────────────────
 function isOverdue(task) {
@@ -88,69 +61,45 @@ function daysLeft(deadline) {
   return Math.ceil((new Date(deadline) - new Date(new Date().toDateString())) / 86400000);
 }
 
-// ── Dummy Data ─────────────────────────────────────────────────
-const INITIAL_TASKS = [
-  {
-    id:1, title:"Prepare class timetable for 2026-27",
-    description:"Create and distribute the class timetable for all sections before the new academic year begins.",
-    assignedTo:["Pami Pradhan","Shivani Pradhan"], priority:"High", status:"In Progress",
-    deadline:"2026-06-10", deadlineTime:"17:00", createdAt:"2026-06-01",
-  },
-  {
-    id:2, title:"Collect pending fee forms from parents",
-    description:"Follow up with parents of students with outstanding fee forms from the previous year.",
-    assignedTo:["Rajesh Biswal"], priority:"High", status:"Pending",
-    deadline:"2026-06-08", deadlineTime:"12:00", createdAt:"2026-06-03",
-  },
-  {
-    id:3, title:"Update student attendance register",
-    description:"Verify and update physical attendance registers for all classes for May 2026.",
-    assignedTo:["Rashmita Patra"], priority:"Medium", status:"Completed",
-    deadline:"2026-06-05", deadlineTime:"", createdAt:"2026-05-28",
-  },
-  {
-    id:4, title:"Inventory check for new academic year",
-    description:"Count and record all textbooks, notebooks, and stationery available in the inventory room.",
-    assignedTo:["Sandeep Pradhan","Gaurang Polai"], priority:"Medium", status:"Pending",
-    deadline:"2026-06-12", deadlineTime:"15:00", createdAt:"2026-06-04",
-  },
-  {
-    id:5, title:"Submit board exam results to principal",
-    description:"Compile and submit the 10th and 12th board exam result summary to the principal office.",
-    assignedTo:["Priti Singh","Janki Das"], priority:"Low", status:"Pending",
-    deadline:"2026-06-15", deadlineTime:"10:00", createdAt:"2026-06-05",
-  },
-];
-
 // ── Staff Multi-Select ─────────────────────────────────────────
-function StaffMultiSelect({ selected, onChange, error }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+function StaffMultiSelect({ employees, selected, onChange, error }) {
+  const [open,   setOpen]   = useState(false);
+  const [search, setSearch] = useState("");
+  const ref      = useRef(null);
+  const searchRef = useRef(null);
 
   useEffect(() => {
     function handleClick(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setSearch(""); }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  function toggle(name) {
-    onChange(selected.includes(name)
-      ? selected.filter(s => s !== name)
-      : [...selected, name]
+  useEffect(() => {
+    if (open) setTimeout(() => searchRef.current?.focus(), 50);
+    else setSearch("");
+  }, [open]);
+
+  const filtered = employees.filter(e =>
+    e.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  function toggle(emp) {
+    onChange(selected.includes(emp.name)
+      ? selected.filter(n => n !== emp.name)
+      : [...selected, emp.name]
     );
   }
 
   return (
     <div ref={ref} className="relative">
-      {/* Selected chips */}
       {selected.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-2">
-          {selected.map(s => (
-            <span key={s} className="flex items-center gap-1 bg-school-navy/10 text-school-navy text-xs font-semibold px-2 py-1 rounded-lg">
-              {s}
-              <button type="button" onClick={() => toggle(s)}
+          {selected.map(name => (
+            <span key={name} className="flex items-center gap-1 bg-school-navy/10 text-school-navy text-xs font-semibold px-2 py-1 rounded-lg">
+              {name}
+              <button type="button" onClick={() => onChange(selected.filter(n => n !== name))}
                 className="hover:text-red-500 transition-colors">
                 <X className="w-3 h-3"/>
               </button>
@@ -159,7 +108,6 @@ function StaffMultiSelect({ selected, onChange, error }) {
         </div>
       )}
 
-      {/* Trigger */}
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -174,23 +122,42 @@ function StaffMultiSelect({ selected, onChange, error }) {
         <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? "rotate-180" : ""}`}/>
       </button>
 
-      {/* Dropdown */}
       {open && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-20 max-h-52 overflow-y-auto">
-          {STAFF_MEMBERS.map(s => {
-            const isSelected = selected.includes(s);
-            return (
-              <button key={s} type="button" onClick={() => toggle(s)}
-                className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-gray-50 text-sm transition-colors text-left ${isSelected ? "bg-school-navy/5" : ""}`}>
-                <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${
-                  isSelected ? "bg-school-navy border-school-navy" : "border-gray-300"
-                }`}>
-                  {isSelected && <Check className="w-2.5 h-2.5 text-white"/>}
-                </div>
-                <span className={isSelected ? "font-semibold text-school-navy" : "text-gray-700"}>{s}</span>
-              </button>
-            );
-          })}
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-20">
+          {/* Search box */}
+          <div className="p-2 border-b border-gray-100">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"/>
+              <input
+                ref={searchRef}
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search staff..."
+                className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
+              />
+            </div>
+          </div>
+          {/* Employee list */}
+          <div className="max-h-44 overflow-y-auto">
+            {filtered.length === 0 && (
+              <p className="px-4 py-3 text-xs text-gray-400">No staff match &quot;{search}&quot;</p>
+            )}
+            {filtered.map(emp => {
+              const isSelected = selected.includes(emp.name);
+              return (
+                <button key={emp.id} type="button" onClick={() => toggle(emp)}
+                  className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-gray-50 text-sm transition-colors text-left ${isSelected ? "bg-school-navy/5" : ""}`}>
+                  <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                    isSelected ? "bg-school-navy border-school-navy" : "border-gray-300"
+                  }`}>
+                    {isSelected && <Check className="w-2.5 h-2.5 text-white"/>}
+                  </div>
+                  <span className={isSelected ? "font-semibold text-school-navy" : "text-gray-700"}>{emp.name}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -198,34 +165,58 @@ function StaffMultiSelect({ selected, onChange, error }) {
 }
 
 // ── Add / Edit Modal ───────────────────────────────────────────
-function TaskModal({ task, onClose, onSave }) {
+function TaskModal({ task, employees, onClose, onSave }) {
   const isEdit = !!task?.id;
   const blank  = {
     title:"", description:"", assignedTo:[], priority:"Medium",
-    deadline:"", deadlineTime:"", status:"Pending",
+    deadline:"", deadlineTime:"", status:"Pending", showOnDashboard: false,
   };
-  const [form,   setForm]   = useState(task?.id ? { ...task } : blank);
-  const [errors, setErrors] = useState({});
+  const [form,    setForm]    = useState(task?.id ? { ...task } : blank);
+  const [errors,  setErrors]  = useState({});
+  const [saving,  setSaving]  = useState(false);
 
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
+  // AM/PM time helpers — form stores 24h "HH:MM", picker shows 12h
+  const [rawH, rawM] = form.deadlineTime ? form.deadlineTime.split(":").map(Number) : [null, null];
+  const tHour = rawH !== null ? (rawH % 12 || 12) : "";
+  const tMin  = rawM !== null ? String(rawM).padStart(2, "0") : "00";
+  const tAmpm = rawH !== null ? (rawH >= 12 ? "PM" : "AM") : "AM";
+
+  function setTime(h12, m, ampm) {
+    if (h12 === "" || h12 === null) { setForm(p => ({ ...p, deadlineTime: "" })); return; }
+    const n = Number(h12);
+    const h24 = ampm === "PM" ? (n === 12 ? 12 : n + 12) : (n === 12 ? 0 : n);
+    setForm(p => ({ ...p, deadlineTime: `${String(h24).padStart(2,"0")}:${m}` }));
+  }
+
   function validate() {
     const e = {};
-    if (!form.title.trim())           e.title      = "Title is required";
+    if (!form.title.trim())          e.title      = "Title is required";
     else if (!isValidLength(form.title, 100, 3))
-                                       e.title      = "Title must be between 3 and 100 characters";
+                                      e.title      = "Title must be between 3 and 100 characters";
     if (form.description && !isValidLength(form.description, 1000))
-                                       e.description = "Description must be 1000 characters or fewer";
-    if (!form.assignedTo.length)      e.assignedTo = "Select at least one staff member";
-    if (!form.deadline)               e.deadline   = "Deadline date is required";
+                                      e.description = "Description must be 1000 characters or fewer";
+    if (!form.assignedTo.length)     e.assignedTo = "Select at least one staff member";
+    if (!form.deadline)              e.deadline   = "Deadline date is required";
     else if (!isEdit && new Date(form.deadline) < new Date(new Date().toDateString()))
-                                       e.deadline   = "Deadline cannot be in the past";
+                                      e.deadline   = "Deadline cannot be in the past";
     setErrors(e);
     return Object.keys(e).length === 0;
   }
 
-  function handleSave() {
-    if (validate()) onSave(form);
+  async function handleSave() {
+    if (!validate()) return;
+    setSaving(true);
+    try {
+      // Resolve selected names → employee IDs
+      const assigneeIds = form.assignedTo
+        .map(name => employees.find(e => e.name === name)?.id)
+        .filter(Boolean);
+      await onSave({ ...form, assigneeIds });
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -270,12 +261,13 @@ function TaskModal({ task, onClose, onSave }) {
             {errors.description && <p className="text-xs text-red-500 mt-1">{errors.description}</p>}
           </div>
 
-          {/* Assign To (multi-select) */}
+          {/* Assign To */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
               Assign To <span className="text-red-500">*</span>
             </label>
             <StaffMultiSelect
+              employees={employees}
               selected={form.assignedTo}
               onChange={val => { setForm(p => ({...p, assignedTo: val})); setErrors(p => ({...p, assignedTo:""})); }}
               error={errors.assignedTo}
@@ -283,7 +275,7 @@ function TaskModal({ task, onClose, onSave }) {
             {errors.assignedTo && <p className="text-xs text-red-500 mt-1">{errors.assignedTo}</p>}
           </div>
 
-          {/* Deadline date + time */}
+          {/* Deadline */}
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
               Deadline <span className="text-red-500">*</span>
@@ -297,13 +289,38 @@ function TaskModal({ task, onClose, onSave }) {
                   onChange={e => { set("deadline")(e); setErrors(p => ({...p, deadline:""})); }}
                 />
               </div>
-              <div className="relative">
-                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"/>
-                <input type="time"
-                  className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
-                  value={form.deadlineTime}
-                  onChange={set("deadlineTime")}
-                />
+              <div className="flex items-center gap-1 border border-gray-200 rounded-xl px-3 py-2">
+                <Clock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0"/>
+                <select
+                  value={tHour}
+                  onChange={e => setTime(e.target.value, tMin, tAmpm)}
+                  className="text-sm bg-transparent focus:outline-none cursor-pointer"
+                >
+                  <option value="">--</option>
+                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(h => (
+                    <option key={h} value={h}>{h}</option>
+                  ))}
+                </select>
+                {tHour !== "" && <>
+                  <span className="text-gray-400 text-sm font-bold">:</span>
+                  <select
+                    value={tMin}
+                    onChange={e => setTime(tHour, e.target.value, tAmpm)}
+                    className="text-sm bg-transparent focus:outline-none cursor-pointer"
+                  >
+                    {["00","05","10","15","20","25","30","35","40","45","50","55"].map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                  <div className="flex ml-0.5 border border-gray-200 rounded-lg overflow-hidden">
+                    {["AM","PM"].map(ap => (
+                      <button key={ap} type="button"
+                        onClick={() => setTime(tHour, tMin, ap)}
+                        className={`px-2 py-0.5 text-xs font-bold transition-colors ${tAmpm===ap ? "bg-school-navy text-white" : "text-gray-500 hover:bg-gray-100"}`}
+                      >{ap}</button>
+                    ))}
+                  </div>
+                </>}
               </div>
             </div>
             {errors.deadline && <p className="text-xs text-red-500 mt-1">{errors.deadline}</p>}
@@ -348,14 +365,33 @@ function TaskModal({ task, onClose, onSave }) {
             </div>
           )}
 
+          {/* Show on Dashboard */}
+          <button
+            type="button"
+            onClick={() => setForm(p => ({ ...p, showOnDashboard: !p.showOnDashboard }))}
+            className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border-2 transition-all text-sm font-semibold ${
+              form.showOnDashboard
+                ? "border-school-navy bg-school-navy/5 text-school-navy"
+                : "border-gray-200 text-gray-500 hover:border-gray-300"
+            }`}
+          >
+            <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+              form.showOnDashboard ? "border-school-navy bg-school-navy" : "border-gray-300"
+            }`}>
+              {form.showOnDashboard && <Check className="w-3 h-3 text-white"/>}
+            </div>
+            Pin to Dashboard
+            <span className="ml-auto text-xs font-normal text-gray-400">Visible on main dashboard</span>
+          </button>
+
           <div className="flex gap-2 pt-1">
-            <button onClick={onClose}
-              className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+            <button onClick={onClose} disabled={saving}
+              className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
               Cancel
             </button>
-            <button onClick={handleSave}
-              className="flex-1 py-2.5 bg-school-navy text-white rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors shadow-sm">
-              {isEdit ? "Update Task" : "Assign Task"}
+            <button onClick={handleSave} disabled={saving}
+              className="flex-1 py-2.5 bg-school-navy text-white rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors shadow-sm disabled:opacity-60">
+              {saving ? "Saving…" : isEdit ? "Update Task" : "Assign Task"}
             </button>
           </div>
         </div>
@@ -467,13 +503,30 @@ function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
 
 // ── Main Page ──────────────────────────────────────────────────
 export default function TasksPage() {
-  const [tasks,     setTasks]     = useState(INITIAL_TASKS);
+  const [tasks,     setTasks]     = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [loading,   setLoading]   = useState(true);
   const [modal,     setModal]     = useState(null);
   const [search,    setSearch]    = useState("");
   const [statusF,   setStatusF]   = useState("All");
   const [priorityF, setPriorityF] = useState("All");
   const [assigneeF, setAssigneeF] = useState("All");
   const [deleteId,  setDeleteId]  = useState(null);
+
+  const loadAll = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [taskData, empData] = await Promise.all([getTasks(), getEmployeesForTasks()]);
+      setTasks(taskData);
+      setEmployees(empData);
+    } catch (e) {
+      console.error("Tasks loadAll error:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
 
   const stats = useMemo(() => ({
     total:      tasks.length,
@@ -486,43 +539,64 @@ export default function TasksPage() {
   const filtered = useMemo(() => tasks.filter(t => {
     const eff       = isOverdue(t) ? "Overdue" : t.status;
     const assignees = Array.isArray(t.assignedTo) ? t.assignedTo : [t.assignedTo];
-    if (statusF   !== "All" && eff !== statusF)                   return false;
-    if (priorityF !== "All" && t.priority !== priorityF)          return false;
-    if (assigneeF !== "All" && !assignees.includes(assigneeF))    return false;
+    if (statusF   !== "All" && eff !== statusF)                 return false;
+    if (priorityF !== "All" && t.priority !== priorityF)        return false;
+    if (assigneeF !== "All" && !assignees.includes(assigneeF))  return false;
     if (search) {
       const q = search.toLowerCase();
-      const inTitle    = t.title.toLowerCase().includes(q);
-      const inAssignee = assignees.some(a => a.toLowerCase().includes(q));
-      if (!inTitle && !inAssignee) return false;
+      if (!t.title.toLowerCase().includes(q) && !assignees.some(a => a.toLowerCase().includes(q)))
+        return false;
     }
     return true;
   }), [tasks, statusF, priorityF, assigneeF, search]);
 
-  function handleSave(form) {
-    if (form.id) {
-      setTasks(prev => prev.map(t => t.id === form.id ? { ...form } : t));
-    } else {
-      setTasks(prev => [{ ...form, id: Date.now(), createdAt: TODAY }, ...prev]);
+  async function handleSave(form) {
+    try {
+      if (form.id) {
+        const updated = await updateTask(form.id, form);
+        setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+      } else {
+        const created = await addTask(form);
+        setTasks(prev => [created, ...prev]);
+      }
+      setModal(null);
+    } catch (e) {
+      console.error("Save task error:", e);
     }
-    setModal(null);
   }
 
-  function handleDelete(id) {
-    setTasks(prev => prev.filter(t => t.id !== id));
+  async function handleDelete(id) {
+    try {
+      await deleteTask(id);
+      setTasks(prev => prev.filter(t => t.id !== id));
+    } catch (e) {
+      console.error("Delete task error:", e);
+    }
     setDeleteId(null);
   }
 
-  function handleStatusChange(id, status) {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+  async function handleStatusChange(id, status) {
+    try {
+      await updateTaskStatus(id, status);
+      setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
+    } catch (e) {
+      console.error("Status change error:", e);
+    }
   }
 
   const STAT_CARDS = [
-    { label:"Total",       value:stats.total,      bg:"bg-school-navy", sub:"text-white/70",        val:"text-white"      },
+    { label:"Total",       value:stats.total,       bg:"bg-school-navy", sub:"text-white/70",        val:"text-white"      },
     { label:"Pending",     value:stats.pending,     bg:"bg-amber-50 border border-amber-200",    sub:"text-amber-600",  val:"text-amber-700"  },
     { label:"In Progress", value:stats.inProgress,  bg:"bg-indigo-50 border border-indigo-200",  sub:"text-indigo-600", val:"text-indigo-700" },
     { label:"Completed",   value:stats.completed,   bg:"bg-green-50 border border-green-200",    sub:"text-green-600",  val:"text-green-700"  },
     { label:"Overdue",     value:stats.overdue,     bg:"bg-red-50 border border-red-200",        sub:"text-red-600",    val:"text-red-700"    },
   ];
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-24 text-sm text-gray-400">
+      Loading tasks…
+    </div>
+  );
 
   return (
     <div className="space-y-5">
@@ -533,10 +607,16 @@ export default function TasksPage() {
           <h2 className="text-xl font-bold text-gray-800">Task Management</h2>
           <p className="text-sm text-gray-500 mt-0.5">Assign tasks to staff, set deadlines and track progress</p>
         </div>
-        <button onClick={() => setModal("add")}
-          className="flex items-center gap-2 bg-school-navy text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors shadow-sm flex-shrink-0">
-          <Plus className="w-4 h-4"/> Assign Task
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={loadAll}
+            className="p-2 border border-gray-200 rounded-xl text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
+            <RefreshCw className="w-4 h-4"/>
+          </button>
+          <button onClick={() => setModal("add")}
+            className="flex items-center gap-2 bg-school-navy text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors shadow-sm flex-shrink-0">
+            <Plus className="w-4 h-4"/> Assign Task
+          </button>
+        </div>
       </div>
 
       {/* Stats */}
@@ -573,7 +653,7 @@ export default function TasksPage() {
         <select className="border border-gray-200 rounded-xl px-3 py-2.5 text-sm font-semibold text-gray-700 focus:outline-none bg-white cursor-pointer"
           value={assigneeF} onChange={e => setAssigneeF(e.target.value)}>
           <option value="All">All Staff</option>
-          {STAFF_MEMBERS.map(s => <option key={s}>{s}</option>)}
+          {employees.map(e => <option key={e.id} value={e.name}>{e.name}</option>)}
         </select>
       </div>
 
@@ -612,6 +692,7 @@ export default function TasksPage() {
       {(modal === "add" || (modal && modal.id)) && (
         <TaskModal
           task={modal === "add" ? null : modal}
+          employees={employees}
           onClose={() => setModal(null)}
           onSave={handleSave}
         />

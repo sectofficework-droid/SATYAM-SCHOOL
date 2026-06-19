@@ -220,22 +220,13 @@ function DocumentsTab({ docs, s }) {
 }
 
 function FeesTab({ fees }) {
-  // fees can be:
-  //   array  → dummy/legacy format (term objects)
-  //   object → store student format { total, paid, discount }
-  const isArray = Array.isArray(fees);
-
-  const totalFees = isArray
-    ? fees.reduce((s, f) => s + f.amount, 0)
-    : (fees?.total ?? 0);
-  const discount  = isArray ? 0 : (fees?.discount ?? 0);
+  const totalFees  = fees?.total ?? 0;
+  const discount   = fees?.discount ?? 0;
   const actualFees = Math.max(totalFees - discount, 0);
-  const paidFees  = isArray ? fees.filter((f) => f.paid) : [];
-  const totalPaid = isArray
-    ? paidFees.reduce((s, f) => s + f.amount, 0)
-    : (fees?.paid ?? 0);
-  const totalDue  = Math.max(actualFees - totalPaid, 0);
-  const paidPct   = actualFees > 0 ? Math.round((totalPaid / actualFees) * 100) : 0;
+  const totalPaid  = fees?.paid ?? 0;
+  const totalDue   = Math.max(actualFees - totalPaid, 0);
+  const paidPct    = actualFees > 0 ? Math.round((totalPaid / actualFees) * 100) : 0;
+  const payments   = fees?.payments || [];
 
   return (
     <div className="space-y-5">
@@ -244,7 +235,6 @@ function FeesTab({ fees }) {
         <div className="bg-blue-50 rounded-2xl p-4 text-center border border-blue-100">
           <p className="text-xs text-blue-500 font-bold uppercase tracking-wide mb-1">Total Fees</p>
           <p className="text-2xl font-bold text-blue-700">₹{actualFees.toLocaleString("en-IN")}</p>
-          {isArray && <p className="text-xs text-blue-400 mt-1">{fees.length} term{fees.length !== 1 ? "s" : ""}</p>}
           {discount > 0 && <p className="text-xs text-amber-600 font-semibold mt-1">₹{totalFees.toLocaleString("en-IN")} - ₹{discount.toLocaleString("en-IN")} discount</p>}
         </div>
         <div className="bg-green-50 rounded-2xl p-4 text-center border border-green-100">
@@ -281,51 +271,49 @@ function FeesTab({ fees }) {
         </div>
       </div>
 
-      {/* Payment history — only shown for term-based (dummy) students */}
-      {isArray && (
-        <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
-            <p className="text-sm font-semibold text-gray-700">Fee Payment History</p>
-            <span className="text-xs bg-green-100 text-green-700 font-semibold px-2.5 py-1 rounded-full">
-              {paidFees.length} payment{paidFees.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50">
-                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Fee Term</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Paid On</th>
-                <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Receipt No</th>
+      {/* Payment history */}
+      <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+          <p className="text-sm font-semibold text-gray-700">Fee Payment History</p>
+          <span className="text-xs bg-green-100 text-green-700 font-semibold px-2.5 py-1 rounded-full">
+            {payments.length} payment{payments.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50">
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Fee Term</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Amount</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Paid On</th>
+              <th className="text-left px-5 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Receipt No</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {payments.length === 0 ? (
+              <tr>
+                <td colSpan={4} className="px-5 py-10 text-center text-gray-400 text-sm">
+                  No fee payments recorded yet
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-50">
-              {paidFees.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-5 py-10 text-center text-gray-400 text-sm">
-                    No fee payments recorded yet
+            ) : (
+              payments.map((fee, i) => (
+                <tr key={i} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-5 py-3.5 font-medium text-gray-800">{fee.term}</td>
+                  <td className="px-5 py-3.5 font-semibold text-green-700">
+                    ₹{fee.amount.toLocaleString("en-IN")}
+                  </td>
+                  <td className="px-5 py-3.5 text-gray-500">{fee.date}</td>
+                  <td className="px-5 py-3.5">
+                    <button className="text-school-navy text-xs font-semibold hover:text-school-gold transition-colors">
+                      {fee.receipt}
+                    </button>
                   </td>
                 </tr>
-              ) : (
-                paidFees.map((fee, i) => (
-                  <tr key={i} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-5 py-3.5 font-medium text-gray-800">{fee.term}</td>
-                    <td className="px-5 py-3.5 font-semibold text-green-700">
-                      ₹{fee.amount.toLocaleString("en-IN")}
-                    </td>
-                    <td className="px-5 py-3.5 text-gray-500">{fee.date}</td>
-                    <td className="px-5 py-3.5">
-                      <button className="text-school-navy text-xs font-semibold hover:text-school-gold transition-colors">
-                        {fee.receipt}
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -434,13 +422,8 @@ function ResultsTab({ results }) {
 }
 
 function InventoryTab({ inventory }) {
-  const masterItems = useStore(s => s.studentInventoryItems);
-  const merged = masterItems.map(name => {
-    const existing = inventory.find(i => i.item === name);
-    return existing || { item: name, givenDate: "", given: false };
-  });
-  const given   = merged.filter((i) => i.given);
-  const pending = merged.filter((i) => !i.given);
+  const given   = inventory.filter((i) => i.given);
+  const pending = inventory.filter((i) => !i.given);
 
   return (
     <div className="space-y-5">
@@ -449,7 +432,7 @@ function InventoryTab({ inventory }) {
       <div className="grid grid-cols-3 gap-4">
         <div className="bg-blue-50 rounded-2xl p-4 text-center border border-blue-100">
           <p className="text-xs text-blue-500 font-bold uppercase tracking-wide mb-1">Total Items</p>
-          <p className="text-2xl font-bold text-blue-700">{merged.length}</p>
+          <p className="text-2xl font-bold text-blue-700">{inventory.length}</p>
         </div>
         <div className="bg-green-50 rounded-2xl p-4 text-center border border-green-100">
           <p className="text-xs text-green-500 font-bold uppercase tracking-wide mb-1">Given</p>
@@ -474,38 +457,45 @@ function InventoryTab({ inventory }) {
           )}
         </div>
         <div className="divide-y divide-gray-50">
-          {merged.map((item, i) => (
-            <div key={i} className="flex items-center gap-4 px-5 py-3.5">
-              <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                item.given ? "bg-green-100" : "bg-amber-50 border border-amber-200"
-              }`}>
-                {item.given
-                  ? <CheckCircle className="w-4.5 h-4.5 text-green-600" />
-                  : <Clock className="w-4 h-4 text-amber-500" />
-                }
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-800">{item.item}</p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {item.given
-                    ? `Given on ${item.givenDate}`
-                    : "Pending — not yet distributed"
-                  }
-                </p>
-              </div>
-              <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${
-                item.given
-                  ? "bg-green-100 text-green-700"
-                  : "bg-amber-100 text-amber-700"
-              }`}>
-                {item.given ? "Given" : "Pending"}
-              </span>
+          {inventory.length === 0 ? (
+            <div className="px-5 py-10 text-center">
+              <Package className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+              <p className="text-sm text-gray-400 font-medium">No inventory assigned to this student</p>
             </div>
-          ))}
+          ) : (
+            inventory.map((item, i) => (
+              <div key={i} className="flex items-center gap-4 px-5 py-3.5">
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                  item.given ? "bg-green-100" : "bg-amber-50 border border-amber-200"
+                }`}>
+                  {item.given
+                    ? <CheckCircle className="w-4.5 h-4.5 text-green-600" />
+                    : <Clock className="w-4 h-4 text-amber-500" />
+                  }
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800">{item.item}</p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {item.given
+                      ? `Given on ${item.givenDate}`
+                      : "Pending — not yet distributed"
+                    }
+                  </p>
+                </div>
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${
+                  item.given
+                    ? "bg-green-100 text-green-700"
+                    : "bg-amber-100 text-amber-700"
+                }`}>
+                  {item.given ? "Given" : "Pending"}
+                </span>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
-      {pending.length === 0 && (
+      {inventory.length > 0 && pending.length === 0 && (
         <div className="flex items-center gap-3 bg-green-50 border border-green-100 rounded-2xl px-5 py-4">
           <CheckCircle className="w-5 h-5 text-green-500 flex-shrink-0" />
           <p className="text-sm font-semibold text-green-700">All inventory items have been distributed to this student.</p>
@@ -769,7 +759,7 @@ export default function StudentDetailPage() {
       amount:  rawStudent.fees.discount,
       reason:  rawStudent.fees.discountReason,
     } : { applied: false, amount: 0, reason: "" },
-    fees:      rawStudent.feePayments,
+    fees:      { ...rawStudent.fees, payments: rawStudent.feePayments },
     attendance: [],
     results:    [],
   } : null;

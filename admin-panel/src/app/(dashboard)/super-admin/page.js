@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   ShieldCheck, Crown, Shield, LogOut, Eye, EyeOff,
   Camera, Calendar, CreditCard, MapPin, User, Tag,
@@ -15,8 +15,11 @@ import {
   isValidName, isValidPhone, isValidEmail, isValidAadhar, isValidPincode,
   isNonNegativeNumber,
 } from "@/lib/validators";
-import { getStudents, addStudent as dbAddStudent, updateStudent as dbUpdateStudent } from "@/lib/studentService";
+import { getStudents, getClasses, addStudent as dbAddStudent, updateStudent as dbUpdateStudent } from "@/lib/studentService";
 import { getEmployees } from "@/lib/employeeService";
+import { getFeesForSuperAdmin } from "@/lib/reportService";
+import { updateFeesForEnrollment } from "@/lib/feesService";
+import { getAssets, getInventoryItems } from "@/lib/inventoryService";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -33,8 +36,71 @@ const CASTES    = ["General","OBC","SC","ST","EWS","SEBC","Other"];
 const MEDIUMS   = ["English","Gujarati","Hindi","Other"];
 const PREV_CLS  = ["Nursery / KG","1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th","11th","12th"];
 
-const MGMT_USERS   = [{ name:"Sunil Pradhan", password:"sunil123", initials:"SP" }];
-const SENIOR_USERS = [{ name:"Rajesh Biswal", password:"rajesh123", initials:"RB" },{ name:"BK Debiprasad Das", password:"bkdas123", initials:"BD" }];
+const IMPORT_FIELDS = [
+  // ── Admission Info ──────────────────────────────────────────────
+  { key:"grNo",              label:"GR Number",                      required:false },
+  { key:"cls",               label:"Class",                          required:true  },
+  { key:"admissionClass",    label:"Admission Class",                required:false },
+  { key:"section",           label:"Section (A/B/C)",                required:false },
+  { key:"rollNo",            label:"Roll No",                        required:false },
+  { key:"joinDate",          label:"Date of Joining (YYYY-MM-DD)",   required:false },
+  { key:"feeTotal",          label:"Fee Total (Rs)",                 required:false },
+  { key:"discountAmount",    label:"Discount Amount (Rs)",           required:false },
+  { key:"discountReason",    label:"Discount Reason",                required:false },
+  // ── Personal Info ───────────────────────────────────────────────
+  { key:"firstName",         label:"First Name",                     required:true  },
+  { key:"lastName",          label:"Last Name",                      required:true  },
+  { key:"fatherName",        label:"Father Name",                    required:true  },
+  { key:"motherName",        label:"Mother Name",                    required:true  },
+  { key:"dob",               label:"Date of Birth (YYYY-MM-DD)",     required:true  },
+  { key:"gender",            label:"Gender (Male/Female/Other)",     required:true  },
+  { key:"placeOfBirth",      label:"Place of Birth",                 required:true  },
+  { key:"motherTongue",      label:"Mother Tongue",                  required:true  },
+  { key:"religion",          label:"Religion",                       required:true  },
+  { key:"caste",             label:"Category / Caste",              required:true  },
+  { key:"subCaste",          label:"Sub Caste",                      required:false },
+  { key:"height",            label:"Height (cm)",                    required:false },
+  { key:"weight",            label:"Weight (kg)",                    required:false },
+  // ── Contact ─────────────────────────────────────────────────────
+  { key:"mobile1",           label:"Mobile 1",                       required:true  },
+  { key:"mobile2",           label:"Mobile 2",                       required:false },
+  { key:"roomPlotNo",        label:"Room / Plot No",                 required:true  },
+  { key:"society",           label:"Society / Colony",               required:true  },
+  { key:"landmark",          label:"Landmark",                       required:false },
+  { key:"area",              label:"Area / Locality",                required:true  },
+  { key:"pinCode",           label:"Pin Code",                       required:true  },
+  { key:"address",           label:"Full Address",                   required:false },
+  // ── IDs & Documents ─────────────────────────────────────────────
+  { key:"aadharNo",          label:"Aadhar Number",                  required:false },
+  { key:"aadharName",        label:"Aadhar Name",                    required:false },
+  { key:"udise",             label:"UDISE Number",                   required:false },
+  { key:"pen",               label:"PEN Number",                     required:false },
+  { key:"apaar",             label:"APAAR ID",                       required:false },
+  // ── Previous School ─────────────────────────────────────────────
+  { key:"lastSchoolName",    label:"Last School Name",               required:false },
+  { key:"lastSchoolClass",   label:"Last School Class",              required:false },
+  { key:"lastSchoolGrNo",    label:"Last School GR No",              required:false },
+  { key:"lastSchoolMedium",  label:"Last School Medium",             required:false },
+  { key:"lastSchoolPlace",   label:"Last School Place",              required:false },
+  { key:"prevAttendanceDays",label:"Previous Attendance Days",       required:false },
+  { key:"lastExamGiven",     label:"Last Exam Given (Yes/No)",       required:false },
+  { key:"prevPercentage",    label:"Previous Percentage",            required:false },
+];
+
+const EXAMPLE_ROW = [
+  // Admission Info
+  "GR001","5th","5th","A","1","2026-06-01","15500","0","",
+  // Personal Info
+  "Arjun","Patel","Rajesh Patel","Meena Patel","2015-06-15",
+  "Male","Surat","Gujarati","Hindu","General","Patel","120","25",
+  // Contact
+  "9876543210","","12","Gandhi Nagar","Near Park","Adajan","395009","12 Gandhi Nagar, Adajan, Surat",
+  // IDs
+  "1234 5678 9012","Arjun Rajesh Patel","","","",
+  // Previous School
+  "City Primary School","4th","","Gujarati","Surat","200","Yes","75.5",
+];
+
 
 // All student fields matching Add Student form (no discount)
 const FIELD_GROUPS = [
@@ -102,11 +168,11 @@ const MODULE_THEMES = {
 };
 
 const MGMT_MODULES = [
-  { key:"students",  label:"Student Records",  icon:GraduationCap, stats:["25 Students","15 Classes","All Active"]          },
-  { key:"fees",      label:"Fees Management",  icon:IndianRupee,   stats:["₹3.2L Collected","₹48K Pending","15 Records"]    },
-  { key:"inventory", label:"Inventory",        icon:Package,       stats:["8 Assets","6 Item Types","₹2.4L Value"]          },
-  { key:"employee",  label:"Employee",         icon:Users,         stats:["12 Staff","8 Teachers","4 Support"]              },
-  { key:"salary",    label:"Salary",           icon:IndianRupee,   stats:["Management Only","Auto Expense Sync","Private"]  },
+  { key:"students",  label:"Student Records",  icon:GraduationCap },
+  { key:"fees",      label:"Fees Management",  icon:IndianRupee   },
+  { key:"inventory", label:"Inventory",        icon:Package       },
+  { key:"employee",  label:"Employee",         icon:Users         },
+  { key:"salary",    label:"Salary",           icon:IndianRupee   },
 ];
 
 
@@ -133,114 +199,11 @@ const PENDING_ID_FIELDS = [
   { key:"apaar",    label:"APAAR ID"   },
 ];
 
-const INVENTORY_ITEMS = ["Bag","Uniform Set","Book Set","Notebook Set","School Diary","ID Card"];
 const EMP_ROLES    = ["Teacher","Admin Staff","Principal","Vice Principal","Lab Assistant","Librarian","Peon","Guard","Cook","Driver"];
 const EMP_STATUSES = ["Active","On Leave","Resigned"];
 const ASSET_ACTIONS = ["Purchased","Assigned","Returned","Serviced","Repaired","Moved","Disposed"];
 
 // â"€â"€ Dummy data â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-let _sid = 0;
-function mkSt(cls, roll, firstName, lastName, gender) {
-  _sid++;
-  return {
-    id:_sid, enrollNo:`SS-${String(_sid).padStart(4,"0")}`,
-    firstName, lastName, name:`${firstName} ${lastName}`,
-    cls, roll, gender,
-    joinDate:"2026-06-01", grNo:`GR${2000+_sid}`,
-    dob:"2015-06-10", religion:"Hindu", caste:"General",
-    fatherName:`${lastName} Sr`, motherName:`Smt. ${lastName}`,
-    roomPlotNo:"12", address:"Gandhi Nagar, Surat", mobile1:`98765${String(40000+_sid).padStart(5,"0")}`, mobile2:"",
-    placeOfBirth:"Surat",
-    lastSchoolName:"City Primary School", lastSchoolClass:"Nursery / KG", lastSchoolMedium:"Gujarati", lastSchoolPlace:"Surat",
-    aadharNo:`XXXX XXXX ${1000+_sid}`, aadharName:`${firstName} ${lastName}`,
-    udise:"", pen:`PEN${3000+_sid}`, apaar:"",
-  };
-}
-
-const DUMMY_STUDENTS = [
-  mkSt("JR KG","1","Arjun","Patel","Male"),       mkSt("SR KG","1","Diya","Shah","Female"),
-  mkSt("Balvatika","1","Vivaan","Mehta","Male"),   mkSt("1st","1","Anaya","Desai","Female"),
-  mkSt("2nd","1","Rohan","Joshi","Male"),          mkSt("3rd","1","Ishaan","Trivedi","Male"),
-  mkSt("4th","1","Priya","Verma","Female"),        mkSt("5th","1","Aditya","Rao","Male"),
-  mkSt("6th","1","Sneha","Gupta","Female"),        mkSt("7th","1","Karan","Nair","Male"),
-  mkSt("8th","1","Pooja","Singh","Female"),        mkSt("9th","1","Rahul","Kumar","Male"),
-  mkSt("10th","1","Anjali","Mishra","Female"),     mkSt("11th Commerce","1","Varun","Pillai","Male"),
-  mkSt("12th Commerce","1","Neha","Pandey","Female"),
-  mkSt("JR KG","2","Riya","Patel","Female"),       mkSt("SR KG","2","Dev","Shah","Male"),
-  mkSt("1st","2","Aarav","Joshi","Male"),          mkSt("2nd","2","Shreya","Mehta","Female"),
-  mkSt("3rd","2","Yash","Desai","Male"),           mkSt("4th","2","Kavya","Trivedi","Female"),
-  mkSt("5th","2","Om","Rao","Male"),               mkSt("6th","2","Nisha","Gupta","Female"),
-  mkSt("7th","2","Jay","Nair","Male"),             mkSt("8th","2","Tanu","Singh","Female"),
-];
-
-let _payId = 1;
-function mkPay(label, amount, dueDate, paid, paidDate) {
-  return { id: _payId++, label, amount, dueDate, paid, paidDate };
-}
-function mkFee(id, enrollNo, name, cls, totalFee, discount, payments) {
-  return { id, enrollNo, name, cls, totalFee, discount, payments };
-}
-
-const DUMMY_FEE_RECORDS = [
-  mkFee(1,"SS-0001","Arjun Patel",   "JR KG",         16200,0,   [mkPay("Term 1",5400,"2026-04-15",5400,"2026-04-10"),mkPay("Term 2",5400,"2026-07-15",5400,"2026-07-08"),mkPay("Term 3",5400,"2026-10-15",0,"")]),
-  mkFee(2,"SS-0002","Diya Shah",     "SR KG",         16200,500, [mkPay("Full Payment",15700,"2026-04-15",15700,"2026-04-05")]),
-  mkFee(3,"SS-0003","Vivaan Mehta",  "Balvatika",     17000,0,   [mkPay("Term 1",5666,"2026-04-15",5666,"2026-04-12"),mkPay("Term 2",5667,"2026-07-15",0,""),mkPay("Term 3",5667,"2026-10-15",0,"")]),
-  mkFee(4,"SS-0004","Anaya Desai",   "1st",           18000,1000,[mkPay("Half Yearly 1",8500,"2026-04-15",8500,"2026-04-08"),mkPay("Half Yearly 2",8500,"2026-10-15",8500,"2026-10-10")]),
-  mkFee(5,"SS-0005","Rohan Joshi",   "2nd",           18200,0,   [mkPay("Term 1",6066,"2026-04-15",6066,"2026-04-15"),mkPay("Term 2",6067,"2026-07-15",0,""),mkPay("Term 3",6067,"2026-10-15",0,"")]),
-  mkFee(6,"SS-0006","Ishaan Trivedi","3rd",           18500,0,   [mkPay("Full Payment",18500,"2026-04-15",18500,"2026-04-02")]),
-  mkFee(7,"SS-0007","Priya Verma",   "4th",           18800,500, [mkPay("Term 1",6100,"2026-04-15",6100,"2026-04-20"),mkPay("Term 2",6100,"2026-07-15",6100,"2026-07-15"),mkPay("Term 3",6100,"2026-10-15",0,"")]),
-  mkFee(8,"SS-0008","Aditya Rao",    "5th",           19500,0,   [mkPay("Term 1",6500,"2026-04-15",6500,"2026-04-18"),mkPay("Term 2",6500,"2026-07-15",0,""),mkPay("Term 3",6500,"2026-10-15",0,"")]),
-];
-
-const DUMMY_ASSETS = [
-  { id:1, name:"HP LaserJet Printer",   category:"Electronics", location:"Office",        status:"Active",      assignedTo:"Admin",      purchaseDate:"2023-01-15", value:18500,
-    history:[{ id:1,date:"2023-01-15",action:"Purchased",from:"—",to:"Office",note:"Initial setup"},{ id:2,date:"2024-03-10",action:"Serviced",from:"Office",to:"Office",note:"Cartridge replaced"}]},
-  { id:2, name:"Dell Laptop",           category:"Electronics", location:"Lab",           status:"Active",      assignedTo:"Lab Staff",  purchaseDate:"2022-06-10", value:55000,
-    history:[{ id:3,date:"2022-06-10",action:"Purchased",from:"—",to:"Lab",note:"New purchase"},{ id:4,date:"2023-09-01",action:"Assigned",from:"Lab",to:"Lab Staff",note:"Staff assignment"}]},
-  { id:3, name:"Projector Epson X41+", category:"Electronics", location:"Hall",          status:"Active",      assignedTo:"AV Team",    purchaseDate:"2021-08-20", value:42000,
-    history:[{ id:5,date:"2021-08-20",action:"Purchased",from:"—",to:"Hall",note:"Hall installation"},{ id:6,date:"2025-01-15",action:"Serviced",from:"Hall",to:"Hall",note:"Bulb replaced"}]},
-  { id:4, name:"Classroom Chairs (30)", category:"Furniture",   location:"Classroom 4",  status:"Active",      assignedTo:"Class 4",    purchaseDate:"2020-04-01", value:24000,
-    history:[{ id:7,date:"2020-04-01",action:"Purchased",from:"—",to:"Classroom 4",note:"Annual procurement"}]},
-  { id:5, name:"Science Lab Kit",       category:"Lab Equip",   location:"Science Lab",  status:"Maintenance", assignedTo:"Lab Asst",   purchaseDate:"2023-03-12", value:32000,
-    history:[{ id:8,date:"2023-03-12",action:"Purchased",from:"—",to:"Science Lab",note:""},{ id:9,date:"2026-02-20",action:"Repaired",from:"Science Lab",to:"Science Lab",note:"Under maintenance"}]},
-  { id:6, name:"Sports Equipment Set",  category:"Sports",      location:"Ground",        status:"Active",      assignedTo:"PE Teacher", purchaseDate:"2024-01-05", value:15000,
-    history:[{ id:10,date:"2024-01-05",action:"Purchased",from:"—",to:"Ground",note:"New set"}]},
-  { id:7, name:"Water Purifier",        category:"Appliance",   location:"Canteen",       status:"Active",      assignedTo:"Cook",       purchaseDate:"2022-11-30", value:12500,
-    history:[{ id:11,date:"2022-11-30",action:"Purchased",from:"—",to:"Canteen",note:""}]},
-  { id:8, name:"CCTV Camera Set",       category:"Security",    location:"Entire School", status:"Active",      assignedTo:"Admin",      purchaseDate:"2023-07-01", value:38000,
-    history:[{ id:12,date:"2023-07-01",action:"Purchased",from:"—",to:"Entire School",note:"16-camera setup"}]},
-];
-
-const DUMMY_STUDENT_INVENTORY = DUMMY_STUDENTS.map((s,i) => ({
-  ...s,
-  items: INVENTORY_ITEMS.map((item,j) => ({
-    item, given: j < [5,6,3,6,4,6,5,4,6,5,4,6,5,6,4,5,5,5,4,5,5,5,4,4,5][i],
-    date: j < [5,6,3,6,4,6,5,4,6,5,4,6,5,6,4,5,5,5,4,5,5,5,4,4,5][i] ? "2026-06-05" : "",
-  })),
-}));
-
-const DUMMY_STOCK = [
-  { id:1,item:"Bag",   price:450, total:150,issued:120},{ id:2,item:"Uniform Set",      price:850, total:200,issued:185},
-  { id:3,item:"Book Set",    price:1200,total:300,issued:252},{ id:4,item:"Notebook Set",    price:180, total:500,issued:420},
-  { id:5,item:"School Diary", price:120, total:180,issued:160},{ id:6,item:"ID Card",      price:50,  total:200,issued:192},
-  { id:7,item:"Water Bottle", price:250, total:100,issued:78 },{ id:8,item:"PE Kit",       price:650, total:120,issued:92 },
-];
-
-const DUMMY_EMPLOYEES = [
-  { id:1, name:"Rajesh Patel",    role:"Teacher",     subject:"Mathematics", qualification:"B.Ed, M.Sc", mobile:"9876541001",email:"rajesh@satyam.in",salary:28000,joinDate:"2020-06-01",status:"Active"   },
-  { id:2, name:"Meena Desai",     role:"Teacher",     subject:"English",     qualification:"B.Ed, M.A",  mobile:"9876541002",email:"meena@satyam.in", salary:26000,joinDate:"2019-04-15",status:"Active"   },
-  { id:3, name:"Suresh Shah",     role:"Teacher",     subject:"Science",     qualification:"B.Ed, B.Sc", mobile:"9876541003",email:"suresh@satyam.in",salary:27000,joinDate:"2021-07-01",status:"Active"   },
-  { id:4, name:"Priya Trivedi",   role:"Teacher",     subject:"Social Sc",   qualification:"B.Ed",       mobile:"9876541004",email:"priya@satyam.in", salary:25000,joinDate:"2022-06-15",status:"Active"   },
-  { id:5, name:"Amit Kumar",      role:"Teacher",     subject:"Hindi",       qualification:"B.Ed, M.A",  mobile:"9876541005",email:"amit@satyam.in",  salary:24000,joinDate:"2020-08-01",status:"Active"   },
-  { id:6, name:"Kavita Joshi",    role:"Teacher",     subject:"Gujarati",    qualification:"B.Ed",       mobile:"9876541006",email:"kavita@satyam.in",salary:24000,joinDate:"2021-06-01",status:"Active"   },
-  { id:7, name:"Ramesh Verma",    role:"Admin Staff", subject:"—",           qualification:"B.Com",      mobile:"9876541007",email:"ramesh@satyam.in",salary:22000,joinDate:"2018-03-01",status:"Active"   },
-  { id:8, name:"Sunita Rao",      role:"Teacher",     subject:"Computer",    qualification:"MCA",        mobile:"9876541008",email:"sunita@satyam.in",salary:25000,joinDate:"2023-06-01",status:"Active"   },
-  { id:9, name:"Dinesh Mehta",    role:"Peon",        subject:"—",           qualification:"10th",       mobile:"9876541009",email:"",               salary:15000,joinDate:"2017-06-01",status:"Active"   },
-  { id:10,name:"Aarti Sharma",    role:"Teacher",     subject:"Drawing",     qualification:"B.F.A",      mobile:"9876541010",email:"aarti@satyam.in", salary:20000,joinDate:"2022-01-15",status:"Active"   },
-  { id:11,name:"Vinod Prajapati", role:"Guard",       subject:"—",           qualification:"10th",       mobile:"9876541011",email:"",               salary:14000,joinDate:"2019-06-01",status:"Active"   },
-  { id:12,name:"Savita Nair",     role:"Teacher",     subject:"Music",       qualification:"B.Mus",      mobile:"9876541012",email:"savita@satyam.in",salary:20000,joinDate:"2021-06-15",status:"Active"   },
-];
-
 // Maps the shape returned by getStudents() to what super-admin components expect
 function mapStudentForSuperAdmin(st) {
   return {
@@ -379,109 +342,6 @@ function FieldCell({ field, value, onChange, compact, error }) {
       onBlur={() => setTouched(true)}
       title={invalidMsg || undefined}
     />
-  );
-}
-
-// â"€â"€ Login â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-function LoginView({ onLogin }) {
-  const [role,  setRole]  = useState("management");
-  const [name,  setName]  = useState("");
-  const [pass,  setPass]  = useState("");
-  const [showP, setShowP] = useState(false);
-  const [error, setError] = useState("");
-  const users = role === "management" ? MGMT_USERS : SENIOR_USERS;
-
-  function handleLogin(e) {
-    e.preventDefault();
-    if (!name.trim() || !pass.trim()) {
-      setError("Please enter both fields.");
-      return;
-    }
-    const found = users.find(u => u.name === name && u.password === pass);
-    if (found) onLogin({ ...found, role });
-    else setError("Invalid credentials.");
-  }
-
-  return (
-    <div className="-m-4 lg:-m-6 flex items-center justify-center h-[calc(100vh-4rem)] bg-gradient-to-br from-slate-900 via-slate-800 to-school-navy p-6">
-      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden flex">
-
-        {/* Left —" branding panel */}
-        <div className="hidden md:flex flex-col justify-center w-2/5 flex-shrink-0 bg-school-navy px-8 py-8 text-white">
-          <div className="w-16 h-16 bg-school-gold rounded-2xl flex items-center justify-center mb-5 shadow-lg">
-            <ShieldCheck className="w-8 h-8 text-white" />
-          </div>
-          <p className="text-2xl font-bold mb-1">Super Admin</p>
-          <p className="text-white/50 text-sm mb-7">Restricted Access Portal</p>
-          <div className="space-y-3">
-            <div className="flex items-center gap-3 bg-white/10 rounded-xl px-4 py-3">
-              <Crown className="w-5 h-5 text-school-gold flex-shrink-0" />
-              <div>
-                <p className="text-sm font-bold">Management Head</p>
-                <p className="text-white/45 text-xs mt-0.5">Full website control</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3 bg-white/10 rounded-xl px-4 py-3">
-              <Shield className="w-5 h-5 text-blue-300 flex-shrink-0" />
-              <div>
-                <p className="text-sm font-bold">Senior Admin</p>
-                <p className="text-white/45 text-xs mt-0.5">Student update access</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right —" form */}
-        <div className="flex-1 flex flex-col justify-center px-8 py-8">
-          {/* Mobile header */}
-          <div className="flex md:hidden items-center gap-3 mb-5">
-            <div className="w-10 h-10 bg-school-gold rounded-xl flex items-center justify-center flex-shrink-0">
-              <ShieldCheck className="w-5 h-5 text-white" />
-            </div>
-            <p className="font-bold text-gray-800">Super Admin —" Restricted Access</p>
-          </div>
-
-          <p className="text-xl font-bold text-gray-800 mb-1">Sign In</p>
-          <p className="text-sm text-gray-400 mb-6">Select your role and enter credentials</p>
-
-          {/* Role toggle */}
-          <div className="flex gap-3 mb-5">
-            {[{v:"management",label:"Management Head",Icon:Crown},{v:"senior",label:"Senior Admin",Icon:Shield}].map(({v,label,Icon}) => (
-              <button key={v} onClick={() => { setRole(v); setError(""); setName(""); setPass(""); }}
-                className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 text-sm font-semibold transition-all ${role===v?"border-school-navy bg-school-navy text-white shadow-md":"border-gray-200 text-gray-500 hover:border-gray-300"}`}>
-                <Icon className="w-4 h-4" />{label}
-              </button>
-            ))}
-          </div>
-
-          {error && (
-            <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 mb-4 text-sm">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-600 mb-1.5">Name</label>
-              <select className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy" value={name} onChange={e => { setName(e.target.value); setError(""); }}>
-                <option value="">-- Select --</option>
-                {users.map(u => <option key={u.name}>{u.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-600 mb-1.5">Password</label>
-              <div className="relative">
-                <input type={showP?"text":"password"} className="w-full border border-gray-200 rounded-xl px-4 py-3 pr-11 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy" value={pass} onChange={e => { setPass(e.target.value); setError(""); }} placeholder="Enter password" />
-                <button type="button" onClick={() => setShowP(!showP)} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400">{showP?<EyeOff className="w-4 h-4"/>:<Eye className="w-4 h-4"/>}</button>
-              </div>
-            </div>
-            <button type="submit" className="w-full bg-school-navy text-white py-3 rounded-xl font-semibold text-sm hover:bg-opacity-90 transition-colors shadow-md">
-              Login
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -834,14 +694,16 @@ function SpreadsheetEditor({ students, title }) {
 }
 
 // â"€â"€ Fees Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-function FeesPanel() {
-  const [feeRecs,  setFeeRecs]  = useState(DUMMY_FEE_RECORDS);
+function FeesPanel({ fees }) {
+  const [feeRecs,  setFeeRecs]  = useState([]);
   const [expandId, setExpandId] = useState(null);
   const [editRec,  setEditRec]  = useState(null);
   const [clsF,     setClsF]     = useState("All");
   const [search,   setSearch]   = useState("");
   const [saved,    setSaved]    = useState(false);
   const [feeError, setFeeError] = useState("");
+
+  useEffect(() => { setFeeRecs(fees || []); }, [fees]);
 
   const filtered = feeRecs.filter(r =>
     (clsF==="All"||r.cls===clsF) &&
@@ -850,7 +712,7 @@ function FeesPanel() {
 
   function openEdit(rec) { setExpandId(rec.id); setEditRec(JSON.parse(JSON.stringify(rec))); setFeeError(""); }
 
-  function saveEdit() {
+  async function saveEdit() {
     const hasNegative = !isNonNegativeNumber(editRec.discount)
       || editRec.payments.some(p => !isNonNegativeNumber(p.amount) || !isNonNegativeNumber(p.paid));
     if (hasNegative) {
@@ -858,9 +720,22 @@ function FeesPanel() {
       return;
     }
     setFeeError("");
-    setFeeRecs(prev=>prev.map(r=>r.id===editRec.id?editRec:r));
-    setSaved(true); setTimeout(()=>setSaved(false),2000);
-    setExpandId(null); setEditRec(null);
+    const originalRec = feeRecs.find(r => r.id === editRec.id);
+    const originalPaymentIds = (originalRec?.payments || [])
+      .filter(p => typeof p.id === "string")
+      .map(p => p.id);
+    try {
+      await updateFeesForEnrollment(editRec.id, {
+        discount: editRec.discount,
+        payments: editRec.payments,
+        originalPaymentIds,
+      });
+      setFeeRecs(prev=>prev.map(r=>r.id===editRec.id?editRec:r));
+      setSaved(true); setTimeout(()=>setSaved(false),2000);
+      setExpandId(null); setEditRec(null);
+    } catch (err) {
+      setFeeError("Save failed: " + (err.message || "Unknown error"));
+    }
   }
 
   // Clamp payment-term amount/paid fields to a non-negative number before they enter state.
@@ -978,15 +853,16 @@ function FeesPanel() {
 }
 
 // â"€â"€ Inventory Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-function InventoryPanel() {
+function InventoryPanel({ students }) {
   const masterItems   = useStore(s => s.studentInventoryItems);
   const addMasterItem = useStore(s => s.addStudentInventoryItem);
   const remMasterItem = useStore(s => s.removeStudentInventoryItem);
 
   const [tab,        setTab]        = useState("assets");
-  const [assets,     setAssets]     = useState(DUMMY_ASSETS);
-  const [stock,      setStock]      = useState(DUMMY_STOCK);
-  const [stuInv,     setStuInv]     = useState(DUMMY_STUDENT_INVENTORY);
+  const [assets,     setAssets]     = useState([]);
+  const [stock,      setStock]      = useState([]);
+  const [stuInv,     setStuInv]     = useState([]);
+  const [invLoading, setInvLoading] = useState(true);
   const [clsF,       setClsF]       = useState("All");
   const [selStu,     setSelStu]     = useState(null);
   const [stuItems,   setStuItems]   = useState([]);
@@ -997,6 +873,46 @@ function InventoryPanel() {
   const [newItem,    setNewItem]     = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
   let _hid = 100;
+
+  useEffect(() => {
+    Promise.all([getAssets(), getInventoryItems()])
+      .then(([assetData, itemData]) => {
+        setAssets(assetData.map(a => ({
+          id:           a.id,
+          name:         a.name + (a.brand ? ` (${a.brand})` : ""),
+          category:     "",
+          location:     a.storageAddress || "",
+          status:       a.currentCheckout ? "In Use" : "Available",
+          assignedTo:   a.currentCheckout?.takenBy || "—",
+          purchaseDate: "",
+          value:        0,
+          history: a.checkouts.flatMap(c => {
+            const rows = [{ id: c.id, date: c.takenDate || "", action: "Assigned", from: "", to: c.takenBy || "", note: c.purpose || "" }];
+            if (c.returnDate) rows.push({ id: c.id + 100000, date: c.returnDate, action: "Returned", from: c.takenBy || "", to: "", note: "" });
+            return rows;
+          }),
+        })));
+        setStock(itemData.map(item => ({
+          id:     item.id,
+          item:   item.name,
+          price:  0,
+          total:  item.batches.reduce((s, b) => s + b.qty, 0),
+          issued: item.usages.reduce((s, u) => s + u.qty, 0),
+        })));
+      })
+      .catch(() => {})
+      .finally(() => setInvLoading(false));
+  }, []);
+
+  useEffect(() => {
+    setStuInv((students || []).map(s => ({
+      id:       s.id,
+      name:     s.name,
+      cls:      s.cls,
+      enrollNo: s.enrollNo,
+      items:    masterItems.map(item => ({ item, given: false, date: "" })),
+    })));
+  }, [students, masterItems]);
 
   function showSaved(msg) { setSaved(msg); setTimeout(()=>setSaved(""),2000); }
 
@@ -1022,9 +938,10 @@ function InventoryPanel() {
         ))}
       </div>
       {saved && <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-2.5 mb-3 text-sm"><CheckCircle2 className="w-4 h-4"/>{saved}</div>}
+      {invLoading && (tab==="assets"||tab==="stock") && <div className="text-center py-8 text-sm text-gray-400">Loading…</div>}
 
       {/* Assets tab */}
-      {tab==="assets" && (
+      {!invLoading && tab==="assets" && (
         <div className="overflow-x-auto rounded-xl border border-gray-200">
           <table className="w-full text-xs">
             <thead><tr className="bg-gray-50 border-b border-gray-200">
@@ -1124,7 +1041,7 @@ function InventoryPanel() {
               <thead><tr className="bg-gray-50 border-b border-gray-200">
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Name</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Class</th>
-                {INVENTORY_ITEMS.map(item=><th key={item} className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">{item}</th>)}
+                {masterItems.map(item=><th key={item} className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">{item}</th>)}
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Action</th>
               </tr></thead>
               <tbody>
@@ -1170,7 +1087,7 @@ function InventoryPanel() {
       )}
 
       {/* Stock tab */}
-      {tab==="stock" && (
+      {!invLoading && tab==="stock" && (
         <div className="overflow-x-auto rounded-xl border border-gray-200">
           <table className="w-full text-sm">
             <thead><tr className="bg-gray-50 border-b border-gray-200">
@@ -1869,66 +1786,41 @@ function PendingDetailsPanel({ students }) {
     </div>
   );
 }
-
-// â"€â"€ Pending Tasks Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
-const PRIORITIES = [
-  { key:"High",   color:"bg-red-100 text-red-700 border-red-200"    },
-  { key:"Medium", color:"bg-amber-100 text-amber-700 border-amber-200" },
-  { key:"Low",    color:"bg-green-100 text-green-700 border-green-200" },
-];
-
-// ── Import Students Panel ──────────────────────────────────────────────────────
-const IMPORT_FIELDS = [
-  { key:"firstName",        label:"First Name",                  required:true  },
-  { key:"lastName",         label:"Last Name",                   required:true  },
-  { key:"fatherName",       label:"Father Name",                 required:false },
-  { key:"motherName",       label:"Mother Name",                 required:false },
-  { key:"dob",              label:"Date of Birth (YYYY-MM-DD)",  required:false },
-  { key:"gender",           label:"Gender (Male/Female/Other)",  required:true  },
-  { key:"cls",              label:"Class",                       required:true  },
-  { key:"section",          label:"Section (A/B/C)",             required:false },
-  { key:"rollNo",           label:"Roll No",                     required:false },
-  { key:"joinDate",         label:"Date of Joining (YYYY-MM-DD)",required:false },
-  { key:"grNo",             label:"GR Number",                   required:false },
-  { key:"mobile1",          label:"Mobile 1",                    required:false },
-  { key:"mobile2",          label:"Mobile 2",                    required:false },
-  { key:"address",          label:"Full Address",                required:false },
-  { key:"religion",         label:"Religion",                    required:false },
-  { key:"caste",            label:"Category / Caste",            required:false },
-  { key:"aadharNo",         label:"Aadhar Number",               required:false },
-  { key:"udise",            label:"UDISE Number",                required:false },
-  { key:"pen",              label:"PEN Number",                  required:false },
-  { key:"apaar",            label:"APAAR ID",                    required:false },
-  { key:"lastSchoolName",   label:"Last School Name",            required:false },
-  { key:"lastSchoolClass",  label:"Last School Class",           required:false },
-];
-
-const EXAMPLE_ROW = [
-  "Arjun","Patel","Rajesh Patel","Meena Patel","2015-06-15",
-  "Male","5th","A","1","2026-06-01","GR001",
-  "9876543210","","12 Gandhi Nagar Surat",
-  "Hindu","General","1234 5678 9012","","","",
-  "City Primary School","4th",
-];
-
-const IMPORT_SESSION = "2026-27"; // controlled from Settings — matches the single Add Student form
+// â"€â"€ Super Admin Page â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 
 function ImportStudentsPanel({ onImportDone }) {
   const fileRef = useRef(null);
-  const [step,      setStep]      = useState("idle"); // idle | preview | done
+  const [step,      setStep]      = useState("idle");
   const [parsed,    setParsed]    = useState([]);
   const [rowErrors, setRowErrors] = useState([]);
   const [importing, setImporting] = useState(false);
-  const [importedCount, setImportedCount] = useState(0);
+  const [importLog, setImportLog] = useState([]);
 
   function downloadTemplate() {
-    const wb = XLSX.utils.book_new();
-    const headers  = IMPORT_FIELDS.map(f => f.label);
-    const required = IMPORT_FIELDS.map(f => f.required ? "Required *" : "Optional");
-    const ws = XLSX.utils.aoa_to_sheet([headers, required, EXAMPLE_ROW]);
-    ws["!cols"] = IMPORT_FIELDS.map(() => ({ wch: 22 }));
-    XLSX.utils.book_append_sheet(wb, ws, "Students");
-    XLSX.writeFile(wb, "Student_Import_Template.xlsx");
+    // Build a styled HTML table — Excel opens HTML-format XLS and preserves inline styles
+    const td = (text, bg, color, bold) =>
+      `<td style="background:${bg};color:${color};font-weight:${bold?"bold":"normal"};font-family:Arial;font-size:11px;padding:4px 8px;border:1px solid #ccc;white-space:nowrap;">${text}</td>`;
+
+    let rows = "";
+    // Row 1 — column headers (red = required, blue = optional)
+    rows += "<tr>" + IMPORT_FIELDS.map(f =>
+      td(f.label, f.required ? "#C0392B" : "#2471A3", "#FFFFFF", true)
+    ).join("") + "</tr>";
+    // Row 2 — required / optional label
+    rows += "<tr>" + IMPORT_FIELDS.map(f =>
+      td(f.required ? "Required *" : "Optional", f.required ? "#FADBD8" : "#D6EAF8", f.required ? "#922B21" : "#1A5276", true)
+    ).join("") + "</tr>";
+    // Row 3 — example data
+    rows += "<tr>" + EXAMPLE_ROW.map(v =>
+      td(v, "#FEFCE8", "#333333", false)
+    ).join("") + "</tr>";
+
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"/></head><body><table>${rows}</table></body></html>`;
+    const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url; a.download = "Student_Import_Template.xls"; a.click();
+    URL.revokeObjectURL(url);
   }
 
   function handleFile(e) {
@@ -1940,87 +1832,101 @@ function ImportStudentsPanel({ onImportDone }) {
         const wb   = XLSX.read(evt.target.result, { type:"binary" });
         const ws   = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:"" });
-
         if (rows.length < 3) { alert("File has no data rows. Please use the downloaded template."); return; }
-
         const headerRow = rows[0];
-        // Build map: fieldKey → column index
         const colMap = {};
         IMPORT_FIELDS.forEach(f => {
           const idx = headerRow.findIndex(h => String(h).trim() === f.label);
           if (idx >= 0) colMap[f.key] = idx;
         });
-
-        // Skip row 1 (headers) and row 2 (required hints / example)
         const dataRows = rows.slice(2);
         const result = [];
         const errs   = [];
-
         dataRows.forEach((row, i) => {
-          if (row.every(c => !c)) return; // skip blank rows
+          if (row.every(c => !c)) return;
           const s = { _row: i + 3, _errors: [] };
           IMPORT_FIELDS.forEach(f => {
             s[f.key] = colMap[f.key] !== undefined ? String(row[colMap[f.key]] ?? "").trim() : "";
           });
-
           if (!s.firstName) s._errors.push("First Name missing");
           if (!s.cls)       s._errors.push("Class missing");
-          if (s.cls && !CLASSES.includes(s.cls)) s._errors.push(`Unknown class "${s.cls}"`);
-          if (s.gender && !["Male","Female","Other"].includes(s.gender)) s._errors.push(`Invalid gender "${s.gender}"`);
-
+          if (s.cls && !CLASSES.includes(s.cls)) s._errors.push('Unknown class "' + s.cls + '"');
+          if (s.gender && !["Male","Female","Other"].includes(s.gender)) s._errors.push('Invalid gender "' + s.gender + '"');
           result.push(s);
-          if (s._errors.length) errs.push(`Row ${s._row}: ${s._errors.join(", ")}`);
+          if (s._errors.length) errs.push("Row " + s._row + ": " + s._errors.join(", "));
         });
-
         setParsed(result);
         setRowErrors(errs);
         setStep("preview");
-      } catch {
-        alert("Could not read the file. Please use the downloaded template (.xlsx).");
-      }
+      } catch { alert("Could not read the file. Please use the downloaded template (.xlsx)."); }
     };
     reader.readAsBinaryString(file);
     e.target.value = "";
   }
 
   async function confirmImport() {
+    const valid = parsed.filter(s => s._errors.length === 0);
     setImporting(true);
-    let count = 0;
+    setImportLog([]);
+    const log = [];
     for (const s of valid) {
       try {
         await dbAddStudent({
-          firstName:       s.firstName,
-          lastName:        s.lastName,
-          grNo:            s.grNo || "",
-          dob:             s.dob || "2000-01-01",
-          gender:          s.gender || "Male",
-          fatherName:      s.fatherName || "—",
-          motherName:      s.motherName || "—",
-          mobile:          s.mobile1 || null,
-          mobile2:         s.mobile2 || null,
-          religion:        s.religion || null,
-          caste:           s.caste || "General",
-          address:         s.address || null,
-          aadhar:          s.aadharNo ? s.aadharNo.replace(/\D/g, "") : null,
-          udise:           s.udise || null,
-          pen:             s.pen || null,
-          apaar:           s.apaar || null,
-          std:             s.cls,
-          section:         s.section || "A",
-          dateOfJoin:      s.joinDate || new Date().toISOString().split("T")[0],
-          lastSchoolName:  s.lastSchoolName || null,
-          lastSchoolClass: s.lastSchoolClass || null,
+          std:               s.cls,
+          admissionClass:    s.admissionClass || s.cls,
+          section:           s.section || "A",
+          firstName:         s.firstName,
+          lastName:          s.lastName,
+          fatherName:        s.fatherName || "",
+          motherName:        s.motherName || "",
+          gender:            s.gender,
+          dob:               s.dob || null,
+          placeOfBirth:      s.placeOfBirth || "",
+          motherTongue:      s.motherTongue || "",
+          religion:          s.religion || "",
+          caste:             s.caste || "General",
+          subCaste:          s.subCaste || "",
+          height:            s.height || null,
+          weight:            s.weight || null,
+          grNo:              s.grNo || "",
+          mobile:            s.mobile1 || "",
+          mobile2:           s.mobile2 || "",
+          roomPlotNo:        s.roomPlotNo || "",
+          society:           s.society || "",
+          landmark:          s.landmark || "",
+          area:              s.area || "",
+          pinCode:           s.pinCode || "",
+          address:           s.address || "",
+          aadhar:            s.aadharNo || "",
+          aadharName:        s.aadharName || "",
+          udise:             s.udise || "",
+          pen:               s.pen || "",
+          apaar:             s.apaar || "",
+          dateOfJoin:        s.joinDate || new Date().toISOString().split("T")[0],
+          feeTotal:          s.feeTotal ? Number(s.feeTotal) : 0,
+          discountAmount:    s.discountAmount ? Number(s.discountAmount) : 0,
+          discountReason:    s.discountReason || "",
+          lastSchoolName:    s.lastSchoolName || "",
+          lastSchoolClass:   s.lastSchoolClass || "",
+          lastSchoolGrNo:    s.lastSchoolGrNo || "",
+          lastSchoolMedium:  s.lastSchoolMedium || "",
+          lastSchoolPlace:   s.lastSchoolPlace || "",
+          prevAttendanceDays: s.prevAttendanceDays || "",
+          lastExamGiven:     s.lastExamGiven || "No",
+          prevPercentage:    s.prevPercentage || "",
         });
-        count++;
-      } catch { }
+        log.push({ name: s.firstName + " " + s.lastName, ok: true });
+      } catch(err) {
+        log.push({ name: s.firstName + " " + s.lastName, ok: false, err: err?.message || "Error" });
+      }
+      setImportLog([...log]);
     }
-    setImportedCount(count);
     setImporting(false);
     setStep("done");
     if (onImportDone) onImportDone();
   }
 
-  function reset() { setParsed([]); setRowErrors([]); setImportedCount(0); setStep("idle"); }
+  function reset() { setParsed([]); setRowErrors([]); setStep("idle"); setImportLog([]); }
 
   const valid   = parsed.filter(s => s._errors.length === 0);
   const invalid = parsed.filter(s => s._errors.length  >  0);
@@ -2028,11 +1934,8 @@ function ImportStudentsPanel({ onImportDone }) {
   return (
     <div className="space-y-5">
 
-      {/* ── Step: idle ── */}
       {step === "idle" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
-          {/* Step 1 — Download Template */}
           <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 space-y-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0">
@@ -2044,7 +1947,7 @@ function ImportStudentsPanel({ onImportDone }) {
               </div>
             </div>
             <ul className="text-xs text-blue-700 space-y-1 pl-1">
-              {["Contains all student fields (22 columns)","Row 2 shows which fields are required","Row 3 shows example data — replace with real data","Do not change column headers or order"].map(t => (
+              {["Contains all student fields (43 columns)","Row 2 shows which fields are required","Row 3 shows example data — replace with real data","Do not change column headers or order"].map(t => (
                 <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0"/>{t}</li>
               ))}
             </ul>
@@ -2053,8 +1956,6 @@ function ImportStudentsPanel({ onImportDone }) {
               <Download className="w-4 h-4"/> Download Template (.xlsx)
             </button>
           </div>
-
-          {/* Step 2 — Upload */}
           <div className="bg-green-50 border border-green-200 rounded-2xl p-5 space-y-3">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-green-600 flex items-center justify-center flex-shrink-0">
@@ -2079,11 +1980,8 @@ function ImportStudentsPanel({ onImportDone }) {
         </div>
       )}
 
-      {/* ── Step: preview ── */}
       {step === "preview" && (
         <div className="space-y-4">
-
-          {/* Summary bar */}
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-3 py-1.5 rounded-xl text-sm font-semibold">
               <CheckCircle2 className="w-4 h-4"/> {valid.length} valid student{valid.length !== 1 ? "s" : ""}
@@ -2095,8 +1993,6 @@ function ImportStudentsPanel({ onImportDone }) {
             )}
             <span className="text-xs text-gray-400">{parsed.length} total rows parsed</span>
           </div>
-
-          {/* Errors list */}
           {rowErrors.length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-1 max-h-36 overflow-y-auto">
               <p className="text-xs font-bold text-red-700 mb-2 uppercase tracking-wide">Errors — these rows will be skipped</p>
@@ -2107,10 +2003,8 @@ function ImportStudentsPanel({ onImportDone }) {
               ))}
             </div>
           )}
-
-          {/* Preview table */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
               <p className="text-sm font-bold text-gray-700">Preview — First 10 valid rows</p>
             </div>
             <div className="overflow-x-auto">
@@ -2124,7 +2018,7 @@ function ImportStudentsPanel({ onImportDone }) {
                 </thead>
                 <tbody>
                   {valid.slice(0,10).map((s, i) => (
-                    <tr key={i} className={`border-b border-gray-50 ${i % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}>
+                    <tr key={i} className={"border-b border-gray-50 " + (i % 2 === 0 ? "bg-white" : "bg-gray-50/40")}>
                       <td className="px-3 py-2 text-gray-400">{s._row}</td>
                       <td className="px-3 py-2 font-semibold text-gray-800">{s.firstName} {s.lastName}</td>
                       <td className="px-3 py-2 text-school-navy font-semibold">{s.cls}</td>
@@ -2141,8 +2035,6 @@ function ImportStudentsPanel({ onImportDone }) {
               </table>
             </div>
           </div>
-
-          {/* Actions */}
           <div className="flex gap-3">
             <button onClick={reset}
               className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
@@ -2153,7 +2045,7 @@ function ImportStudentsPanel({ onImportDone }) {
               disabled={valid.length === 0 || importing}
               className="flex items-center gap-2 px-6 py-2.5 bg-school-navy text-white rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors shadow-sm disabled:opacity-50">
               {importing
-                ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Importing...</>
+                ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Importing {importLog.length}/{valid.length}...</>
                 : <><Upload className="w-4 h-4"/> Import {valid.length} Student{valid.length !== 1 ? "s" : ""}</>
               }
             </button>
@@ -2161,17 +2053,23 @@ function ImportStudentsPanel({ onImportDone }) {
         </div>
       )}
 
-      {/* ── Step: done ── */}
       {step === "done" && (
         <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
           <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center">
             <CheckCircle2 className="w-8 h-8 text-green-600"/>
           </div>
-          <p className="text-xl font-bold text-gray-800">Import Successful!</p>
+          <p className="text-xl font-bold text-gray-800">Import Complete!</p>
           <p className="text-sm text-gray-500">
-            <span className="font-bold text-green-700">{importedCount} students</span> have been imported successfully with auto-assigned enrollment numbers.
-            {invalid.length > 0 && <><br/><span className="text-red-500">{invalid.length} rows were skipped</span> due to errors.</>}
+            <span className="font-bold text-green-700">{importLog.filter(l=>l.ok).length} students</span> imported successfully.
+            {importLog.filter(l=>!l.ok).length > 0 && <><br/><span className="text-red-500">{importLog.filter(l=>!l.ok).length} failed</span> — check errors below.</>}
           </p>
+          {importLog.filter(l=>!l.ok).length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 w-full max-w-md text-left space-y-1 max-h-40 overflow-y-auto">
+              {importLog.filter(l=>!l.ok).map((l,i)=>(
+                <p key={i} className="text-xs text-red-600">{l.name}: {l.err}</p>
+              ))}
+            </div>
+          )}
           <button onClick={reset}
             className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-school-navy text-white rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors">
             <Upload className="w-4 h-4"/> Import More Students
@@ -2182,155 +2080,16 @@ function ImportStudentsPanel({ onImportDone }) {
   );
 }
 
-function PendingTasksPanel({ createdBy }) {
-  const { pendingTasks, addTask, toggleTask, deleteTask } = useStore();
-  const [text,     setText]     = useState("");
-  const [priority, setPriority] = useState("High");
-  const [showDone, setShowDone] = useState(false);
-
-  const pending = pendingTasks.filter(t => !t.done);
-  const done    = pendingTasks.filter(t =>  t.done);
-
-  function handleAdd(e) {
-    e.preventDefault();
-    if (!text.trim()) return;
-    addTask(text.trim(), priority, createdBy);
-    setText("");
-  }
-
-  function fmtDate(iso) {
-    return new Date(iso).toLocaleDateString("en-IN", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" });
-  }
-
-  const priBadge = (p) => PRIORITIES.find(x=>x.key===p)?.color ?? "";
-
-  return (
-    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-gradient-to-r from-school-navy/5 to-transparent">
-        <div className="w-8 h-8 rounded-lg bg-school-navy flex items-center justify-center flex-shrink-0">
-          <ClipboardList className="w-4 h-4 text-white"/>
-        </div>
-        <div className="flex-1">
-          <h2 className="text-sm font-bold text-gray-900">Important Pending Tasks</h2>
-          <p className="text-xs text-gray-500 mt-0.5">Visible to all admins Â· Shown on dashboard</p>
-        </div>
-        {pending.length > 0 && (
-          <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{pending.length}</span>
-        )}
-      </div>
-
-      <div className="p-5 space-y-4">
-        {/* Add task form */}
-        <form onSubmit={handleAdd} className="flex gap-2">
-          <input
-            value={text}
-            onChange={e=>setText(e.target.value)}
-            placeholder="Write an important pending task—¦"
-            className="flex-1 px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white placeholder:text-gray-300"
-          />
-          <select
-            value={priority}
-            onChange={e=>setPriority(e.target.value)}
-            className="border border-gray-200 rounded-xl text-sm px-3 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy cursor-pointer"
-          >
-            {PRIORITIES.map(p=><option key={p.key}>{p.key}</option>)}
-          </select>
-          <button
-            type="submit"
-            className="flex items-center gap-1.5 px-4 py-2.5 bg-school-navy text-white text-sm font-semibold rounded-xl hover:bg-school-navy-dark transition-colors flex-shrink-0"
-          >
-            <Plus className="w-4 h-4"/>Add
-          </button>
-        </form>
-
-        {/* Pending tasks list */}
-        {pending.length === 0 ? (
-          <div className="flex flex-col items-center py-6 text-gray-400">
-            <CheckCircle2 className="w-10 h-10 mb-2 text-green-300"/>
-            <p className="text-sm font-medium text-gray-500">All caught up! No pending tasks.</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {pending.map(task=>(
-              <div key={task.id} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100 hover:border-gray-200 bg-gray-50/50 group">
-                <button
-                  type="button"
-                  onClick={()=>toggleTask(task.id)}
-                  className="w-5 h-5 rounded-md border-2 border-gray-300 hover:border-school-navy flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-800 font-medium leading-snug">{task.text}</p>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${priBadge(task.priority)}`}>{task.priority}</span>
-                    <span className="text-[10px] text-gray-400">by {task.createdBy} Â· {fmtDate(task.createdAt)}</span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={()=>deleteTask(task.id)}
-                  className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 rounded-lg transition-all flex-shrink-0"
-                >
-                  <Trash2 className="w-3.5 h-3.5"/>
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Completed tasks toggle */}
-        {done.length > 0 && (
-          <div>
-            <button
-              type="button"
-              onClick={()=>setShowDone(p=>!p)}
-              className="flex items-center gap-2 text-xs font-semibold text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              {showDone ? <ChevronUp className="w-3.5 h-3.5"/> : <ChevronDown className="w-3.5 h-3.5"/>}
-              {showDone ? "Hide" : "Show"} completed ({done.length})
-            </button>
-            {showDone && (
-              <div className="space-y-2 mt-2">
-                {done.map(task=>(
-                  <div key={task.id} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100 bg-white group opacity-60">
-                    <button
-                      type="button"
-                      onClick={()=>toggleTask(task.id)}
-                      className="w-5 h-5 rounded-md border-2 border-green-400 bg-green-400 flex items-center justify-center flex-shrink-0 mt-0.5"
-                    >
-                      <Check className="w-3 h-3 text-white"/>
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-400 line-through leading-snug">{task.text}</p>
-                      <span className="text-[10px] text-gray-400">by {task.createdBy} Â· {fmtDate(task.createdAt)}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={()=>deleteTask(task.id)}
-                      className="opacity-0 group-hover:opacity-100 p-1 text-gray-300 hover:text-red-500 rounded-lg transition-all flex-shrink-0"
-                    >
-                      <Trash2 className="w-3.5 h-3.5"/>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// â"€â"€ Super Admin Page â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
 export default function SuperAdminPage() {
-  const [authUser,       setAuthUser]       = useState(null);
+  const authUser = useStore(s => s.authUser);
   const [activeTab,      setActiveTab]      = useState("single");
   const [mgmtTab,        setMgmtTab]        = useState("students");
   const [studentsSubTab, setStudentsSubTab] = useState("spreadsheet");
 
   const [dbStudents,  setDbStudents]  = useState([]);
   const [dbEmployees, setDbEmployees] = useState([]);
+  const [dbFees,      setDbFees]      = useState([]);
+  const [dbClasses,   setDbClasses]   = useState([]);
   const [dataLoading, setDataLoading] = useState(false);
 
   const setStoreEmployees = useStore(s => s.setEmployees);
@@ -2340,17 +2099,37 @@ export default function SuperAdminPage() {
     Promise.all([
       getStudents().then(data => setDbStudents(data.map(mapStudentForSuperAdmin))).catch(() => {}),
       getEmployees().then(data => { setDbEmployees(data); setStoreEmployees(data); }).catch(() => {}),
+      getFeesForSuperAdmin().then(setDbFees).catch(() => {}),
+      getClasses().then(setDbClasses).catch(() => {}),
     ]).finally(() => setDataLoading(false));
   }
-
-  // Load DB data once after login
+  // Load data once on mount
   const [loaded, setLoaded] = useState(false);
-  if (authUser && !loaded) { setLoaded(true); loadData(); }
+  useEffect(() => {
+    if (authUser && !loaded) { setLoaded(true); loadData(); }
+  }, [authUser]);
 
-  if (!authUser) return <LoginView onLogin={setAuthUser} />;
+  if (!authUser) return null;
+  if (authUser.role === "normal_admin") return (
+    <div className="flex items-center justify-center h-64"><p className="text-gray-500">You do not have access to this section.</p></div>
+  );
 
   const isMgmt = authUser.role === "management";
   const curModule = MGMT_MODULES.find(m=>m.key===mgmtTab);
+
+  const fmtAmt = n => n >= 100000 ? `₹${(n/100000).toFixed(1)}L` : n >= 1000 ? `₹${(n/1000).toFixed(0)}K` : `₹${n}`;
+  const feeCollected = dbFees.reduce((s, r) => s + r.payments.reduce((ps, p) => ps + p.paid, 0), 0);
+  const feePending   = dbFees.reduce((s, r) => {
+    const paid = r.payments.reduce((ps, p) => ps + p.paid, 0);
+    return s + Math.max(r.totalFee - r.discount - paid, 0);
+  }, 0);
+  const moduleStats = {
+    students:  [`${dbStudents.length} Students`, `${dbClasses.length} Classes`, `${dbStudents.filter(s=>(s.status||"Active")==="Active").length} Active`],
+    fees:      [`${fmtAmt(feeCollected)} Collected`, `${fmtAmt(feePending)} Pending`, `${dbFees.length} Records`],
+    inventory: ["Assets & Stock", "Item Tracking", "Student Items"],
+    employee:  [`${dbEmployees.length} Staff`, `${dbEmployees.filter(e=>e.type==="Teacher").length} Teachers`, `${dbEmployees.filter(e=>e.type!=="Teacher").length} Support`],
+    salary:    ["Management Only", "Auto Expense Sync", "Private"],
+  };
 
   return (
     <div className="p-4 md:p-6 space-y-5">
@@ -2365,13 +2144,7 @@ export default function SuperAdminPage() {
             <p className="text-xs text-gray-500">Welcome, <span className="font-semibold text-gray-700">{authUser.name}</span></p>
           </div>
         </div>
-        <button onClick={()=>setAuthUser(null)} className="flex items-center gap-2 text-sm text-gray-500 hover:text-red-500 border border-gray-200 px-3 py-2 rounded-lg transition-colors">
-          <LogOut className="w-4 h-4"/>Logout
-        </button>
       </div>
-
-      {/* Pending Tasks —" visible to both roles */}
-      <PendingTasksPanel createdBy={authUser.name} />
 
       {/* Senior Admin tabs */}
       {!isMgmt && (
@@ -2421,7 +2194,7 @@ export default function SuperAdminPage() {
                 <div>
                   <h2 className="text-lg font-bold">{curModule.label}</h2>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {curModule.stats.map((s,i)=>(
+                    {(moduleStats[mgmtTab] || []).map((s,i)=>(
                       <span key={i} className="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-lg text-xs font-semibold">{s}</span>
                     ))}
                   </div>
@@ -2456,8 +2229,8 @@ export default function SuperAdminPage() {
                 {studentsSubTab==="import"      && <ImportStudentsPanel onImportDone={loadData}/>}
               </>
             )}
-            {mgmtTab==="fees"      && <FeesPanel/>}
-            {mgmtTab==="inventory" && <InventoryPanel/>}
+            {mgmtTab==="fees"      && <FeesPanel fees={dbFees}/>}
+            {mgmtTab==="inventory" && <InventoryPanel students={dbStudents}/>}
             {mgmtTab==="employee"  && <EmployeePanel employees={dbEmployees}/>}
             {mgmtTab==="salary"    && <SalaryPanel employees={dbEmployees}/>}
           </div>

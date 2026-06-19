@@ -1,8 +1,9 @@
 "use client";
 
-import { Menu, Bell, ChevronDown, Search } from "lucide-react";
-import { usePathname } from "next/navigation";
+import { Menu, Bell, ChevronDown, Search, LogOut } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
 import useStore from "@/lib/store";
+import supabase from "@/lib/supabase";
 
 const pageTitles = {
   "/dashboard": { title: "Dashboard", sub: "School overview & quick stats" },
@@ -14,12 +15,22 @@ const pageTitles = {
   "/settings": { title: "Settings", sub: "System configuration & preferences" },
 };
 
+const ROLE_LABELS = { management: "Management Head", senior_admin: "Senior Admin", normal_admin: "Admin" };
+
 export default function Header() {
   const pathname = usePathname();
+  const router = useRouter();
   const toggleSidebar = useStore((state) => state.toggleSidebar);
-  const user = useStore((state) => state.user);
+  const authUser = useStore((state) => state.authUser);
+  const clearAuthUser = useStore((state) => state.clearAuthUser);
 
   const page = pageTitles[pathname] || pageTitles["/dashboard"];
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    clearAuthUser();
+    router.replace("/login");
+  }
 
   return (
     <header className="h-16 bg-white border-b border-gray-100 flex items-center px-4 lg:px-6 gap-4 flex-shrink-0 shadow-sm">
@@ -57,20 +68,28 @@ export default function Header() {
         </button>
 
         {/* User chip */}
-        <button className="flex items-center gap-2.5 px-2 py-1.5 rounded-xl hover:bg-gray-100 transition-colors border border-transparent hover:border-gray-200">
-          <div className="w-7 h-7 rounded-full bg-school-navy flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
-            {user?.initials || "AU"}
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-xl border border-transparent">
+            <div className="w-7 h-7 rounded-full bg-school-navy flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+              {authUser?.initials || "?"}
+            </div>
+            <div className="hidden sm:block text-left">
+              <p className="text-xs font-semibold text-gray-800 leading-tight">
+                {authUser?.name || "Admin"}
+              </p>
+              <p className="text-[10px] text-gray-400 leading-tight">
+                {ROLE_LABELS[authUser?.role] || "Admin"}
+              </p>
+            </div>
           </div>
-          <div className="hidden sm:block text-left">
-            <p className="text-xs font-semibold text-gray-800 leading-tight">
-              {user?.name || "Admin"}
-            </p>
-            <p className="text-[10px] text-gray-400 leading-tight">
-              {user?.role || "Super Admin"}
-            </p>
-          </div>
-          <ChevronDown className="w-3.5 h-3.5 text-gray-400 hidden sm:block" />
-        </button>
+          <button
+            onClick={handleLogout}
+            title="Sign out"
+            className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </header>
   );

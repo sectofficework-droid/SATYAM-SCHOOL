@@ -1930,105 +1930,6 @@ function TimetableTab() {
 }
 
 // ── Settings Auth ──────────────────────────────────────────────────────────────
-const SETTINGS_USERS = [
-  { name:"Sunil Pradhan", password:"admin123", initials:"SP" },
-];
-
-function SettingsLogin({ onLogin }) {
-  const [name,  setName]  = useState("");
-  const [pass,  setPass]  = useState("");
-  const [showP, setShowP] = useState(false);
-  const [error, setError] = useState("");
-
-  function handleLogin(e) {
-    e.preventDefault();
-    const found = SETTINGS_USERS.find(u => u.name === name && u.password === pass);
-    if (found) onLogin(found);
-    else setError("Invalid credentials.");
-  }
-
-  return (
-    <div className="-m-4 lg:-m-6 flex items-center justify-center h-[calc(100vh-4rem)] bg-gradient-to-br from-slate-900 via-slate-800 to-school-navy p-6">
-      <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden flex">
-
-        {/* Left — branding */}
-        <div className="hidden md:flex flex-col justify-center w-2/5 flex-shrink-0 bg-school-navy px-8 py-8 text-white">
-          <div className="w-16 h-16 bg-school-gold rounded-2xl flex items-center justify-center mb-5 shadow-lg">
-            <SlidersHorizontal className="w-8 h-8 text-white" />
-          </div>
-          <p className="text-2xl font-bold mb-1">Settings</p>
-          <p className="text-white/50 text-sm mb-7">Restricted Configuration Area</p>
-          <div className="space-y-3">
-            {[
-              { Icon:Building2,    title:"School Profile",    sub:"Name, address & contact"   },
-              { Icon:IndianRupee,  title:"Fee Structure",     sub:"Class-wise fee management" },
-              { Icon:Users,        title:"User Management",   sub:"Roles & access control"    },
-            ].map(({ Icon, title, sub }) => (
-              <div key={title} className="flex items-center gap-3 bg-white/10 rounded-xl px-4 py-3">
-                <Icon className="w-5 h-5 text-school-gold flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-bold">{title}</p>
-                  <p className="text-white/45 text-xs mt-0.5">{sub}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Right — form */}
-        <div className="flex-1 flex flex-col justify-center px-8 py-8">
-          <div className="flex md:hidden items-center gap-3 mb-5">
-            <div className="w-10 h-10 bg-school-gold rounded-xl flex items-center justify-center flex-shrink-0">
-              <SlidersHorizontal className="w-5 h-5 text-white" />
-            </div>
-            <p className="font-bold text-gray-800">Settings — Restricted Access</p>
-          </div>
-
-          <p className="text-xl font-bold text-gray-800 mb-1">Sign In</p>
-          <p className="text-sm text-gray-400 mb-6">Enter your credentials to access settings</p>
-
-          {error && (
-            <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2.5 mb-4 text-sm">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-sm font-semibold text-gray-600 mb-1.5">Name</label>
-              <select
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"
-                value={name} onChange={e => { setName(e.target.value); setError(""); }}>
-                <option value="">-- Select --</option>
-                {SETTINGS_USERS.map(u => <option key={u.name}>{u.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-gray-600 mb-1.5">Password</label>
-              <div className="relative">
-                <input
-                  type={showP ? "text" : "password"}
-                  className="w-full border border-gray-200 rounded-xl px-4 py-3 pr-11 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"
-                  value={pass} onChange={e => { setPass(e.target.value); setError(""); }}
-                  placeholder="Enter password"
-                />
-                <button type="button" onClick={() => setShowP(!showP)}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400">
-                  {showP ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
-                </button>
-              </div>
-            </div>
-            <button type="submit"
-              className="w-full bg-school-navy text-white py-3 rounded-xl font-semibold text-sm hover:bg-opacity-90 transition-colors shadow-md">
-              Login
-            </button>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Main Settings Page ─────────────────────────────────────────────────────────
 // ── Tab: Fee Reminder Templates ────────────────────────────────────────────────
 function FeeReminderTab() {
@@ -2102,10 +2003,13 @@ const TABS = [
 ];
 
 export default function SettingsPage() {
-  const [authUser, setAuthUser] = useState(null);
+  const authUser = useStore(s => s.authUser);
   const [tab, setTab] = useState("school");
 
-  if (!authUser) return <SettingsLogin onLogin={setAuthUser} />;
+  if (!authUser) return null;
+  if (authUser.role === "normal_admin") return (
+    <div className="flex items-center justify-center h-64"><p className="text-gray-500">You do not have access to this section.</p></div>
+  );
 
   return (
     <div className="space-y-5">
@@ -2114,20 +2018,6 @@ export default function SettingsPage() {
         <div>
           <h2 className="text-xl font-bold text-gray-800">Settings</h2>
           <p className="text-sm text-gray-500 mt-0.5">School configuration, academic year, fee structure & user management</p>
-        </div>
-        <div className="flex items-center gap-3 flex-shrink-0">
-          <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-3 py-2">
-            <div className="w-6 h-6 rounded-full bg-school-navy flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">
-              {authUser.initials}
-            </div>
-            <span className="text-xs font-semibold text-gray-700">{authUser.name}</span>
-          </div>
-          <button
-            onClick={() => setAuthUser(null)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-500 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors"
-          >
-            <LogOut className="w-3.5 h-3.5" /> Logout
-          </button>
         </div>
       </div>
 

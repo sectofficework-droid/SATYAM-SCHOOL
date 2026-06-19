@@ -1,19 +1,33 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Eye, EyeOff, Lock, Mail, MapPin, BookOpen } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { isValidEmail, isStrongPassword } from "@/lib/validators";
+import supabase from "@/lib/supabase";
+import useStore from "@/lib/store";
 
 export default function LoginPage() {
   const router = useRouter();
+  const setAuthUser = useStore((s) => s.setAuthUser);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
+
+  // Only handle PASSWORD_RECOVERY event (from recovery email link landing here)
+  // Do NOT handle SIGNED_IN here — it fires during normal form login too and causes loops
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        router.replace("/auth/set-password");
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -27,15 +41,29 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    setTimeout(() => {
-      if (email === "admin@school.com" && password === "123456") {
-        sessionStorage.removeItem("tasksPopupShown");
-        router.push("/dashboard");
-      } else {
-        setError("Invalid email or password.");
-        setLoading(false);
-      }
-    }, 1500);
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password });
+    if (authError) {
+      setError("Invalid email or password.");
+      setLoading(false);
+      return;
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from("admin_users")
+      .select("name, role, initials")
+      .eq("id", authData.user.id)
+      .single();
+
+    if (profileError || !profile) {
+      await supabase.auth.signOut();
+      setError("Your account is not authorized for this system.");
+      setLoading(false);
+      return;
+    }
+
+    setAuthUser({ id: authData.user.id, email: authData.user.email, ...profile });
+    sessionStorage.removeItem("tasksPopupShown");
+    router.push("/dashboard");
   };
 
   return (
@@ -206,6 +234,12 @@ export default function LoginPage() {
               </label>
               <button
                 type="button"
+                onClick={async () => {
+                  if (!email) { setError("Enter your email first, then click Forgot password."); return; }
+                  const { error: e } = await supabase.auth.resetPasswordForEmail(email);
+                  if (e) setError(e.message);
+                  else setError("Password reset email sent. Check your inbox.");
+                }}
                 className="text-sm text-[#1e3a5f] hover:text-[#f59e0b] font-medium transition-colors"
               >
                 Forgot password?

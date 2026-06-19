@@ -197,6 +197,7 @@ export default function AddStudentPage() {
     grNo: "",
     std: "",
     admissionClass: "",
+    rollNo: "",
     firstName: "",
     lastName: "",
     fatherName: "",
@@ -231,7 +232,15 @@ export default function AddStudentPage() {
     apaar: "",
   });
 
-  const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value.toUpperCase() }));
+  const set      = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value.toUpperCase() }));
+  const setExact = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
+
+  useEffect(() => {
+    const parts = [form.roomPlotNo, form.society, form.landmark, form.area, "SURAT", form.pinCode]
+      .filter(Boolean);
+    setForm(p => ({ ...p, address: parts.join(", ") }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.roomPlotNo, form.society, form.landmark, form.area, form.pinCode]);
 
   const handleStdChange = async (e) => {
     const val = e.target.value;
@@ -269,8 +278,10 @@ export default function AddStudentPage() {
               .limit(1);
             const last = rolls?.[0]?.roll_no || 0;
             setAutoRollNo(last + 1);
+            setForm(p => ({ ...p, rollNo: String(last + 1) }));
           } else {
             setAutoRollNo(1);
+            setForm(p => ({ ...p, rollNo: "1" }));
           }
         }
       }
@@ -347,7 +358,10 @@ export default function AddStudentPage() {
     if (!isValidPhone(form.mobile1)) errs.mobile1 = "Enter a valid 10-digit mobile number.";
     if (form.mobile2 && !isValidPhone(form.mobile2)) errs.mobile2 = "Enter a valid 10-digit mobile number.";
 
-    if (form.pinCode && !isValidPincode(form.pinCode)) errs.pinCode = "Enter a valid 6-digit pin code.";
+    if (!form.society)  errs.society = "Society / Colony is required.";
+    if (!form.area)     errs.area    = "Area / Locality is required.";
+    if (!form.pinCode)  errs.pinCode = "Pin code is required.";
+    else if (!isValidPincode(form.pinCode)) errs.pinCode = "Enter a valid 6-digit pin code.";
 
     if (hasAadhar) {
       if (!form.aadharRaw) {
@@ -406,6 +420,7 @@ export default function AddStudentPage() {
       // Academic
       std:            form.std,
       section:        "A",
+      rollNo:         form.rollNo ? Number(form.rollNo) : null,
       admissionClass: form.admissionClass || form.std,
       dateOfJoin:     form.joinDate,
       // Family
@@ -644,7 +659,7 @@ export default function AddStudentPage() {
           <SectionHeader number="4" title="Class Details" />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
             <div>
-              <FieldLabel required>Standard</FieldLabel>
+              <FieldLabel required>Current Standard</FieldLabel>
               <SelectField value={form.std} onChange={handleStdChange} required>
                 <option value="">Select Standard</option>
                 {standards.map((s) => <option key={s}>{s}</option>)}
@@ -652,21 +667,48 @@ export default function AddStudentPage() {
             </div>
             <div>
               <FieldLabel required>Roll Number</FieldLabel>
-              <div className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl border ${autoRollNo ? "border-dashed border-school-navy/30 bg-blue-50" : "border-gray-200 bg-gray-50"}`}>
-                <Hash className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-                {autoRollNo
-                  ? <span className="text-school-navy font-bold text-sm">{autoRollNo}</span>
-                  : <span className="text-gray-400 text-sm">Select class first</span>
-                }
-                {autoRollNo && <span className="text-xs text-gray-400 ml-auto">(Auto-assigned)</span>}
+              <div className="relative">
+                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                <input
+                  type="number"
+                  min="1"
+                  className={`w-full pl-9 pr-3 py-2.5 rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-school-navy/30 ${form.rollNo ? "border-school-navy/30 bg-blue-50 text-school-navy" : "border-gray-200 bg-gray-50 text-gray-400"}`}
+                  placeholder={form.std ? "Enter roll no" : "Select class first"}
+                  value={form.rollNo}
+                  onChange={e => setForm(p => ({ ...p, rollNo: e.target.value }))}
+                  disabled={!form.std}
+                />
+                {autoRollNo && Number(form.rollNo) !== autoRollNo && (
+                  <button
+                    type="button"
+                    onClick={() => setForm(p => ({ ...p, rollNo: String(autoRollNo) }))}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-blue-500 font-semibold hover:text-blue-700"
+                  >
+                    Reset to {autoRollNo}
+                  </button>
+                )}
               </div>
+              {autoRollNo && Number(form.rollNo) === autoRollNo && (
+                <p className="text-[11px] text-gray-400 mt-1">Auto-assigned · editable</p>
+              )}
+            </div>
+            <div>
+              <FieldLabel>Admission Class</FieldLabel>
+              <SelectField
+                value={form.admissionClass}
+                onChange={setExact("admissionClass")}
+              >
+                <option value="">Same as current std</option>
+                {standards.map((s) => <option key={s}>{s}</option>)}
+              </SelectField>
+              <p className="text-[11px] text-gray-400 mt-1">Class when student first joined this school</p>
             </div>
           </div>
           {form.std && (
             <div className="mt-3 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 max-w-lg">
               <GraduationCap className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
               <p className="text-xs text-blue-700 font-medium">
-                <b>{form.std}</b> will be permanently recorded as the joining class.
+                Current class: <b>{form.std}</b> · Admission class: <b>{form.admissionClass || form.std}</b>
               </p>
             </div>
           )}
@@ -710,7 +752,7 @@ export default function AddStudentPage() {
 
             <div>
               <FieldLabel required>Gender</FieldLabel>
-              <SelectField value={form.gender} onChange={set("gender")} required>
+              <SelectField value={form.gender} onChange={setExact("gender")} required>
                 <option value="">Select Gender</option>
                 {genders.map((g) => <option key={g}>{g}</option>)}
               </SelectField>
@@ -718,14 +760,14 @@ export default function AddStudentPage() {
 
             <div>
               <FieldLabel required>Religion</FieldLabel>
-              <SelectField value={form.religion} onChange={set("religion")} required>
+              <SelectField value={form.religion} onChange={setExact("religion")} required>
                 {religions.map((r) => <option key={r}>{r}</option>)}
               </SelectField>
             </div>
 
             <div>
               <FieldLabel required>Category / Caste</FieldLabel>
-              <SelectField value={form.caste} onChange={(e) => { set("caste")(e); setCasteCertFile(null); }} required>
+              <SelectField value={form.caste} onChange={(e) => { setExact("caste")(e); setCasteCertFile(null); }} required>
                 {castes.map((c) => <option key={c}>{c}</option>)}
               </SelectField>
             </div>
@@ -821,8 +863,9 @@ export default function AddStudentPage() {
             </div>
 
             <div>
-              <FieldLabel>Society</FieldLabel>
-              <Input placeholder="e.g. Shanti Nagar Society" value={form.society} onChange={set("society")} />
+              <FieldLabel required>Society / Colony</FieldLabel>
+              <Input placeholder="e.g. Shanti Nagar Society" value={form.society} onChange={set("society")} required />
+              <FieldError>{errors.society}</FieldError>
             </div>
 
             <div>
@@ -831,13 +874,14 @@ export default function AddStudentPage() {
             </div>
 
             <div>
-              <FieldLabel>Area</FieldLabel>
-              <Input placeholder="e.g. Vesu" value={form.area} onChange={set("area")} />
+              <FieldLabel required>Area / Locality</FieldLabel>
+              <Input placeholder="e.g. Vesu" value={form.area} onChange={set("area")} required />
+              <FieldError>{errors.area}</FieldError>
             </div>
 
             <div>
-              <FieldLabel>Pin Code</FieldLabel>
-              <Input placeholder="e.g. 395007" maxLength={6} value={form.pinCode} onChange={set("pinCode")} />
+              <FieldLabel required>Pin Code</FieldLabel>
+              <Input placeholder="e.g. 395007" maxLength={6} value={form.pinCode} onChange={set("pinCode")} required />
               <FieldError>{errors.pinCode}</FieldError>
             </div>
 
@@ -916,14 +960,14 @@ export default function AddStudentPage() {
                   </div>
                   <div>
                     <FieldLabel>Last Class Attended</FieldLabel>
-                    <SelectField value={form.lastSchoolClass} onChange={set("lastSchoolClass")}>
+                    <SelectField value={form.lastSchoolClass} onChange={setExact("lastSchoolClass")}>
                       <option value="">Select Standard</option>
                       {prevStandards.map((s) => <option key={s}>{s}</option>)}
                     </SelectField>
                   </div>
                   <div>
                     <FieldLabel>Medium of Instruction</FieldLabel>
-                    <SelectField value={form.lastSchoolMedium} onChange={set("lastSchoolMedium")}>
+                    <SelectField value={form.lastSchoolMedium} onChange={setExact("lastSchoolMedium")}>
                       <option value="">Select Medium</option>
                       {mediums.map((m) => <option key={m}>{m}</option>)}
                     </SelectField>

@@ -9,12 +9,9 @@ const useStore = create(
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       closeSidebar: () => set({ sidebarOpen: false }),
 
-      user: {
-        name: "Admin User",
-        role: "Super Admin",
-        email: "admin@satyamstars.edu.in",
-        initials: "AU",
-      },
+      authUser: null,
+      setAuthUser: (user) => set({ authUser: user }),
+      clearAuthUser: () => set({ authUser: null }),
 
       // ── Academic Year ──────────────────────────────────────────
       readmissionDate: "2026-03-15",
@@ -127,6 +124,10 @@ const useStore = create(
         ],
       },
       setPeriodDefs: (defs) => set({ periodDefs: defs }),
+
+      // ── Employee Attendance Summary ───────────────────────────
+      attendanceSummary: null,
+      setAttendanceSummary: (data) => set({ attendanceSummary: data }),
 
       // ── Employee Salaries (management-only) ───────────────────
       employeeSalaries: {

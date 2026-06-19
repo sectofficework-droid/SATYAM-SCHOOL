@@ -113,6 +113,53 @@ export async function saveFeePayment(enrollmentId, studentId, { amount, paymentD
   if (error) throw error;
 }
 
+export async function updateFeesForEnrollment(enrollmentId, { discount, payments, originalPaymentIds }) {
+  // 1. Update discount on enrollment
+  const { error: discErr } = await supabase
+    .from("student_enrollments")
+    .update({ fee_discount: discount })
+    .eq("id", enrollmentId);
+  if (discErr) throw discErr;
+
+  // 2. Get student_id for new payment inserts
+  const { data: enrData } = await supabase
+    .from("student_enrollments")
+    .select("student_id")
+    .eq("id", enrollmentId)
+    .single();
+  const studentId = enrData?.student_id;
+
+  // 3. Update existing payments (UUID ids from DB)
+  const existingPayments = payments.filter(p => typeof p.id === "string");
+  for (const p of existingPayments) {
+    await supabase
+      .from("fee_payments")
+      .update({ amount: p.paid, payment_date: p.paidDate || null })
+      .eq("id", p.id);
+  }
+
+  // 4. Insert new payments (numeric ids from Date.now())
+  const newPayments = payments.filter(p => typeof p.id === "number");
+  if (newPayments.length > 0) {
+    const rows = newPayments.map(p => ({
+      enrollment_id: enrollmentId,
+      student_id:    studentId,
+      amount:        p.paid,
+      payment_date:  p.paidDate || null,
+    }));
+    const { error: insErr } = await supabase.from("fee_payments").insert(rows);
+    if (insErr) throw insErr;
+  }
+
+  // 5. Delete payments removed by the user
+  const currentIds = existingPayments.map(p => p.id);
+  const deletedIds = (originalPaymentIds || []).filter(id => !currentIds.includes(id));
+  if (deletedIds.length > 0) {
+    const { error: delErr } = await supabase.from("fee_payments").delete().in("id", deletedIds);
+    if (delErr) throw delErr;
+  }
+}
+
 export async function markInventoryGiven(assignmentIds, givenDate) {
   const { error } = await supabase
     .from("student_inventory_assignments")

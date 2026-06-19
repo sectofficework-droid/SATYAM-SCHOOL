@@ -101,6 +101,13 @@ export function mapToStudent(enrollment) {
         )
       : false,
 
+    // Birth Certificate check (for fresh admissions with no previous school)
+    birthCertUploaded: s.student_documents
+      ? s.student_documents.some(d =>
+          d.document_types?.name === "Birth Certificate" && d.status === "Uploaded"
+        )
+      : false,
+
     // Fees
     fees: {
       total:          enrollment.fee_total || 0,
@@ -267,8 +274,10 @@ export async function getStudents(yearId = null) {
         dob, gender, mobile1, mobile2, status,
         father_name, mother_name, aadhar, udise, pen, apaar,
         address, pincode, room_plot_no, area,
-        student_documents(status, document_types(name))
+        student_documents(status, document_types(name)),
+        student_previous_school(school_name)
       ),
+      student_inventory_assignments(status, inventory_items(name)),
       class:classes!student_enrollments_class_id_fkey(id, name),
       section:sections(id, name),
       academic_year:academic_years(id, label),
@@ -354,7 +363,7 @@ export async function addStudent(formData) {
 
   // 3. Get next enrollment number and roll number
   const enrollmentNo = await getNextEnrollmentNo();
-  const rollNo       = await getNextRollNo(cls.id, section.id, year.id);
+  const rollNo       = formData.rollNo ?? await getNextRollNo(cls.id, section.id, year.id);
 
   // 4. Insert into students table
   const { data: student, error: studentErr } = await supabase

@@ -8,35 +8,33 @@ import {
 import {
   GraduationCap, Users, IndianRupee, TrendingUp, TrendingDown,
   Bell, ArrowUpRight, Package, AlertCircle, Calendar,
-  UserCog, FileText, Activity, ChevronDown, ClipboardList,
-  X, ShieldAlert,
+  Activity, ClipboardList,
 } from "lucide-react";
+import { getDashboardStats, getRecentNotices, getInventoryAlerts, getRecentActivities } from "@/lib/dashboardService";
+import { getDashboardTasks } from "@/lib/taskService";
 import useStore from "@/lib/store";
-import { getDashboardStats, getRecentNotices } from "@/lib/dashboardService";
 
 // ── Dummy Data ────────────────────────────────────────────────
 
-const classes = [
-  "All Classes","Class 1","Class 2","Class 3","Class 4","Class 5",
-  "Class 6","Class 7","Class 8","Class 9","Class 10","Class 11","Class 12",
-];
 
-const weekDays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const EMP_TYPE_LABEL = {
+  teaching:      "Teaching",
+  "non-teaching": "Non-Teaching",
+  management:    "Management",
+  media:         "Media",
+};
 
-function genStudentAttendance(cls) {
-  const total = cls === "All Classes" ? 155 : 38;
-  return weekDays.map((day) => ({
-    day,
-    Present: Math.floor(total * 0.88 + (total * 0.08 * (Math.sin(day.length) + 1) / 2)),
-    Absent:  Math.floor(total * 0.07 + (total * 0.03 * (Math.cos(day.length) + 1) / 2)),
-  }));
+function buildEmpChartData(grouped) {
+  const order = ["management", "teaching", "non-teaching", "media"];
+  const keys  = [...new Set([...order, ...Object.keys(grouped)])];
+  return keys
+    .filter(k => grouped[k])
+    .map(k => ({
+      day:     EMP_TYPE_LABEL[k] || k,
+      Present: grouped[k].count > 0 ? Math.round(grouped[k].Present / grouped[k].count) : 0,
+      Absent:  grouped[k].count > 0 ? Math.round(grouped[k].Absent  / grouped[k].count) : 0,
+    }));
 }
-
-const employeeAttendanceData = weekDays.map((day) => ({
-  day,
-  Present: [62, 65, 60, 64, 63, 58][weekDays.indexOf(day)],
-  Absent:  [4, 2, 6, 3, 4, 8][weekDays.indexOf(day)],
-}));
 
 const NOTICE_DOT = {
   Event:    "bg-blue-400",
@@ -53,70 +51,20 @@ function fmtNoticeDate(dateStr) {
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 }
 
-const inventoryAlerts = [
-  { item: "A4 Paper Reams",       stock: 12, min: 50 },
-  { item: "Whiteboard Markers",   stock: 8,  min: 30 },
-  { item: "Sports Footballs",     stock: 3,  min: 10 },
-];
+const ACTIVITY_ICON = {
+  fee:   { Icon: IndianRupee,  style: "bg-green-50 text-green-600"  },
+  admit: { Icon: GraduationCap, style: "bg-purple-50 text-purple-600" },
+};
 
-const recentActivities = [
-  {
-    icon: IndianRupee,
-    iconStyle: "bg-green-50 text-green-600",
-    title: "Fee Payment Received",
-    detail: "Arjun Patel · Class 10-A · ₹8,500 (Annual Fee)",
-    time: "2 min ago",
-    by: "Admin",
-  },
-  {
-    icon: UserCog,
-    iconStyle: "bg-blue-50 text-blue-600",
-    title: "Student Profile Updated",
-    detail: "Priya Shah · Class 9-B · Contact & address updated",
-    time: "18 min ago",
-    by: "Admin",
-  },
-  {
-    icon: GraduationCap,
-    iconStyle: "bg-purple-50 text-purple-600",
-    title: "New Student Admitted",
-    detail: "Rohan Mehta · Class 11-A · Adm. No. 2025-156",
-    time: "1 hr ago",
-    by: "Admin",
-  },
-  {
-    icon: IndianRupee,
-    iconStyle: "bg-green-50 text-green-600",
-    title: "Fee Payment Received",
-    detail: "Sneha Desai · Class 8-C · ₹6,200 (Term Fee)",
-    time: "2 hr ago",
-    by: "Admin",
-  },
-  {
-    icon: FileText,
-    iconStyle: "bg-amber-50 text-amber-600",
-    title: "Fee Structure Updated",
-    detail: "Class 9 & 10 annual fee revised for 2025–26",
-    time: "3 hr ago",
-    by: "Super Admin",
-  },
-  {
-    icon: UserCog,
-    iconStyle: "bg-blue-50 text-blue-600",
-    title: "Employee Profile Updated",
-    detail: "Ravi Sharma · Subject assignment updated",
-    time: "4 hr ago",
-    by: "Admin",
-  },
-  {
-    icon: IndianRupee,
-    iconStyle: "bg-green-50 text-green-600",
-    title: "Fee Payment Received",
-    detail: "Kiran Patel · Class 7-B · ₹4,800 (Term Fee)",
-    time: "5 hr ago",
-    by: "Admin",
-  },
-];
+function fmtActivityDate(dateStr) {
+  if (!dateStr) return "";
+  const d    = new Date(dateStr.length > 10 ? dateStr : dateStr + "T00:00:00");
+  const diff = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === 1) return "Yesterday";
+  if (diff < 7)  return diff + " days ago";
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -125,6 +73,16 @@ const todayStr = new Date().toISOString().split("T")[0];
 function formatDateLabel(dateStr) {
   const d = new Date(dateStr);
   return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function fmtTaskDeadline(deadline, deadlineTime) {
+  if (!deadline) return null;
+  const date = new Date(deadline + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  if (!deadlineTime) return date;
+  const [h, m] = deadlineTime.split(":").map(Number);
+  const ampm = h >= 12 ? "PM" : "AM";
+  const h12  = h % 12 || 12;
+  return `${date}, ${h12}:${String(m).padStart(2,"0")} ${ampm}`;
 }
 
 // ── Custom Tooltip ─────────────────────────────────────────────
@@ -142,80 +100,19 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-const PRIORITY_BADGE = {
-  High:   "bg-red-100 text-red-700 border border-red-200",
-  Medium: "bg-amber-100 text-amber-700 border border-amber-200",
-  Low:    "bg-green-100 text-green-700 border border-green-200",
-};
-
-// ── Login Popup ────────────────────────────────────────────────
-function TasksPopup({ tasks, onClose, onToggle }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-school-navy to-school-navy-light px-6 py-5 flex items-start justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
-              <ShieldAlert className="w-5 h-5 text-white"/>
-            </div>
-            <div>
-              <p className="text-white font-bold text-base">Pending Tasks</p>
-              <p className="text-white/60 text-xs mt-0.5">{tasks.length} task{tasks.length !== 1 ? "s" : ""} need attention</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors mt-0.5">
-            <X className="w-5 h-5"/>
-          </button>
-        </div>
-
-        {/* Task list */}
-        <div className="px-6 py-4 max-h-80 overflow-y-auto space-y-2.5">
-          {tasks.map(task => (
-            <div key={task.id} className="flex items-start gap-3 p-3 rounded-xl border border-gray-100 bg-gray-50/60">
-              <button
-                onClick={() => onToggle(task.id)}
-                className="w-5 h-5 rounded-md border-2 border-gray-300 hover:border-school-navy flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors"
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-gray-800 font-medium leading-snug">{task.text}</p>
-                <div className="flex items-center gap-2 mt-1.5">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${PRIORITY_BADGE[task.priority]}`}>{task.priority}</span>
-                  <span className="text-[10px] text-gray-400">by {task.createdBy}</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Footer */}
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between">
-          <p className="text-xs text-gray-400">Tasks remain until marked complete in Super Admin</p>
-          <button
-            onClick={onClose}
-            className="px-5 py-2 bg-school-navy text-white text-sm font-semibold rounded-xl hover:bg-school-navy-dark transition-colors"
-          >
-            Got it
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ── Main Component ─────────────────────────────────────────────
 export default function DashboardPage() {
-  const [selectedDate,  setSelectedDate]  = useState(todayStr);
-  const [selectedClass, setSelectedClass] = useState("All Classes");
+  const [selectedDate, setSelectedDate] = useState(todayStr);
+  const attendanceSummary = useStore(s => s.attendanceSummary);
 
-  const { pendingTasks, toggleTask } = useStore();
-  const [showPopup, setShowPopup] = useState(false);
-
-  const [dbTotalStudents, setDbTotalStudents] = useState(null);
-  const [dbTotalStaff,    setDbTotalStaff]    = useState(null);
-  const [dbFeePayments,   setDbFeePayments]   = useState([]);
-  const [dbExpenses,      setDbExpenses]      = useState([]);
-  const [dbNotices,       setDbNotices]       = useState([]);
+  const [dbTotalStudents,  setDbTotalStudents]  = useState(null);
+  const [dbTotalStaff,     setDbTotalStaff]     = useState(null);
+  const [dbFeePayments,    setDbFeePayments]     = useState([]);
+  const [dbExpenses,       setDbExpenses]        = useState([]);
+  const [dbNotices,          setDbNotices]          = useState([]);
+  const [dbPinnedTasks,      setDbPinnedTasks]      = useState([]);
+  const [dbInventoryAlerts,  setDbInventoryAlerts]  = useState(null);
+  const [dbRecentActivities, setDbRecentActivities] = useState(null);
 
   useEffect(() => {
     getDashboardStats().then(s => {
@@ -225,17 +122,10 @@ export default function DashboardPage() {
       setDbExpenses(s.expenses);
     }).catch(() => {});
     getRecentNotices().then(setDbNotices).catch(() => {});
+    getDashboardTasks().then(setDbPinnedTasks).catch(() => {});
+    getInventoryAlerts().then(setDbInventoryAlerts).catch(() => {});
+    getRecentActivities().then(setDbRecentActivities).catch(() => {});
   }, []);
-
-  const pendingOnly = pendingTasks.filter(t => !t.done);
-
-  // Show popup once per browser session if there are pending tasks
-  useEffect(() => {
-    if (pendingOnly.length > 0 && !sessionStorage.getItem("tasksPopupShown")) {
-      setShowPopup(true);
-      sessionStorage.setItem("tasksPopupShown", "1");
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isToday   = selectedDate === todayStr;
   const dateLabel = isToday ? "Today" : formatDateLabel(selectedDate);
@@ -248,22 +138,13 @@ export default function DashboardPage() {
   const expMonthTotal = dbExpenses.filter(e => e.date?.startsWith(curMonth)).reduce((s, e) => s + e.amount, 0);
   const expDateTotal  = dbExpenses.filter(e => e.date === selectedDate).reduce((s, e) => s + e.amount, 0);
 
-  const studentChartData = useMemo(
-    () => genStudentAttendance(selectedClass),
-    [selectedClass]
+  const empChartData = useMemo(
+    () => attendanceSummary?.grouped ? buildEmpChartData(attendanceSummary.grouped) : [],
+    [attendanceSummary]
   );
 
   return (
     <div className="space-y-6 max-w-screen-2xl">
-
-      {/* Login popup — shows once per session if pending tasks exist */}
-      {showPopup && (
-        <TasksPopup
-          tasks={pendingOnly}
-          onClose={() => setShowPopup(false)}
-          onToggle={(id) => { toggleTask(id); }}
-        />
-      )}
 
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -351,38 +232,41 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Pending Tasks Card (shown only if tasks exist) ── */}
-      {pendingOnly.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-sm border border-red-100 overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-red-100 bg-red-50/60">
+      {/* ── Pinned Tasks ── */}
+      {dbPinnedTasks.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm border border-school-navy/20 overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 bg-school-navy/5">
             <div className="flex items-center gap-2">
-              <ClipboardList className="w-4 h-4 text-red-600" />
-              <h3 className="font-semibold text-gray-800 text-sm">Pending Tasks</h3>
-              <span className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full">{pendingOnly.length}</span>
+              <ClipboardList className="w-4 h-4 text-school-navy" />
+              <h3 className="font-semibold text-gray-800 text-sm">Pinned Tasks</h3>
+              <span className="bg-school-navy text-white text-xs font-bold px-2 py-0.5 rounded-full">{dbPinnedTasks.length}</span>
             </div>
-            <button
-              onClick={() => setShowPopup(true)}
-              className="text-xs text-red-600 hover:text-red-800 font-semibold flex items-center gap-1 transition-colors"
-            >
+            <a href="/tasks" className="text-xs text-school-navy hover:text-school-gold font-semibold flex items-center gap-1 transition-colors">
               View All <ArrowUpRight className="w-3 h-3"/>
-            </button>
+            </a>
           </div>
           <div className="divide-y divide-gray-50">
-            {pendingOnly.slice(0, 4).map(task => (
-              <div key={task.id} className="flex items-center gap-4 px-5 py-3 hover:bg-gray-50 transition-colors">
-                <button
-                  onClick={() => toggleTask(task.id)}
-                  className="w-4 h-4 rounded border-2 border-gray-300 hover:border-school-navy flex-shrink-0 transition-colors"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-gray-800 font-medium truncate">{task.text}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">by {task.createdBy}</p>
+            {dbPinnedTasks.map(task => {
+              const priorityBadge = task.priority === "High" ? "bg-red-100 text-red-700" : task.priority === "Low" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700";
+              const statusBadge   = task.status === "In Progress" ? "bg-indigo-100 text-indigo-700" : "bg-gray-100 text-gray-600";
+              return (
+                <div key={task.id} className="flex items-center gap-4 px-5 py-3 hover:bg-gray-50 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-800 font-medium truncate">{task.title}</p>
+                    {task.assignedTo?.length > 0 && (
+                      <p className="text-xs text-gray-400 mt-0.5 truncate">{task.assignedTo.join(", ")}</p>
+                    )}
+                  </div>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${priorityBadge}`}>{task.priority}</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${statusBadge}`}>{task.status}</span>
+                  {task.deadline && (
+                    <span className="text-[10px] text-gray-400 flex-shrink-0 hidden sm:block flex items-center gap-1">
+                      <Calendar className="w-3 h-3 inline-block"/> {fmtTaskDeadline(task.deadline, task.deadlineTime)}
+                    </span>
+                  )}
                 </div>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${PRIORITY_BADGE[task.priority]}`}>
-                  {task.priority}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -426,7 +310,11 @@ export default function DashboardPage() {
             <h3 className="font-semibold text-gray-800 text-sm">Low Stock Alerts</h3>
           </div>
           <div className="p-4 space-y-3">
-            {inventoryAlerts.map((alert) => {
+            {dbInventoryAlerts === null ? (
+              <div className="py-4 text-center text-gray-400 text-xs">Loading…</div>
+            ) : dbInventoryAlerts.length === 0 ? (
+              <div className="py-4 text-center text-gray-400 text-xs">No low-stock items</div>
+            ) : dbInventoryAlerts.map((alert) => {
               const pct = Math.round((alert.stock / alert.min) * 100);
               return (
                 <div key={alert.item} className="space-y-1.5">
@@ -450,39 +338,21 @@ export default function DashboardPage() {
       {/* ── Attendance Graphs ── */}
       <div className="grid lg:grid-cols-2 gap-4">
 
-        {/* Student Attendance */}
+        {/* Student Attendance — Coming Soon */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <div className="flex items-center gap-2">
-              <GraduationCap className="w-4 h-4 text-school-navy" />
-              <h3 className="font-semibold text-gray-800 text-sm">Student Attendance</h3>
-            </div>
-            {/* Class filter */}
-            <div className="relative">
-              <select
-                value={selectedClass}
-                onChange={(e) => setSelectedClass(e.target.value)}
-                className="appearance-none text-xs font-medium text-school-navy bg-blue-50 border border-blue-100 rounded-lg pl-3 pr-7 py-1.5 focus:outline-none cursor-pointer"
-              >
-                {classes.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-school-navy pointer-events-none" />
-            </div>
+          <div className="flex items-center px-5 py-4 border-b border-gray-100 gap-2">
+            <GraduationCap className="w-4 h-4 text-school-navy" />
+            <h3 className="font-semibold text-gray-800 text-sm">Student Attendance</h3>
+            <span className="ml-auto text-xs bg-amber-100 text-amber-700 font-semibold px-2.5 py-1 rounded-lg">Coming Soon</span>
           </div>
-          <div className="p-4" style={{ height: 260 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={studentChartData} barGap={4}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                <Bar dataKey="Present" fill="#22c55e" radius={[4, 4, 0, 0]} maxBarSize={28} />
-                <Bar dataKey="Absent"  fill="#f87171" radius={[4, 4, 0, 0]} maxBarSize={28} />
-              </BarChart>
-            </ResponsiveContainer>
+          <div className="flex flex-col items-center justify-center gap-3 p-8" style={{ height: 260 }}>
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center">
+              <GraduationCap className="w-7 h-7 text-amber-400" />
+            </div>
+            <p className="text-sm font-semibold text-gray-600">Student Attendance Module</p>
+            <p className="text-xs text-gray-400 text-center max-w-xs">
+              Daily student attendance tracking will be available once the attendance module is set up.
+            </p>
           </div>
         </div>
 
@@ -493,21 +363,36 @@ export default function DashboardPage() {
               <Users className="w-4 h-4 text-school-navy" />
               <h3 className="font-semibold text-gray-800 text-sm">Employee Attendance</h3>
             </div>
-            <span className="text-xs text-gray-400 bg-gray-100 px-2.5 py-1 rounded-lg">This Week</span>
+            {attendanceSummary
+              ? <span className="text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-lg truncate max-w-[160px]">{attendanceSummary.period}</span>
+              : <span className="text-xs text-gray-400 bg-gray-100 px-2.5 py-1 rounded-lg">No data</span>
+            }
           </div>
-          <div className="p-4" style={{ height: 260 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={employeeAttendanceData} barGap={4}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
-                <Tooltip content={<CustomTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
-                <Bar dataKey="Present" fill="#818cf8" radius={[4, 4, 0, 0]} maxBarSize={28} />
-                <Bar dataKey="Absent"  fill="#f87171" radius={[4, 4, 0, 0]} maxBarSize={28} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {empChartData.length > 0 ? (
+            <div className="p-4" style={{ height: 260 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={empChartData} barGap={4}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} label={{ value: "Avg Days", angle: -90, position: "insideLeft", style: { fontSize: 10, fill: "#9ca3af" } }} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+                  <Bar dataKey="Present" fill="#818cf8" radius={[4, 4, 0, 0]} maxBarSize={28} />
+                  <Bar dataKey="Absent"  fill="#f87171" radius={[4, 4, 0, 0]} maxBarSize={28} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 p-8" style={{ height: 260 }}>
+              <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center">
+                <Users className="w-7 h-7 text-indigo-300" />
+              </div>
+              <p className="text-sm font-semibold text-gray-600">No Attendance Data</p>
+              <p className="text-xs text-gray-400 text-center max-w-xs">
+                Import attendance from the <a href="/employee" className="text-school-navy underline font-medium">Employee</a> module to see the chart here.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -517,20 +402,23 @@ export default function DashboardPage() {
           <div className="flex items-center gap-2">
             <Activity className="w-4 h-4 text-school-navy" />
             <h3 className="font-semibold text-gray-800 text-sm">Recent Activities</h3>
-            <span className="text-xs bg-school-navy text-white px-2 py-0.5 rounded-full">
-              {recentActivities.length}
-            </span>
+            {dbRecentActivities !== null && dbRecentActivities.length > 0 && (
+              <span className="text-xs bg-school-navy text-white px-2 py-0.5 rounded-full">
+                {dbRecentActivities.length}
+              </span>
+            )}
           </div>
-          <button className="text-xs text-school-navy hover:text-school-gold font-medium flex items-center gap-1 transition-colors">
-            View All <ArrowUpRight className="w-3 h-3" />
-          </button>
         </div>
         <div className="divide-y divide-gray-50">
-          {recentActivities.map((activity, idx) => {
-            const Icon = activity.icon;
+          {dbRecentActivities === null ? (
+            <div className="px-5 py-8 text-center text-gray-400 text-sm">Loading…</div>
+          ) : dbRecentActivities.length === 0 ? (
+            <div className="px-5 py-8 text-center text-gray-400 text-sm">No recent activities</div>
+          ) : dbRecentActivities.map((activity, idx) => {
+            const { Icon, style } = ACTIVITY_ICON[activity.type] || { Icon: Activity, style: "bg-gray-50 text-gray-500" };
             return (
               <div key={idx} className="flex items-start gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors">
-                <div className={`w-9 h-9 rounded-xl ${activity.iconStyle} flex items-center justify-center flex-shrink-0 mt-0.5`}>
+                <div className={`w-9 h-9 rounded-xl ${style} flex items-center justify-center flex-shrink-0 mt-0.5`}>
                   <Icon className="w-4 h-4" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -538,10 +426,7 @@ export default function DashboardPage() {
                   <p className="text-xs text-gray-400 mt-0.5 truncate">{activity.detail}</p>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <p className="text-xs text-gray-400">{activity.time}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    by <span className="font-medium text-school-navy">{activity.by}</span>
-                  </p>
+                  <p className="text-xs text-gray-400">{fmtActivityDate(activity.date)}</p>
                 </div>
               </div>
             );
