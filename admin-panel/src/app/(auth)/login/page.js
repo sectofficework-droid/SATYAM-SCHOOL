@@ -236,7 +236,7 @@ export default function LoginPage() {
                 type="button"
                 onClick={async () => {
                   if (!email) { setError("Enter your email first, then click Forgot password."); return; }
-                  const { error: e } = await supabase.auth.resetPasswordForEmail(email);
+                  const { error: e } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/auth/callback` });
                   if (e) setError(e.message);
                   else setError("Password reset email sent. Check your inbox.");
                 }}

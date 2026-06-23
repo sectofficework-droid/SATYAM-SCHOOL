@@ -172,13 +172,25 @@ export async function getFeesForReport() {
 
 // ── Employees ──────────────────────────────────────────────────────────────────
 export async function getEmployeesForReport() {
-  const { data, error } = await supabase
-    .from("employees")
-    .select("id, name, type, designation, department, phone, email, joining_date, status, subject_mappings")
-    .order("name");
-  if (error) throw error;
+  const [empRes, salRes] = await Promise.all([
+    supabase
+      .from("employees")
+      .select("id, name, type, designation, department, phone, email, joining_date, status, subject_mappings")
+      .order("name"),
+    supabase
+      .from("salary_payments")
+      .select("employee_id, amount, month")
+      .order("month", { ascending: false }),
+  ]);
+  if (empRes.error) throw empRes.error;
 
-  return (data || []).map(row => ({
+  // Latest salary amount per employee
+  const salMap = {};
+  for (const s of (salRes.data || [])) {
+    if (!salMap[s.employee_id]) salMap[s.employee_id] = Number(s.amount) || 0;
+  }
+
+  return (empRes.data || []).map(row => ({
     id:        row.id,
     name:      row.name,
     role:      row.designation || row.type || "",
@@ -188,11 +200,19 @@ export async function getEmployeesForReport() {
     qualification: "",
     mobile:    row.phone || "",
     email:     row.email || "",
-    salary:    0,
+    salary:    salMap[row.id] || 0,
     joinDate:  row.joining_date || "",
     status:    row.status || "Active",
     type:      row.type || "",
   }));
+}
+
+export async function getAcademicYearLabels() {
+  const { data } = await supabase
+    .from("academic_years")
+    .select("label")
+    .order("label", { ascending: false });
+  return (data || []).map(r => r.label);
 }
 
 // ── Fees for Super-Admin panel (current year, with full payment records) ─────

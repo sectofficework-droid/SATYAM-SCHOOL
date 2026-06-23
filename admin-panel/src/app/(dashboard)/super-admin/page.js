@@ -11,6 +11,8 @@ import {
   ClipboardList, Flag, Upload, FileText, Download, Filter,
 } from "lucide-react";
 import useStore from "@/lib/store";
+import supabase from "@/lib/supabase";
+import { addExpense } from "@/lib/expensesService";
 import {
   isValidName, isValidPhone, isValidEmail, isValidAadhar, isValidPincode,
   isNonNegativeNumber,
@@ -1210,31 +1212,39 @@ function InventoryPanel({ students }) {
 
 // -- Salary Panel (Management Head only) -------------------------------------------
 function SalaryPanel({ employees: propEmployees }) {
-  const employees      = propEmployees || [];
-  const salaries       = useStore(s => s.employeeSalaries);
-  const updateSal      = useStore(s => s.updateEmployeeSalary);
-  const salPayments    = useStore(s => s.salaryPayments);
-  const addSalPayments = useStore(s => s.addSalaryPayments);
-  const storeExpenses  = useStore(s => s.expenses);
-  const setStoreExp    = useStore(s => s.setExpenses);
+  const employees  = propEmployees || [];
+  const salaries   = useStore(s => s.employeeSalaries);
+  const updateSal  = useStore(s => s.updateEmployeeSalary);
 
   const curMonth = new Date().toISOString().slice(0, 7);
-  const [month,   setMonth]   = useState(curMonth);
-  const [search,  setSearch]  = useState("");
-  const [typeF,   setTypeF]   = useState("All");
-  const [editId,  setEditId]  = useState(null);
-  const [editVal, setEditVal] = useState("");
+  const [month,      setMonth]      = useState(curMonth);
+  const [search,     setSearch]     = useState("");
+  const [typeF,      setTypeF]      = useState("All");
+  const [editId,     setEditId]     = useState(null);
+  const [editVal,    setEditVal]    = useState("");
+  const [dbPayments, setDbPayments] = useState([]);
+  const [paying,     setPaying]     = useState(false);
 
-  const safeSalaries   = salaries    || {};
-  const safePayments   = Array.isArray(salPayments) ? salPayments : [];
-  const safeExpenses   = Array.isArray(storeExpenses) ? storeExpenses : [];
+  const safeSalaries = salaries || {};
 
   const monthLabel = (m) => new Date(m + "-01").toLocaleDateString("en-IN", { month:"long", year:"numeric" });
-  function getSal(emp)    { return safeSalaries[emp.empId] ?? 15000; }
-  function isPaid(emp)    { return safePayments.some(p => p.empId === emp.empId && p.month === month); }
-  function getPaidOn(emp) { return safePayments.find(p => p.empId === emp.empId && p.month === month)?.date; }
+  function getSal(emp) { return safeSalaries[emp.empId] ?? 15000; }
 
-  const filtered = (employees.length > 0 ? employees : []).filter(e => {
+  async function loadPayments(m) {
+    const { data } = await supabase
+      .from("salary_payments")
+      .select("id, employee_id, amount, paid_on, paid_by")
+      .gte("month", m + "-01")
+      .lt("month", new Date(new Date(m + "-01").setMonth(new Date(m + "-01").getMonth() + 1)).toISOString().slice(0, 10));
+    setDbPayments(data || []);
+  }
+
+  useEffect(() => { loadPayments(month); }, [month]);
+
+  function isPaid(emp)    { return dbPayments.some(p => p.employee_id === emp.id); }
+  function getPaidOn(emp) { return dbPayments.find(p => p.employee_id === emp.id)?.paid_on; }
+
+  const filtered = employees.filter(e => {
     const mt = typeF === "All" || e.type === typeF;
     const ms = !search || e.name.toLowerCase().includes(search.toLowerCase()) || (e.empId||"").toLowerCase().includes(search.toLowerCase());
     return mt && ms;
@@ -1253,20 +1263,30 @@ function SalaryPanel({ employees: propEmployees }) {
     setEditId(null);
   }
 
-  function payOne(emp) {
-    const amount = getSal(emp);
-    const date   = new Date().toISOString().split("T")[0];
-    addSalaryPayments([{ id: Date.now(), empId: emp.empId, empName: emp.name, month, amount, date, paidBy:"Sunil Pradhan" }]);
-    setStoreExp([{ id: Date.now()+1, title:"Salary \u2014 "+monthLabel(month)+" \u2014 "+emp.name, category:"Salary", amount, date, paidBy:"Sunil Pradhan", note:(emp.designation||"")+" \u00b7 "+emp.empId }, ...safeExpenses]);
+  async function payOne(emp) {
+    if (paying) return;
+    setPaying(true);
+    const amount  = getSal(emp);
+    const date    = new Date().toISOString().split("T")[0];
+    const monthDate = month + "-01";
+    await supabase.from("salary_payments").insert({ employee_id: emp.id, month: monthDate, amount, paid_on: date, paid_by: "Sunil Pradhan" });
+    await addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount, date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId }).catch(() => {});
+    await loadPayments(month);
+    setPaying(false);
   }
 
-  function payAll() {
-    if (unpaidThisMonth.length === 0) return;
-    const date = new Date().toISOString().split("T")[0];
-    const newPay = unpaidThisMonth.map((emp,i) => ({ id:Date.now()+i, empId:emp.empId, empName:emp.name, month, amount:getSal(emp), date, paidBy:"Sunil Pradhan" }));
-    const newExp = unpaidThisMonth.map((emp,i) => ({ id:Date.now()+10000+i, title:"Salary \u2014 "+monthLabel(month)+" \u2014 "+emp.name, category:"Salary", amount:getSal(emp), date, paidBy:"Sunil Pradhan", note:(emp.designation||"")+" \u00b7 "+emp.empId }));
-    addSalaryPayments(newPay);
-    setStoreExp([...newExp, ...safeExpenses]);
+  async function payAll() {
+    if (unpaidThisMonth.length === 0 || paying) return;
+    setPaying(true);
+    const date      = new Date().toISOString().split("T")[0];
+    const monthDate = month + "-01";
+    const rows = unpaidThisMonth.map(emp => ({ employee_id: emp.id, month: monthDate, amount: getSal(emp), paid_on: date, paid_by: "Sunil Pradhan" }));
+    await supabase.from("salary_payments").insert(rows);
+    await Promise.allSettled(unpaidThisMonth.map(emp =>
+      addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount: getSal(emp), date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId })
+    ));
+    await loadPayments(month);
+    setPaying(false);
   }
 
   if (employees.length === 0) return (

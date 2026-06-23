@@ -281,9 +281,9 @@ export default function DashboardPage() {
               <Bell className="w-4 h-4 text-school-navy" />
               <h3 className="font-semibold text-gray-800 text-sm">Recent Notices</h3>
             </div>
-            <button className="text-xs text-school-navy hover:text-school-gold font-medium flex items-center gap-1 transition-colors">
+            <a href="/notice" className="text-xs text-school-navy hover:text-school-gold font-medium flex items-center gap-1 transition-colors">
               View All <ArrowUpRight className="w-3 h-3" />
-            </button>
+            </a>
           </div>
           <div className="divide-y divide-gray-50">
             {dbNotices.length === 0 ? (
@@ -328,9 +328,9 @@ export default function DashboardPage() {
                 </div>
               );
             })}
-            <button className="w-full mt-2 text-xs text-school-navy hover:text-school-gold font-medium transition-colors text-center flex items-center justify-center gap-1">
+            <a href="/inventory" className="w-full mt-2 text-xs text-school-navy hover:text-school-gold font-medium transition-colors text-center flex items-center justify-center gap-1">
               View Inventory <ArrowUpRight className="w-3 h-3" />
-            </button>
+            </a>
           </div>
         </div>
       </div>

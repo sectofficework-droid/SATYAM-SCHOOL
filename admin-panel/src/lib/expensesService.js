@@ -45,6 +45,17 @@ export async function addExpense(exp) {
   return mapFromDB(data);
 }
 
+export async function updateExpense(id, exp) {
+  const { data, error } = await supabase
+    .from("expenses")
+    .update(mapToDB(exp))
+    .eq("id", id)
+    .select()
+    .single();
+  if (error) throw error;
+  return mapFromDB(data);
+}
+
 export async function deleteExpense(id) {
   const { error } = await supabase.from("expenses").delete().eq("id", id);
   if (error) throw error;

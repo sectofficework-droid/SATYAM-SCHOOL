@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import useStore from "@/lib/store";
+import supabase from "@/lib/supabase";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -1166,11 +1167,17 @@ const DEFAULT_ROLE_PERMS = {
   "Teacher": { student_basic:true, student_full:false, fees_view:true,  fees_class_only:true,  fees_remind:true,  attendance:true,  reports:false, timetable:true  },
 };
 
-const ROLE_COLORS = {
-  "Super Admin": "bg-red-100 text-red-700",
-  "Admin":       "bg-purple-100 text-purple-700",
-  "Teacher":     "bg-green-100 text-green-700",
+const ROLE_LABELS = {
+  management:   "Management Head",
+  senior_admin: "Senior Admin",
+  normal_admin: "Admin",
 };
+const ROLE_COLORS = {
+  management:   "bg-red-100 text-red-700",
+  senior_admin: "bg-purple-100 text-purple-700",
+  normal_admin: "bg-blue-100 text-blue-700",
+};
+const DB_ROLES = ["management", "senior_admin", "normal_admin"];
 
 // ── Tab: Users & Roles ─────────────────────────────────────────────────────────
 function UsersRolesTab() {
@@ -1204,43 +1211,60 @@ function UsersRolesTab() {
     }));
   }
 
-  // ── Users ──
-  const [users,    setUsers]    = useState(DEF_USERS);
+  // ── Users (real DB data) ──
+  const [users,    setUsers]    = useState([]);
+  const [usersLoading, setUsersLoading] = useState(true);
   const [editMode, setEditMode] = useState(false);
-  const [backup,   setBackup]   = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [editId,   setEditId]   = useState(null);
-  const [showPass, setShowPass] = useState({});
   const [saved,    setSaved]    = useState(false);
+  const [userSaveErr, setUserSaveErr] = useState("");
 
-  const blank = { name:"", email:"", role:"Fee Clerk", status:"Active", pass:"" };
+  const blank = { name:"", initials:"", role:"normal_admin" };
   const [form, setForm] = useState(blank);
   const [userErrors, setUserErrors] = useState({});
   const setF = k => e => { setForm(p => ({ ...p, [k]: e.target.value })); setUserErrors(p => ({ ...p, [k]: "" })); };
 
-  function startEdit() { setBackup(users.map(u => ({ ...u }))); setEditMode(true); }
-  function cancel()    { setUsers(backup); setShowForm(false); setEditId(null); setEditMode(false); }
-  function save()      { setShowForm(false); setEditId(null); setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2000); }
+  const loadUsers = useCallback(async () => {
+    setUsersLoading(true);
+    const { data } = await supabase.from("admin_users").select("id, name, initials, role").order("name");
+    setUsers(data || []);
+    setUsersLoading(false);
+  }, []);
 
-  function openAdd()    { setForm(blank); setEditId(null); setUserErrors({}); setShowForm(true); }
-  function openEdit(u)  { setForm({ ...u }); setEditId(u.id); setUserErrors({}); setShowForm(true); }
+  useEffect(() => { loadUsers(); }, [loadUsers]);
 
-  function saveUser() {
+  function startEdit() { setEditMode(true); }
+  function doneEdit()  { setShowForm(false); setEditId(null); setEditMode(false); setUserSaveErr(""); }
+  function cancel()    { setShowForm(false); setEditId(null); setEditMode(false); setUserSaveErr(""); }
+
+  function openAdd()   { setForm(blank); setEditId(null); setUserErrors({}); setUserSaveErr(""); setShowForm(true); }
+  function openEdit(u) { setForm({ name: u.name, initials: u.initials || "", role: u.role }); setEditId(u.id); setUserErrors({}); setUserSaveErr(""); setShowForm(true); }
+
+  async function saveUser() {
     const e = {};
     if (!isValidName(form.name, { max: 80 })) e.name = "Enter a valid full name.";
-    if (!isValidEmail(form.email)) e.email = "Enter a valid email address.";
-    else if (users.some(u => u.email.toLowerCase() === form.email.trim().toLowerCase() && u.id !== editId)) {
-      e.email = "A user with this email already exists.";
-    }
-    if (!isNonEmpty(form.pass) || form.pass.trim().length < 6) e.pass = "Password must be at least 6 characters.";
+    if (!isNonEmpty(form.initials) || form.initials.trim().length > 3) e.initials = "Enter 1-3 character initials.";
     setUserErrors(e);
     if (!hasNoErrors(e)) return;
-    if (editId) setUsers(prev => prev.map(u => u.id === editId ? { ...form, id: editId } : u));
-    else        setUsers(prev => [...prev, { ...form, id: Date.now() }]);
+
+    setUserSaveErr("");
+    if (editId) {
+      const { error } = await supabase.from("admin_users").update({ name: form.name.trim(), initials: form.initials.trim().toUpperCase(), role: form.role }).eq("id", editId);
+      if (error) { setUserSaveErr("Failed to update: " + error.message); return; }
+      setUsers(prev => prev.map(u => u.id === editId ? { ...u, name: form.name.trim(), initials: form.initials.trim().toUpperCase(), role: form.role } : u));
+    }
     setShowForm(false);
+    setEditId(null);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   }
 
-  function deleteUser(id) { setUsers(prev => prev.filter(u => u.id !== id)); }
+  async function deleteUser(id) {
+    if (!confirm("Remove this user's admin access? Their Supabase Auth account will remain.")) return;
+    const { error } = await supabase.from("admin_users").delete().eq("id", id);
+    if (!error) setUsers(prev => prev.filter(u => u.id !== id));
+  }
 
   return (
     <div className="space-y-5">
@@ -1352,7 +1376,7 @@ function UsersRolesTab() {
         <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
           <div>
             <h3 className="text-sm font-bold text-gray-700">Admin Users</h3>
-            <p className="text-xs text-gray-400 mt-0.5">{users.length} user{users.length !== 1 ? "s" : ""} registered</p>
+            <p className="text-xs text-gray-400 mt-0.5">{usersLoading ? "Loading…" : `${users.length} user${users.length !== 1 ? "s" : ""} registered`}</p>
           </div>
           <div className="flex items-center gap-2">
             {editMode && (
@@ -1361,7 +1385,7 @@ function UsersRolesTab() {
                 <UserPlus className="w-4 h-4"/> Add User
               </button>
             )}
-            <EditBar editMode={editMode} saved={saved} onEdit={startEdit} onSave={save} onCancel={cancel}/>
+            <EditBar editMode={editMode} saved={saved} onEdit={startEdit} onSave={doneEdit} onCancel={cancel}/>
           </div>
         </div>
 
@@ -1370,32 +1394,27 @@ function UsersRolesTab() {
             <p className="text-xs font-bold text-school-navy uppercase tracking-wide mb-4">
               {editId ? "Edit User" : "Add New User"}
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {!editId && (
+              <div className="mb-4 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
+                <b>Note:</b> To add a new admin, first create them in Supabase Auth (Authentication → Users → Add User), then edit their name, initials &amp; role here.
+              </div>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <Field label="Full Name">
                 <input className={inp} placeholder="Enter name" value={form.name} onChange={setF("name")}/>
                 <FieldError msg={userErrors.name}/>
               </Field>
-              <Field label="Email">
-                <input className={inp} type="email" placeholder="email@school.in" value={form.email} onChange={setF("email")}/>
-                <FieldError msg={userErrors.email}/>
+              <Field label="Initials (1-3 chars)">
+                <input className={inp} placeholder="e.g. RB" maxLength={3} value={form.initials} onChange={setF("initials")}/>
+                <FieldError msg={userErrors.initials}/>
               </Field>
               <Field label="Role">
                 <select className={sel} value={form.role} onChange={setF("role")}>
-                  {ROLES.map(r => <option key={r}>{r}</option>)}
+                  {DB_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                 </select>
               </Field>
-              <Field label="Password">
-                <div className="relative">
-                  <input className={inp + " pr-9"} type={showPass.form ? "text" : "password"}
-                    placeholder="Set password" value={form.pass} onChange={setF("pass")}/>
-                  <button type="button" onClick={() => setShowPass(p => ({ ...p, form: !p.form }))}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                    {showPass.form ? <EyeOff className="w-3.5 h-3.5"/> : <Eye className="w-3.5 h-3.5"/>}
-                  </button>
-                </div>
-                <FieldError msg={userErrors.pass}/>
-              </Field>
             </div>
+            {userSaveErr && <p className="text-xs text-red-500 mt-2">{userSaveErr}</p>}
             <div className="flex gap-2 mt-4">
               <button onClick={saveUser}
                 className="flex items-center gap-1.5 bg-school-navy text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-school-navy/90 transition-colors">
@@ -1410,23 +1429,26 @@ function UsersRolesTab() {
         )}
 
         <div className="divide-y divide-gray-100">
+          {usersLoading && (
+            <div className="px-5 py-8 text-center text-xs text-gray-400">Loading admin users…</div>
+          )}
+          {!usersLoading && users.length === 0 && (
+            <div className="px-5 py-8 text-center text-xs text-gray-400">No admin users found.</div>
+          )}
           {users.map(u => (
             <div key={u.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-school-gold flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                  {u.name.charAt(0)}
+                <div className="w-9 h-9 rounded-full bg-school-navy flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                  {u.initials || u.name.charAt(0)}
                 </div>
                 <div>
                   <p className="text-sm font-semibold text-gray-800">{u.name}</p>
-                  <p className="text-xs text-gray-400">{u.email}</p>
+                  <p className="text-xs text-gray-400 font-mono">{u.id.slice(0, 8)}…</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${ROLE_COLORS[u.role] || "bg-gray-100 text-gray-600"}`}>
-                  {u.role}
-                </span>
-                <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${u.status==="Active" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
-                  {u.status}
+                  {ROLE_LABELS[u.role] || u.role}
                 </span>
                 {editMode && (
                   <div className="flex gap-1">
@@ -1459,8 +1481,6 @@ function UsersRolesTab() {
 function TimetableTab() {
   const periodDefs      = useStore(s => s.periodDefs);
   const setPeriodDefs   = useStore(s => s.setPeriodDefs);
-  const storedTT        = useStore(s => s.timetables);
-  const saveTT          = useStore(s => s.setTimetables);
   const ttActiveClasses = useStore(s => s.activeClasses);
   const backupRef       = useRef(null);
   const periodsBackup   = useRef(null);
@@ -1468,12 +1488,29 @@ function TimetableTab() {
   const [selYear,          setSelYear]          = useState(DEF_YEAR.current);
   const [editMode,         setEditMode]         = useState(false);
   const [saved,            setSaved]            = useState(false);
+  const [ttLoading,        setTtLoading]        = useState(false);
   const [activeCell,       setActiveCell]       = useState(null);
-  const [ttData,           setTtData]           = useState(() => storedTT || {});
+  const [ttData,           setTtData]           = useState({});
   const [periodsEditMode,  setPeriodsEditMode]  = useState(false);
   const [periodsForm,      setPeriodsForm]      = useState(() => JSON.parse(JSON.stringify(periodDefs || DEF_PERIOD_DEFS)));
   const [periodsSaved,     setPeriodsSaved]     = useState(false);
   const [activeGroup,      setActiveGroup]      = useState(DAY_GROUPS[0]);
+
+  async function loadTT(year) {
+    setTtLoading(true);
+    const { data } = await supabase.from("timetables").select("*").eq("academic_year", year);
+    const built = {};
+    (data || []).forEach(row => {
+      if (!built[year])                              built[year]                              = {};
+      if (!built[year][row.day_group])               built[year][row.day_group]               = {};
+      if (!built[year][row.day_group][row.slot_id])  built[year][row.day_group][row.slot_id]  = {};
+      built[year][row.day_group][row.slot_id][row.class_name] = { subject: row.subject || "", teacher: row.teacher || "" };
+    });
+    setTtData(built);
+    setTtLoading(false);
+  }
+
+  useEffect(() => { loadTT(selYear); }, [selYear]);
 
   const activeDefs = periodsEditMode ? periodsForm : (periodDefs || DEF_PERIOD_DEFS);
   function groupSlots(group) { return activeDefs[group] ?? []; }
@@ -1547,7 +1584,22 @@ function TimetableTab() {
   }
   function startEdit() { backupRef.current = JSON.parse(JSON.stringify(ttData)); setEditMode(true); setActiveCell(null); }
   function cancel()    { if (backupRef.current) setTtData(backupRef.current); setEditMode(false); setActiveCell(null); }
-  function save()      { saveTT(ttData); setSaved(true); setEditMode(false); setActiveCell(null); setTimeout(() => setSaved(false), 2500); }
+  async function save() {
+    const rows = [];
+    const yearData = ttData[selYear] || {};
+    Object.entries(yearData).forEach(([group, slots]) => {
+      Object.entries(slots).forEach(([slotId, classes]) => {
+        Object.entries(classes).forEach(([cls, cell]) => {
+          if (cell.subject || cell.teacher) {
+            rows.push({ academic_year: selYear, day_group: group, slot_id: slotId, class_name: cls, subject: cell.subject || "", teacher: cell.teacher || "" });
+          }
+        });
+      });
+    });
+    await supabase.from("timetables").delete().eq("academic_year", selYear);
+    if (rows.length) await supabase.from("timetables").insert(rows);
+    setSaved(true); setEditMode(false); setActiveCell(null); setTimeout(() => setSaved(false), 2500);
+  }
   const isCellActive = (group, slotId, cls) =>
     activeCell?.group === group && activeCell?.slotId === slotId && activeCell?.cls === cls;
 
@@ -1788,8 +1840,14 @@ function TimetableTab() {
         )}
       </div>
 
+      {ttLoading && (
+        <div className="flex items-center justify-center py-16 text-gray-400 text-sm font-medium">
+          Loading timetable…
+        </div>
+      )}
+
       {/* ── One table per day group, stacked ── */}
-      {DAY_GROUPS.map(group => {
+      {!ttLoading && DAY_GROUPS.map(group => {
         const slots  = groupSlots(group);
         const isSat  = group === "Saturday";
         const hdrBg  = isSat ? "bg-amber-600" : "bg-school-navy";

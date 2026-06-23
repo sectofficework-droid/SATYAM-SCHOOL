@@ -568,6 +568,8 @@ function generateAdmissionFormHTML(s, logoUrl) {
   const leftColHTML  = leftDocs.map((d) => makeDocBlock(d, false)).filter(Boolean).join("");
   const rightColHTML = rightDocs.map((d) => makeDocBlock(d, true)).filter(Boolean).join("");
 
+  const docBlocksHTML = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;"><div>${leftColHTML}</div><div>${rightColHTML}</div></div>`;
+
   const discountBlock = s.discount?.applied
     ? `<div style="background:#fefce8;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;margin-top:8px;">
          <div style="font-size:8.5px;font-weight:bold;color:#92400e;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px;">Fees Discount Applied</div>

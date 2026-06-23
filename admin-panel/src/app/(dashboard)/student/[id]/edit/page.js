@@ -12,9 +12,15 @@ import {
 } from "@/lib/validators";
 import { getStudentByEnrollment, updateStudent as svcUpdate } from "@/lib/studentService";
 import { getActiveClasses } from "@/lib/settingsService";
+import supabase from "@/lib/supabase";
 
 // ── Options ────────────────────────────────────────────────────
-const CURRENT_SESSION = "2026-27";
+function getCurrentSession() {
+  const now = new Date(); const yr = now.getFullYear(); const month = now.getMonth() + 1;
+  const start = month >= 4 ? yr : yr - 1;
+  return `${start}-${String(start + 1).slice(2)}`;
+}
+const CURRENT_SESSION = getCurrentSession();
 const prevStandards = [
   "Nursery / KG", "1st", "2nd", "3rd", "4th", "5th",
   "6th", "7th", "8th", "9th", "10th", "11th", "12th",
@@ -25,11 +31,6 @@ const castes    = ["General", "OBC", "SC", "ST", "EWS", "SEBC", "Other"];
 const mediums   = ["English", "Gujarati", "Hindi", "Other"];
 const todayStr  = new Date().toISOString().split("T")[0];
 
-const siblingsByClass = {
-  "10th": ["Arjun Patel", "Ravi Kumar"],
-  "9th":  ["Priya Shah", "Nisha Mehta"],
-  "8th":  ["Sneha Desai", "Pooja Joshi"],
-};
 const defaultDocTypes = [
   "Birth Certificate",
   "Student Aadhar Card",
@@ -402,6 +403,26 @@ function EditForm({ existing, id, router }) {
         lastExamGiven:      lastExamGiven ? "Yes" : "No",
         prevPercentage:     form.prevPercentage,
       });
+
+      // Save document statuses to DB
+      const { data: docTypes } = await supabase.from("document_types").select("id, name");
+      if (docTypes?.length) {
+        const docTypeMap = Object.fromEntries(docTypes.map(d => [d.name, d.id]));
+        const visibleDocs = defaultDocTypes.filter(d => hasPrevSchool || (d !== "Leaving Certificate" && d !== "Marksheet"));
+        const upserts = visibleDocs
+          .filter(name => docTypeMap[name])
+          .map(name => ({
+            student_id:       existing._studentId,
+            document_type_id: docTypeMap[name],
+            status:           checkedDocs[name] ? "Uploaded" : "Pending",
+            file_url:         null,
+            uploaded_at:      checkedDocs[name] ? new Date().toISOString() : null,
+          }));
+        if (upserts.length) {
+          await supabase.from("student_documents").upsert(upserts, { onConflict: "student_id,document_type_id" });
+        }
+      }
+
       alert("Student profile updated successfully!");
       router.replace(`/student/${id}`);
     } catch (err) {
@@ -512,15 +533,14 @@ function EditForm({ existing, id, router }) {
                     </div>
                     <div>
                       <FieldLabel required>Sibling&apos;s Name</FieldLabel>
-                      <SelectField
+                      <input
+                        type="text"
                         value={sib.name}
                         onChange={(e) => updateSibling(sib.id, "name", e.target.value)}
-                        disabled={!sib.cls}
+                        placeholder="Enter sibling's full name"
                         required
-                      >
-                        <option value="">{sib.cls ? "Select Student" : "Select class first"}</option>
-                        {(siblingsByClass[sib.cls] || []).map((n) => <option key={n}>{n}</option>)}
-                      </SelectField>
+                        className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
+                      />
                     </div>
                   </div>
                 </div>

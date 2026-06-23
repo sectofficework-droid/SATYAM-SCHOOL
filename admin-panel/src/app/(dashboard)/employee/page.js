@@ -3,16 +3,18 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import useStore from "@/lib/store";
+import supabase from "@/lib/supabase";
+import { addExpense } from "@/lib/expensesService";
 import * as XLSX from "xlsx";
 import {
   isValidName, isValidPhone, isValidEmail, isValidAadhar,
   isNonEmpty, isPastOrTodayDate, isValidUploadFile,
 } from "@/lib/validators";
 import { getActiveClasses } from "@/lib/settingsService";
-import { getEmployees, addEmployee } from "@/lib/employeeService";
+import { getEmployees, addEmployee, updateEmployee } from "@/lib/employeeService";
 import {
   Users, Plus, Search, X, Phone, Mail, MapPin,
-  Calendar, GraduationCap, Briefcase,
+  Calendar, GraduationCap, Briefcase, Pencil,
   User, FileText, Check, Eye, BookOpen,
   ChevronRight, ChevronLeft, Shield, Upload,
   ClipboardList, IndianRupee, AlertCircle, Download,
@@ -791,8 +793,118 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
   return createPortal(modal, document.body);
 }
 
+// ── Edit Employee Modal ────────────────────────────────────────────────────────
+function EditEmployeeModal({ emp, onClose, onSave }) {
+  const baseInput = "w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy";
+  const baseSel   = baseInput + " appearance-none bg-white";
+
+  const [name,      setName]      = useState(emp.name || "");
+  const [phone,     setPhone]     = useState(emp.phone || "");
+  const [altPhone,  setAltPhone]  = useState(emp.altPhone || "");
+  const [email,     setEmail]     = useState(emp.email || "");
+  const [type,      setType]      = useState(emp.type || "teaching");
+  const [desig,     setDesig]     = useState(emp.designation || "");
+  const [dept,      setDept]      = useState(emp.department || "");
+  const [empType,   setEmpType]   = useState(emp.employmentType || "Permanent");
+  const [status,    setStatus]    = useState(emp.status || "Active");
+  const [saving,    setSaving]    = useState(false);
+  const [err,       setErr]       = useState("");
+
+  useEffect(() => { setDesig(""); }, [type]);
+
+  async function handleSave() {
+    if (!name.trim()) { setErr("Name is required."); return; }
+    if (!desig)       { setErr("Designation is required."); return; }
+    if (!dept)        { setErr("Department is required."); return; }
+    setSaving(true); setErr("");
+    await onSave({ ...emp, name: name.trim(), phone, altPhone, email, type, designation: desig, department: dept, employmentType: empType, status });
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[92vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+          <div>
+            <h3 className="text-base font-bold text-gray-800">Edit Employee</h3>
+            <p className="text-xs text-gray-400 mt-0.5">{emp.empId}</p>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors">
+            <X className="w-4 h-4 text-gray-500"/>
+          </button>
+        </div>
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name *</label>
+              <input className={baseInput} value={name} onChange={e => setName(e.target.value)} placeholder="Employee name"/>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Phone *</label>
+              <input className={baseInput} value={phone} onChange={e => setPhone(e.target.value)} placeholder="10-digit mobile"/>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Alt Phone</label>
+              <input className={baseInput} value={altPhone} onChange={e => setAltPhone(e.target.value)} placeholder="Optional"/>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Email</label>
+              <input className={baseInput} type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@school.in"/>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Type *</label>
+              <select className={baseSel} value={type} onChange={e => setType(e.target.value)}>
+                <option value="management">Management</option>
+                <option value="teaching">Teaching</option>
+                <option value="non-teaching">Non-Teaching</option>
+                <option value="media">Media</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Designation *</label>
+              <select className={baseSel} value={desig} onChange={e => setDesig(e.target.value)}>
+                <option value="">Select</option>
+                {(DESIGNATIONS[type] || []).map(d => <option key={d}>{d}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Department *</label>
+              <select className={baseSel} value={dept} onChange={e => setDept(e.target.value)}>
+                <option value="">Select</option>
+                {DEPARTMENTS.map(d => <option key={d}>{d}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Employment Type</label>
+              <select className={baseSel} value={empType} onChange={e => setEmpType(e.target.value)}>
+                {EMPLOYMENT_TYPES.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Status</label>
+              <select className={baseSel} value={status} onChange={e => setStatus(e.target.value)}>
+                <option>Active</option>
+                <option>On Leave</option>
+                <option>Resigned</option>
+              </select>
+            </div>
+          </div>
+          {err && <p className="text-xs text-red-500">{err}</p>}
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">Cancel</button>
+          <button onClick={handleSave} disabled={saving}
+            className="flex-1 py-2.5 rounded-xl bg-school-navy text-white text-sm font-semibold hover:bg-school-navy-dark transition-colors disabled:opacity-50">
+            {saving ? "Saving…" : "Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Attendance Section ─────────────────────────────────────────────────────────
-function AttendanceSection({ employees, salaries, addSalaryPayments, setStoreExpenses, storeExpenses, setAttendanceSummary }) {
+function AttendanceSection({ employees, salaries, setAttendanceSummary }) {
   const today = new Date().toISOString().split("T")[0];
   const [periodType, setPeriodType] = useState("fullmonth");
   const [fromDate,   setFromDate]   = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0]);
@@ -900,22 +1012,32 @@ function AttendanceSection({ employees, salaries, addSalaryPayments, setStoreExp
     reader.readAsBinaryString(file);
   }
 
-  function handleGenerate() {
-    const date  = today;
-    const label = fmtD(fromDate) + " to " + fmtD(toDate);
-    const month = fromDate.slice(0, 7);
-    const newPay = records.filter(r => r.emp).map((r,i) => ({
-      id: Date.now()+i, empId: r.emp.empId, empName: r.emp.name,
-      month, amount: r.net, date, paidBy: "Sunil Pradhan",
+  async function handleGenerate() {
+    const date      = today;
+    const label     = fmtD(fromDate) + " to " + fmtD(toDate);
+    const monthStr  = fromDate.slice(0, 7);
+    const monthDate = monthStr + "-01";
+    const paid = records.filter(r => r.emp);
+    const rows = paid.map(r => ({
+      employee_id: r.emp.id,
+      month:       monthDate,
+      amount:      r.net,
+      paid_on:     date,
+      paid_by:     "Sunil Pradhan",
     }));
-    const newExp = records.filter(r => r.emp).map((r,i) => ({
-      id: Date.now()+10000+i,
-      title: "Salary \u2014 " + label + " \u2014 " + r.emp.name,
-      category: "Salary", amount: r.net, date, paidBy: "Sunil Pradhan",
-      note: (r.emp.designation||"") + " \u00b7 " + r.emp.empId + " \u00b7 Present: " + r.present + "/" + periodDays,
-    }));
-    addSalaryPayments(newPay);
-    setStoreExpenses([...newExp, ...(storeExpenses||[])]);
+    if (rows.length) {
+      await supabase.from("salary_payments").insert(rows);
+      await Promise.allSettled(paid.map(r =>
+        addExpense({
+          title:   "Salary \u2014 " + label + " \u2014 " + r.emp.name,
+          category: "Salary",
+          amount:   r.net,
+          date,
+          paidBy:  "Sunil Pradhan",
+          note:    (r.emp.designation||"") + " \u00b7 " + r.emp.empId + " \u00b7 Present: " + r.present + "/" + periodDays,
+        })
+      ));
+    }
     setSavedKey(periodKey);
   }
 
@@ -1152,9 +1274,6 @@ export default function EmployeePage() {
   const [addOpen, setAddOpen]       = useState(false);
 
   const salaries       = useStore(s => s.employeeSalaries);
-  const addSalaryPay   = useStore(s => s.addSalaryPayments);
-  const storeExpenses  = useStore(s => s.expenses);
-  const setStoreExp    = useStore(s => s.setExpenses);
   const setAttendanceSummary = useStore(s => s.setAttendanceSummary);
 
   const total       = employees.length;
@@ -1174,6 +1293,8 @@ export default function EmployeePage() {
     return ms && mt && md;
   });
 
+  const [editEmp, setEditEmp] = useState(null);
+
   const handleAdd = async (emp) => {
     try {
       const saved = await addEmployee(emp);
@@ -1182,6 +1303,14 @@ export default function EmployeePage() {
       // silently fail — employee was not saved
     }
     setAddOpen(false);
+  };
+
+  const handleEdit = async (updatedEmp) => {
+    try {
+      await updateEmployee(updatedEmp.id, updatedEmp);
+      setEmployees(prev => prev.map(e => e.id === updatedEmp.id ? { ...e, ...updatedEmp } : e));
+    } catch { }
+    setEditEmp(null);
   };
 
   return (
@@ -1216,9 +1345,6 @@ export default function EmployeePage() {
         <AttendanceSection
           employees={employees}
           salaries={salaries || {}}
-          addSalaryPayments={addSalaryPay}
-          setStoreExpenses={setStoreExp}
-          storeExpenses={storeExpenses}
           setAttendanceSummary={setAttendanceSummary}
         />
       )}
@@ -1339,10 +1465,16 @@ export default function EmployeePage() {
                       </span>
                     </td>
                     <td className="px-4 py-3.5">
-                      <button onClick={() => setViewEmp(emp)}
-                        className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-700">
-                        <Eye className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => setViewEmp(emp)}
+                          className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-700">
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => setEditEmp(emp)}
+                          className="p-1.5 rounded-lg hover:bg-blue-50 transition-colors text-gray-400 hover:text-school-navy">
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1360,7 +1492,8 @@ export default function EmployeePage() {
       {/* End staff list view */}
       </>}
 
-      {viewEmp && <ViewEmployeeModal emp={viewEmp} onClose={() => setViewEmp(null)} />}
+      {viewEmp  && <ViewEmployeeModal emp={viewEmp} onClose={() => setViewEmp(null)} />}
+      {editEmp  && <EditEmployeeModal emp={editEmp} onClose={() => setEditEmp(null)} onSave={handleEdit} />}
       {addOpen  && <AddEmployeeModal employees={employees} onClose={() => setAddOpen(false)} onSave={handleAdd} />}
     </div>
   );

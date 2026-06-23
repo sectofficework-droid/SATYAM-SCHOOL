@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   GraduationCap, IndianRupee, Users, Package, Search,
   RefreshCw, Download, FileText, ShieldCheck, BookOpen, Landmark, IdCard,
@@ -11,7 +11,7 @@ import autoTable from "jspdf-autotable";
 import {
   getStudentsForReport, getFeesForReport,
   getEmployeesForReport, getInventoryForReport,
-  getPaymentsForReport,
+  getPaymentsForReport, getAcademicYearLabels,
 } from "@/lib/reportService";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -19,7 +19,7 @@ const CLASSES   = ["JR.KG","SR.KG","Balvatika","1st","2nd","3rd","4th","5th","6t
 const GENDERS   = ["Male","Female","Other"];
 const RELIGIONS = ["Hindu","Muslim","Christian","Jain","Sikh","Buddhist","Parsi","Other"];
 const CASTES    = ["General","OBC","SC","ST","EWS","SEBC","Other"];
-const SESSIONS  = ["2026-27","2025-26","2024-25","2023-24"];
+const SESSIONS_FALLBACK = ["2026-27","2025-26","2024-25","2023-24"];
 const STU_STATUSES = ["Active","Leave","Inactive"];
 const EMP_ROLES    = ["Teacher","Admin Staff","Principal","Vice Principal","Lab Assistant","Librarian","Peon","Guard","Cook","Driver"];
 const EMP_STATUSES = ["Active","On Leave","Resigned"];
@@ -149,7 +149,7 @@ function entryGetSummary(cols) {
 
 const ENTRY_QUICK_FILTERS = [
   {key:"cls",     label:"Class",         options:["All",...CLASSES] },
-  {key:"session", label:"Academic Year", options:["All",...SESSIONS]},
+  {key:"session", label:"Academic Year", options:["All",...SESSIONS_FALLBACK]},
 ];
 
 // pool of optional fields that can be inserted as a one-off "extra field" into a fixed register
@@ -257,7 +257,7 @@ const REPORT_CONFIGS = {
     quickFilters:[
       {key:"cls",      label:"Class",         options:["All",...CLASSES]      },
       {key:"status",   label:"Status",        options:["All",...STU_STATUSES] },
-      {key:"session",  label:"Academic Year", options:["All",...SESSIONS]     },
+      {key:"session",  label:"Academic Year", options:["All",...SESSIONS_FALLBACK]     },
       {key:"gender",   label:"Gender",        options:["All",...GENDERS]      },
       {key:"religion", label:"Religion",      options:["All",...RELIGIONS]    },
       {key:"caste",    label:"Category",      options:["All",...CASTES]       },
@@ -320,7 +320,7 @@ const REPORT_CONFIGS = {
       isCollection:true,
       quickFilters:[
         {key:"cls",     label:"Class",         options:["All",...CLASSES]  },
-        {key:"session", label:"Academic Year",  options:["All",...SESSIONS] },
+        {key:"session", label:"Academic Year",  options:["All",...SESSIONS_FALLBACK] },
       ],
       dateField:"date", dateLabel:"Payment Date",
       columns:[
@@ -580,22 +580,25 @@ export default function ReportPage() {
   const [dbEmployees, setDbEmployees] = useState([]);
   const [dbInventory, setDbInventory] = useState([]);
   const [dbLoading,   setDbLoading]   = useState(true);
+  const [dbSessions,  setDbSessions]  = useState(SESSIONS_FALLBACK);
 
   const loadAll = useCallback(async () => {
     setDbLoading(true);
     try {
-      const [students, fees, payments, employees, inventory] = await Promise.all([
+      const [students, fees, payments, employees, inventory, sessions] = await Promise.all([
         getStudentsForReport(),
         getFeesForReport(),
         getPaymentsForReport(),
         getEmployeesForReport(),
         getInventoryForReport(),
+        getAcademicYearLabels(),
       ]);
       setDbStudents(students);
       setDbFees(fees);
       setDbPayments(payments);
       setDbEmployees(employees);
       setDbInventory(inventory);
+      if (sessions.length) setDbSessions(sessions);
     } catch (e) {
       console.error("Report loadAll error:", e);
     } finally {
@@ -611,6 +614,12 @@ export default function ReportPage() {
   const ecfg = cfg.isFeesModule
     ? (feesView === "collection" ? cfg.collectionConfig : cfg.statusConfig)
     : cfg;
+
+  // Patch session filter options with live DB years (module-level config uses SESSIONS_FALLBACK as static placeholder)
+  const activeQuickFilters = useMemo(() =>
+    (ecfg.quickFilters || []).map(f =>
+      f.key === "session" ? { ...f, options: ["All", ...dbSessions] } : f
+    ), [ecfg.quickFilters, dbSessions]);
 
   useEffect(() => {
     const activeCols = cfg.isFeesModule
@@ -826,7 +835,7 @@ export default function ReportPage() {
         )}
 
         <div className="flex flex-wrap gap-3 items-end">
-          {ecfg.quickFilters.map(f => (
+          {activeQuickFilters.map(f => (
             <div key={f.key} className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{f.label}</label>
               <select className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28"

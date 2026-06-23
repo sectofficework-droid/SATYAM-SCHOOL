@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { getExpenses, addExpense, deleteExpense } from "@/lib/expensesService";
+import { getExpenses, addExpense, updateExpense, deleteExpense } from "@/lib/expensesService";
 import {
-  IndianRupee, Plus, Search, Trash2, X, Check,
+  IndianRupee, Plus, Search, Trash2, X, Check, Pencil,
   ChevronDown, Download, FileSpreadsheet, TrendingDown,
   Calendar, User, Tag, FileText, SlidersHorizontal,
 } from "lucide-react";
@@ -133,6 +133,98 @@ function AddExpenseModal({ onClose, onSave }) {
   );
 }
 
+// ── Edit Expense Modal ──────────────────────────────────────────
+function EditExpenseModal({ expense, onClose, onSave }) {
+  const [title,    setTitle]    = useState(expense.title);
+  const [category, setCategory] = useState(expense.category);
+  const [amount,   setAmount]   = useState(String(expense.amount));
+  const [date,     setDate]     = useState(expense.date);
+  const [paidBy,   setPaidBy]   = useState(expense.paidBy || PAID_BY[0]);
+  const [note,     setNote]     = useState(expense.note || "");
+
+  const titleValid  = isValidLength(title, 100, 2);
+  const amountValid = isPositiveAmount(amount, 1000000);
+  const valid = titleValid && amountValid && date;
+
+  function handleSave() {
+    if (!valid) return;
+    onSave({ title: title.trim(), category, amount: Number(amount), date, paidBy, note: note.trim() });
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[92vh]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
+          <h3 className="text-base font-bold text-gray-800">Edit Expense</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"><X className="w-4 h-4 text-gray-500"/></button>
+        </div>
+        <div className="overflow-y-auto flex-1 px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Title *</label>
+            <input className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
+              placeholder="e.g. Electricity Bill — June 2026" value={title} onChange={e => setTitle(e.target.value)} />
+            {title.length > 0 && !titleValid && (
+              <p className="text-xs text-red-500 mt-1">Title must be 2-100 characters</p>
+            )}
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Category *</label>
+              <div className="relative">
+                <select value={category} onChange={e => setCategory(e.target.value)}
+                  className="w-full appearance-none border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white pr-9">
+                  {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"/>
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Amount (₹) *</label>
+              <div className="relative">
+                <IndianRupee className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"/>
+                <input type="number" min="1" className="w-full border border-gray-200 rounded-xl pl-9 pr-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
+                  placeholder="0" value={amount} onChange={e => setAmount(e.target.value)} />
+              </div>
+              {amount.length > 0 && !amountValid && (
+                <p className="text-xs text-red-500 mt-1">Enter an amount between ₹1 and ₹10,00,000</p>
+              )}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
+              <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"/>
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-1.5">Paid By</label>
+              <div className="relative">
+                <select value={paidBy} onChange={e => setPaidBy(e.target.value)}
+                  className="w-full appearance-none border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white pr-9">
+                  {PAID_BY.map(p => <option key={p}>{p}</option>)}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"/>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Note</label>
+            <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="Optional description…"
+              className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy resize-none"/>
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">Cancel</button>
+          <button onClick={handleSave} disabled={!valid}
+            className="flex-1 py-2.5 rounded-xl bg-school-navy text-white text-sm font-semibold hover:bg-school-navy-dark transition-colors disabled:opacity-40">
+            Save Changes
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Page ───────────────────────────────────────────────────
 export default function ExpensesPage() {
   const [expenses,    setExpenses]    = useState([]);
@@ -141,6 +233,7 @@ export default function ExpensesPage() {
   const [catFilter,   setCatFilter]   = useState("all");
   const [monthFilter, setMonthFilter] = useState("all");
   const [addOpen,     setAddOpen]     = useState(false);
+  const [editTarget,  setEditTarget]  = useState(null);
 
   useEffect(() => {
     getExpenses()
@@ -172,6 +265,14 @@ export default function ExpensesPage() {
       setExpenses(prev => [saved, ...prev]);
     } catch { }
     setAddOpen(false);
+  }
+
+  async function handleEditSave(exp) {
+    try {
+      const saved = await updateExpense(editTarget.id, exp);
+      setExpenses(prev => prev.map(e => e.id === saved.id ? saved : e));
+    } catch { }
+    setEditTarget(null);
   }
 
   async function handleDelete(id) {
@@ -210,6 +311,7 @@ export default function ExpensesPage() {
   return (
     <>
       {addOpen && <AddExpenseModal onClose={() => setAddOpen(false)} onSave={handleAdd}/>}
+      {editTarget && <EditExpenseModal expense={editTarget} onClose={() => setEditTarget(null)} onSave={handleEditSave}/>}
       <div className="space-y-5">
 
         {/* Header */}
@@ -330,10 +432,16 @@ export default function ExpensesPage() {
                     <td className="px-5 py-3.5 text-sm text-gray-600 whitespace-nowrap">{e.paidBy}</td>
                     <td className="px-5 py-3.5 text-xs text-gray-400 italic max-w-[180px] truncate">{e.note || "—"}</td>
                     <td className="px-5 py-3.5">
-                      <button onClick={() => handleDelete(e.id)}
-                        className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                        <Trash2 className="w-3.5 h-3.5"/>
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => setEditTarget(e)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-school-navy hover:bg-blue-50 transition-colors">
+                          <Pencil className="w-3.5 h-3.5"/>
+                        </button>
+                        <button onClick={() => handleDelete(e.id)}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                          <Trash2 className="w-3.5 h-3.5"/>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

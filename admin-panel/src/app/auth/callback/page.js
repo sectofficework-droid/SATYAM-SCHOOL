@@ -10,27 +10,42 @@ export default function AuthCallbackPage() {
   const [message, setMessage] = useState("Verifying your link...");
 
   useEffect(() => {
+    const code       = searchParams.get("code");
     const token_hash = searchParams.get("token_hash");
-    const type = searchParams.get("type");
+    const type       = searchParams.get("type");
 
-    if (!token_hash || !type) {
-      setMessage("Invalid or missing verification link.");
-      setTimeout(() => router.replace("/login"), 3000);
+    if (code) {
+      // PKCE flow — Gmail pre-fetch cannot complete this without the browser secret
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        if (error) {
+          setMessage("Link expired or already used. Request a new one from the login page.");
+          setTimeout(() => router.replace("/login"), 3000);
+          return;
+        }
+        router.replace("/auth/set-password");
+      });
       return;
     }
 
-    supabase.auth.verifyOtp({ token_hash, type }).then(({ error }) => {
-      if (error) {
-        setMessage("Link expired or already used. Request a new one.");
-        setTimeout(() => router.replace("/login"), 3000);
-        return;
-      }
-      if (type === "invite" || type === "recovery") {
-        router.replace("/auth/set-password");
-      } else {
-        router.replace("/dashboard");
-      }
-    });
+    if (token_hash && type) {
+      // Legacy OTP flow (invite links)
+      supabase.auth.verifyOtp({ token_hash, type }).then(({ error }) => {
+        if (error) {
+          setMessage("Link expired or already used. Request a new one from the login page.");
+          setTimeout(() => router.replace("/login"), 3000);
+          return;
+        }
+        if (type === "invite" || type === "recovery") {
+          router.replace("/auth/set-password");
+        } else {
+          router.replace("/dashboard");
+        }
+      });
+      return;
+    }
+
+    setMessage("Invalid link. Redirecting to login...");
+    setTimeout(() => router.replace("/login"), 2000);
   }, []);
 
   return (

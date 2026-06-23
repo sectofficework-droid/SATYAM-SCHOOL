@@ -15,7 +15,12 @@ import {
 } from "@/lib/validators";
 
 // ── Options ────────────────────────────────────────────────────
-const CURRENT_SESSION = "2026-27"; // controlled from Settings — not editable in form
+function getCurrentSession() {
+  const now = new Date(); const yr = now.getFullYear(); const month = now.getMonth() + 1;
+  const start = month >= 4 ? yr : yr - 1;
+  return `${start}-${String(start + 1).slice(2)}`;
+}
+const CURRENT_SESSION = getCurrentSession();
 
 const prevStandards = [
   "Nursery / KG", "1st", "2nd", "3rd", "4th", "5th",
