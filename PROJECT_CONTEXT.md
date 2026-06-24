@@ -1,6 +1,6 @@
 # PROJECT CONTEXT — Satyam Stars International School ERP
 
-> **As of:** 17 June 2026 (commit `0f8c4f7`)  
+> **As of:** 23 June 2026 (commit `41f3fac`)  
 > **Branch:** main  
 > **Working directory:** `D:\SATYAM-SCHOOL\admin-panel`
 
@@ -10,7 +10,7 @@
 
 A single-app Next.js 14 school management ERP for **Satyam Stars International School**, Surat, Gujarat (GSEB Board, English Medium). The entire system lives in `admin-panel/` as a monolithic Next.js App Router application.
 
-**Backend status:** Supabase is now connected. Settings module is fully live. Student and Employee modules have their class dropdowns wired to DB. All other modules (fees, student data, employee data, inventory, etc.) still use Zustand/dummy data and are pending DB integration.
+**Backend status:** Supabase is now connected end-to-end. **Authentication is real** (Supabase Auth + an `admin_users` role table) — the old hardcoded login is gone. **Every functional module — Dashboard, Student, Fees, Employee, Inventory, Expenses, Notice Board, Report, Tasks, Settings, Super Admin — now reads and writes Supabase** via a dedicated service file per module. What remains pending is narrower and more specific than before: file/photo upload to Supabase Storage, Razorpay, a handful of Settings sub-tabs (Year Planning, Fee Reminders, Role Permissions) that are still Zustand-only, employee base salary persistence, and some schema drift cleanup (see below).
 
 **Scale:** ~1,000+ students, 50+ staff, 15 classes (JR KG → 12th Commerce).
 
@@ -27,7 +27,7 @@ A single-app Next.js 14 school management ERP for **Satyam Stars International S
 | State | Zustand 5 (with localStorage persist, version 8) |
 | Forms | React Hook Form 7 + Zod 4 |
 | Database | **Supabase (connected)** — `https://hxkowdaugkkumvzyfsai.supabase.co` |
-| Auth (pending) | Supabase Auth (currently hardcoded credentials) |
+| Auth | **Supabase Auth (connected)** — `signInWithPassword` + `admin_users` role table, PKCE flow, invite/reset via `/auth/callback` + `/auth/set-password` |
 | Payments (pending) | Razorpay (package installed, not connected) |
 | Export | XLSX (Excel) + jsPDF + jspdf-autotable (PDF) |
 | Charts | Recharts 3 |
@@ -36,22 +36,42 @@ A single-app Next.js 14 school management ERP for **Satyam Stars International S
 
 **Brand colors:** `school-navy` (#1e3a5f), `school-gold` (#f59e0b)
 
-**Supabase client:** `src/lib/supabase.js`  
-**Settings service:** `src/lib/settingsService.js` (all DB calls for settings + active-class lookup)
+**Supabase client:** `src/lib/supabase.js` — singleton browser client, `auth: { flowType: "pkce" }`. `@supabase/ssr` is installed but **not yet used** — there is no server-side or service-role client anywhere in the codebase.
+
+**Service layer (`src/lib/*Service.js`):** one file per module, each wrapping the Supabase calls for that domain. See **DB Integration Progress** and **File Size Reference** below for the full list.
 
 ---
 
-## Supabase Schema (tables in use)
+## Supabase Schema
 
-| Table | Key Columns | Notes |
-|---|---|---|
-| `school_profile` | id, name, address, city, state, pincode, phone, email, website, board, medium, udise, updated_at | Single row; use `.not("id","is",null)` to UPDATE |
-| `academic_years` | id, label, start_date, admission_date, readmission_date, is_current | `is_current` = only one row at a time |
-| `classes` | id, name, sort_order, is_active | Class name format: "JR.KG", "SR.KG", "Balvatika", "1st"–"10th", "11th - Commerce", "12th - Commerce" |
-| `sections` | id, class_id, name | UNIQUE (class_id, name) |
-| `fee_structures` | id, academic_year_id, class_id, tuition_amount, uniform_amount, old_student_discount, updated_at | UNIQUE (academic_year_id, class_id); use upsert |
+`database/schema.sql` (571 lines) defines **35 tables**:
+
+| Area | Tables |
+|---|---|
+| School config | `roles`, `school_profile`, `academic_years`, `classes`, `sections`, `fee_structures`, `document_types` |
+| Students | `students`, `student_enrollments` (core per-year join: class/section/roll/fee), `student_previous_school`, `student_documents`, `student_siblings`, `transfer_certificates`, `student_promotions` |
+| Fees | `fee_payments`, `fee_reminder_templates` |
+| Employees | `employees`, `employee_documents`, `employee_subject_mappings`, `employee_salaries`, `salary_payments` |
+| Money | `expenses` |
+| Inventory | `inventory_items`, `inventory_batches`, `inventory_usages`, `student_inventory_assignments`, `assets`, `asset_checkouts` |
+| Comms / ops | `notices`, `tasks`, `task_assignees` |
+| Scheduling | `timetable_period_definitions`, `timetable_entries`, `year_plan_events` |
+| Auth (unused) | `users` |
 
 **RLS:** intentionally OFF during development.
+
+**⚠️ Schema drift — `schema.sql` is a blueprint, not the live source of truth.** The deployed DB and the app code have diverged from it in at least 4 places:
+- App auth uses a table called **`admin_users`** (id, name, role, initials) — not the `users` table defined in `schema.sql`, which is unused dead schema.
+- Settings' Timetable tab reads/writes a table called **`timetables`**, not the documented `timetable_period_definitions` / `timetable_entries`.
+- `sections` is written with a `class_teacher` column (in `settingsService.js`) that isn't in the `schema.sql` definition.
+- `tasks` is written with a `show_on_dashboard` boolean (in `taskService.js`) that isn't in the `schema.sql` definition.
+
+Treat the actual Supabase project + code as authoritative; `schema.sql` needs a reconciliation pass (see **Next Integration Steps**).
+
+**Other DB files:**
+- `database/fix_class_names.sql` — one-off migration from space-format class names ("JR KG") to dot/dash format ("JR.KG", "11th - Commerce")
+- `database/seed_fees_inventory.sql` — now empty (gutted in the `24b1ee3` commit)
+- `schema_dump.json` (repo root) — **dead/junk file**, contains only `{"message":"Invalid API key",...}` from a failed dump attempt, not real data
 
 **Class name format note:** DB stores "JR.KG" / "SR.KG" / "11th - Commerce" / "12th - Commerce". Zustand `activeClasses` still uses old format ("JR KG", "SR KG", "11th Commerce", "12th Commerce") for backward compat with `student/page.js` ACTIVE_CLASS_MAP. Conversion via `DB_TO_STORE` map in `settings/page.js` ClassSectionsTab.
 
@@ -60,8 +80,10 @@ A single-app Next.js 14 school management ERP for **Satyam Stars International S
 ## Route Map
 
 ```
-/login                        ← Auth (hardcoded admin@school.com / 123456)
-/dashboard                    ← Overview: KPIs, charts, notices, activity feed
+/login                        ← Auth via Supabase Auth (admin must already have an admin_users row)
+/auth/callback                 ← PKCE/OTP exchange for invite & password-reset links
+/auth/set-password             ← Set password after invite/reset
+/dashboard                    ← Overview: KPIs, charts, notices, activity feed — live on Supabase
 /student                      ← Student list + filters + export
 /student/add                  ← Add new student form
 /student/[id]                 ← Student profile view
@@ -72,271 +94,158 @@ A single-app Next.js 14 school management ERP for **Satyam Stars International S
 /inventory                    ← Stock items, assets, distribution
 /expenses                     ← School expense tracking
 /notice                       ← Notice board: post/pin/archive notices
-/report                       ← Reports (UI complete — see details below)
+/report                       ← Reports
 /tasks                        ← Task management (assign to staff, track)
-/settings                     ← School config, fee structure, user accounts ✅ LIVE
-/super-admin                  ← Bulk student edit wizard, import tool, role login, salary panel
+/settings                     ← School config, fee structure, classes, timetable, users & roles
+/super-admin                  ← Bulk student edit wizard, import tool, fee/salary panels
 ```
 
 ---
 
 ## Module Status
 
-### 1. Authentication — `/login`
-**Status: Complete (frontend only)**
+### 1. Authentication — `/login`, `/auth/callback`, `/auth/set-password`
+**Status: Complete — real Supabase Auth**
 
-- Email + password form with "remember me" and forgot-password link
-- Hardcoded credentials: `admin@school.com` / `123456`
-- Super Admin has its own role-based login inside the Super Admin module (not a separate route)
-- **Pending:** Replace hardcoded auth with Supabase Auth
+- Login calls `supabase.auth.signInWithPassword`, then looks up the signed-in user's row in `admin_users` (id, name, role, initials) to populate Zustand `authUser`
+- **No hardcoded credentials remain** — `admin@school.com` / `123456` is gone
+- Roles enforced in code: `management`, `senior_admin`, `normal_admin` (`DB_ROLES` in `settings/page.js`). The login page's UI copy ("Super Admin · Teacher · Accountant · Inventory Manager") is stale and doesn't match the enforced roles — worth a cleanup pass
+- `AuthGuard.jsx` wraps `(dashboard)/layout.js`: checks `supabase.auth.getSession()`, redirects to `/login` if there's no session or no matching `admin_users` row, and listens for `SIGNED_OUT`
+- `auth/callback/page.js`: handles PKCE `code` exchange and legacy OTP `token_hash` (invite/recovery links), then routes to `/auth/set-password`
+- `auth/set-password/page.js`: sets the password via `supabase.auth.updateUser`; requires an admin to have already created the matching `admin_users` row (no self-signup)
+- Super Admin's own internal hardcoded role login (Sunil Pradhan / sunil123 etc.) has been **removed** — see Super Admin module below
+- **Pending:** Admin-user creation UI (Settings → Users & Roles currently only edits/deletes existing `admin_users` rows; new admins must be invited outside this UI)
 
 ---
 
 ### 2. Dashboard — `/dashboard`
-**Status: Complete (dummy data)**
+**Status: Live on Supabase** (`dashboardService.js`, ~114 lines)
 
-- KPI cards: Total Students (1,247), Total Staff (68), Fee Collection, Expenses
-- Bar charts: Student attendance by class, Employee attendance by week (Recharts)
-- Recent notices (4 items) with type badges
-- Inventory low-stock alerts (3 items)
-- Recent activity feed (7 items: admissions, fee payments, profile updates)
-- Pending Tasks popup (session-persistent, reads from Zustand store)
-- **Pending:** Wire all stats to real Supabase queries
+- KPI cards (students, staff, fee collection, expenses), attendance charts, recent notices, inventory low-stock alerts, and the recent-activity feed are all computed from DB queries scoped to the current academic year/month
+- Pending Tasks popup now reads dashboard-pinned tasks via `taskService.js`
+- **Pending:** nothing significant — this module's DB wiring is essentially complete
 
 ---
 
 ### 3. Student Management — `/student/*`
-**Status: Frontend complete; class dropdowns connected to DB**
+**Status: Live on Supabase** (`studentService.js`, ~694 lines — the largest service file)
 
-#### Student List (`/student`)
-- 6-column grid card layout (photo, info, IDs, alerts, fee summary, actions)
-- Filters: search (name / enrollment / father name), class, session, pending docs (multi-select), pending govt ID (UDISE / PEN / APAAR)
-- Alerts on cards: TC upload warning, pending documents, pending inventory items
-- Actions: Edit, View Profile, Deactivate (modal with reason + date), Promote (with discount/uniform fee calculation)
-- Export: Excel and PDF (respects active filters)
-- Uses Zustand `activeClasses` + `ACTIVE_CLASS_MAP` for class filter dropdown (dynamic via Zustand, populated when Settings is visited)
-- Dummy data: 5 students (Arjun Patel, Priya Shah, Rohan Mehta, Sneha Desai, Dev Joshi)
-
-#### Add Student (`/student/add`)
-- Multi-section form: Admission info, Personal, Contact, Birth, Previous School, Govt IDs, Documents
-- **Class dropdown now loads active classes from DB** via `getActiveClasses()` (settingsService)
-
-#### Student Profile (`/student/[id]`)
-- Full profile view: personal details, fee history, document tracking, inventory assignments
-
-#### Edit Student (`/student/[id]/edit`)
-- Full editable form, mirrors Add Student layout
-- **Class dropdown now loads active classes from DB** via `getActiveClasses()` (settingsService)
-
-#### Transfer Certificate (`/student/[id]/tc`)
-- TC generation with DOB-in-words helper
-- TC upload tracking (shows warning on student card if not uploaded after TC issued)
-
-#### Government ID Eligibility Logic
-- **UDISE eligibility:** Birth certificate required
-- **PEN eligibility:** Birth certificate + Aadhar required
-- **APAAR eligibility:** Birth certificate + Aadhar + name match on Aadhar required
-- Computed dynamically in both Student List and Report module
-
-**Pending:** Backend storage for all student data, photo upload to Supabase storage
+- Full CRUD across students, per-year enrollments (class/section/roll/fee), documents, previous-school records, siblings, and inventory assignments
+- Deactivate, Promote (creates a new enrollment + a promotion audit row), fee-payment insert, and TC issuance (flips status to "Left") all hit the DB
+- Class dropdowns in Add/Edit still load active classes from DB via `getActiveClasses()` (unchanged)
+- Govt ID eligibility logic (UDISE / PEN / APAAR) unchanged, computed dynamically in both Student and Report modules
+- **Pending:** Photo/document upload UI still writes a literal string into `file_url`/`photo_url`, not an actual uploaded file — **no Supabase Storage integration yet**
 
 ---
 
 ### 4. Fees — `/fees`
-**Status: Complete (frontend only)**
+**Status: Live on Supabase** (`feesService.js`, ~169 lines)
 
-- Fee structure display: 15 class-based annual fees (₹14,500 – ₹19,000)
-- Fee entry flow: Select student → view fee summary → record payment → mark inventory distribution
-- Fee summary: Total fee, discount amount + reason, actual fee, paid amount, balance due
-- Payment history table: dates, amounts, received-by staff
-- Inventory distribution: mark items given (auto-dates to today)
-- Fee reminders: tri-lingual templates (English / Hindi / Odia), last-date selector, editable message body, per-student amounts filled automatically
-- Fee overview table: filter by class/status, search by name/roll, individual notify modal with language toggle
-- **Pending:** Wire to Supabase (fee_structures already live in DB via Settings); Razorpay integration; SMS/WhatsApp delivery
+- Per-student fee summary: joins enrollment + student + class + section + payments + inventory assignments
+- Payment history insert/update/delete (diffed against existing rows), inventory-given marking, and fee-structure lookups all hit the DB
+- **Pending:** Razorpay integration; SMS/WhatsApp delivery for reminders (templates are still Zustand-only — see Settings)
 
 ---
 
 ### 5. Employee Management — `/employee`
-**Status: Frontend complete; class dropdowns connected to DB**
+**Status: Live on Supabase** (`employeeService.js`, ~80 lines) — salary calculation partially DB-backed
 
-- 27 employees seeded in Zustand store (EMP001–EMP027): 1 Principal, 7 Admin/Non-Teaching, 1 Media, 1 Care Taker, 16 Teaching, 1 Social Media Manager
-- Profile fields: Personal (name, DOB, phone, email, Aadhar, PAN), Job (designation, dept, joining date, employment type), Academic (class teacher of, subject→class mappings)
-- Document tracking: Aadhar, PAN, Degree, Experience Letter, Photo, Address Proof (6 docs each)
-- View modal: complete profile with document status
-- Add modal: 4-tab form (Personal / Job / Academic / Documents) with file upload UI
-- Table filters: Type (Management / Teaching / Non-Teaching), Department, text search (name / ID / designation)
-- Stats cards: Total staff, Teaching, Non-Teaching, Management
-- **Class teacher dropdown:** loads active classes+sections from DB (`getActiveClasses()`, builds "ClassName-Section" strings)
-- **Subject class toggles:** load active class names from DB (`classList` state in `AddEmployeeModal`)
-- **Attendance + Salary Calculation section:**
-  - Select from/to date range → compute present/absent/leave days per employee
-  - Auto-calculate per-day rate and deduction; shows net salary
-  - "Generate Salary" button: marks as paid, writes salary payment records to Zustand `salaryPayments`, and auto-creates an expense entry in the Expenses module (category: Salary)
-  - Export salary calculation to Excel
-- **Pending:** Backend storage for employee data; actual file upload to Supabase storage; full DB integration
+- Full employee CRUD via DB; class-teacher and subject-class dropdowns still load active classes from DB (unchanged)
+- Attendance + Salary Calculation: "Generate Salary" writes directly to `salary_payments` (`supabase.from("salary_payments").insert()` in `page.js`) and auto-creates a matching Expense entry via `expensesService`
+- **Base monthly salary amounts (`employeeSalaries`) remain Zustand-only** — the `employee_salaries` table exists in `schema.sql` but nothing in the codebase reads or writes it
+- **Pending:** Migrate `employeeSalaries` to DB; real file upload to Storage for employee documents/photos
 
 ---
 
 ### 6. Inventory — `/inventory`
-**Status: Complete (frontend only)**
+**Status: Live on Supabase** (`inventoryService.js`, ~191 lines)
 
-- 9 consumable items (6 student-distributed, 3 office supplies) with batch tracking
-- Batch management: add batches with date, received-by, quantity, notes
-- Usage history: distributions by qty, date, purpose, notes
-- Low-stock alerts: configurable minimum thresholds
-- Storage location tracking: room, shelf, drawer per item
-- 8 permanent assets (microphone, camera, laptop, etc.) with checkout tracking (checked out to, date)
-- Student distribution tracking: items given vs total needed per student
-- **Pending:** Backend persistence
+- Items, batches, usages, configurable low-stock thresholds, permanent assets, and asset checkouts are all DB-backed
+- **Pending:** nothing significant
 
 ---
 
 ### 7. Expenses — `/expenses`
-**Status: Complete (frontend only)**
+**Status: Live on Supabase** (`expensesService.js`, ~62 lines)
 
-- Track all school outgoings: 8 categories (Salary, Infrastructure, Supplies, Utilities, Events, Maintenance, Transport, Other)
-- KPI cards: Total all-time, This Month total, Top category by spend
-- Expense list with color-coded category badges; sorted newest-first
-- Filters: search (title / paid-by), category filter, month filter
-- Add Expense modal: title, category, amount, date, paid-by (admin dropdown), optional note
-- Delete expense (with confirm dialog)
-- Salary payments from the Employee module auto-appear here as Salary category entries (Zustand sync)
-- Export filtered list to Excel and PDF
-- Data lives in Zustand `expenses` array (persisted via localStorage)
-- **Pending:** Supabase persistence
+- Full CRUD; salary payments generated from the Employee module continue to auto-sync in here as Salary-category entries
+- **Pending:** nothing significant
 
 ---
 
 ### 8. Notice Board — `/notice`
-**Status: Complete (frontend only)**
+**Status: Live on Supabase** (`noticeService.js`, ~78 lines) — previously local-component-state only, now persists
 
-- 7 notice types: Academic, Event, Holiday, Fee, Circular, General, Urgent (each with its own color badge)
-- 5 audience targets: Everyone, All Students, All Staff, Parents, Management
-- Notice card features: pin/unpin, edit, archive/restore, delete
-- Days-until-expiry indicator on each card (shows "Expired" when past expiry date)
-- Filter by type, audience, and active/archived view
-- Search by title
-- Post Notice modal: title, content, type, audience, posted date, expiry date (optional), posted-by (admin dropdown), pin toggle
-- Edit support: pre-fills all fields from existing notice
-- Data is local component state (NOT in Zustand store); does not persist across refreshes
-- **Pending:** Move to Zustand/Supabase for persistence
+- Full CRUD: pin/unpin, edit, archive/restore, delete now survive a refresh (this was the old doc's biggest "pending" item for this module — now resolved)
+- **Pending:** nothing significant
 
 ---
 
 ### 9. Report — `/report`
+**Status: Live on Supabase (read-only aggregation)** (`reportService.js`, ~303 lines)
 
-**Status: Complete (frontend only)**
-
-- 4 report types accessible via tab/section UI:
-  1. **Student Reports** — filterable list with eligibility columns (UDISE / PEN / APAAR), export Excel/PDF
-  2. **Employee Reports** — staff listing with document status, export
-  3. **Fee Reports** — fee collection summary by class/session
-  4. **Inventory Reports** — stock levels, asset status
-- DOB-to-words conversion function for TC/certificate use built into this module
-- Govt ID eligibility logic fully implemented here (same rules as Student module)
-- Export available in both Excel and PDF for all report types
-- **Pending:** Real data from Supabase; no backend yet
+- Student, employee, fee, and inventory/asset reports all pull live data; the employee report additionally surfaces each employee's latest payment from `salary_payments`
+- Govt ID eligibility logic and DOB-to-words helper unchanged
+- **Pending:** nothing significant
 
 ---
 
 ### 10. Settings — `/settings`
-**Status: ✅ FULLY CONNECTED TO SUPABASE**
+**Status: Live on Supabase — now 8 tabs (was 4)**
 
-All 4 tabs read from and write to Supabase:
+The original 4 tabs are unchanged in behavior: **School Profile**, **Academic Year**, **Fee Structure**, **Classes & Sections** (see previous version of this doc for details — still accurate).
 
-#### School Profile Tab
-- Loads from `school_profile` table on mount
-- Saves updates back to `school_profile` (UPDATE .not("id","is",null))
-- Fields: name, board, medium, address, city, state, pin, phone, email, website, udise
+**New tabs added since the last update:**
 
-#### Academic Year Tab
-- Loads all years from `academic_years` table
-- Populates form from `is_current = true` row (admission_date, readmission_date)
-- Add year: inserts new row with `is_current: false`
-- Remove year: deletes row by id
-- Save: sets all `is_current = false` then sets selected year `is_current = true` with dates
-
-#### Fee Structure Tab
-- Year dropdown populated from `academic_years` (defaults to `is_current` year)
-- Fee rows loaded from `fee_structures` joined with `classes`
-- Falls back to all active classes with 0 values if no fee_structures exist for selected year
-- Save: upserts rows to `fee_structures` with `onConflict: "academic_year_id,class_id"`
-
-#### Classes & Sections Tab
-- Loads all classes + sections from DB via `getClassesWithSections()`
-- Activate/deactivate class: calls `setClassActiveInDB()` + updates Zustand `activeClasses`
-- Add/remove sections: tracked locally during edit, diffed on Save, applies `insertSection` / `deleteSectionFromDB`
-- On load: syncs Zustand `activeClasses` with DB (using `DB_TO_STORE` mapping for name format compat)
-- Section teachers: local-only (not in DB)
+- **Timetable** — DB-backed, but via a `timetables` table that does **not** match the `timetable_period_definitions` / `timetable_entries` tables defined in `schema.sql` (schema drift, see above)
+- **Year Planning** — Zustand-only; the `year_plan_events` table exists in `schema.sql` but is unused
+- **Fee Reminders** — Zustand-only; the `fee_reminder_templates` table exists in `schema.sql` but is unused
+- **Users & Roles** — `admin_users` rows can be edited/deleted from the DB here, but **not created** (new admins are invited outside this UI); the Role Permissions matrix on this same tab is Zustand-only (`roles.permissions` JSONB column exists in the schema but is unused)
 
 ---
 
 ### 11. Super Admin — `/super-admin`
-**Status: Complete (frontend only)**
+**Status: Live on Supabase for its data operations; auth model changed**
 
-This module has its own internal role-based login before showing content:
-
-**Role credentials (hardcoded):**
-- Management: `Sunil Pradhan` / `sunil123`
-- Senior Admin: `Rajesh Biswal` / `rajesh123` or `BK Debiprasad Das` / `bkdas123`
-
-**Features:**
-- **Bulk Student Edit Wizard:** Select class → select fields to update → edit per-student → save all at once
-- **Student Import Tool:** Import students from Excel file (maps columns to student fields), preview before save
-- **Role Permissions Panel:** View/toggle what each role (Admin, Teacher) can access per module
-- **System-wide config:** Active classes, readmission date, uniform fee per class, old student discount
-- **Task creation:** Add tasks with priority and assign to a staff member (writes to Zustand store)
-- **Salary Panel (Management-only):** View/edit base monthly salary per employee (reads `employeeSalaries` from Zustand); view all salary payment history from `salaryPayments`
-- **History / Audit log:** View recent bulk actions (session-only, not persisted)
-
-**Pending:** Backend integration; import currently does not persist to DB
+- **Internal hardcoded role login removed.** The module now reads the real `authUser` set by the main Supabase Auth login instead of its own credential check
+- `normal_admin` is blocked from this route entirely; `authUser.role === "management"` gates Management-only panels (e.g. the Salary Panel) versus Senior Admin
+- Bulk Student Edit Wizard, Import Tool, Fee Panel, and Inventory tools now call `studentService` / `employeeService` / `reportService` / `feesService` / `inventoryService` / `expensesService`
+- **Pending:** Re-verify the Import Tool actually persists to DB end-to-end (bulk insert via `studentService`) rather than just previewing — worth a smoke test
 
 ---
 
 ### 12. Tasks — `/tasks`
-**Status: Complete (frontend only)**
+**Status: Live on Supabase** (`taskService.js`, ~120 lines)
 
-- Task list view: all tasks with priority badges (High / Medium / Low), assigned-to, created-by, due date
-- Add task modal: title, description, priority, assign to (staff dropdown with 20+ names), due date
-- Status tracking: Pending → In Progress → Done
-- Edit and delete tasks
-- Filter by status / priority / assignee
-- Tasks also surfaced on Dashboard as a popup (incomplete tasks only)
-- State lives in Zustand store (not persisted to DB)
-- **Pending:** Supabase table for tasks, real assignment notifications
+- Tasks plus a `task_assignees` junction table are now DB-backed (supports multiple assignees per task)
+- Dashboard-pinned tasks and the active-employee list used for assignment are both sourced from DB
+- **Pending:** nothing significant
 
 ---
 
 ## Global State (Zustand — `src/lib/store.js`)
 
-**Version: 8** (uses persist middleware)
+**Version: 8** (unchanged — not bumped despite the DB migration)
+
+**Dead weight:** the legacy seed arrays `employees` (27 entries), `expenses` (10 entries), `feePayments` (5 entries), and `students` (5 dummy entries) are **still hardcoded in the file but confirmed unused** by any page now that the equivalent data comes from Supabase. Safe to delete in a later cleanup pass.
+
+Still genuinely live in Zustand (intentionally, not yet migrated to DB):
 
 ```
-sidebarOpen / toggleSidebar / closeSidebar
-user: { name, role, email, initials }
-readmissionDate
-activeClasses: array of currently-active class names (Zustand format: "JR KG", "SR KG", etc.)
-  → populated/synced from DB when Settings > Classes & Sections tab is visited
-  → used by student/page.js ACTIVE_CLASS_MAP for the class filter dropdown
-setActiveClasses(list)       ← sets entire array from DB sync
-activateClass(name)          ← adds one class
-deactivateClass(name)        ← removes one class
-timetables: {}
-timeSlots: [{id, label, time, special?}]  ← 7 slots: Prayer, P1–P5, Recess
-setTimeSlots
+authUser / setAuthUser / clearAuthUser     ← NEW: real auth session (id, name, role, initials)
+employeeSalaries: { [empId]: monthlyAmount }   ← base pay; employee_salaries table unused
+rolePermissions: {}                              ← Role Permissions matrix UI; roles.permissions unused
+feeReminderTemplates                             ← fee_reminder_templates table unused
+yearPlanEvents                                   ← year_plan_events table unused
+studentInventoryItems                            ← master list of distributable items
+periodDefs / timeSlots                           ← legacy timetable scaffolding
+sessionFeesStructure
 uniformFees: { [className]: amount }
-oldStudentDiscount: 1000   ← fixed ₹1,000 for returning students
-employees: [27 seeded staff, EMP001–EMP027]
-rolePermissions: {}
-employeeSalaries: { [empId]: monthlyAmount }   ← management-only view
-updateEmployeeSalary(empId, amount)
-salaryPayments: []     ← auto-populated when Employee module generates salary
-addSalaryPayments(payments)
-expenses: [seeded with 10 initial entries]
-setExpenses(list)
-feePayments: [seeded with 5 entries for dashboard totals]
-pendingTasks: [{ id, text, priority, createdBy, done }]
-addTask / toggleTask / deleteTask
+oldStudentDiscount: 1000
+sidebarOpen / toggleSidebar / closeSidebar
+readmissionDate
+activeClasses + setActiveClasses / activateClass / deactivateClass   ← synced from DB (unchanged)
+pendingTasks                                     ← legacy; dashboard popup now reads from taskService instead
 ```
 
 ---
@@ -352,14 +261,17 @@ addTask / toggleTask / deleteTask
 | Zustand with localStorage | Simple global state without a backend; survives page refresh |
 | Custom `dev-start.js` script | Replaces `next dev` to fix port/env issues |
 | Tri-lingual fee reminders (EN/HI/OD) | School has students from Odisha; Odia language needed |
-| Super Admin has its own internal login | Prevents accidental access; no separate auth route needed |
-| Salary is management-only in Super Admin + Employee modules | Base salaries stored in `employeeSalaries` Zustand map; not shown to regular admins |
-| Salary payments auto-sync to Expenses module | When Employee generates salary, an expense entry (category: Salary) is created automatically via Zustand |
-| Notice board state is local (not in Zustand) | Notices are session-only until Supabase integration |
+| **Real auth replaces hardcoded login** | `admin_users` table holds role (`management` / `senior_admin` / `normal_admin`); `AuthGuard` wraps the dashboard layout; invite/reset flow via PKCE `auth/callback` + `auth/set-password` |
+| **Super Admin's internal hardcoded login removed** | Now reuses the main `authUser`/role from Supabase Auth instead of its own credential set; `normal_admin` is blocked, `management` unlocks the Salary Panel |
+| **One service file per module (`src/lib/*Service.js`)** | Keeps Supabase query logic out of page components; consistent pattern across Student/Employee/Fees/Inventory/Expenses/Notice/Report/Task/Settings |
+| **`schema.sql` is a historical blueprint, not the live source of truth** | Deployed DB has drifted (`admin_users` vs `users`, `timetables` vs `timetable_period_definitions`/`timetable_entries`, ad-hoc columns like `sections.class_teacher` and `tasks.show_on_dashboard`) — code + actual Supabase tables are authoritative until reconciled |
+| Notice board moved off local component state into Supabase | Removes the old "lost on refresh" limitation |
+| `@supabase/ssr` installed but unused | Added as a dependency for future server-side work; everything currently goes through the browser client in `src/lib/supabase.js` |
+| Salary is management-only in Super Admin + Employee modules | Base salaries stored in Zustand `employeeSalaries`; not shown to regular admins |
+| Salary payments auto-sync to Expenses module | When Employee generates salary, an expense entry (category: Salary) is created automatically |
 | APAAR eligibility = Birth cert + Aadhar + name match | Government requirement logic implemented in code |
-| DB class names use dots/dashes; Zustand uses spaces | "JR.KG"→"JR KG", "11th - Commerce"→"11th Commerce"; `DB_TO_STORE` map in settings/page.js handles conversion |
-| Active classes loaded from DB in dropdowns | student/add, student/[id]/edit, employee/page.js all call `getActiveClasses()` directly; no Zustand dependency for their dropdowns |
-| RLS disabled during development | Will be enabled once Supabase Auth is integrated |
+| DB class names use dots/dashes; Zustand uses spaces | "JR.KG"→"JR KG", "11th - Commerce"→"11th Commerce"; `DB_TO_STORE` map in `settings/page.js` handles conversion |
+| RLS disabled during development | Will be enabled once the auth model is finalized |
 
 ---
 
@@ -376,18 +288,22 @@ addTask / toggleTask / deleteTask
 
 | Module | Status |
 |---|---|
-| Settings (school profile, academic years, fee structures, classes/sections) | ✅ Live |
-| Student Add/Edit — class dropdown | ✅ Live (loads active classes from DB) |
-| Employee — class teacher + subject class dropdowns | ✅ Live (loads active classes from DB) |
-| Student list data | ⏳ Pending |
-| Fees data | ⏳ Pending |
-| Employee data | ⏳ Pending |
-| Inventory | ⏳ Pending |
-| Expenses | ⏳ Pending |
-| Notice board | ⏳ Pending |
-| Tasks | ⏳ Pending |
-| Dashboard stats | ⏳ Pending |
-| Authentication | ⏳ Pending (Supabase Auth) |
+| Authentication | ✅ Live — Supabase Auth + `admin_users` role table + PKCE invite/reset flow |
+| Settings — School Profile, Academic Year, Fee Structure, Classes & Sections | ✅ Live |
+| Settings — Timetable | ✅ Live (but on a `timetables` table that drifts from `schema.sql`) |
+| Settings — Year Planning / Fee Reminders / Role Permissions matrix | ⏳ Pending — still Zustand-only |
+| Settings — Users & Roles (admin_users) | ◐ Partial — edit/delete live, create not wired |
+| Dashboard | ✅ Live |
+| Student (list/add/edit/profile/TC) | ✅ Live |
+| Fees | ✅ Live |
+| Employee | ◐ Partial — core CRUD + salary payments live; base salary amounts still Zustand-only |
+| Inventory | ✅ Live |
+| Expenses | ✅ Live |
+| Notice board | ✅ Live |
+| Report | ✅ Live (read-only) |
+| Tasks | ✅ Live |
+| Super Admin | ✅ Live for data ops; auth model now reuses main login |
+| File/photo upload to Storage | ⏳ Pending |
 
 ---
 
@@ -395,16 +311,17 @@ addTask / toggleTask / deleteTask
 
 | Item | Notes |
 |---|---|
-| Real authentication | Hardcoded credentials everywhere; Supabase Auth not wired |
 | Razorpay payment flow | Package installed, no integration code |
 | FCM / push notifications | Sonner toasts ready; FCM not wired |
-| Student/staff photo upload | UI elements exist, no Supabase storage calls |
-| Timetable module | `timeSlots` and `timetables` in Zustand; no page built yet |
-| Attendance module | Referenced in dashboard charts, no dedicated page |
+| Student/staff photo & document upload to Storage | UI exists; DB columns save a literal string, not a real uploaded file URL |
+| Employee base salary in DB | `employee_salaries` table exists, unused; `employeeSalaries` still Zustand-only |
+| Year Planning / Fee Reminder templates / Role Permissions persistence | Tables exist (`year_plan_events`, `fee_reminder_templates`, `roles.permissions`), all unused — corresponding Settings UI is still Zustand-only |
+| Admin-user creation UI | Settings → Users & Roles only edits/deletes `admin_users`; new admins must be invited outside this UI |
+| Schema drift cleanup | `users` (unused) vs `admin_users` (live); `timetable_period_definitions`/`timetable_entries` (unused) vs `timetables` (live); ad-hoc columns (`sections.class_teacher`, `tasks.show_on_dashboard`) not reflected in `schema.sql` |
 | Parent portal | Not started |
 | SMS/WhatsApp delivery | Fee reminder text is ready, no send mechanism |
 | Real-time notifications | No WebSocket or Supabase Realtime setup |
-| S3/Supabase Storage for files | Photos and documents saved as null |
+| Server-side/admin Supabase client | `@supabase/ssr` installed but unused; everything goes through the browser client |
 
 ---
 
@@ -412,19 +329,30 @@ addTask / toggleTask / deleteTask
 
 | File | Lines | Purpose |
 |---|---|---|
-| `src/app/(dashboard)/employee/page.js` | ~1,250+ | Employee + attendance + salary calculation |
-| `src/app/(dashboard)/fees/page.js` | ~1,250 | Fee management |
-| `src/app/(dashboard)/student/page.js` | ~1,235 | Student list |
-| `src/app/(dashboard)/super-admin/page.js` | ~1,200+ | Super admin tools + salary panel |
-| `src/app/(dashboard)/settings/page.js` | ~900+ | School config — **fully live on Supabase** |
-| `src/app/(dashboard)/report/page.js` | ~800+ | All reports |
-| `src/app/(dashboard)/inventory/page.js` | ~770+ | Inventory & assets |
-| `src/app/(dashboard)/tasks/page.js` | ~500+ | Task management |
-| `src/app/(dashboard)/notice/page.js` | ~416 | Notice board |
-| `src/app/(dashboard)/expenses/page.js` | ~348 | Expense tracking |
-| `src/lib/store.js` | ~320+ | Global Zustand state (seeded employees, salaries, expenses) |
-| `src/lib/settingsService.js` | ~154 | **NEW** — all Supabase calls for settings + active class lookup |
-| `src/lib/supabase.js` | ~5 | Supabase client singleton |
+| `src/app/(dashboard)/super-admin/page.js` | ~2,261 | Super admin tools + fee/salary panels — now uses real auth role gating |
+| `src/app/(dashboard)/settings/page.js` | ~2,110 | School config — 8 tabs, mostly live on Supabase |
+| `src/app/(dashboard)/employee/page.js` | ~1,500 | Employee + attendance + salary calculation |
+| `src/app/(dashboard)/fees/page.js` | ~1,377 | Fee management |
+| `src/app/(dashboard)/student/page.js` | ~1,310 | Student list |
+| `src/app/(dashboard)/inventory/page.js` | ~1,299 | Inventory & assets |
+| `src/app/(dashboard)/report/page.js` | ~1,177 | All reports |
+| `src/app/(dashboard)/tasks/page.js` | ~725 | Task management |
+| `src/lib/studentService.js` | ~694 | **Largest service** — full student/enrollment/document/sibling/promotion CRUD |
+| `src/app/(dashboard)/expenses/page.js` | ~467 | Expense tracking |
+| `src/app/(dashboard)/notice/page.js` | ~444 | Notice board — now DB-backed |
+| `src/app/(dashboard)/dashboard/page.js` | ~439 | Dashboard overview |
+| `src/lib/store.js` | ~245 | Global Zustand state — legacy dummy arrays now unused dead weight |
+| `src/lib/reportService.js` | ~303 | Read-only aggregation across student/fee/employee/inventory data |
+| `src/lib/inventoryService.js` | ~191 | Items/batches/usages/assets/checkouts CRUD |
+| `src/lib/feesService.js` | ~169 | Fee summary joins, payment CRUD, inventory-given marking |
+| `src/lib/settingsService.js` | ~161 | School/year/fee/class config + `admin_users` + `timetables` calls |
+| `src/lib/taskService.js` | ~120 | Tasks + `task_assignees` CRUD |
+| `src/lib/dashboardService.js` | ~114 | KPI stats, notices, low-stock alerts, activity feed |
+| `src/components/AuthGuard.jsx` | ~63 | Session/role gate wrapping the dashboard layout |
+| `src/lib/employeeService.js` | ~80 | Employee CRUD |
+| `src/lib/noticeService.js` | ~78 | Notice CRUD |
+| `src/lib/expensesService.js` | ~62 | Expense CRUD |
+| `src/lib/supabase.js` | ~10 | Supabase client singleton (PKCE auth flow) |
 
 ---
 
@@ -432,6 +360,11 @@ addTask / toggleTask / deleteTask
 
 | Commit | Work Done |
 |---|---|
+| `41f3fac` all changes done | Polish pass across login, dashboard, employee, expenses, report, settings, student add/edit/profile, super-admin, and auth callback; `expensesService`/`reportService` tweaks; `supabase.js` auth config |
+| `24b1ee3` user login saved in database | Real Supabase Auth wired in: `AuthGuard`, `auth/callback`, `auth/set-password`, `admin_users`-based login; `dashboardService`/`feesService`/`reportService`/`taskService` created; Notice/Settings/Super Admin/Tasks pages rewritten against DB; `seed_fees_inventory.sql` gutted |
+| `ba4ca92` Database created and supabase installed | Full `database/schema.sql` (35 tables) committed; `studentService`/`employeeService`/`inventoryService`/`expensesService`/`noticeService`/`feesService`/`dashboardService`/`settingsService` created; nearly every module's `page.js` rewritten to call these services |
+| `631fa4f` file table schema created | Settings module expanded (Timetable groundwork); `store.js` updates; README expanded |
+| `6643560` Frontend Done | Year Planning tab, `validators.js`, `yearPlanData.js` added; broad UI polish across student/employee/fees/inventory/report/super-admin |
 | `0f8c4f7` project context updated | PROJECT_CONTEXT.md updated |
 | `eeffe95` notice and expenses module ready | **Expenses** + **Notice Board** modules built; Employee gets Attendance+Salary section; Super Admin gets Salary panel; store seeded with 27 employees, salaries, timeSlots, expenses, feePayments |
 | `c213c41` project context created | PROJECT_CONTEXT.md first created |
@@ -453,9 +386,10 @@ addTask / toggleTask / deleteTask
 
 ## Next Integration Steps (in order)
 
-1. **Fees module** — wire fee structure display + payment recording to Supabase
-2. **Settings module** — User Accounts tab (create auth users via Supabase Auth)
-3. **Employee module** — full backend storage (employee records, attendance, salary)
-4. **Student module** — full backend storage (student data, documents)
-5. **Dashboard** — real KPI queries
-6. **Remaining modules** — inventory, expenses, notice board, tasks
+1. **Supabase Storage** — wire real file upload for student/employee documents and photos (currently UI-only, saves literal strings)
+2. **Razorpay** — connect payment flow for fee collection
+3. **Migrate remaining Zustand-only config to DB** — `employeeSalaries` → `employee_salaries`; Year Planning → `year_plan_events`; Fee Reminder templates → `fee_reminder_templates`; Role Permissions matrix → `roles.permissions`
+4. **Admin-user creation UI** — let Settings → Users & Roles create new `admin_users` rows (today only edit/delete)
+5. **Schema cleanup** — reconcile `schema.sql` with the live DB: retire or repurpose `users`, decide between `timetables` and `timetable_period_definitions`/`timetable_entries`, formalize `sections.class_teacher` and `tasks.show_on_dashboard` as real schema columns
+6. **FCM / Supabase Realtime** — push notifications, live updates
+7. **Parent portal** — not started
