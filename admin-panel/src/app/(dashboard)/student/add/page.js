@@ -13,6 +13,8 @@ import {
   isValidName, isValidPhone, isValidPincode, isValidAadhar,
   isValidPercentage, isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
+import { uploadFileToS3, slugify, fileExt } from "@/lib/s3Upload";
+import { compressFile, formatFileSize } from "@/lib/fileCompression";
 
 // ── Options ────────────────────────────────────────────────────
 function getCurrentSession() {
@@ -146,6 +148,7 @@ function YesNoToggle({ value, onChange }) {
 // ── Main Component ─────────────────────────────────────────────
 export default function AddStudentPage() {
   const router = useRouter();
+  const [sessionId] = useState(() => crypto.randomUUID());
 
   const [standards, setStandards]           = useState([]);
   const [nextEnrollment, setNextEnrollment] = useState("...");
@@ -183,14 +186,20 @@ export default function AddStudentPage() {
   const [photo, setPhoto]                 = useState(null);
   const [photoPreview, setPhotoPreview]   = useState(null);
   const [photoError, setPhotoError]       = useState("");
+  const [photoKey, setPhotoKey]           = useState(null);
+  const [photoSize, setPhotoSize]         = useState(0);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [casteCertFile, setCasteCertFile] = useState(null);
+  const [casteCertKey, setCasteCertKey]   = useState(null);
+  const [casteCertSize, setCasteCertSize] = useState(0);
+  const [casteCertUploading, setCasteCertUploading] = useState(false);
   const casteCertRef = useRef(null);
   const photoRef = useRef(null);
 
   const [aadharDisplay, setAadharDisplay] = useState("");
 
   const [checkedDocs, setCheckedDocs]       = useState({});
-  const [uploadedFiles, setUploadedFiles]   = useState({}); // { docName: fileName }
+  const [uploadedFiles, setUploadedFiles]   = useState({}); // { docName: { fileName, key, uploading } }
   const [uploadedFileUrls, setUploadedFileUrls] = useState({}); // { docName: { url, type } }
   const [customDocs, setCustomDocs]         = useState([]);
   const [docErrors, setDocErrors]           = useState({}); // { docName: errorMsg }
@@ -315,6 +324,17 @@ export default function AddStudentPage() {
     setPhotoError("");
     setPhoto(file);
     setPhotoPreview(URL.createObjectURL(file));
+    setPhotoKey(null);
+    setPhotoSize(0);
+    setPhotoUploading(true);
+    compressFile(file)
+      .then((compressed) => {
+        const key = `students/pending/${sessionId}/photo.${fileExt(compressed)}`;
+        setPhotoSize(compressed.size);
+        return uploadFileToS3(compressed, key).then(() => setPhotoKey(key));
+      })
+      .catch(() => setPhotoError("Photo upload failed — please try again."))
+      .finally(() => setPhotoUploading(false));
   };
 
   // Toggle document — clears uploaded file when unticked
@@ -336,11 +356,22 @@ export default function AddStudentPage() {
       return;
     }
     setDocErrors((p) => { const next = { ...p }; delete next[name]; return next; });
-    setUploadedFiles((p) => ({ ...p, [name]: file.name }));
+    setUploadedFiles((p) => ({ ...p, [name]: { fileName: file.name, key: null, size: 0, uploading: true } }));
     setUploadedFileUrls((p) => ({
       ...p,
       [name]: { url: URL.createObjectURL(file), type: file.type },
     }));
+    compressFile(file)
+      .then((compressed) => {
+        const key = `students/pending/${sessionId}/documents/${slugify(name)}.${fileExt(compressed)}`;
+        return uploadFileToS3(compressed, key).then(() =>
+          setUploadedFiles((p) => ({ ...p, [name]: { ...p[name], key, size: compressed.size, uploading: false } }))
+        );
+      })
+      .catch(() => {
+        setDocErrors((p) => ({ ...p, [name]: "Upload failed — please try again." }));
+        setUploadedFiles((p) => ({ ...p, [name]: { ...p[name], uploading: false } }));
+      });
   };
 
   const addCustomDoc = () =>
@@ -391,8 +422,14 @@ export default function AddStudentPage() {
     e.preventDefault();
     if (!validate()) return;
 
+    const anyDocUploading = Object.values(uploadedFiles).some((d) => d?.uploading);
+    if (photoUploading || anyDocUploading || casteCertUploading) {
+      alert("Please wait for file uploads to finish before submitting.");
+      return;
+    }
+
     let finalCaste = form.caste;
-    if (form.caste !== "General" && !casteCertFile) {
+    if (form.caste !== "General" && !casteCertKey) {
       finalCaste = "General";
       alert("No caste certificate uploaded — category has been set to General automatically.");
     }
@@ -406,9 +443,12 @@ export default function AddStudentPage() {
       .filter(name => checkedDocs[name])
       .map(name => ({
         name,
-        uploaded: !!uploadedFiles[name],
-        fileUrl:  null, // S3 upload not yet configured
+        uploaded: !!uploadedFiles[name]?.key,
+        fileUrl:  uploadedFiles[name]?.key || null,
       }));
+    if (casteCertKey) {
+      documents.push({ name: "Caste Certificate", uploaded: true, fileUrl: casteCertKey });
+    }
 
     const finalDiscountReason = discountReason === "Other" ? discountCustomReason : discountReason;
 
@@ -420,8 +460,8 @@ export default function AddStudentPage() {
       dob:            form.dob,
       gender:         form.gender,
       placeOfBirth:   form.placeOfBirth,
-      // Photo (S3 upload not yet; store nothing)
-      photo:          null,
+      // Photo
+      photo:          photoKey,
       // Academic
       std:            form.std,
       section:        "A",
@@ -571,12 +611,15 @@ export default function AddStudentPage() {
                 {photo ? "Change Photo" : "Upload Photo"}
               </button>
               {photo && (
-                <button type="button" onClick={() => { setPhoto(null); setPhotoPreview(null); }}
+                <button type="button" onClick={() => { setPhoto(null); setPhotoPreview(null); setPhotoKey(null); setPhotoSize(0); }}
                   className="ml-2 text-xs text-red-500 hover:text-red-700">
                   Remove
                 </button>
               )}
-              <p className="text-xs text-gray-400 mt-2">Optional · JPG or PNG · Max 2MB</p>
+              <p className="text-xs text-gray-400 mt-2">Optional · JPG or PNG · auto-compressed to 1MB or less</p>
+              {!photoUploading && photoSize > 0 && (
+                <p className="text-xs text-green-600 font-medium mt-1">✓ {formatFileSize(photoSize)}</p>
+              )}
               <FieldError>{photoError}</FieldError>
             </div>
           </div>
@@ -772,7 +815,7 @@ export default function AddStudentPage() {
 
             <div>
               <FieldLabel required>Category / Caste</FieldLabel>
-              <SelectField value={form.caste} onChange={(e) => { setExact("caste")(e); setCasteCertFile(null); }} required>
+              <SelectField value={form.caste} onChange={(e) => { setExact("caste")(e); setCasteCertFile(null); setCasteCertKey(null); }} required>
                 {castes.map((c) => <option key={c}>{c}</option>)}
               </SelectField>
             </div>
@@ -828,16 +871,32 @@ export default function AddStudentPage() {
                   }
                   setCasteCertError("");
                   setCasteCertFile(file);
+                  setCasteCertKey(null);
+                  setCasteCertSize(0);
+                  if (!file) return;
+                  setCasteCertUploading(true);
+                  compressFile(file)
+                    .then((compressed) => {
+                      const key = `students/pending/${sessionId}/documents/caste-certificate.${fileExt(compressed)}`;
+                      setCasteCertSize(compressed.size);
+                      return uploadFileToS3(compressed, key).then(() => setCasteCertKey(key));
+                    })
+                    .catch(() => setCasteCertError("Upload failed — please try again."))
+                    .finally(() => setCasteCertUploading(false));
                 }}
               />
               <FieldError>{casteCertError}</FieldError>
               {casteCertFile ? (
                 <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
                   <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
-                  <span className="text-sm text-green-700 font-medium flex-1 truncate">{casteCertFile.name}</span>
+                  <span className="text-sm text-green-700 font-medium flex-1 truncate">
+                    {casteCertUploading
+                      ? "Uploading…"
+                      : `${casteCertFile.name}${casteCertSize ? ` (${formatFileSize(casteCertSize)})` : ""}`}
+                  </span>
                   <button
                     type="button"
-                    onClick={() => setCasteCertFile(null)}
+                    onClick={() => { setCasteCertFile(null); setCasteCertKey(null); }}
                     className="text-red-400 hover:text-red-600 transition-colors flex-shrink-0"
                   >
                     <X className="w-4 h-4" />
@@ -1073,8 +1132,10 @@ export default function AddStudentPage() {
                   <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
                   <span className="text-sm font-medium text-gray-700">{docName}</span>
                   {uploadedFiles[docName] && (
-                    <span className="ml-auto text-xs text-green-600 font-medium truncate max-w-[140px]">
-                      ✓ {uploadedFiles[docName]}
+                    <span className="ml-auto text-xs text-green-600 font-medium truncate max-w-[160px]">
+                      {uploadedFiles[docName].uploading
+                        ? "Uploading…"
+                        : `✓ ${uploadedFiles[docName].fileName}${uploadedFiles[docName].size ? ` (${formatFileSize(uploadedFiles[docName].size)})` : ""}`}
                     </span>
                   )}
                 </div>

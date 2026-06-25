@@ -12,6 +12,8 @@ import {
 } from "@/lib/validators";
 import { getStudentByEnrollment, updateStudent as svcUpdate } from "@/lib/studentService";
 import { getActiveClasses } from "@/lib/settingsService";
+import { uploadFileToS3, getS3ViewUrl, slugify, fileExt } from "@/lib/s3Upload";
+import { compressFile, formatFileSize } from "@/lib/fileCompression";
 import supabase from "@/lib/supabase";
 
 // ── Options ────────────────────────────────────────────────────
@@ -221,8 +223,14 @@ function EditForm({ existing, id, router }) {
   const [photo, setPhoto]                 = useState(null);
   const [photoPreview, setPhotoPreview]   = useState(null);
   const [photoError, setPhotoError]       = useState("");
+  const [photoKey, setPhotoKey]           = useState(null);
+  const [photoSize, setPhotoSize]         = useState(0);
+  const [photoUploading, setPhotoUploading] = useState(false);
   const [casteCertFile, setCasteCertFile] = useState(null);
   const [casteCertError, setCasteCertError] = useState("");
+  const [casteCertKey, setCasteCertKey] = useState(null);
+  const [casteCertSize, setCasteCertSize] = useState(0);
+  const [casteCertUploading, setCasteCertUploading] = useState(false);
   const casteCertRef = useRef(null);
   const photoRef     = useRef(null);
   const [aadharDisplay, setAadharDisplay] = useState(existing.aadhar || "");
@@ -234,6 +242,14 @@ function EditForm({ existing, id, router }) {
   const [docErrors, setDocErrors]       = useState({});
   const [errors, setErrors]             = useState({});
   const [submitting, setSubmitting]     = useState(false);
+
+  // Show the already-uploaded photo (if any) by resolving a fresh presigned view URL
+  useEffect(() => {
+    if (existing.photo) {
+      getS3ViewUrl(existing.photo).then((url) => { if (url) setPhotoPreview(url); }).catch(() => {});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [form, setForm] = useState({
     joinDate:         existing.joinDate,
     std:              existing.std,
@@ -293,6 +309,17 @@ function EditForm({ existing, id, router }) {
     setPhotoError("");
     setPhoto(file);
     setPhotoPreview(URL.createObjectURL(file));
+    setPhotoKey(null);
+    setPhotoSize(0);
+    setPhotoUploading(true);
+    compressFile(file)
+      .then((compressed) => {
+        const key = `students/${existing._studentId}/photo.${fileExt(compressed)}`;
+        setPhotoSize(compressed.size);
+        return uploadFileToS3(compressed, key).then(() => setPhotoKey(key));
+      })
+      .catch(() => setPhotoError("Photo upload failed — please try again."))
+      .finally(() => setPhotoUploading(false));
   };
 
   const toggleDoc = (name) => {
@@ -312,7 +339,18 @@ function EditForm({ existing, id, router }) {
       return;
     }
     setDocErrors((p) => { const next = { ...p }; delete next[name]; return next; });
-    setUploadedFiles((p) => ({ ...p, [name]: file.name }));
+    setUploadedFiles((p) => ({ ...p, [name]: { fileName: file.name, key: null, size: 0, uploading: true } }));
+    compressFile(file)
+      .then((compressed) => {
+        const key = `students/${existing._studentId}/documents/${slugify(name)}.${fileExt(compressed)}`;
+        return uploadFileToS3(compressed, key).then(() =>
+          setUploadedFiles((p) => ({ ...p, [name]: { ...p[name], key, size: compressed.size, uploading: false } }))
+        );
+      })
+      .catch(() => {
+        setDocErrors((p) => ({ ...p, [name]: "Upload failed — please try again." }));
+        setUploadedFiles((p) => ({ ...p, [name]: { ...p[name], uploading: false } }));
+      });
   };
 
   const addCustomDoc = () => setCustomDocs((p) => [...p, { id: Date.now(), label: "" }]);
@@ -356,8 +394,15 @@ function EditForm({ existing, id, router }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
+
+    const anyDocUploading = Object.values(uploadedFiles).some((d) => d?.uploading);
+    if (photoUploading || anyDocUploading || casteCertUploading) {
+      alert("Please wait for file uploads to finish before submitting.");
+      return;
+    }
+
     let finalCaste = form.caste;
-    if (form.caste !== "General" && !casteCertFile) {
+    if (form.caste !== "General" && !casteCertKey) {
       finalCaste = "General";
       setForm(p => ({ ...p, caste: "General" }));
       alert("No caste certificate uploaded — category has been reset to General.");
@@ -372,7 +417,7 @@ function EditForm({ existing, id, router }) {
         grNo:         existing.grNo || "",
         firstName:    form.firstName,
         lastName:     form.lastName,
-        photo:        null,
+        photo:        photoKey || existing.photo || null,
         fatherName:   form.fatherName,
         motherName:   form.motherName,
         mobile:       form.mobile1,
@@ -411,13 +456,34 @@ function EditForm({ existing, id, router }) {
         const visibleDocs = defaultDocTypes.filter(d => hasPrevSchool || (d !== "Leaving Certificate" && d !== "Marksheet"));
         const upserts = visibleDocs
           .filter(name => docTypeMap[name])
-          .map(name => ({
+          .map(name => {
+            // uploadedFiles[name] is either a plain string (pre-existing key, untouched
+            // this session) or an { fileName, key, ... } object (uploaded this session).
+            // file_url must be included on every row with its real value (never omitted) —
+            // Supabase's bulk upsert pads any key missing from a row with NULL when other
+            // rows in the same batch DO have that key, which previously wiped out file_url
+            // on every document not re-uploaded in the current save.
+            const existingVal = uploadedFiles[name];
+            const fileUrl = existingVal && typeof existingVal === "object"
+              ? (existingVal.key || null)
+              : (existingVal || null);
+            return {
+              student_id:       existing._studentId,
+              document_type_id: docTypeMap[name],
+              status:           checkedDocs[name] ? "Uploaded" : "Pending",
+              uploaded_at:      checkedDocs[name] ? new Date().toISOString() : null,
+              file_url:         fileUrl,
+            };
+          });
+        if (casteCertKey && docTypeMap["Caste Certificate"]) {
+          upserts.push({
             student_id:       existing._studentId,
-            document_type_id: docTypeMap[name],
-            status:           checkedDocs[name] ? "Uploaded" : "Pending",
-            file_url:         null,
-            uploaded_at:      checkedDocs[name] ? new Date().toISOString() : null,
-          }));
+            document_type_id: docTypeMap["Caste Certificate"],
+            status:           "Uploaded",
+            uploaded_at:      new Date().toISOString(),
+            file_url:         casteCertKey,
+          });
+        }
         if (upserts.length) {
           await supabase.from("student_documents").upsert(upserts, { onConflict: "student_id,document_type_id" });
         }
@@ -481,10 +547,13 @@ function EditForm({ existing, id, router }) {
               {photo ? "Change Photo" : "Upload New Photo"}
             </button>
             {photo && (
-              <button type="button" onClick={() => { setPhoto(null); setPhotoPreview(null); }}
+              <button type="button" onClick={() => { setPhoto(null); setPhotoPreview(null); setPhotoKey(null); setPhotoSize(0); }}
                 className="ml-2 text-xs text-red-500 hover:text-red-700">Remove</button>
             )}
-            <p className="text-xs text-gray-400 mt-2">Optional · JPG or PNG · Max 2MB</p>
+            <p className="text-xs text-gray-400 mt-2">Optional · JPG or PNG · auto-compressed to 1MB or less</p>
+            {!photoUploading && photoSize > 0 && (
+              <p className="text-xs text-green-600 font-medium mt-1">✓ {formatFileSize(photoSize)}</p>
+            )}
             <FieldError>{photoError}</FieldError>
           </div>
         </div>
@@ -613,7 +682,7 @@ function EditForm({ existing, id, router }) {
             <FieldLabel required>Category / Caste</FieldLabel>
             <SelectField
               value={form.caste}
-              onChange={(e) => { set("caste")(e); setCasteCertFile(null); }}
+              onChange={(e) => { set("caste")(e); setCasteCertFile(null); setCasteCertKey(null); }}
               required
             >
               {castes.map((c) => <option key={c}>{c}</option>)}
@@ -671,16 +740,32 @@ function EditForm({ existing, id, router }) {
                 }
                 setCasteCertError("");
                 setCasteCertFile(file);
+                setCasteCertKey(null);
+                setCasteCertSize(0);
+                if (!file) return;
+                setCasteCertUploading(true);
+                compressFile(file)
+                  .then((compressed) => {
+                    const key = `students/${existing._studentId}/documents/caste-certificate.${fileExt(compressed)}`;
+                    setCasteCertSize(compressed.size);
+                    return uploadFileToS3(compressed, key).then(() => setCasteCertKey(key));
+                  })
+                  .catch(() => setCasteCertError("Upload failed — please try again."))
+                  .finally(() => setCasteCertUploading(false));
               }}
             />
             <FieldError>{casteCertError}</FieldError>
             {casteCertFile ? (
               <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2.5">
                 <Check className="w-4 h-4 text-green-600 flex-shrink-0" />
-                <span className="text-sm text-green-700 font-medium flex-1 truncate">{casteCertFile.name}</span>
+                <span className="text-sm text-green-700 font-medium flex-1 truncate">
+                  {casteCertUploading
+                    ? "Uploading…"
+                    : `${casteCertFile.name}${casteCertSize ? ` (${formatFileSize(casteCertSize)})` : ""}`}
+                </span>
                 <button
                   type="button"
-                  onClick={() => setCasteCertFile(null)}
+                  onClick={() => { setCasteCertFile(null); setCasteCertKey(null); }}
                   className="text-red-400 hover:text-red-600 transition-colors flex-shrink-0"
                 >
                   <X className="w-4 h-4" />
@@ -895,8 +980,12 @@ function EditForm({ existing, id, router }) {
                 <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 <span className="text-sm font-medium text-gray-700">{docName}</span>
                 {uploadedFiles[docName] && (
-                  <span className="ml-auto text-xs text-green-600 font-medium truncate max-w-[140px]">
-                    ✓ {uploadedFiles[docName]}
+                  <span className="ml-auto text-xs text-green-600 font-medium truncate max-w-[160px]">
+                    {typeof uploadedFiles[docName] === "object"
+                      ? (uploadedFiles[docName].uploading
+                          ? "Uploading…"
+                          : `✓ ${uploadedFiles[docName].fileName}${uploadedFiles[docName].size ? ` (${formatFileSize(uploadedFiles[docName].size)})` : ""}`)
+                      : `✓ ${uploadedFiles[docName]}`}
                   </span>
                 )}
               </div>

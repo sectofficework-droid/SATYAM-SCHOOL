@@ -12,6 +12,8 @@ import {
 } from "@/lib/validators";
 import { getActiveClasses } from "@/lib/settingsService";
 import { getEmployees, addEmployee, updateEmployee } from "@/lib/employeeService";
+import { uploadFileToS3, slugify, fileExt } from "@/lib/s3Upload";
+import { compressFile, formatFileSize } from "@/lib/fileCompression";
 import {
   Users, Plus, Search, X, Phone, Mail, MapPin,
   Calendar, GraduationCap, Briefcase, Pencil,
@@ -293,6 +295,7 @@ function ViewEmployeeModal({ emp, onClose }) {
 // "selected" = checkbox toggled; a doc is only "uploaded" when fileName is set
 function AddEmployeeModal({ employees, onClose, onSave }) {
   const [tab, setTab]         = useState(0);
+  const [sessionId] = useState(() => crypto.randomUUID());
 
   const [classList,          setClassList]          = useState([]);
   const [classesWithSections, setClassesWithSections] = useState([]);
@@ -319,6 +322,13 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
   const [address, setAddress]   = useState("");
   const [aadharDisplay, setAadharDisplay] = useState("");
   const [pan, setPan]           = useState("");
+  const [photo, setPhoto]             = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoKey, setPhotoKey]       = useState(null);
+  const [photoSize, setPhotoSize]     = useState(0);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError]   = useState("");
+  const photoRef = useRef(null);
 
   // Job
   const [type, setType]         = useState("teaching");
@@ -334,7 +344,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
 
   // Documents — selected: checkbox toggled; file uploaded only when fileName set
   const [docs, setDocs] = useState(
-    REQUIRED_DOCS.map((n) => ({ name: n, selected: false, file: null, fileName: "", error: "" }))
+    REQUIRED_DOCS.map((n) => ({ name: n, selected: false, file: null, fileName: "", key: null, size: 0, uploading: false, error: "" }))
   );
 
   const [mounted, setMounted] = useState(false);
@@ -372,6 +382,30 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
   // Aadhar: format as XXXX XXXX XXXX
   const handleAadhar = (e) => setAadharDisplay(fmtAadhar(e.target.value));
 
+  const handlePhoto = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!isValidUploadFile(file)) {
+      setPhotoError("Invalid file — only JPG/PNG up to 5MB allowed.");
+      e.target.value = "";
+      return;
+    }
+    setPhotoError("");
+    setPhoto(file);
+    setPhotoPreview(URL.createObjectURL(file));
+    setPhotoKey(null);
+    setPhotoSize(0);
+    setPhotoUploading(true);
+    compressFile(file)
+      .then((compressed) => {
+        const key = `employees/pending/${sessionId}/photo.${fileExt(compressed)}`;
+        setPhotoSize(compressed.size);
+        return uploadFileToS3(compressed, key).then(() => setPhotoKey(key));
+      })
+      .catch(() => setPhotoError("Photo upload failed — please try again."))
+      .finally(() => setPhotoUploading(false));
+  };
+
   // Documents
   const toggleDoc = (docName) =>
     setDocs((prev) => prev.map((d) => {
@@ -385,20 +419,30 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
     if (!file) return;
     if (!isValidUploadFile(file)) {
       setDocs((prev) => prev.map((d) =>
-        d.name === docName ? { ...d, file: null, fileName: "", error: "Only JPG/PNG/PDF up to 5MB allowed" } : d
+        d.name === docName ? { ...d, file: null, fileName: "", key: null, error: "Only JPG/PNG/PDF up to 5MB allowed" } : d
       ));
       e.target.value = "";
       return;
     }
     setDocs((prev) => prev.map((d) =>
-      d.name === docName ? { ...d, file, fileName: file.name, error: "" } : d
+      d.name === docName ? { ...d, file, fileName: file.name, key: null, size: 0, uploading: true, error: "" } : d
     ));
     e.target.value = "";
+    compressFile(file)
+      .then((compressed) => {
+        const key = `employees/pending/${sessionId}/documents/${slugify(docName)}.${fileExt(compressed)}`;
+        return uploadFileToS3(compressed, key).then(() =>
+          setDocs((prev) => prev.map((d) => d.name === docName ? { ...d, key, size: compressed.size, uploading: false } : d))
+        );
+      })
+      .catch(() => setDocs((prev) => prev.map((d) =>
+        d.name === docName ? { ...d, uploading: false, error: "Upload failed — please try again." } : d
+      )));
   };
 
   const removeFile = (docName) =>
     setDocs((prev) => prev.map((d) =>
-      d.name === docName ? { ...d, file: null, fileName: "", error: "" } : d
+      d.name === docName ? { ...d, file: null, fileName: "", key: null, size: 0, error: "" } : d
     ));
 
   // Subject-class mappings
@@ -415,10 +459,14 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
 
   const handleSave = () => {
     if (!tab0Valid || !tab1Valid || !docsValid) return;
+    if (docs.some((d) => d.uploading) || photoUploading) {
+      alert("Please wait for file uploads to finish before submitting.");
+      return;
+    }
     onSave({
       id: Date.now(),
       empId: nextEmpId,
-      name: name.trim(), photo: null,
+      name: name.trim(), photo: photoKey,
       type, designation, department,
       gender, dob,
       phone: phone.trim(), altPhone: altPhone.trim(),
@@ -429,11 +477,12 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
       subjectMappings: type === "teaching"
         ? mappings.filter((m) => m.subject && m.classes.length > 0)
         : [],
-      // doc is "uploaded" only when a file was actually selected
-      documents: docs.map(({ name: n, fileName }) => ({
+      // doc is "uploaded" only when a file was actually selected and finished uploading
+      documents: docs.map(({ name: n, fileName, key }) => ({
         name: n,
-        uploaded: !!fileName,
+        uploaded: !!key,
         fileName,
+        fileUrl: key || null,
       })),
     });
   };
@@ -474,6 +523,26 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
           {/* ── Personal ── */}
           {tab === 0 && (
             <>
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {photoPreview
+                    ? <img src={photoPreview} alt="Preview" className="w-full h-full object-cover" />
+                    : <User className="w-7 h-7 text-gray-300" />}
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Photo</label>
+                  <input ref={photoRef} type="file" accept="image/jpg,image/jpeg,image/png" className="hidden" onChange={handlePhoto} />
+                  <button type="button" onClick={() => photoRef.current.click()}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+                    <Upload className="w-3.5 h-3.5" />
+                    {photoUploading ? "Uploading…" : photoPreview ? "Change Photo" : "Upload Photo"}
+                  </button>
+                  {!photoUploading && photoSize > 0 && (
+                    <p className="text-xs text-green-600 font-medium mt-1">✓ {formatFileSize(photoSize)}</p>
+                  )}
+                  {photoError && <p className="text-xs text-red-500 mt-1">{photoError}</p>}
+                </div>
+              </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Full Name *</label>
                 <input className={IPT} placeholder="e.g. Anita Sharma" value={name}
@@ -694,7 +763,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
               </p>
               <div className="space-y-2.5">
                 {docs.map((d) => {
-                  const isUploaded = !!d.fileName;
+                  const isUploaded = !!d.key;
                   return (
                     <div key={d.name}
                       className={`rounded-xl border transition-colors ${
@@ -721,7 +790,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
                         </span>
                         {d.selected && !isUploaded && (
                           <span className="ml-auto text-[10px] font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">
-                            File pending
+                            {d.uploading ? "Uploading…" : "File pending"}
                           </span>
                         )}
                       </button>
@@ -732,7 +801,9 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
                           {isUploaded ? (
                             <div className="flex items-center gap-2 bg-white border border-green-200 rounded-lg px-3 py-2">
                               <FileText className="w-3.5 h-3.5 text-green-600 flex-shrink-0" />
-                              <span className="text-xs text-gray-700 flex-1 truncate">{d.fileName}</span>
+                              <span className="text-xs text-gray-700 flex-1 truncate">
+                                {d.fileName}{d.size ? ` (${formatFileSize(d.size)})` : ""}
+                              </span>
                               <button onClick={() => removeFile(d.name)}
                                 className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0">
                                 <X className="w-3.5 h-3.5" />

@@ -5,6 +5,8 @@ import { createPortal } from "react-dom";
 import useStore from "@/lib/store";
 import { useParams, useRouter } from "next/navigation";
 import { getStudentByEnrollment } from "@/lib/studentService";
+import S3Image from "@/components/S3Image";
+import { getS3ViewUrl, buildDocDownloadName } from "@/lib/s3Upload";
 import {
   ArrowLeft, User, Phone, Calendar, BookOpen,
   FileText, IndianRupee, ClipboardCheck, Award, Edit,
@@ -200,11 +202,18 @@ function DocumentsTab({ docs, s }) {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-800">{doc.name}</p>
               <p className="text-xs text-gray-400 mt-0.5">
-                {doc.uploaded ? doc.file : "Not uploaded yet"}
+                {doc.uploaded ? (doc.file?.split("/").pop() || "Uploaded") : "Not uploaded yet"}
               </p>
             </div>
             {doc.uploaded ? (
-              <button className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors">
+              <button
+                onClick={async () => {
+                  const downloadName = buildDocDownloadName(s.enrollment, s.studentName, doc.name, doc.file);
+                  const url = await getS3ViewUrl(doc.file, downloadName);
+                  if (url) window.open(url, "_blank");
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+              >
                 <Download className="w-3.5 h-3.5" /> View
               </button>
             ) : (
@@ -847,10 +856,12 @@ export default function StudentDetailPage() {
             {/* Photo Column */}
             <div className="flex-shrink-0 flex flex-col items-center gap-2">
               <div className="w-24 h-28 sm:w-28 sm:h-32 rounded-xl border-4 border-school-navy/15 bg-gradient-to-b from-school-navy/5 to-school-navy/10 flex items-center justify-center overflow-hidden shadow-inner">
-                {student.photo
-                  ? <img src={student.photo} alt={student.studentName} className="w-full h-full object-cover" />
-                  : <User className="w-10 h-10 text-school-navy/25" />
-                }
+                <S3Image
+                  s3Key={student.photo}
+                  alt={student.studentName}
+                  className="w-full h-full object-cover"
+                  fallback={<User className="w-10 h-10 text-school-navy/25" />}
+                />
               </div>
               <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-green-100 text-green-700">
                 Active

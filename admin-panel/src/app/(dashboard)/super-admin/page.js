@@ -15,9 +15,11 @@ import supabase from "@/lib/supabase";
 import { addExpense } from "@/lib/expensesService";
 import {
   isValidName, isValidPhone, isValidEmail, isValidAadhar, isValidPincode,
-  isNonNegativeNumber,
+  isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
 import { getStudents, getClasses, addStudent as dbAddStudent, updateStudent as dbUpdateStudent } from "@/lib/studentService";
+import { uploadFileToS3, getS3ViewUrl, slugify, fileExt } from "@/lib/s3Upload";
+import { compressFile, formatFileSize } from "@/lib/fileCompression";
 import { getEmployees } from "@/lib/employeeService";
 import { getFeesForSuperAdmin } from "@/lib/reportService";
 import { updateFeesForEnrollment } from "@/lib/feesService";
@@ -373,33 +375,104 @@ function SingleStudentTool({ students, onStudentUpdated }) {
 
   const [photo,        setPhoto]        = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoKey,     setPhotoKey]     = useState(null);
+  const [photoSize,    setPhotoSize]    = useState(0);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError,   setPhotoError]   = useState("");
   const [checkedDocs,  setCheckedDocs]  = useState({});
   const [uploadedFiles,setUploadedFiles]= useState({});
+  const [docErrors,    setDocErrors]    = useState({});
   const [customDocs,   setCustomDocs]   = useState([]);
+  const [saving,       setSaving]       = useState(false);
   const photoRef = useRef(null);
 
   function resetMedia() {
-    setPhoto(null); setPhotoPreview(null);
-    setCheckedDocs({}); setUploadedFiles({}); setCustomDocs([]);
+    setPhoto(null); setPhotoPreview(null); setPhotoKey(null); setPhotoSize(0); setPhotoError("");
+    setCheckedDocs({}); setUploadedFiles({}); setDocErrors({}); setCustomDocs([]);
   }
-  function selectStudent(st) { setSelected(st); setForm({...st}); setSaved(false); setErrors({}); resetMedia(); }
+  function selectStudent(st) {
+    setSelected(st); setForm({...st}); setSaved(false); setErrors({}); resetMedia();
+    if (st.photo) {
+      getS3ViewUrl(st.photo).then(url => { if (url) setPhotoPreview(url); }).catch(() => {});
+    }
+  }
   function goBack()           { setSelected(null); resetMedia(); }
 
   async function handleSave() {
     const errs = validateStudentForm(form);
     setErrors(errs);
     if (Object.keys(errs).length > 0) return;
+
+    const anyDocUploading = Object.values(uploadedFiles).some(d => d?.uploading);
+    if (photoUploading || anyDocUploading) {
+      alert("Please wait for file uploads to finish before saving.");
+      return;
+    }
+
+    setSaving(true);
     try {
-      await dbUpdateStudent(selected._studentId, mapFormForUpdate(form));
+      await dbUpdateStudent(selected._studentId, {
+        ...mapFormForUpdate(form),
+        photo: photoKey || selected.photo || null,
+      });
+
+      const { data: docTypes } = await supabase.from("document_types").select("id, name");
+      if (docTypes?.length) {
+        const docTypeMap = Object.fromEntries(docTypes.map(d => [d.name, d.id]));
+        const allDocNames = [...DEFAULT_DOCS, ...customDocs.filter(d => d.label.trim()).map(d => d.label)];
+        const upserts = allDocNames
+          .filter(name => checkedDocs[name] && docTypeMap[name])
+          .map(name => {
+            // file_url must be included on every row with its real value (never omitted) —
+            // Supabase's bulk upsert pads any key missing from a row with NULL when other
+            // rows in the same batch DO have that key, which can wipe out a previously
+            // stored S3 key for documents not re-uploaded in the current save.
+            const existingVal = uploadedFiles[name];
+            const fileUrl = existingVal && typeof existingVal === "object"
+              ? (existingVal.key || null)
+              : (existingVal || null);
+            return {
+              student_id:       selected._studentId,
+              document_type_id: docTypeMap[name],
+              status:           "Uploaded",
+              uploaded_at:      new Date().toISOString(),
+              file_url:         fileUrl,
+            };
+          });
+        if (upserts.length) {
+          await supabase.from("student_documents").upsert(upserts, { onConflict: "student_id,document_type_id" });
+        }
+      }
+
       if (onStudentUpdated) onStudentUpdated(selected._studentId, form);
-    } catch { }
-    setSaved(true); setTimeout(() => setSaved(false), 2500);
+      setSaved(true); setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      alert("Failed to save: " + err.message);
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handlePhoto(e) {
     const f = e.target.files[0];
     if (!f) return;
+    if (!isValidUploadFile(f)) {
+      setPhotoError("Invalid file — only JPG/PNG/PDF up to 5MB allowed.");
+      e.target.value = "";
+      return;
+    }
+    setPhotoError("");
     setPhoto(f); setPhotoPreview(URL.createObjectURL(f));
+    setPhotoKey(null); setPhotoSize(0);
+    setPhotoUploading(true);
+    compressFile(f)
+      .then((compressed) => {
+        const key = `students/${selected._studentId}/photo.${fileExt(compressed)}`;
+        setPhotoSize(compressed.size);
+        return uploadFileToS3(compressed, key).then(() => setPhotoKey(key));
+      })
+      .catch(() => setPhotoError("Photo upload failed — please try again."))
+      .finally(() => setPhotoUploading(false));
   }
   function toggleDoc(name) {
     const was = checkedDocs[name];
@@ -408,7 +481,25 @@ function SingleStudentTool({ students, onStudentUpdated }) {
   }
   function handleDocFile(name, e) {
     const f = e.target.files[0];
-    if (f) setUploadedFiles(p=>({...p,[name]:f.name}));
+    if (!f) return;
+    if (!isValidUploadFile(f)) {
+      setDocErrors(p => ({ ...p, [name]: "Invalid file — only JPG/PNG/PDF up to 5MB allowed." }));
+      e.target.value = "";
+      return;
+    }
+    setDocErrors(p => { const n = { ...p }; delete n[name]; return n; });
+    setUploadedFiles(p => ({ ...p, [name]: { fileName: f.name, key: null, size: 0, uploading: true } }));
+    compressFile(f)
+      .then((compressed) => {
+        const key = `students/${selected._studentId}/documents/${slugify(name)}.${fileExt(compressed)}`;
+        return uploadFileToS3(compressed, key).then(() =>
+          setUploadedFiles(p => ({ ...p, [name]: { ...p[name], key, size: compressed.size, uploading: false } }))
+        );
+      })
+      .catch(() => {
+        setDocErrors(p => ({ ...p, [name]: "Upload failed — please try again." }));
+        setUploadedFiles(p => ({ ...p, [name]: { ...p[name], uploading: false } }));
+      });
   }
   function addCustomDoc()  { setCustomDocs(p=>[...p,{id:Date.now(),label:""}]); }
   function removeCustomDoc(id) { setCustomDocs(p=>p.filter(d=>d.id!==id)); }
@@ -504,11 +595,13 @@ function SingleStudentTool({ students, onStudentUpdated }) {
           </div>
           <div>
             <input ref={photoRef} type="file" accept="image/jpg,image/jpeg,image/png" className="hidden" onChange={handlePhoto}/>
-            <button type="button" onClick={()=>photoRef.current.click()} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50">
-              <Upload className="w-4 h-4"/>{photo?"Change Photo":"Upload Photo"}
+            <button type="button" disabled={photoUploading} onClick={()=>photoRef.current.click()} className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-60">
+              <Upload className="w-4 h-4"/>{photoUploading ? "Uploading..." : (photo?"Change Photo":"Upload Photo")}
             </button>
-            {photo && <button type="button" onClick={()=>{setPhoto(null);setPhotoPreview(null);}} className="ml-2 text-xs text-red-500 hover:text-red-700">Remove</button>}
-            <p className="text-xs text-gray-400 mt-1.5">JPG or PNG Â· Max 2MB</p>
+            {photo && !photoUploading && <button type="button" onClick={()=>{setPhoto(null);setPhotoPreview(null);setPhotoKey(null);setPhotoSize(0);}} className="ml-2 text-xs text-red-500 hover:text-red-700">Remove</button>}
+            <p className="text-xs text-gray-400 mt-1.5">JPG or PNG · auto-compressed to 1MB or less</p>
+            {!photoUploading && photoSize > 0 && <p className="text-xs text-green-600 font-medium mt-1">✓ {formatFileSize(photoSize)}</p>}
+            {photoError && <p className="text-[11px] text-red-500 mt-1">{photoError}</p>}
           </div>
         </div>
       </div>
@@ -525,7 +618,13 @@ function SingleStudentTool({ students, onStudentUpdated }) {
                 </div>
                 <FileText className="w-3.5 h-3.5 text-gray-400 flex-shrink-0"/>
                 <span className="text-sm text-gray-700">{docName}</span>
-                {uploadedFiles[docName]&&<span className="ml-auto text-xs text-green-600 font-medium truncate max-w-[130px]">✓ {uploadedFiles[docName]}</span>}
+                {uploadedFiles[docName]&&(
+                  <span className="ml-auto text-xs text-green-600 font-medium truncate max-w-[160px]">
+                    {uploadedFiles[docName].uploading
+                      ? "Uploading..."
+                      : `✓ ${uploadedFiles[docName].fileName}${uploadedFiles[docName].size ? ` (${formatFileSize(uploadedFiles[docName].size)})` : ""}`}
+                  </span>
+                )}
               </div>
               {checkedDocs[docName]&&(
                 <div className="px-4 py-2.5 bg-blue-50 border-t border-blue-100">
@@ -533,6 +632,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
                     <Upload className="w-3 h-3"/>{uploadedFiles[docName]?"Change File":"Upload File"}
                     <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={e=>handleDocFile(docName,e)}/>
                   </label>
+                  {docErrors[docName] && <p className="text-[11px] text-red-500 mt-1">{docErrors[docName]}</p>}
                 </div>
               )}
             </div>
@@ -557,7 +657,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
       </div>
 
       <div className="mt-6 flex gap-3">
-        <button onClick={handleSave} className="flex items-center gap-2 bg-school-navy text-white px-6 py-2.5 rounded-lg text-sm font-semibold"><Save className="w-4 h-4"/>Save Changes</button>
+        <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-school-navy text-white px-6 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-60"><Save className="w-4 h-4"/>{saving ? "Saving..." : "Save Changes"}</button>
         <button onClick={() => { setForm({...selected}); setErrors({}); resetMedia(); }} className="flex items-center gap-2 border border-gray-200 text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold"><RefreshCw className="w-4 h-4"/>Reset</button>
       </div>
     </div>
@@ -1506,6 +1606,42 @@ function EmployeePanel({ employees: propEmployees }) {
   const [editId, setEditId] = useState(null);
   const [form,   setForm]   = useState({});
   const [saved,  setSaved]  = useState(false);
+  const [photoPreview,   setPhotoPreview]   = useState(null);
+  const [photoKey,       setPhotoKey]       = useState(null);
+  const [photoSize,      setPhotoSize]      = useState(0);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError,     setPhotoError]     = useState("");
+
+  function openEdit(emp) {
+    setEditId(emp.id);
+    setForm({ phone:emp.phone, email:emp.email, designation:emp.designation, status:emp.status, joiningDate:emp.joiningDate, salary: salaries[emp.empId]||"" });
+    setPhotoPreview(null); setPhotoKey(null); setPhotoSize(0); setPhotoError("");
+    if (emp.photo) {
+      getS3ViewUrl(emp.photo).then(url => { if (url) setPhotoPreview(url); }).catch(() => {});
+    }
+  }
+
+  function handleEmpPhoto(e, emp) {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (!isValidUploadFile(f)) {
+      setPhotoError("Invalid file — only JPG/PNG up to 5MB allowed.");
+      e.target.value = "";
+      return;
+    }
+    setPhotoError("");
+    setPhotoPreview(URL.createObjectURL(f));
+    setPhotoKey(null); setPhotoSize(0);
+    setPhotoUploading(true);
+    compressFile(f)
+      .then((compressed) => {
+        const key = `employees/${emp.id}/photo.${fileExt(compressed)}`;
+        setPhotoSize(compressed.size);
+        return uploadFileToS3(compressed, key).then(() => setPhotoKey(key));
+      })
+      .catch(() => setPhotoError("Photo upload failed — please try again."))
+      .finally(() => setPhotoUploading(false));
+  }
 
   const TYPE_COLORS = {
     teaching:      "bg-blue-100 text-blue-700",
@@ -1522,13 +1658,18 @@ function EmployeePanel({ employees: propEmployees }) {
   });
 
   async function saveEdit() {
+    if (photoUploading) {
+      alert("Please wait for the photo upload to finish before saving.");
+      return;
+    }
     const { salary: salVal, ...empFields } = form;
     const emp = employees.find(e => e.id === editId);
+    const photo = photoKey || emp?.photo || null;
     try {
       const { updateEmployee } = await import("@/lib/employeeService");
-      await updateEmployee(editId, { ...emp, ...empFields });
+      await updateEmployee(editId, { ...emp, ...empFields, photo });
     } catch { }
-    const updated = employees.map(e => e.id === editId ? { ...e, ...empFields } : e);
+    const updated = employees.map(e => e.id === editId ? { ...e, ...empFields, photo } : e);
     setEmployees(updated);
     if (emp && salVal && !isNaN(Number(salVal)) && Number(salVal) > 0) {
       updateSal(emp.empId, Number(salVal));
@@ -1603,7 +1744,7 @@ function EmployeePanel({ employees: propEmployees }) {
                   </td>
                   <td className="px-3 py-2 text-gray-400">{emp.joiningDate||"—"}</td>
                   <td className="px-3 py-2">
-                    <button onClick={()=>editId===emp.id?setEditId(null):(setEditId(emp.id),setForm({ phone:emp.phone, email:emp.email, designation:emp.designation, status:emp.status, joiningDate:emp.joiningDate, salary: salaries[emp.empId]||"" }))}
+                    <button onClick={()=>editId===emp.id?setEditId(null):openEdit(emp)}
                       className="flex items-center gap-1 text-purple-700 font-semibold hover:text-purple-900">
                       <Pencil className="w-3.5 h-3.5"/>{editId===emp.id?"Close":"Edit"}
                     </button>
@@ -1612,6 +1753,20 @@ function EmployeePanel({ employees: propEmployees }) {
                 {editId===emp.id && (
                   <tr key={`ee-${emp.id}`}>
                     <td colSpan={10} className="px-4 py-4 bg-purple-50/30 border-b border-purple-100">
+                      <div className="flex items-center gap-4 mb-4">
+                        <div className="w-14 h-14 rounded-xl bg-gray-100 flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-300 flex-shrink-0">
+                          {photoPreview ? <img src={photoPreview} alt="Preview" className="w-full h-full object-cover"/> : <Camera className="w-5 h-5 text-gray-300"/>}
+                        </div>
+                        <div>
+                          <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-semibold text-gray-600 hover:bg-gray-50 cursor-pointer">
+                            <Upload className="w-3.5 h-3.5"/>{photoUploading ? "Uploading..." : (photoPreview ? "Change Photo" : "Upload Photo")}
+                            <input type="file" accept="image/jpg,image/jpeg,image/png" className="hidden" onChange={e=>handleEmpPhoto(e,emp)}/>
+                          </label>
+                          <p className="text-[11px] text-gray-400 mt-1">JPG or PNG · auto-compressed to 1MB or less</p>
+                          {!photoUploading && photoSize > 0 && <p className="text-[11px] text-green-600 font-medium mt-0.5">✓ {formatFileSize(photoSize)}</p>}
+                          {photoError && <p className="text-[11px] text-red-500 mt-0.5">{photoError}</p>}
+                        </div>
+                      </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
                         {[
                           {l:"Phone",          f:"phone",       t:"text"},
@@ -1631,8 +1786,8 @@ function EmployeePanel({ employees: propEmployees }) {
                         ))}
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={saveEdit} className="flex items-center gap-1.5 bg-purple-600 text-white px-4 py-2 rounded-lg text-xs font-semibold">
-                          <Save className="w-3.5 h-3.5"/>Save Changes
+                        <button onClick={saveEdit} disabled={photoUploading} className="flex items-center gap-1.5 bg-purple-600 text-white px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-60">
+                          <Save className="w-3.5 h-3.5"/>{photoUploading ? "Uploading..." : "Save Changes"}
                         </button>
                         <button onClick={()=>setEditId(null)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-xs font-semibold">
                           <X className="w-3.5 h-3.5"/>Cancel

@@ -5,6 +5,7 @@ import Link from "next/link";
 import useStore from "@/lib/store";
 import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabase";
+import S3Image from "@/components/S3Image";
 import {
   getStudents as fetchStudentsFromDB,
   deactivateStudent as svcDeactivate,
@@ -994,14 +995,17 @@ export default function StudentPage() {
 
                     {/* ── Column 1: Photo — full card height ── */}
                     <div className={`relative overflow-hidden border-r border-gray-100 ${a.photoBg}`} style={{ minHeight: "168px" }}>
-                      {student.photo ? (
-                        <img src={student.photo} alt={student.name} className="w-full h-full object-cover absolute inset-0" />
-                      ) : (
-                        <div className="w-full h-full absolute inset-0 flex flex-col items-center justify-center gap-2">
-                          <User className={`w-14 h-14 ${a.photoIcon}`} />
-                          <span className={`text-[10px] font-bold tracking-widest uppercase ${a.photoIcon} opacity-40`}>Photo</span>
-                        </div>
-                      )}
+                      <S3Image
+                        s3Key={student.photo}
+                        alt={student.name}
+                        className="w-full h-full object-cover absolute inset-0"
+                        fallback={
+                          <div className="w-full h-full absolute inset-0 flex flex-col items-center justify-center gap-2">
+                            <User className={`w-14 h-14 ${a.photoIcon}`} />
+                            <span className={`text-[10px] font-bold tracking-widest uppercase ${a.photoIcon} opacity-40`}>Photo</span>
+                          </div>
+                        }
+                      />
                     </div>
 
                     {/* ── Column 2: Basic Details ── */}
