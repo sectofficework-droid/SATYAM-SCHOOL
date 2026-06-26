@@ -181,6 +181,8 @@ const MGMT_MODULES = [
 
 
 const DEFAULT_DOCS = ["Birth Certificate","Student Aadhar Card","Father's Aadhar Card","Mother's Aadhar Card","Leaving Certificate","Marksheet"];
+// Must match REQUIRED_DOCS in employee/page.js — both write to the same employees.documents JSONB shape.
+const EMP_REQUIRED_DOCS = ["Aadhar Card", "PAN Card", "Degree Certificate", "Experience Letter", "Photo", "Address Proof"];
 
 const PHOTO_GROUP = {
   group: "Photo",
@@ -1611,6 +1613,7 @@ function EmployeePanel({ employees: propEmployees }) {
   const [photoSize,      setPhotoSize]      = useState(0);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError,     setPhotoError]     = useState("");
+  const [empDocs,        setEmpDocs]        = useState([]);
 
   function openEdit(emp) {
     setEditId(emp.id);
@@ -1619,6 +1622,30 @@ function EmployeePanel({ employees: propEmployees }) {
     if (emp.photo) {
       getS3ViewUrl(emp.photo).then(url => { if (url) setPhotoPreview(url); }).catch(() => {});
     }
+    const existingDocs = emp.documents || [];
+    setEmpDocs(EMP_REQUIRED_DOCS.map(name => {
+      const existing = existingDocs.find(d => d.name === name);
+      return { name, fileName: existing?.fileName || "", key: existing?.fileUrl || null, size: 0, uploading: false, error: "" };
+    }));
+  }
+
+  function handleEmpDocFile(e, docName, emp) {
+    const f = e.target.files[0];
+    if (!f) return;
+    if (!isValidUploadFile(f)) {
+      setEmpDocs(prev => prev.map(d => d.name === docName ? { ...d, error: "Only JPG/PNG/PDF up to 5MB allowed" } : d));
+      e.target.value = "";
+      return;
+    }
+    setEmpDocs(prev => prev.map(d => d.name === docName ? { ...d, fileName: f.name, key: null, size: 0, uploading: true, error: "" } : d));
+    compressFile(f)
+      .then((compressed) => {
+        const key = `employees/${emp.id}/documents/${slugify(docName)}.${fileExt(compressed)}`;
+        return uploadFileToS3(compressed, key).then(() =>
+          setEmpDocs(prev => prev.map(d => d.name === docName ? { ...d, key, size: compressed.size, uploading: false } : d))
+        );
+      })
+      .catch(() => setEmpDocs(prev => prev.map(d => d.name === docName ? { ...d, uploading: false, error: "Upload failed — please try again." } : d)));
   }
 
   function handleEmpPhoto(e, emp) {
@@ -1658,18 +1685,19 @@ function EmployeePanel({ employees: propEmployees }) {
   });
 
   async function saveEdit() {
-    if (photoUploading) {
-      alert("Please wait for the photo upload to finish before saving.");
+    if (photoUploading || empDocs.some(d => d.uploading)) {
+      alert("Please wait for uploads to finish before saving.");
       return;
     }
     const { salary: salVal, ...empFields } = form;
     const emp = employees.find(e => e.id === editId);
     const photo = photoKey || emp?.photo || null;
+    const documents = empDocs.map(d => ({ name: d.name, uploaded: !!d.key, fileName: d.fileName || "", fileUrl: d.key || null }));
     try {
       const { updateEmployee } = await import("@/lib/employeeService");
-      await updateEmployee(editId, { ...emp, ...empFields, photo });
+      await updateEmployee(editId, { ...emp, ...empFields, photo, documents });
     } catch { }
-    const updated = employees.map(e => e.id === editId ? { ...e, ...empFields, photo } : e);
+    const updated = employees.map(e => e.id === editId ? { ...e, ...empFields, photo, documents } : e);
     setEmployees(updated);
     if (emp && salVal && !isNaN(Number(salVal)) && Number(salVal) > 0) {
       updateSal(emp.empId, Number(salVal));
@@ -1767,6 +1795,31 @@ function EmployeePanel({ employees: propEmployees }) {
                           {photoError && <p className="text-[11px] text-red-500 mt-0.5">{photoError}</p>}
                         </div>
                       </div>
+                      <div className="mb-4">
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Documents</p>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {empDocs.map(d => (
+                            <div key={d.name} className="border border-gray-200 rounded-lg px-3 py-2 bg-white">
+                              <p className="text-[11px] font-semibold text-gray-700 truncate">{d.name}</p>
+                              {d.uploading ? (
+                                <p className="text-[11px] text-gray-400 mt-1">Uploading...</p>
+                              ) : d.key ? (
+                                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                  <span className="text-[11px] text-green-600 font-medium">✓ {d.size ? formatFileSize(d.size) : "Uploaded"}</span>
+                                  <button type="button" onClick={async () => { const url = await getS3ViewUrl(d.key); if (url) window.open(url, "_blank"); }} className="text-[11px] text-school-navy underline">View</button>
+                                </div>
+                              ) : (
+                                <p className="text-[11px] text-red-400 mt-1">Not uploaded</p>
+                              )}
+                              <label className="inline-flex items-center gap-1 mt-1.5 px-2 py-1 bg-gray-50 border border-gray-200 rounded text-[11px] font-medium text-gray-600 cursor-pointer hover:bg-gray-100">
+                                <Upload className="w-3 h-3"/>{d.key ? "Change" : "Upload"}
+                                <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={e=>handleEmpDocFile(e, d.name, emp)}/>
+                              </label>
+                              {d.error && <p className="text-[11px] text-red-500 mt-0.5">{d.error}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
                         {[
                           {l:"Phone",          f:"phone",       t:"text"},
@@ -1786,8 +1839,8 @@ function EmployeePanel({ employees: propEmployees }) {
                         ))}
                       </div>
                       <div className="flex gap-2">
-                        <button onClick={saveEdit} disabled={photoUploading} className="flex items-center gap-1.5 bg-purple-600 text-white px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-60">
-                          <Save className="w-3.5 h-3.5"/>{photoUploading ? "Uploading..." : "Save Changes"}
+                        <button onClick={saveEdit} disabled={photoUploading || empDocs.some(d=>d.uploading)} className="flex items-center gap-1.5 bg-purple-600 text-white px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-60">
+                          <Save className="w-3.5 h-3.5"/>{(photoUploading || empDocs.some(d=>d.uploading)) ? "Uploading..." : "Save Changes"}
                         </button>
                         <button onClick={()=>setEditId(null)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-xs font-semibold">
                           <X className="w-3.5 h-3.5"/>Cancel

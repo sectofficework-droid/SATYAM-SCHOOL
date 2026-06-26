@@ -14,6 +14,7 @@ import { getActiveClasses } from "@/lib/settingsService";
 import { getEmployees, addEmployee, updateEmployee } from "@/lib/employeeService";
 import { uploadFileToS3, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile, formatFileSize } from "@/lib/fileCompression";
+import S3Image from "@/components/S3Image";
 import {
   Users, Plus, Search, X, Phone, Mail, MapPin,
   Calendar, GraduationCap, Briefcase, Pencil,
@@ -145,8 +146,13 @@ function ViewEmployeeModal({ emp, onClose }) {
         {/* Header */}
         <div className="flex items-start justify-between px-6 pt-5 pb-4 border-b border-gray-100 flex-shrink-0">
           <div className="flex items-center gap-4">
-            <div className={`w-14 h-14 ${bg} rounded-2xl flex items-center justify-center flex-shrink-0 shadow-md`}>
-              <span className="text-white font-bold text-xl">{initials(emp.name)}</span>
+            <div className={`w-14 h-14 ${bg} rounded-2xl flex items-center justify-center flex-shrink-0 shadow-md overflow-hidden`}>
+              <S3Image
+                s3Key={emp.photo}
+                alt={emp.name}
+                className="w-full h-full object-cover"
+                fallback={<span className="text-white font-bold text-xl">{initials(emp.name)}</span>}
+              />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -1506,8 +1512,13 @@ export default function EmployeePage() {
                   <tr key={emp.id} className="hover:bg-gray-50/50 transition-colors">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 ${bg} rounded-xl flex items-center justify-center flex-shrink-0`}>
-                          <span className="text-white font-bold text-xs">{initials(emp.name)}</span>
+                        <div className={`w-9 h-9 ${bg} rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden`}>
+                          <S3Image
+                            s3Key={emp.photo}
+                            alt={emp.name}
+                            className="w-full h-full object-cover"
+                            fallback={<span className="text-white font-bold text-xs">{initials(emp.name)}</span>}
+                          />
                         </div>
                         <div>
                           <p className="font-semibold text-gray-800">{emp.name}</p>
