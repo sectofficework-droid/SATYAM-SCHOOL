@@ -434,6 +434,7 @@ export default function FeesPage() {
   const [newAdmin,         setNewAdmin]          = useState("");
   const [newAdminCustom,   setNewAdminCustom]    = useState("");
   const [pendingInventory, setPendingInventory]  = useState(new Set());
+  const [invGivenDate,     setInvGivenDate]      = useState(todayStr);
   const [saving,           setSaving]            = useState(false);
 
   // Overview filters
@@ -568,6 +569,7 @@ export default function FeesPage() {
     setEntryStd(""); setEntryRoll("");
     setNewAmt(""); setNewDate(todayStr); setNewAdmin(""); setNewAdminCustom("");
     setPendingInventory(new Set());
+    setInvGivenDate(todayStr);
   };
 
   const refreshStudents = async () => {
@@ -635,10 +637,11 @@ export default function FeesPage() {
     }
     setSaving(true);
     try {
-      await markInventoryGiven(assignmentIds, todayStr);
+      await markInventoryGiven(assignmentIds, invGivenDate || todayStr);
       await refreshStudents();
       const count = pendingInventory.size;
       setPendingInventory(new Set());
+      setInvGivenDate(todayStr);
       alert(`${count} inventory item(s) marked as given!`);
     } catch (err) {
       alert("Failed to update inventory: " + err.message);
@@ -1105,7 +1108,7 @@ export default function FeesPage() {
                       <div className="px-4 py-3 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
                         <div>
                           <p className="text-xs font-bold text-amber-800 uppercase tracking-wide">Pending Inventory</p>
-                          <p className="text-[10px] text-amber-600 mt-0.5">Tick items given today — date auto-assigned</p>
+                          <p className="text-[10px] text-amber-600 mt-0.5">Tick items to mark as given — set the date below</p>
                         </div>
                         <span className="text-[10px] bg-amber-100 text-amber-700 font-semibold px-2 py-0.5 rounded-full">
                           {pendingInvItems.length} pending
@@ -1129,15 +1132,25 @@ export default function FeesPage() {
                               </div>
                               {checked && (
                                 <span className="text-[11px] text-amber-700 font-semibold bg-amber-100 px-2 py-0.5 rounded-full flex-shrink-0">
-                                  Given today · {todayLong()}
+                                  Given · {invGivenDate ? invGivenDate.split("-").reverse().join("-") : todayLong()}
                                 </span>
                               )}
                             </div>
                           );
                         })}
                       </div>
-                      {pendingInventory.size > 0 && (
-                        <div className="px-4 py-3 bg-amber-50 border-t border-amber-100 flex justify-end">
+                      <div className="px-4 py-3 bg-amber-50 border-t border-amber-100 flex flex-wrap items-center justify-between gap-3">
+                        <div className="flex items-center gap-2">
+                          <label className="text-xs font-bold text-amber-800 uppercase tracking-wide whitespace-nowrap">Given Date</label>
+                          <input
+                            type="date"
+                            value={invGivenDate}
+                            max={todayStr}
+                            onChange={(e) => setInvGivenDate(e.target.value)}
+                            className="text-sm border border-amber-300 rounded-lg px-2 py-1 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                          />
+                        </div>
+                        {pendingInventory.size > 0 && (
                           <button
                             onClick={handleSaveInventory}
                             disabled={saving}
@@ -1146,8 +1159,8 @@ export default function FeesPage() {
                             <Package className="w-4 h-4" />
                             {saving ? "Saving…" : `Save Inventory (${pendingInventory.size} item${pendingInventory.size !== 1 ? "s" : ""})`}
                           </button>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   )}
 

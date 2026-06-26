@@ -19,6 +19,7 @@ import {
   IndianRupee, Check, ArrowLeft, Download,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { fmtDMY } from "@/lib/utils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { isPositiveAmount, isValidLength } from "@/lib/validators";
@@ -1047,7 +1048,7 @@ export default function StudentPage() {
                         <div className="w-px bg-gray-200" />
                         <div className="flex-1 min-w-0 px-2.5 py-1.5 bg-gray-50/60">
                           <p className="text-[9px] text-gray-400 font-bold uppercase tracking-wide">Date of Join</p>
-                          <p className="text-[13px] font-semibold text-gray-700 leading-tight">{student.dateOfJoin || "—"}</p>
+                          <p className="text-[13px] font-semibold text-gray-700 leading-tight">{fmtDMY(student.dateOfJoin)}</p>
                         </div>
                       </div>
 
@@ -1063,7 +1064,7 @@ export default function StudentPage() {
                         <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                         <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wide flex-shrink-0">DOB</span>
                         <span className="text-[13px] font-medium text-gray-700">
-                          {student.dob} · Age <b className="text-gray-900">{calcAge(student.dob)}</b> · {student.gender}
+                          {fmtDMY(student.dob)} · Age <b className="text-gray-900">{calcAge(student.dob)}</b> · {student.gender}
                         </span>
                       </div>
                     </div>

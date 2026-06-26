@@ -7,6 +7,7 @@ import {
   ChevronDown, Lock,
 } from "lucide-react";
 import { isDateOnOrAfter, isValidLength } from "@/lib/validators";
+import { fmtDMY } from "@/lib/utils";
 import {
   getStudentByEnrollment,
   saveTransferCertificate,
@@ -93,11 +94,11 @@ function TcCertificate({ student, tcData }) {
           ["Student's Name",          student.name],
           ["Father's Name",           student.fatherName],
           ["Mother's Name",           student.motherName],
-          ["Date of Birth",           student.dob],
+          ["Date of Birth",           fmtDMY(student.dob)],
           ["Nationality / Religion",  `Indian / ${student.religion}`],
           ["Category",                student.caste],
           ["Aadhar Card No.",         student.aadhar || "Not Provided"],
-          ["Date of Admission",       student.admissionDate],
+          ["Date of Admission",       fmtDMY(student.admissionDate)],
           ["Class at Admission",      student.admissionClass || "—"],
           ["Last Class Attended",     `${student.std}${student.section ? "-" + student.section : ""}`],
           ["Academic Session",        student.session],

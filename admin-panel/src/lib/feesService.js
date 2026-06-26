@@ -160,10 +160,52 @@ export async function updateFeesForEnrollment(enrollmentId, { discount, payments
   }
 }
 
+export async function markInventoryPending(assignmentIds) {
+  const { error } = await supabase
+    .from("student_inventory_assignments")
+    .update({ status: "Pending", given_date: null })
+    .in("id", assignmentIds);
+  if (error) throw error;
+}
+
 export async function markInventoryGiven(assignmentIds, givenDate) {
+  // Fetch item_id + name for each assignment so we can deduct stock
+  const { data: assignments, error: fetchErr } = await supabase
+    .from("student_inventory_assignments")
+    .select("id, item_id, inventory_items(name)")
+    .in("id", assignmentIds);
+  if (fetchErr) throw fetchErr;
+
+  // Mark assignments as Given
   const { error } = await supabase
     .from("student_inventory_assignments")
     .update({ status: "Given", given_date: givenDate })
     .in("id", assignmentIds);
   if (error) throw error;
+
+  // Books and notebooks are deducted manually via the Inventory module — skip them here
+  const MANUAL_ITEMS = ["book set"];
+  const deductible = (assignments || []).filter(a => {
+    if (!a.item_id) return false;
+    const name = (a.inventory_items?.name || "").toLowerCase().trim();
+    return !name.includes("notebook") && !MANUAL_ITEMS.includes(name);
+  });
+
+  // Insert inventory_usages to deduct stock (group by item_id, qty = number of students)
+  const qtyMap = {};
+  deductible.forEach(a => {
+    qtyMap[a.item_id] = (qtyMap[a.item_id] || 0) + 1;
+  });
+  const usageRows = Object.entries(qtyMap).map(([item_id, qty]) => ({
+    item_id,
+    qty,
+    usage_date: givenDate,
+    purpose:    "student",
+  }));
+  if (usageRows.length > 0) {
+    const { error: usageErr } = await supabase
+      .from("inventory_usages")
+      .insert(usageRows);
+    if (usageErr) throw usageErr;
+  }
 }

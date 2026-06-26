@@ -18,17 +18,18 @@ import {
   isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
 import { getStudents, getClasses, addStudent as dbAddStudent, updateStudent as dbUpdateStudent } from "@/lib/studentService";
+import { DEFAULT_DOCS } from "@/lib/constants";
 import { uploadFileToS3, getS3ViewUrl, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile, formatFileSize } from "@/lib/fileCompression";
 import { getEmployees } from "@/lib/employeeService";
 import { getFeesForSuperAdmin } from "@/lib/reportService";
-import { updateFeesForEnrollment } from "@/lib/feesService";
+import { updateFeesForEnrollment, markInventoryGiven, markInventoryPending } from "@/lib/feesService";
 import { getAssets, getInventoryItems } from "@/lib/inventoryService";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-// â"€â"€ Constants â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Constants ─────────────────────────────────────────────────────────────────
 const CLASSES = [
   "JR.KG","SR.KG","Balvatika",
   "1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th",
@@ -91,6 +92,45 @@ const IMPORT_FIELDS = [
   { key:"prevPercentage",    label:"Previous Percentage",            required:false },
 ];
 
+// Converts any common date format to YYYY-MM-DD for the database.
+// Handles: JS Date objects, DD/MM/YYYY, DD-MM-YYYY, Excel serials, YYYY-MM-DD (passthrough).
+function normalizeDate(val) {
+  if (!val) return null;
+  // JS Date object (from XLSX cellDates:true)
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return null;
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, "0");
+    const d = String(val.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(val).trim();
+  if (!s) return null;
+  // Already ISO
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  // DD/MM/YYYY or D/M/YYYY (India standard)
+  const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, d, m, y] = slashMatch;
+    return `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+  }
+  // DD-MM-YYYY
+  const dashMatch = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dashMatch) {
+    const [, d, m, y] = dashMatch;
+    return `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+  }
+  // Excel serial number
+  const serial = Number(s);
+  if (!isNaN(serial) && serial > 1000) {
+    const date = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+    if (!isNaN(date.getTime())) {
+      return `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,"0")}-${String(date.getUTCDate()).padStart(2,"0")}`;
+    }
+  }
+  return s;
+}
+
 const EXAMPLE_ROW = [
   // Admission Info
   "GR001","5th","5th","A","1","2026-06-01","15500","0","",
@@ -112,6 +152,7 @@ const FIELD_GROUPS = [
     { key:"joinDate",        label:"Date of Join",    icon:Calendar,      type:"date"   },
     { key:"grNo",            label:"GR Number",       icon:Hash,          type:"text"   },
     { key:"cls",             label:"Class",           icon:GraduationCap, type:"select", options:CLASSES },
+    { key:"roll",            label:"Roll No",         icon:Hash,          type:"text"   },
   ]},
   { group:"Personal", fields:[
     { key:"firstName",       label:"First Name",      icon:User,          type:"text"   },
@@ -180,7 +221,7 @@ const MGMT_MODULES = [
 ];
 
 
-const DEFAULT_DOCS = ["Birth Certificate","Student Aadhar Card","Father's Aadhar Card","Mother's Aadhar Card","Leaving Certificate","Marksheet"];
+// DEFAULT_DOCS imported from @/lib/constants
 // Must match REQUIRED_DOCS in employee/page.js — both write to the same employees.documents JSONB shape.
 const EMP_REQUIRED_DOCS = ["Aadhar Card", "PAN Card", "Degree Certificate", "Experience Letter", "Photo", "Address Proof"];
 
@@ -209,7 +250,7 @@ const EMP_ROLES    = ["Teacher","Admin Staff","Principal","Vice Principal","Lab 
 const EMP_STATUSES = ["Active","On Leave","Resigned"];
 const ASSET_ACTIONS = ["Purchased","Assigned","Returned","Serviced","Repaired","Moved","Disposed"];
 
-// â"€â"€ Dummy data â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Dummy data ────────────────────────────────────────────────────────────────
 // Maps the shape returned by getStudents() to what super-admin components expect
 function mapStudentForSuperAdmin(st) {
   return {
@@ -228,6 +269,8 @@ function mapStudentForSuperAdmin(st) {
 function mapFormForUpdate(form) {
   return {
     grNo:             form.grNo,
+    rollNo:           form.roll ? Number(form.roll) : undefined,
+    joinDate:         form.joinDate || undefined,
     firstName:        form.firstName,
     lastName:         form.lastName,
     fatherName:       form.fatherName,
@@ -253,7 +296,7 @@ function mapFormForUpdate(form) {
   };
 }
 
-// â"€â"€ Shared cell renderer â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Shared cell renderer ──────────────────────────────────────────────────────
 // Detects the semantic type of a free-text field from its key/label so the
 // spreadsheet editor can flag obviously invalid values without blocking typing.
 function detectFieldKind(field) {
@@ -351,7 +394,7 @@ function FieldCell({ field, value, onChange, compact, error }) {
   );
 }
 
-// â"€â"€ Single Student Tool (Senior Admin) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Single Student Tool (Senior Admin) ────────────────────────────────────────
 const NAME_FIELDS  = ["firstName", "lastName", "fatherName", "motherName", "aadharName"];
 const PHONE_FIELDS = ["mobile1", "mobile2"];
 
@@ -415,7 +458,8 @@ function SingleStudentTool({ students, onStudentUpdated }) {
     try {
       await dbUpdateStudent(selected._studentId, {
         ...mapFormForUpdate(form),
-        photo: photoKey || selected.photo || null,
+        photo:        photoKey || selected.photo || null,
+        enrollmentId: selected._enrollmentId,
       });
 
       const { data: docTypes } = await supabase.from("document_types").select("id, name");
@@ -534,7 +578,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
   if (!selected) return (
     <div>
       <div className="flex items-center gap-3 mb-5">
-        <button onClick={() => { setSelClass(""); setSearch(""); resetMedia(); }} className="text-school-navy text-sm font-semibold">â† Back</button>
+        <button onClick={() => { setSelClass(""); setSearch(""); resetMedia(); }} className="text-school-navy text-sm font-semibold">← Back</button>
         <span className="text-gray-400">/</span>
         <span className="text-sm font-bold text-gray-700">{selClass}</span>
         <span className="ml-auto text-xs text-gray-400">{inClass.length} students</span>
@@ -549,7 +593,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
             <div className="w-10 h-10 rounded-full bg-school-gold flex items-center justify-center text-white font-bold text-sm flex-shrink-0">{st.firstName[0]}{st.lastName[0]}</div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-800">{st.name}</p>
-              <p className="text-xs text-gray-400">{st.enrollNo} Â· Roll {st.roll}</p>
+              <p className="text-xs text-gray-400">{st.enrollNo} · Roll {st.roll}</p>
             </div>
             <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
           </button>
@@ -562,7 +606,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
   return (
     <div>
       <div className="flex items-center gap-3 mb-5">
-        <button onClick={goBack} className="text-school-navy text-sm font-semibold">â† Back</button>
+        <button onClick={goBack} className="text-school-navy text-sm font-semibold">← Back</button>
         <span className="text-gray-400">/</span>
         <span className="text-sm font-bold">{selClass}</span>
         <span className="text-gray-400">/</span>
@@ -588,7 +632,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
           </div>
         ))}
       </div>
-      {/* â"€â"€ Photo Upload â"€â"€ */}
+      {/* ── Photo Upload ── */}
       <div className="border-t border-gray-100 pt-5 mt-2">
         <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Student Photo</h4>
         <div className="flex items-center gap-5">
@@ -608,7 +652,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
         </div>
       </div>
 
-      {/* â"€â"€ Documents â"€â"€ */}
+      {/* ── Documents ── */}
       <div className="border-t border-gray-100 pt-5">
         <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Documents</h4>
         <div className="space-y-2">
@@ -666,7 +710,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
   );
 }
 
-// â"€â"€ Spreadsheet bulk editor (shared logic) â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Spreadsheet bulk editor (shared logic) ────────────────────────────────────
 function SpreadsheetEditor({ students, title }) {
   const [selClass,      setSelClass]      = useState("All");
   const [search,        setSearch]        = useState("");
@@ -797,7 +841,7 @@ function SpreadsheetEditor({ students, title }) {
   );
 }
 
-// â"€â"€ Fees Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Fees Panel ────────────────────────────────────────────────────────────────
 function FeesPanel({ fees }) {
   const [feeRecs,  setFeeRecs]  = useState([]);
   const [expandId, setExpandId] = useState(null);
@@ -956,7 +1000,7 @@ function FeesPanel({ fees }) {
   );
 }
 
-// â"€â"€ Inventory Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Inventory Panel ───────────────────────────────────────────────────────────
 function InventoryPanel({ students }) {
   const masterItems   = useStore(s => s.studentInventoryItems);
   const addMasterItem = useStore(s => s.addStudentInventoryItem);
@@ -1009,13 +1053,24 @@ function InventoryPanel({ students }) {
   }, []);
 
   useEffect(() => {
-    setStuInv((students || []).map(s => ({
-      id:       s.id,
-      name:     s.name,
-      cls:      s.cls,
-      enrollNo: s.enrollNo,
-      items:    masterItems.map(item => ({ item, given: false, date: "" })),
-    })));
+    const todayIso = new Date().toISOString().split("T")[0];
+    setStuInv((students || []).map(s => {
+      // Build a lookup of item name → DB assignment for this student
+      const dbMap = {};
+      (s.inventory || []).forEach(inv => { dbMap[inv.item] = inv; });
+      return {
+        id:       s._studentId,
+        name:     s.name,
+        cls:      s.std,
+        enrollNo: s.enrollment,
+        items: masterItems.map(itemName => {
+          const db = dbMap[itemName];
+          return db
+            ? { item: itemName, given: db.given, date: db.givenDateRaw || (db.given ? todayIso : ""), _assignmentId: db._assignmentId }
+            : { item: itemName, given: false, date: "", _assignmentId: null };
+        }),
+      };
+    }));
   }, [students, masterItems]);
 
   function showSaved(msg) { setSaved(msg); setTimeout(()=>setSaved(""),2000); }
@@ -1155,7 +1210,7 @@ function InventoryPanel({ students }) {
                     <td className="px-3 py-2 text-gray-600">{s.cls}</td>
                     {s.items.map((it,j)=>(
                       <td key={j} className="px-3 py-2 text-center">
-                        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold ${it.given?"bg-green-100 text-green-700":"bg-gray-100 text-gray-400"}`}>{it.given?"✓":"âœ—"}</span>
+                        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-[11px] font-bold ${it.given?"bg-green-100 text-green-700":"bg-gray-100 text-gray-400"}`}>{it.given?"✓":"✗"}</span>
                       </td>
                     ))}
                     <td className="px-3 py-2"><button onClick={()=>{setSelStu(s);setStuItems(s.items.map(i=>({...i})));}} className="flex items-center gap-1 text-amber-700 font-semibold"><Pencil className="w-3.5 h-3.5"/>Edit</button></td>
@@ -1168,13 +1223,13 @@ function InventoryPanel({ students }) {
       )}
       {tab==="student" && selStu && (
         <div>
-          <button onClick={()=>setSelStu(null)} className="text-amber-700 text-sm font-semibold mb-4">â† Back to list</button>
+          <button onClick={()=>setSelStu(null)} className="text-amber-700 text-sm font-semibold mb-4">← Back to list</button>
           <h4 className="text-sm font-bold text-gray-800 mb-1">{selStu.name}</h4>
-          <p className="text-xs text-gray-400 mb-4">{selStu.cls} Â· {selStu.enrollNo}</p>
+          <p className="text-xs text-gray-400 mb-4">{selStu.cls} · {selStu.enrollNo}</p>
           <div className="space-y-3">
             {stuItems.map((it,j)=>(
               <div key={j} className="flex flex-wrap items-center gap-4 p-3 bg-gray-50 rounded-xl border border-gray-200">
-                <button onClick={()=>setStuItems(prev=>prev.map((x,i)=>i===j?{...x,given:!x.given,date:!x.given?"2026-06-05":""}:x))} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${it.given?"bg-green-500 border-green-500 text-white":"border-gray-300 text-gray-400"}`}><Check className="w-4 h-4"/></button>
+                <button onClick={()=>{ const tod=new Date().toISOString().split("T")[0]; setStuItems(prev=>prev.map((x,i)=>i===j?{...x,given:!x.given,date:!x.given?tod:""}:x)); }} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${it.given?"bg-green-500 border-green-500 text-white":"border-gray-300 text-gray-400"}`}><Check className="w-4 h-4"/></button>
                 <span className="text-sm font-semibold text-gray-700 min-w-24">{it.item}</span>
                 <div className="flex items-center gap-2">
                   <label className="text-xs text-gray-500">Date:</label>
@@ -1310,7 +1365,7 @@ function InventoryPanel({ students }) {
   );
 }
 
-// â"€â"€ Employee Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Employee Panel ────────────────────────────────────────────────────────────
 
 // -- Salary Panel (Management Head only) -------------------------------------------
 function SalaryPanel({ employees: propEmployees }) {
@@ -1324,8 +1379,9 @@ function SalaryPanel({ employees: propEmployees }) {
   const [typeF,      setTypeF]      = useState("All");
   const [editId,     setEditId]     = useState(null);
   const [editVal,    setEditVal]    = useState("");
-  const [dbPayments, setDbPayments] = useState([]);
-  const [paying,     setPaying]     = useState(false);
+  const [dbPayments,  setDbPayments]  = useState([]);
+  const [allPayments, setAllPayments] = useState([]);
+  const [paying,      setPaying]      = useState(false);
 
   const safeSalaries = salaries || {};
 
@@ -1341,7 +1397,13 @@ function SalaryPanel({ employees: propEmployees }) {
     setDbPayments(data || []);
   }
 
+  async function loadAllPayments() {
+    const { data } = await supabase.from("salary_payments").select("id, employee_id, amount, paid_on, paid_by, month");
+    setAllPayments(data || []);
+  }
+
   useEffect(() => { loadPayments(month); }, [month]);
+  useEffect(() => { loadAllPayments(); }, []);
 
   function isPaid(emp)    { return dbPayments.some(p => p.employee_id === emp.id); }
   function getPaidOn(emp) { return dbPayments.find(p => p.employee_id === emp.id)?.paid_on; }
@@ -1374,6 +1436,7 @@ function SalaryPanel({ employees: propEmployees }) {
     await supabase.from("salary_payments").insert({ employee_id: emp.id, month: monthDate, amount, paid_on: date, paid_by: "Sunil Pradhan" });
     await addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount, date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId }).catch(() => {});
     await loadPayments(month);
+    await loadAllPayments();
     setPaying(false);
   }
 
@@ -1388,8 +1451,11 @@ function SalaryPanel({ employees: propEmployees }) {
       addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount: getSal(emp), date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId })
     ));
     await loadPayments(month);
+    await loadAllPayments();
     setPaying(false);
   }
+
+  const safePayments = allPayments;
 
   if (employees.length === 0) return (
     <div className="flex flex-col items-center justify-center py-12 text-center text-gray-400 space-y-2">
@@ -1859,7 +1925,7 @@ function EmployeePanel({ employees: propEmployees }) {
   );
 }
 
-// â"€â"€ Pending IDs Panel â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Pending IDs Panel ─────────────────────────────────────────────────────────
 function PendingDetailsPanel({ students }) {
   const [selFields, setSelFields] = useState([]);
   const [selClass,  setSelClass]  = useState("All");
@@ -1875,7 +1941,7 @@ function PendingDetailsPanel({ students }) {
     selFields.some(key => !s[key])
   ).filter(s => selClass==="All" || s.cls===selClass);
 
-  // â"€â"€ Export helpers â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+  // ── Export helpers ─────────────────────────────────────────────
   function exportExcel() {
     const rows = filtered.map(s => {
       const row = { Name:s.name, Class:s.cls, "Enroll No":s.enrollNo };
@@ -1894,7 +1960,7 @@ function PendingDetailsPanel({ students }) {
     doc.text("Students with Pending Government IDs", 14, 15);
     doc.setFontSize(9);
     doc.setTextColor(120);
-    doc.text(`Filters: ${activeFields.map(f=>f.label).join(", ") || "None"} Â· Class: ${selClass} Â· Total: ${filtered.length}`, 14, 22);
+    doc.text(`Filters: ${activeFields.map(f=>f.label).join(", ") || "None"} · Class: ${selClass} · Total: ${filtered.length}`, 14, 22);
     autoTable(doc, {
       startY: 28,
       head: [["Name","Class","Enroll No",...PENDING_ID_FIELDS.map(f=>f.label)]],
@@ -2014,7 +2080,7 @@ function PendingDetailsPanel({ students }) {
     </div>
   );
 }
-// â"€â"€ Super Admin Page â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€â"€
+// ── Super Admin Page ──────────────────────────────────────────────────────────
 
 function ImportStudentsPanel({ onImportDone }) {
   const fileRef = useRef(null);
@@ -2057,7 +2123,7 @@ function ImportStudentsPanel({ onImportDone }) {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const wb   = XLSX.read(evt.target.result, { type:"binary" });
+        const wb   = XLSX.read(evt.target.result, { type:"binary", cellDates:true });
         const ws   = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:"" });
         if (rows.length < 3) { alert("File has no data rows. Please use the downloaded template."); return; }
@@ -2074,7 +2140,8 @@ function ImportStudentsPanel({ onImportDone }) {
           if (row.every(c => !c)) return;
           const s = { _row: i + 3, _errors: [] };
           IMPORT_FIELDS.forEach(f => {
-            s[f.key] = colMap[f.key] !== undefined ? String(row[colMap[f.key]] ?? "").trim() : "";
+            const raw = colMap[f.key] !== undefined ? (row[colMap[f.key]] ?? "") : "";
+            s[f.key] = raw instanceof Date ? normalizeDate(raw) || "" : String(raw).trim();
           });
           if (!s.firstName) s._errors.push("First Name missing");
           if (!s.cls)       s._errors.push("Class missing");
@@ -2103,12 +2170,13 @@ function ImportStudentsPanel({ onImportDone }) {
           std:               s.cls,
           admissionClass:    s.admissionClass || s.cls,
           section:           s.section || "A",
+          rollNo:            s.rollNo ? Number(s.rollNo) : undefined,
           firstName:         s.firstName,
           lastName:          s.lastName,
           fatherName:        s.fatherName || "",
           motherName:        s.motherName || "",
           gender:            s.gender,
-          dob:               s.dob || null,
+          dob:               normalizeDate(s.dob),
           placeOfBirth:      s.placeOfBirth || "",
           motherTongue:      s.motherTongue || "",
           religion:          s.religion || "",
@@ -2124,13 +2192,13 @@ function ImportStudentsPanel({ onImportDone }) {
           landmark:          s.landmark || "",
           area:              s.area || "",
           pinCode:           s.pinCode || "",
-          address:           s.address || "",
+          address:           s.address || [s.roomPlotNo, s.society, s.landmark, s.area, s.pinCode].filter(Boolean).join(", "),
           aadhar:            s.aadharNo || "",
           aadharName:        s.aadharName || "",
           udise:             s.udise || "",
           pen:               s.pen || "",
           apaar:             s.apaar || "",
-          dateOfJoin:        s.joinDate || new Date().toISOString().split("T")[0],
+          dateOfJoin:        normalizeDate(s.joinDate) || new Date().toISOString().split("T")[0],
           feeTotal:          s.feeTotal ? Number(s.feeTotal) : 0,
           discountAmount:    s.discountAmount ? Number(s.discountAmount) : 0,
           discountReason:    s.discountReason || "",

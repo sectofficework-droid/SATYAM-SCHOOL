@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import useStore from "@/lib/store";
 import { useParams, useRouter } from "next/navigation";
 import { getStudentByEnrollment } from "@/lib/studentService";
+import { fmtDMY } from "@/lib/utils";
 import S3Image from "@/components/S3Image";
 import { getS3ViewUrl, buildDocDownloadName } from "@/lib/s3Upload";
 import {
@@ -53,7 +54,7 @@ function PersonalTab({ s }) {
         <InfoRow label="Enrollment No"    value={s.enrollment} />
         <InfoRow label="GR Number"        value={s.grNo} />
         <InfoRow label="Academic Session" value={s.session} />
-        <InfoRow label="Date of Join"     value={s.joinDate} />
+        <InfoRow label="Date of Join"     value={fmtDMY(s.joinDate)} />
         <InfoRow label="Standard"         value={`${s.std} - ${s.section}`} />
         <InfoRow label="Roll Number"      value={s.rollNo} />
         <InfoRow label="App Password"     value={s.password} />
@@ -70,7 +71,7 @@ function PersonalTab({ s }) {
         <InfoRow label="Full Name"    value={s.studentName} />
         <InfoRow label="Father's Name" value={s.fatherName} />
         <InfoRow label="Mother's Name" value={s.motherName} />
-        <InfoRow label="Date of Birth" value={s.dob} />
+        <InfoRow label="Date of Birth" value={fmtDMY(s.dob)} />
         <InfoRow label="Gender"        value={s.gender} />
         <InfoRow label="Religion"      value={s.religion} />
         <InfoRow label="Category"      value={s.caste} />
@@ -641,7 +642,7 @@ function generateAdmissionFormHTML(s, logoUrl) {
     <span>Enrollment: <b>#${s.enrollment}</b></span>
     <span>GR No: <b>${s.grNo || "—"}</b></span>
     <span>Session: <b>${s.session}</b></span>
-    <span>Date of Join: <b>${s.joinDate}</b></span>
+    <span>Date of Join: <b>${fmtDMY(s.joinDate)}</b></span>
   </div>
 
   <div class="sec">Class Details</div>
@@ -656,7 +657,7 @@ function generateAdmissionFormHTML(s, logoUrl) {
     <div class="field full"><div class="fl">Full Name</div><div class="fv">${s.studentName}</div></div>
     <div class="field"><div class="fl">Father's Name</div><div class="fv">${s.fatherName}</div></div>
     <div class="field"><div class="fl">Mother's Name</div><div class="fv">${s.motherName}</div></div>
-    <div class="field"><div class="fl">Date of Birth</div><div class="fv">${s.dob}</div></div>
+    <div class="field"><div class="fl">Date of Birth</div><div class="fv">${fmtDMY(s.dob)}</div></div>
     <div class="field"><div class="fl">Gender</div><div class="fv">${s.gender}</div></div>
     <div class="field"><div class="fl">Religion</div><div class="fv">${s.religion}</div></div>
     <div class="field"><div class="fl">Category / Caste</div><div class="fv">${s.caste}</div></div>
@@ -891,7 +892,7 @@ export default function StudentDetailPage() {
                 <div className="bg-gray-50 rounded-xl px-3 py-2">
                   <p className="text-[9px] text-gray-400 uppercase tracking-wide font-semibold">Date of Birth</p>
                   <p className="text-xs font-bold text-gray-800 mt-0.5 flex items-center gap-1">
-                    <Calendar className="w-3 h-3 text-gray-400" /> {student.dob}
+                    <Calendar className="w-3 h-3 text-gray-400" /> {fmtDMY(student.dob)}
                   </p>
                 </div>
                 <div className="bg-gray-50 rounded-xl px-3 py-2">

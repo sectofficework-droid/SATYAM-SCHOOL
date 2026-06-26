@@ -11,6 +11,7 @@ import {
   isValidPercentage, isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
 import { getStudentByEnrollment, updateStudent as svcUpdate } from "@/lib/studentService";
+import { fmtDMY } from "@/lib/utils";
 import { getActiveClasses } from "@/lib/settingsService";
 import { uploadFileToS3, getS3ViewUrl, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile, formatFileSize } from "@/lib/fileCompression";
@@ -414,6 +415,8 @@ function EditForm({ existing, id, router }) {
     setSubmitting(true);
     try {
       await svcUpdate(existing._studentId, {
+        enrollmentId: existing._enrollmentId,
+        joinDate:     form.joinDate || undefined,
         grNo:         existing.grNo || "",
         firstName:    form.firstName,
         lastName:     form.lastName,
@@ -667,7 +670,7 @@ function EditForm({ existing, id, router }) {
             <FieldError>{errors.motherName}</FieldError>
           </div>
           <div>
-            <ReadOnlyField label="Date of Birth" value={form.dob} />
+            <ReadOnlyField label="Date of Birth" value={fmtDMY(form.dob)} />
           </div>
           <div>
             <ReadOnlyField label="Gender" value={form.gender} />

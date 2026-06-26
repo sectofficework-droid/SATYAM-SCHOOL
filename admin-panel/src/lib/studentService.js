@@ -1,4 +1,5 @@
 import supabase from "./supabase";
+import { DEFAULT_DOCS } from "./constants";
 
 // ── Class name normalisation (DB stores "JR KG", app uses "JR.KG") ───────────
 const CLASS_NAME_MAP = {
@@ -22,12 +23,15 @@ export function mapToStudent(enrollment) {
     ? enrollment.fee_payments.reduce((sum, p) => sum + (p.amount || 0), 0)
     : 0;
 
-  const pendingDocs = enrollment.student?.student_documents
-    ? enrollment.student.student_documents
-        .filter(d => d.status === "Pending")
-        .map(d => d.document_types?.name)
-        .filter(Boolean)
-    : [];
+  const uploadedDocNames = new Set(
+    (enrollment.student?.student_documents || [])
+      .filter(d => d.status === "Uploaded")
+      .map(d => d.document_types?.name)
+      .filter(Boolean)
+  );
+  const hasPrevSchool = !!(s.student_previous_school?.[0]?.school_name);
+  const notRequired   = hasPrevSchool ? [] : ["Leaving Certificate", "Marksheet"];
+  const pendingDocs   = DEFAULT_DOCS.filter(name => !uploadedDocNames.has(name) && !notRequired.includes(name));
 
   const pendingInventory = enrollment.student_inventory_assignments
     ? enrollment.student_inventory_assignments
@@ -133,11 +137,13 @@ export function mapToStudent(enrollment) {
     // Full inventory list (populated when student_inventory_assignments is loaded)
     inventory: enrollment.student_inventory_assignments
       ? enrollment.student_inventory_assignments.map(a => ({
-          item:      a.inventory_items?.name || "",
-          givenDate: a.given_date
+          item:          a.inventory_items?.name || "",
+          givenDate:     a.given_date
             ? new Date(a.given_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
             : "",
-          given:     a.status === "Given",
+          givenDateRaw:  a.given_date || "",
+          given:         a.status === "Given",
+          _assignmentId: a.id,
         }))
       : [],
 
@@ -154,15 +160,15 @@ export function mapToStudent(enrollment) {
         }))
       : [],
 
-    // Previous school (if loaded)
-    lastSchoolName:    s.student_previous_school?.school_name || "",
-    lastSchoolGrNo:    s.student_previous_school?.grno || "",
-    lastSchoolClass:   s.student_previous_school?.class || "",
-    lastSchoolMedium:  s.student_previous_school?.medium || "",
-    lastSchoolPlace:   s.student_previous_school?.place || "",
-    prevAttendanceDays: s.student_previous_school?.attendance_days || "",
-    lastExamGiven:     s.student_previous_school?.last_exam_given ? "Yes" : "No",
-    prevPercentage:    s.student_previous_school?.percentage || "",
+    // Previous school (if loaded) — Supabase returns this as an array
+    lastSchoolName:     s.student_previous_school?.[0]?.school_name || "",
+    lastSchoolGrNo:     s.student_previous_school?.[0]?.grno || "",
+    lastSchoolClass:    s.student_previous_school?.[0]?.class || "",
+    lastSchoolMedium:   s.student_previous_school?.[0]?.medium || "",
+    lastSchoolPlace:    s.student_previous_school?.[0]?.place || "",
+    prevAttendanceDays: s.student_previous_school?.[0]?.attendance_days || "",
+    lastExamGiven:      s.student_previous_school?.[0]?.last_exam_given ? "Yes" : "No",
+    prevPercentage:     s.student_previous_school?.[0]?.percentage || "",
 
     // Siblings (if loaded)
     siblings: s.student_siblings
@@ -272,12 +278,12 @@ export async function getStudents(yearId = null) {
       student:students(
         id, first_name, last_name, photo_url, grno,
         dob, gender, mobile1, mobile2, status,
-        father_name, mother_name, aadhar, udise, pen, apaar,
-        address, pincode, room_plot_no, area,
+        father_name, mother_name, aadhar, aadhar_name, udise, pen, apaar,
+        address, pincode, room_plot_no, society, landmark, area,
         student_documents(status, document_types(name)),
         student_previous_school(school_name)
       ),
-      student_inventory_assignments(status, inventory_items(name)),
+      student_inventory_assignments(id, status, given_date, inventory_items(name)),
       class:classes!student_enrollments_class_id_fkey(id, name),
       section:sections(id, name),
       academic_year:academic_years(id, label),
@@ -522,6 +528,20 @@ export async function updateStudent(studentId, formData) {
     })
     .eq("id", studentId);
   if (error) throw error;
+
+  // Update enrollment fields (roll_no, date_of_join) if provided
+  if (formData.enrollmentId) {
+    const enrollUpdate = {};
+    if (formData.rollNo !== undefined) enrollUpdate.roll_no = formData.rollNo;
+    if (formData.joinDate)             enrollUpdate.date_of_join = formData.joinDate;
+    if (Object.keys(enrollUpdate).length > 0) {
+      const { error: enrollErr } = await supabase
+        .from("student_enrollments")
+        .update(enrollUpdate)
+        .eq("id", formData.enrollmentId);
+      if (enrollErr) throw enrollErr;
+    }
+  }
 
   // Update previous school
   if (formData.lastSchoolName) {

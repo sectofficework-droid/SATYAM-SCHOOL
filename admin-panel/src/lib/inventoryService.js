@@ -19,9 +19,11 @@ function mapItem(row) {
     by:      u.used_by || "",
     note:    u.note    || "",
   }));
-  const studentsGiven = usages
-    .filter(u => u.purpose === "student")
-    .reduce((s, u) => s + u.qty, 0);
+  // Count from actual assignment records (not usage records) so notebooks
+  // and pre-fix assignments are included without needing usage entries.
+  const studentsGiven = (row.student_inventory_assignments || [])
+    .filter(a => a.status === "Given")
+    .length;
 
   return {
     id:             row.id,
@@ -40,7 +42,7 @@ function mapItem(row) {
 export async function getInventoryItems() {
   const { data, error } = await supabase
     .from("inventory_items")
-    .select("*, inventory_batches(*), inventory_usages(*)")
+    .select("*, inventory_batches(*), inventory_usages(*), student_inventory_assignments(status)")
     .order("name");
   if (error) throw error;
   return (data || []).map(mapItem);
