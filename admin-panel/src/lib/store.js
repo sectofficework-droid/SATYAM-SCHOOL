@@ -186,7 +186,7 @@ const useStore = create(
       addStudent: (student) => set((s) => ({ students: [...s.students, student] })),
 
       // ── Student Inventory Items (master list) ─────────────────
-      studentInventoryItems: ["Red Bag", "Blue Bag", "Garment Card", "Book Set", "Single Line Notebook", "Box Notebook", "Four Line Notebook", "Drawing Notebook", "ID Card", "School Diary"],
+      studentInventoryItems: ["Red Bag", "Blue Bag", "Garment Card", "Book Set", "Notebook Set", "ID Card", "School Diary"],
       addStudentInventoryItem: (name) => set((s) => ({
         studentInventoryItems: s.studentInventoryItems.includes(name)
           ? s.studentInventoryItems

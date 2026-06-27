@@ -476,10 +476,11 @@ export async function addStudent(formData) {
     );
   }
 
-  // 9. Create inventory assignments (one per active inventory item)
+  // 9. Create inventory assignments — only category='student' items
   const { data: inventoryItems } = await supabase
     .from("inventory_items")
-    .select("id");
+    .select("id")
+    .eq("category", "student");
   if (inventoryItems?.length > 0) {
     await supabase.from("student_inventory_assignments").insert(
       inventoryItems.map(item => ({
@@ -628,10 +629,11 @@ export async function promoteStudent(studentId, fromEnrollmentId, nextClassName,
     to_enrollment_id:   newEnrollment.id,
   });
 
-  // Create inventory assignments for the new enrollment
+  // Create inventory assignments for the new enrollment — only category='student' items
   const { data: inventoryItems } = await supabase
     .from("inventory_items")
-    .select("id");
+    .select("id")
+    .eq("category", "student");
   if (inventoryItems?.length > 0) {
     await supabase.from("student_inventory_assignments").insert(
       inventoryItems.map(item => ({

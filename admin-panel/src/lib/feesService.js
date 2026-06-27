@@ -184,7 +184,7 @@ export async function markInventoryGiven(assignmentIds, givenDate) {
   if (error) throw error;
 
   // Books and notebooks are deducted manually via the Inventory module — skip them here
-  const MANUAL_ITEMS = ["book set"];
+  const MANUAL_ITEMS = ["book set", "notebook set"];
   const deductible = (assignments || []).filter(a => {
     if (!a.item_id) return false;
     const name = (a.inventory_items?.name || "").toLowerCase().trim();

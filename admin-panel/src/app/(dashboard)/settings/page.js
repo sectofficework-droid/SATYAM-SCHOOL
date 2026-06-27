@@ -1485,7 +1485,8 @@ function TimetableTab() {
   const backupRef       = useRef(null);
   const periodsBackup   = useRef(null);
 
-  const [selYear,          setSelYear]          = useState(DEF_YEAR.current);
+  const [selYear,          setSelYear]          = useState("");
+  const [yearList,         setYearList]         = useState([]);
   const [editMode,         setEditMode]         = useState(false);
   const [saved,            setSaved]            = useState(false);
   const [ttLoading,        setTtLoading]        = useState(false);
@@ -1495,6 +1496,15 @@ function TimetableTab() {
   const [periodsForm,      setPeriodsForm]      = useState(() => JSON.parse(JSON.stringify(periodDefs || DEF_PERIOD_DEFS)));
   const [periodsSaved,     setPeriodsSaved]     = useState(false);
   const [activeGroup,      setActiveGroup]      = useState(DAY_GROUPS[0]);
+
+  useEffect(() => {
+    supabase.from("academic_years").select("label, is_current").order("label").then(({ data }) => {
+      const years = (data || []).map(y => y.label).filter(Boolean);
+      setYearList(years);
+      const current = (data || []).find(y => y.is_current)?.label || years[years.length - 1] || DEF_YEAR.current;
+      setSelYear(current);
+    });
+  }, []);
 
   async function loadTT(year) {
     setTtLoading(true);
@@ -1510,7 +1520,7 @@ function TimetableTab() {
     setTtLoading(false);
   }
 
-  useEffect(() => { loadTT(selYear); }, [selYear]);
+  useEffect(() => { if (selYear) loadTT(selYear); }, [selYear]);
 
   const activeDefs = periodsEditMode ? periodsForm : (periodDefs || DEF_PERIOD_DEFS);
   function groupSlots(group) { return activeDefs[group] ?? []; }
@@ -1812,7 +1822,7 @@ function TimetableTab() {
           <div className="flex items-center gap-3 flex-wrap">
             <select disabled={editMode} value={selYear} onChange={e => setSelYear(e.target.value)}
               className="border border-gray-200 rounded-xl px-3 py-2 text-sm font-semibold text-school-navy focus:outline-none cursor-pointer disabled:opacity-50">
-              {INIT_YEARS.map(y => <option key={y}>{y}</option>)}
+              {yearList.map(y => <option key={y}>{y}</option>)}
             </select>
             <span className="text-xs text-gray-400 bg-gray-100 px-2.5 py-1.5 rounded-lg font-medium">
               Full week view — all day groups

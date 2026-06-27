@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import {
   ShieldCheck, Crown, Shield, LogOut, Eye, EyeOff,
   Camera, Calendar, CreditCard, MapPin, User, Tag,
@@ -48,7 +48,7 @@ const IMPORT_FIELDS = [
   { key:"admissionClass",    label:"Admission Class",                required:false },
   { key:"section",           label:"Section (A/B/C)",                required:false },
   { key:"rollNo",            label:"Roll No",                        required:false },
-  { key:"joinDate",          label:"Date of Joining (YYYY-MM-DD)",   required:false },
+  { key:"joinDate",          label:"Date of Joining (DD-MM-YYYY)",   required:false },
   { key:"feeTotal",          label:"Fee Total (Rs)",                 required:false },
   { key:"discountAmount",    label:"Discount Amount (Rs)",           required:false },
   { key:"discountReason",    label:"Discount Reason",                required:false },
@@ -57,7 +57,7 @@ const IMPORT_FIELDS = [
   { key:"lastName",          label:"Last Name",                      required:true  },
   { key:"fatherName",        label:"Father Name",                    required:true  },
   { key:"motherName",        label:"Mother Name",                    required:true  },
-  { key:"dob",               label:"Date of Birth (YYYY-MM-DD)",     required:true  },
+  { key:"dob",               label:"Date of Birth (DD-MM-YYYY)",     required:true  },
   { key:"gender",            label:"Gender (Male/Female/Other)",     required:true  },
   { key:"placeOfBirth",      label:"Place of Birth",                 required:true  },
   { key:"motherTongue",      label:"Mother Tongue",                  required:true  },
@@ -133,9 +133,9 @@ function normalizeDate(val) {
 
 const EXAMPLE_ROW = [
   // Admission Info
-  "GR001","5th","5th","A","1","2026-06-01","15500","0","",
+  "GR001","5th","5th","A","1","01-06-2026","15500","0","",
   // Personal Info
-  "Arjun","Patel","Rajesh Patel","Meena Patel","2015-06-15",
+  "Arjun","Patel","Rajesh Patel","Meena Patel","15-06-2015",
   "Male","Surat","Gujarati","Hindu","General","Patel","120","25",
   // Contact
   "9876543210","","12","Gandhi Nagar","Near Park","Adajan","395009","12 Gandhi Nagar, Adajan, Surat",
@@ -224,6 +224,15 @@ const MGMT_MODULES = [
 // DEFAULT_DOCS imported from @/lib/constants
 // Must match REQUIRED_DOCS in employee/page.js — both write to the same employees.documents JSONB shape.
 const EMP_REQUIRED_DOCS = ["Aadhar Card", "PAN Card", "Degree Certificate", "Experience Letter", "Photo", "Address Proof"];
+const EMP_DESIGNATIONS = {
+  management:     ["Principal", "Vice Principal", "Director", "Coordinator"],
+  teaching:       ["Class Teacher", "Subject Teacher", "HOD", "PGT", "TGT", "PRT"],
+  "non-teaching": ["Accountant", "Admin", "Librarian", "Lab Assistant", "Peon", "Security", "Clerk", "Receptionist", "Care Taker"],
+  media:          ["Social Media Manager", "Editor", "Content Creator", "Photographer", "Videographer"],
+};
+const EMP_DEPARTMENTS = ["Administration", "Primary", "Secondary", "Higher Secondary", "Sports & Activity", "Arts & Craft", "Non-Teaching", "Media & Communications"];
+const EMP_TYPES = [["management","Management"],["teaching","Teaching"],["non-teaching","Non-Teaching"],["media","Media"]];
+const EMP_EMP_TYPES = ["Permanent", "Contractual", "Part-time"];
 
 const PHOTO_GROUP = {
   group: "Photo",
@@ -1052,10 +1061,22 @@ function InventoryPanel({ students }) {
       .finally(() => setInvLoading(false));
   }, []);
 
+  // Derive student item columns from actual DB inventory (not store list)
+  // so renamed/added items always show correctly regardless of localStorage state.
+  const dbItemNames = useMemo(() => {
+    const seen = new Set();
+    const order = [];
+    (students || []).forEach(s =>
+      (s.inventory || []).forEach(inv => {
+        if (inv.item && !seen.has(inv.item)) { seen.add(inv.item); order.push(inv.item); }
+      })
+    );
+    return order;
+  }, [students]);
+
   useEffect(() => {
     const todayIso = new Date().toISOString().split("T")[0];
     setStuInv((students || []).map(s => {
-      // Build a lookup of item name → DB assignment for this student
       const dbMap = {};
       (s.inventory || []).forEach(inv => { dbMap[inv.item] = inv; });
       return {
@@ -1063,7 +1084,7 @@ function InventoryPanel({ students }) {
         name:     s.name,
         cls:      s.std,
         enrollNo: s.enrollment,
-        items: masterItems.map(itemName => {
+        items: dbItemNames.map(itemName => {
           const db = dbMap[itemName];
           return db
             ? { item: itemName, given: db.given, date: db.givenDateRaw || (db.given ? todayIso : ""), _assignmentId: db._assignmentId }
@@ -1071,7 +1092,7 @@ function InventoryPanel({ students }) {
         }),
       };
     }));
-  }, [students, masterItems]);
+  }, [students, dbItemNames]);
 
   function showSaved(msg) { setSaved(msg); setTimeout(()=>setSaved(""),2000); }
 
@@ -1200,7 +1221,7 @@ function InventoryPanel({ students }) {
               <thead><tr className="bg-gray-50 border-b border-gray-200">
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Name</th>
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Class</th>
-                {masterItems.map(item=><th key={item} className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">{item}</th>)}
+                {dbItemNames.map(item=><th key={item} className="px-3 py-2.5 text-center font-semibold text-gray-600 whitespace-nowrap">{item}</th>)}
                 <th className="px-3 py-2.5 text-left font-semibold text-gray-600">Action</th>
               </tr></thead>
               <tbody>
@@ -1239,7 +1260,40 @@ function InventoryPanel({ students }) {
             ))}
           </div>
           <div className="flex gap-2 mt-4">
-            <button onClick={()=>{setStuInv(prev=>prev.map(s=>s.id===selStu.id?{...s,items:stuItems}:s));showSaved("Student inventory updated!");setSelStu(null);}} className="flex items-center gap-1.5 bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-semibold"><Save className="w-4 h-4"/>Save</button>
+            <button
+              onClick={async () => {
+                try {
+                  const orig = selStu.items;
+                  // Items toggled ON (not given → given)
+                  const toGive = stuItems.filter((it, j) => it.given && !orig[j]?.given && it._assignmentId);
+                  // Items toggled OFF (given → not given)
+                  const toUndo = stuItems.filter((it, j) => !it.given && orig[j]?.given && it._assignmentId);
+
+                  // Group toGive by date then call markInventoryGiven per date
+                  const byDate = {};
+                  toGive.forEach(it => {
+                    const d = it.date || new Date().toISOString().split("T")[0];
+                    (byDate[d] = byDate[d] || []).push(it._assignmentId);
+                  });
+                  for (const [date, ids] of Object.entries(byDate)) {
+                    await markInventoryGiven(ids, date);
+                  }
+
+                  if (toUndo.length > 0) {
+                    await markInventoryPending(toUndo.map(it => it._assignmentId));
+                  }
+
+                  setStuInv(prev => prev.map(s => s.id === selStu.id ? { ...s, items: stuItems } : s));
+                  showSaved("Student inventory updated!");
+                  setSelStu(null);
+                } catch (err) {
+                  alert("Failed to update inventory: " + err.message);
+                }
+              }}
+              className="flex items-center gap-1.5 bg-amber-500 text-white px-4 py-2 rounded-lg text-sm font-semibold"
+            >
+              <Save className="w-4 h-4"/>Save
+            </button>
             <button onClick={()=>setSelStu(null)} className="flex items-center gap-1.5 border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm font-semibold"><X className="w-4 h-4"/>Cancel</button>
           </div>
         </div>
@@ -1683,7 +1737,24 @@ function EmployeePanel({ employees: propEmployees }) {
 
   function openEdit(emp) {
     setEditId(emp.id);
-    setForm({ phone:emp.phone, email:emp.email, designation:emp.designation, status:emp.status, joiningDate:emp.joiningDate, salary: salaries[emp.empId]||"" });
+    setForm({
+      name:           emp.name           || "",
+      gender:         emp.gender         || "Male",
+      dob:            emp.dob            || "",
+      phone:          emp.phone          || "",
+      altPhone:       emp.altPhone       || "",
+      email:          emp.email          || "",
+      address:        emp.address        || "",
+      aadhar:         emp.aadhar         || "",
+      pan:            emp.pan            || "",
+      type:           emp.type           || "teaching",
+      designation:    emp.designation    || "",
+      department:     emp.department     || "",
+      employmentType: emp.employmentType || "Permanent",
+      joiningDate:    emp.joiningDate    || "",
+      status:         emp.status         || "Active",
+      salary:         salaries[emp.empId]|| "",
+    });
     setPhotoPreview(null); setPhotoKey(null); setPhotoSize(0); setPhotoError("");
     if (emp.photo) {
       getS3ViewUrl(emp.photo).then(url => { if (url) setPhotoPreview(url); }).catch(() => {});
@@ -1886,23 +1957,88 @@ function EmployeePanel({ employees: propEmployees }) {
                           ))}
                         </div>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
+                      {/* Personal Info */}
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2">Personal Info</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
                         {[
-                          {l:"Phone",          f:"phone",       t:"text"},
-                          {l:"Email",          f:"email",       t:"text"},
-                          {l:"Designation",    f:"designation", t:"text"},
-                          {l:"Monthly Salary", f:"salary",      t:"number"},
-                          {l:"Join Date",      f:"joiningDate", t:"date"},
-                          {l:"Status",         f:"status",      t:"sel", opts:["Active","Inactive"]},
-                        ].map(({l,f,t,opts})=>(
+                          {l:"Full Name",     f:"name",   t:"text"},
+                          {l:"Date of Birth", f:"dob",    t:"date"},
+                          {l:"Aadhar Number", f:"aadhar", t:"text"},
+                          {l:"PAN Number",    f:"pan",    t:"text"},
+                        ].map(({l,f,t})=>(
                           <div key={f} className="flex flex-col gap-0.5">
                             <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">{l}</label>
-                            {t==="sel"
-                              ? <select className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form[f]||""} onChange={e=>setForm({...form,[f]:e.target.value})}>{opts.map(o=><option key={o}>{o}</option>)}</select>
-                              : <input type={t} className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form[f]||""} onChange={e=>setForm({...form,[f]:e.target.value})}/>
-                            }
+                            <input type={t} className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form[f]||""} onChange={e=>setForm({...form,[f]:e.target.value})}/>
                           </div>
                         ))}
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Gender</label>
+                          <select className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form.gender||"Male"} onChange={e=>setForm({...form,gender:e.target.value})}>
+                            {["Male","Female","Other"].map(o=><option key={o}>{o}</option>)}
+                          </select>
+                        </div>
+                      </div>
+                      {/* Contact */}
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-1">Contact</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                        {[
+                          {l:"Phone",     f:"phone",    t:"text"},
+                          {l:"Alt Phone", f:"altPhone", t:"text"},
+                          {l:"Email",     f:"email",    t:"email"},
+                        ].map(({l,f,t})=>(
+                          <div key={f} className="flex flex-col gap-0.5">
+                            <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">{l}</label>
+                            <input type={t} className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form[f]||""} onChange={e=>setForm({...form,[f]:e.target.value})}/>
+                          </div>
+                        ))}
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Address</label>
+                          <input type="text" className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form.address||""} onChange={e=>setForm({...form,address:e.target.value})}/>
+                        </div>
+                      </div>
+                      {/* Job Details */}
+                      <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-1">Job Details</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-3">
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Staff Type</label>
+                          <select className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form.type||"teaching"} onChange={e=>setForm({...form,type:e.target.value,designation:""})}>
+                            {EMP_TYPES.map(([k,l])=><option key={k} value={k}>{l}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Designation</label>
+                          <select className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form.designation||""} onChange={e=>setForm({...form,designation:e.target.value})}>
+                            <option value="">Select…</option>
+                            {(EMP_DESIGNATIONS[form.type]||[]).map(d=><option key={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Department</label>
+                          <select className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form.department||""} onChange={e=>setForm({...form,department:e.target.value})}>
+                            <option value="">Select…</option>
+                            {EMP_DEPARTMENTS.map(d=><option key={d}>{d}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Employment Type</label>
+                          <select className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form.employmentType||"Permanent"} onChange={e=>setForm({...form,employmentType:e.target.value})}>
+                            {EMP_EMP_TYPES.map(o=><option key={o}>{o}</option>)}
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Join Date</label>
+                          <input type="date" className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form.joiningDate||""} onChange={e=>setForm({...form,joiningDate:e.target.value})}/>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Monthly Salary</label>
+                          <input type="number" className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form.salary||""} onChange={e=>setForm({...form,salary:e.target.value})}/>
+                        </div>
+                        <div className="flex flex-col gap-0.5">
+                          <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Status</label>
+                          <select className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form.status||"Active"} onChange={e=>setForm({...form,status:e.target.value})}>
+                            {["Active","Inactive"].map(o=><option key={o}>{o}</option>)}
+                          </select>
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         <button onClick={saveEdit} disabled={photoUploading || empDocs.some(d=>d.uploading)} className="flex items-center gap-1.5 bg-purple-600 text-white px-4 py-2 rounded-lg text-xs font-semibold disabled:opacity-60">
