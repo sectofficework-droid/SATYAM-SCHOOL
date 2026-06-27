@@ -560,6 +560,20 @@ export async function updateStudent(studentId, formData) {
         percentage:      formData.prevPercentage ? parseFloat(formData.prevPercentage) : null,
       }, { onConflict: "student_id" });
   }
+
+  // Update siblings
+  if (formData.siblings !== undefined) {
+    await supabase.from("student_siblings").delete().eq("student_id", studentId);
+    if (formData.siblings?.length > 0) {
+      await supabase.from("student_siblings").insert(
+        formData.siblings.map(sib => ({
+          student_id:    studentId,
+          sibling_name:  sib.name,
+          sibling_class: sib.cls,
+        }))
+      );
+    }
+  }
 }
 
 // ── Deactivate Student ────────────────────────────────────────────────────────
@@ -688,7 +702,7 @@ export async function updateStudentDocument(studentId, documentTypeId, fileUrl) 
 
 // ── Transfer Certificate ──────────────────────────────────────────────────────
 
-export async function saveTransferCertificate(studentId, tcData) {
+export async function saveTransferCertificate(studentId, enrollmentId, tcData) {
   const { data, error } = await supabase
     .from("transfer_certificates")
     .insert({
@@ -711,6 +725,17 @@ export async function saveTransferCertificate(studentId, tcData) {
     .from("students")
     .update({ status: "Left", updated_at: new Date().toISOString() })
     .eq("id", studentId);
+
+  // Deactivate the enrollment so student no longer appears in active fees list
+  if (enrollmentId) {
+    await supabase
+      .from("student_enrollments")
+      .update({
+        deactivate_reason: tcData.reason || "TC Issued",
+        deactivate_date:   tcData.leavingDate,
+      })
+      .eq("id", enrollmentId);
+  }
 
   return data;
 }

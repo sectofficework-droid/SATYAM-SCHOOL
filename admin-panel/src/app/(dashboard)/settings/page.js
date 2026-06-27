@@ -674,12 +674,14 @@ function FeeStructureTab() {
       rows.forEach(r => { uniformMap[r.cls] = r.uniform; });
       setUniformFeesStore(uniformMap);
       setOldStudentDiscountStore(oldDiscount);
-    } catch { /* silently fail */ }
-    setEditing(null);
-    setBulkUniform("");
-    setSaved(true);
-    setEditMode(false);
-    setTimeout(() => setSaved(false), 2500);
+      setEditing(null);
+      setBulkUniform("");
+      setSaved(true);
+      setEditMode(false);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      alert("Failed to save fee structure: " + (err.message || "Unknown error"));
+    }
   }
 
   function applyBulkUniform() {
@@ -1500,7 +1502,7 @@ function TimetableTab() {
   useEffect(() => {
     supabase.from("academic_years").select("label, is_current").order("label").then(({ data }) => {
       const years = (data || []).map(y => y.label).filter(Boolean);
-      setYearList(years);
+      if (years.length) setYearList(years);
       const current = (data || []).find(y => y.is_current)?.label || years[years.length - 1] || DEF_YEAR.current;
       setSelYear(current);
     });

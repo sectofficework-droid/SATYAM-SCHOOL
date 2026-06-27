@@ -257,7 +257,7 @@ export default function ExpensesPage() {
   const thisMonth    = new Date().toISOString().slice(0, 7);
   const totalMonth   = expenses.filter(e => e.date.startsWith(thisMonth)).reduce((s, e) => s + e.amount, 0);
   const catTotals    = CATEGORIES.map(c => ({ cat: c, total: expenses.filter(e => e.category === c).reduce((s, e) => s + e.amount, 0) }));
-  const topCat       = catTotals.sort((a, b) => b.total - a.total)[0];
+  const topCat       = [...catTotals].sort((a, b) => b.total - a.total)[0];
 
   async function handleAdd(exp) {
     try {

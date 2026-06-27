@@ -1364,7 +1364,7 @@ export default function EmployeePage() {
     const ms = !search ||
       e.name.toLowerCase().includes(search.toLowerCase()) ||
       e.empId.toLowerCase().includes(search.toLowerCase()) ||
-      e.designation.toLowerCase().includes(search.toLowerCase());
+      (e.designation || "").toLowerCase().includes(search.toLowerCase());
     const mt = typeFilter === "all" || e.type === typeFilter;
     const md = deptFilter === "all" || e.department === deptFilter;
     return ms && mt && md;
@@ -1376,10 +1376,10 @@ export default function EmployeePage() {
     try {
       const saved = await addEmployee(emp);
       setEmployees(prev => [...prev, saved]);
-    } catch {
-      // silently fail — employee was not saved
+      setAddOpen(false);
+    } catch (err) {
+      alert("Failed to save employee: " + (err.message || "Unknown error"));
     }
-    setAddOpen(false);
   };
 
   const handleEdit = async (updatedEmp) => {

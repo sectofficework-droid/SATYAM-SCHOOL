@@ -207,7 +207,7 @@ export default function TcPage() {
     }
     setSubmitting(true);
     try {
-      await saveTransferCertificate(student._studentId, {
+      await saveTransferCertificate(student._studentId, student._enrollmentId, {
         tcNumber:    form.tcNumber,
         tcDate:      form.tcDate,
         leavingDate: form.leavingDate,
@@ -233,7 +233,7 @@ export default function TcPage() {
           <div className="flex-1">
             <p className="text-sm font-bold text-green-800">Transfer Certificate Generated</p>
             <p className="text-xs text-green-600 mt-0.5">
-              {student.name} has been marked as <b>Inactive</b>. TC No: <b>{form.tcNumber}</b>
+              {student.name} has been marked as <b>Left</b>. TC No: <b>{form.tcNumber}</b>
             </p>
           </div>
           <button
@@ -399,7 +399,7 @@ export default function TcPage() {
         <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-3">
           <span className="text-red-500 text-lg flex-shrink-0 mt-0.5">⚠</span>
           <p className="text-xs text-red-700 font-medium">
-            Once the TC is generated, <b>{student.name}</b> will be marked as <b>Inactive</b> and will not appear
+            Once the TC is generated, <b>{student.name}</b> will be marked as <b>Left</b> and will not appear
             in the active student list. Their data will be preserved for records. This action cannot be undone.
           </p>
         </div>

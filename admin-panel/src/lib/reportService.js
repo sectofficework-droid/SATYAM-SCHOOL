@@ -85,11 +85,11 @@ export async function getStudentsForReport() {
       hasBirthCert,
       remarks:            row.deactivate_reason || "",
       followUp:           "",
-      lastSchoolName:     s.student_previous_school?.school_name || "",
-      lastSchoolGrNo:     s.student_previous_school?.grno || "",
-      prevAttendanceDays: s.student_previous_school?.attendance_days || "",
-      lastExamGiven:      s.student_previous_school?.last_exam_given ? "Yes" : "No",
-      prevPercentage:     s.student_previous_school?.percentage || "",
+      lastSchoolName:     s.student_previous_school?.[0]?.school_name || "",
+      lastSchoolGrNo:     s.student_previous_school?.[0]?.grno || "",
+      prevAttendanceDays: s.student_previous_school?.[0]?.attendance_days || "",
+      lastExamGiven:      s.student_previous_school?.[0]?.last_exam_given ? "Yes" : "No",
+      prevPercentage:     s.student_previous_school?.[0]?.percentage || "",
     };
   }).filter(Boolean);
 }
@@ -280,7 +280,10 @@ export async function getInventoryForReport() {
       status:       stockStatus,
       assignedTo:   "-",
       purchaseDate: item.created_at?.slice(0, 10) || "",
-      value:        0,
+      totalIn,
+      totalUsed,
+      available:    avail,
+      value:        avail,
       _type:        "stock",
     });
   }

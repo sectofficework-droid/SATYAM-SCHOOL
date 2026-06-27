@@ -93,8 +93,8 @@ function fillTemplate(template, vars) {
 }
 
 // Tri-lingual reminder — uses templates from Settings
-function buildReminderMsg(student, lastDate, templates) {
-  const { dueFees } = calcSummary(student);
+function buildReminderMsg(student, lastDate, templates, feesMap) {
+  const { dueFees } = calcSummary(student, feesMap);
   const vars = {
     name:   student.name,
     cls:    `${student.std}${student.section ? "-" + student.section : ""}`,
@@ -115,8 +115,8 @@ function buildReminderMsg(student, lastDate, templates) {
 }
 
 // Per-language message for individual Notify modal — uses templates from Settings
-function buildLangMessage(student, lastDate, lang, templates) {
-  const { dueFees } = calcSummary(student);
+function buildLangMessage(student, lastDate, lang, templates, feesMap) {
+  const { dueFees } = calcSummary(student, feesMap);
   const vars = {
     name:   student.name,
     cls:    student.std + (student.section ? '-' + student.section : ''),
@@ -167,24 +167,24 @@ const NOTIFY_LANGS = [
   { key:"or", label:"Odia"    },
 ];
 
-function NotificationModal({ student, onClose }) {
+function NotificationModal({ student, onClose, feesMap }) {
   const templates  = useStore(s => s.feeReminderTemplates);
   const defaultLast = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
   const [lastDate, setLastDate] = useState(defaultLast);
   const [lang,     setLang]     = useState("en");
-  const [message,  setMessage]  = useState(() => buildLangMessage(student, defaultLast, "en", templates));
+  const [message,  setMessage]  = useState(() => buildLangMessage(student, defaultLast, "en", templates, feesMap));
 
   const handleDateChange = (d) => {
     setLastDate(d);
-    setMessage(buildLangMessage(student, d, lang, templates));
+    setMessage(buildLangMessage(student, d, lang, templates, feesMap));
   };
 
   const handleLangChange = (l) => {
     setLang(l);
-    setMessage(buildLangMessage(student, lastDate, l, templates));
+    setMessage(buildLangMessage(student, lastDate, l, templates, feesMap));
   };
 
-  const { dueFees } = calcSummary(student);
+  const { dueFees } = calcSummary(student, feesMap);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
@@ -458,8 +458,8 @@ export default function FeesPage() {
   useEffect(() => {
     supabase
       .from("academic_years")
-      .select("id, label, is_current, start_date")
-      .order("start_date", { ascending: false })
+      .select("id, label, is_current")
+      .order("label", { ascending: false })
       .then(({ data }) => {
         if (data?.length > 0) {
           setAcademicYears(data);
@@ -493,7 +493,7 @@ export default function FeesPage() {
     const incomplete = students.filter(s => getPaymentStatus(s, feesMap) !== "Full Paid");
     setSelectedIncomplete(new Set(incomplete.map(s => s.enrollment)));
     const first = incomplete[0];
-    if (first) setReminderMsg(buildReminderMsg(first, msgLastDate, templates));
+    if (first) setReminderMsg(buildReminderMsg(first, msgLastDate, templates, feesMap));
   }, [students, feesMap]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-select student from URL params (after students load) ─
@@ -655,7 +655,7 @@ export default function FeesPage() {
       const next = new Set(prev);
       next.has(enr) ? next.delete(enr) : next.add(enr);
       const newFirst = incompleteStudents.find(s => next.has(s.enrollment));
-      if (newFirst) setReminderMsg(buildReminderMsg(newFirst, msgLastDate, templates));
+      if (newFirst) setReminderMsg(buildReminderMsg(newFirst, msgLastDate, templates, feesMap));
       return next;
     });
   };
@@ -663,7 +663,7 @@ export default function FeesPage() {
   const handleReminderDateChange = (d) => {
     setMsgLastDate(d);
     const first = incompleteStudents.find(s => selectedIncomplete.has(s.enrollment));
-    if (first) setReminderMsg(buildReminderMsg(first, d, templates));
+    if (first) setReminderMsg(buildReminderMsg(first, d, templates, feesMap));
   };
 
   const handleSendMessage = () => {
@@ -690,7 +690,7 @@ export default function FeesPage() {
   return (
     <>
       {notifyStudent && (
-        <NotificationModal student={notifyStudent} onClose={() => setNotifyStudent(null)} />
+        <NotificationModal student={notifyStudent} onClose={() => setNotifyStudent(null)} feesMap={feesMap} />
       )}
       {viewStudent && (
         <ViewModal student={viewStudent} onClose={() => setViewStudent(null)} feesMap={feesMap} />
@@ -1206,7 +1206,7 @@ export default function FeesPage() {
                         <div>
                           <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date of Payment <span className="text-red-500">*</span></label>
                           <input
-                            type="date" value={newDate}
+                            type="date" value={newDate} max={todayStr}
                             onChange={(e) => setNewDate(e.target.value)}
                             className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white"
                           />

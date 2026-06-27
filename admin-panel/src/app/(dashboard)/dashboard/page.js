@@ -149,7 +149,7 @@ export default function DashboardPage() {
       {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-bold text-gray-800">Good Morning, Admin</h2>
+          <h2 className="text-xl font-bold text-gray-800">{(() => { const h = new Date().getHours(); return h < 12 ? "Good Morning" : h < 17 ? "Good Afternoon" : "Good Evening"; })()}, Admin</h2>
           <p className="text-sm text-gray-500 mt-0.5">
             Satyam Stars International School — Management Overview
           </p>

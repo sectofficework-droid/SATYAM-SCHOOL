@@ -21,7 +21,7 @@ const RELIGIONS = ["Hindu","Muslim","Christian","Jain","Sikh","Buddhist","Parsi"
 const CASTES    = ["General","OBC","SC","ST","EWS","SEBC","Other"];
 const SESSIONS_FALLBACK = ["2026-27","2025-26","2024-25","2023-24"];
 const STU_STATUSES = ["Active","Leave","Inactive"];
-const EMP_ROLES    = ["Teacher","Admin Staff","Principal","Vice Principal","Lab Assistant","Librarian","Peon","Guard","Cook","Driver"];
+const EMP_ROLES    = ["Principal","Vice Principal","Director","Coordinator","Class Teacher","Subject Teacher","HOD","PGT","TGT","PRT","Accountant","Admin","Librarian","Lab Assistant","Peon","Security","Clerk","Receptionist","Care Taker","Social Media Manager","Editor","Content Creator","Photographer","Videographer"];
 const EMP_STATUSES = ["Active","On Leave","Resigned"];
 
 // ── DOB to Words ──────────────────────────────────────────────────────────────
@@ -421,7 +421,7 @@ const REPORT_CONFIGS = {
   inventory: {
     label:"Inventory & Asset Report", icon:Package,
     quickFilters:[
-      {key:"category", label:"Category", options:["All","Electronics","Furniture","Lab Equip","Sports","Appliance","Security"]},
+      {key:"category", label:"Category", options:["All","student","stock","office","other"]},
       {key:"status",   label:"Status",   options:["All","Active","Maintenance","Disposed"]},
     ],
     dateField:"purchaseDate", dateLabel:"Purchase Date",
@@ -432,7 +432,7 @@ const REPORT_CONFIGS = {
       {key:"status",       label:"Status",        dflt:true },
       {key:"assignedTo",   label:"Assigned To",   dflt:false},
       {key:"purchaseDate", label:"Purchase Date", dflt:false, isDate:true},
-      {key:"value",        label:"Value (Rs)",    dflt:true },
+      {key:"value",        label:"Available Qty", dflt:true },
     ],
     getData(sourceData, f, df, dt, s) {
       let d = (sourceData || []);
@@ -447,7 +447,7 @@ const REPORT_CONFIGS = {
       {label:"Total Assets", value:d.length,                                                  color:"amber" },
       {label:"Active",       value:d.filter(x=>x.status==="Active").length,                  color:"green" },
       {label:"Maintenance",  value:d.filter(x=>x.status==="Maintenance").length,             color:"orange"},
-      {label:"Total Value",  value:`Rs ${d.reduce((s,x)=>s+x.value,0).toLocaleString("en-IN")}`,color:"blue" },
+      {label:"Total Available", value:d.filter(x=>x._type==="stock").reduce((s,x)=>s+x.value,0), color:"blue" },
     ];},
   },
   eligibility: {

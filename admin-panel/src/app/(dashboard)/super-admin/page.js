@@ -599,7 +599,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
       <div className="space-y-2">
         {inClass.map(st => (
           <button key={st.id} onClick={() => selectStudent(st)} className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-school-navy hover:bg-school-navy/5 transition-all text-left">
-            <div className="w-10 h-10 rounded-full bg-school-gold flex items-center justify-center text-white font-bold text-sm flex-shrink-0">{st.firstName[0]}{st.lastName[0]}</div>
+            <div className="w-10 h-10 rounded-full bg-school-gold flex items-center justify-center text-white font-bold text-sm flex-shrink-0">{(st.firstName||"?")[0]}{(st.lastName||"")[0]}</div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-800">{st.name}</p>
               <p className="text-xs text-gray-400">{st.enrollNo} · Roll {st.roll}</p>
@@ -823,7 +823,7 @@ function SpreadsheetEditor({ students, title }) {
                   <tr key={st.id} className={`border-b border-gray-100 ${idx%2===0?"bg-white":"bg-gray-50/50"}`}>
                     <td className={`px-3 py-2 font-semibold text-gray-800 whitespace-nowrap sticky left-0 z-10 ${idx%2===0?"bg-white":"bg-gray-50/50"}`}>
                       <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-school-gold flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">{st.firstName[0]}{st.lastName[0]}</div>
+                        <div className="w-6 h-6 rounded-full bg-school-gold flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">{(st.firstName||"?")[0]}{(st.lastName||"")[0]}</div>
                         {st.name}
                       </div>
                     </td>
@@ -2194,7 +2194,7 @@ function PendingDetailsPanel({ students }) {
                 <tr key={st.id} className={`border-b border-gray-100 ${idx%2===0?"bg-white":"bg-gray-50/40"}`}>
                   <td className={`px-4 py-3 font-semibold text-gray-800 whitespace-nowrap sticky left-0 ${idx%2===0?"bg-white":"bg-gray-50/40"}`}>
                     <div className="flex items-center gap-2">
-                      <div className="w-6 h-6 rounded-full bg-school-gold flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">{st.firstName[0]}{st.lastName[0]}</div>
+                      <div className="w-6 h-6 rounded-full bg-school-gold flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0">{(st.firstName||"?")[0]}{(st.lastName||"")[0]}</div>
                       {st.name}
                     </div>
                   </td>

@@ -229,7 +229,10 @@ function EditForm({ existing, id, router }) {
   const [photoUploading, setPhotoUploading] = useState(false);
   const [casteCertFile, setCasteCertFile] = useState(null);
   const [casteCertError, setCasteCertError] = useState("");
-  const [casteCertKey, setCasteCertKey] = useState(null);
+  // Pre-populate from existing uploaded doc so caste isn't reset on save
+  const [casteCertKey, setCasteCertKey] = useState(
+    existing.uploadedDocs["Caste Certificate"] || null
+  );
   const [casteCertSize, setCasteCertSize] = useState(0);
   const [casteCertUploading, setCasteCertUploading] = useState(false);
   const casteCertRef = useRef(null);
@@ -485,6 +488,28 @@ function EditForm({ existing, id, router }) {
             status:           "Uploaded",
             uploaded_at:      new Date().toISOString(),
             file_url:         casteCertKey,
+          });
+        }
+        // Save custom docs — insert document_type if it doesn't exist yet
+        for (const doc of customDocs.filter(d => d.label.trim())) {
+          let typeId = docTypeMap[doc.label];
+          if (!typeId) {
+            const { data: newType } = await supabase
+              .from("document_types")
+              .insert({ name: doc.label })
+              .select("id")
+              .single();
+            typeId = newType?.id;
+          }
+          if (!typeId) continue;
+          const val = uploadedFiles[doc.label];
+          const fileUrl = val && typeof val === "object" ? (val.key || null) : (val || null);
+          upserts.push({
+            student_id:       existing._studentId,
+            document_type_id: typeId,
+            status:           fileUrl ? "Uploaded" : "Pending",
+            uploaded_at:      fileUrl ? new Date().toISOString() : null,
+            file_url:         fileUrl,
           });
         }
         if (upserts.length) {

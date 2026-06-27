@@ -12,6 +12,7 @@ import {
   promoteStudent as svcPromote,
 } from "@/lib/studentService";
 import { getActiveClasses } from "@/lib/settingsService";
+import { getFeeStructure } from "@/lib/feesService";
 import {
   Plus, Search, GraduationCap, Phone, Calendar, Edit, Trash2,
   LogOut, Eye, EyeOff, User, ChevronDown, ArrowUpCircle,
@@ -525,14 +526,15 @@ function PromoteModal({ student, onClose, onPromote, router }) {
 // ── Main Page ──────────────────────────────────────────────────
 export default function StudentPage() {
   const router           = useRouter();
-  const readmissionDate  = useStore(s => s.readmissionDate);
-  const canPromote       = !!(readmissionDate && new Date() >= new Date(readmissionDate));
+  const [readmissionDate, setReadmissionDate] = useState(null);
+  const canPromote = !!(readmissionDate && new Date() >= new Date(readmissionDate));
 
   const [activeClassNames, setActiveClassNames] = useState([]);
   const [session, setSession]             = useState(CURRENT_SESSION);
   const [search, setSearch]               = useState("");
   const [stdFilter, setStdFilter]         = useState("All Classes");
   const [docFilter, setDocFilter]         = useState("All");
+  const [showLeft, setShowLeft]           = useState(false);
   const [govtIdFilter, setGovtIdFilter]   = useState([]);
   const [showPasswords, setShowPasswords] = useState({});
   const [students, setStudents]               = useState([]);
@@ -540,6 +542,7 @@ export default function StudentPage() {
   const [loadError, setLoadError]             = useState(null);
   const [academicYears, setAcademicYears]     = useState([]);
   const [selectedYearId, setSelectedYearId]   = useState(null);
+  const [feesMap, setFeesMap]                 = useState({});
   const [promoteModal, setPromoteModal]       = useState(null);
   const [deactivateModal, setDeactivateModal] = useState(null);
 
@@ -550,27 +553,35 @@ export default function StudentPage() {
   useEffect(() => {
     supabase
       .from("academic_years")
-      .select("id, label, is_current, start_date")
-      .order("start_date", { ascending: false })
+      .select("id, label, is_current, readmission_date")
+      .order("label", { ascending: false })
       .then(({ data }) => {
         if (data && data.length > 0) {
           setAcademicYears(data);
           const current = data.find(y => y.is_current) || data[0];
           setSelectedYearId(current.id);
           setSession(current.label);
+          if (current.readmission_date) setReadmissionDate(current.readmission_date);
         }
       });
     getActiveClasses().then(cls => setActiveClassNames(cls.map(c => c.name))).catch(() => {});
   }, []);
 
-  // Fetch students when year changes
+  // Fetch students + fee structure when year changes
   useEffect(() => {
     if (!selectedYearId) return;
     setLoading(true);
     setLoadError(null);
-    fetchStudentsFromDB(selectedYearId)
-      .then(data => { setStudents(data); setLoading(false); })
-      .catch(err  => { setLoadError(err.message); setLoading(false); });
+    Promise.all([
+      fetchStudentsFromDB(selectedYearId),
+      getFeeStructure(selectedYearId),
+    ])
+      .then(([data, fees]) => {
+        setStudents(data);
+        if (Object.keys(fees).length > 0) setFeesMap(fees);
+        setLoading(false);
+      })
+      .catch(err => { setLoadError(err.message); setLoading(false); });
   }, [selectedYearId]);
 
   const allStandards = [
@@ -593,8 +604,8 @@ export default function StudentPage() {
     { key: "apaar", label: "APAAR" },
   ];
 
-  // Students are already filtered by year from DB; just exclude Left status
-  const sessionStudents = students.filter(s => s.status !== "Left");
+  // Students are already filtered by year from DB; show Left only when toggle is on
+  const sessionStudents = showLeft ? students : students.filter(s => s.status !== "Left");
 
   const filtered = sessionStudents.filter((s) => {
     const matchSearch =
@@ -627,11 +638,11 @@ export default function StudentPage() {
     const fTotal = student.fees?.total ?? 0;
     const fDisc  = student.fees?.discount ?? 0;
     const fPaid  = student.fees?.paid ?? 0;
-    if (Math.max(fTotal - fDisc, 0) > fPaid) return;
+    if (Math.max(fTotal - fDisc, 0) > fPaid) { alert("Cannot promote: student has pending fees. Please clear all dues first."); return; }
     const { discount = 0, discountReason = "" } = discountData;
     try {
       await svcPromote(student._studentId, student._enrollmentId, nextClass, {
-        feeTotal:      CLASS_FEES[nextClass] ?? 0,
+        feeTotal:      feesMap[nextClass] ?? CLASS_FEES[nextClass] ?? 0,
         totalDiscount: discount,
         reason:        discountReason,
       });
@@ -822,6 +833,21 @@ export default function StudentPage() {
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-school-navy pointer-events-none" />
             </div>
+            <button
+              onClick={() => setShowLeft(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
+                showLeft
+                  ? "bg-gray-700 text-white border-gray-700"
+                  : "bg-white text-gray-500 border-gray-200 hover:border-gray-400"
+              }`}
+            >
+              {showLeft ? "Hide Left" : "Show Left"}
+              {!showLeft && students.filter(s => s.status === "Left").length > 0 && (
+                <span className="bg-gray-200 text-gray-600 text-[10px] font-bold px-1.5 py-0.5 rounded-full">
+                  {students.filter(s => s.status === "Left").length}
+                </span>
+              )}
+            </button>
           </div>
 
           {/* ── Pending Document Filter Chips ── */}
@@ -984,7 +1010,9 @@ export default function StudentPage() {
                       </span>
                     ) : (
                       <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                        student.status === "Active" ? "bg-green-400/20 text-green-300" : "bg-red-400/20 text-red-300"
+                        student.status === "Active" ? "bg-green-400/20 text-green-300"
+                        : student.status === "Left"  ? "bg-gray-400/30 text-gray-300"
+                        : "bg-red-400/20 text-red-300"
                       }`}>
                         {student.status}
                       </span>

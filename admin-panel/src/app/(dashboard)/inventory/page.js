@@ -322,7 +322,7 @@ function AddStockModal({ items, onClose, onSave }) {
   useEffect(() => setMounted(true), []);
   useEffect(() => {
     if (tab === "existing" && selId) {
-      const found = items.find(i => i.id === Number(selId));
+      const found = items.find(i => i.id === selId);
       setLocation(found?.storageAddress || "");
     }
   }, [selId, tab]);
@@ -337,7 +337,7 @@ function AddStockModal({ items, onClose, onSave }) {
     if (!valid) return;
     onSave({
       tab,
-      selId: tab === "existing" ? Number(selId) : null,
+      selId: tab === "existing" ? selId : null,
       newItem: tab === "new" ? {
         name: newName.trim(), category: newCat,
         unit: newUnit.trim() || "Pcs", lowStockAt: Number(newLow) || 10,
@@ -403,6 +403,7 @@ function AddStockModal({ items, onClose, onSave }) {
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Category *</label>
                   <select value={newCat} onChange={(e) => setNewCat(e.target.value)} className={IPT}>
                     <option value="student">Student</option>
+                    <option value="stock">Stock Only</option>
                     <option value="office">Office</option>
                     <option value="other">Other</option>
                   </select>
@@ -490,7 +491,7 @@ function UseStockModal({ items, onClose, onSave }) {
   const eligibleItems = purpose === "student"
     ? items.filter((i) => i.category === "student" && avail(i) > 0)
     : items.filter((i) => avail(i) > 0);
-  const selectedItem = items.find((i) => i.id === Number(selId));
+  const selectedItem = items.find((i) => i.id === selId);
   const availQty     = selectedItem ? avail(selectedItem) : 0;
   const receivedBy   = by === "Other" ? byCustom.trim() : by;
   const qtyNum       = Number(qty);
@@ -499,7 +500,7 @@ function UseStockModal({ items, onClose, onSave }) {
   const handleSave = () => {
     if (!valid) return;
     onSave({
-      itemId: Number(selId),
+      itemId: selId,
       usage: { qty: qtyNum, date, purpose, note: note.trim(), by: receivedBy },
       isStudentDist: purpose === "student" && selectedItem?.category === "student",
     });
@@ -791,17 +792,18 @@ export default function InventoryPage() {
   const loadAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [itemsData, assetsData, yearData] = await Promise.all([
-        getInventoryItems(),
+      const [assetsData, yearData] = await Promise.all([
         getAssets(),
         supabase.from("academic_years").select("id").eq("is_current", true).single(),
       ]);
+      const currentYearId = yearData.data?.id || null;
+      const [itemsData] = await Promise.all([getInventoryItems(currentYearId)]);
       let studentCount = 0;
-      if (yearData.data?.id) {
+      if (currentYearId) {
         const { count } = await supabase
           .from("student_enrollments")
           .select("id", { count: "exact", head: true })
-          .eq("academic_year_id", yearData.data.id);
+          .eq("academic_year_id", currentYearId);
         studentCount = count || 0;
       }
       setTotalStudents(studentCount);
@@ -903,10 +905,7 @@ export default function InventoryPage() {
       const newUsage = await addUsage(payload.itemId, payload.usage);
       setItems(prev => prev.map(item => {
         if (item.id !== payload.itemId) return item;
-        const newStudentsGiven = payload.isStudentDist
-          ? item.studentsGiven + payload.usage.qty
-          : item.studentsGiven;
-        return { ...item, usages: [...item.usages, newUsage], studentsGiven: newStudentsGiven };
+        return { ...item, usages: [...item.usages, newUsage] };
       }));
       setUseOpen(false);
     } catch (err) { alert("Failed to record usage: " + err.message); }

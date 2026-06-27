@@ -39,13 +39,23 @@ function mapItem(row) {
   };
 }
 
-export async function getInventoryItems() {
+export async function getInventoryItems(yearId) {
   const { data, error } = await supabase
     .from("inventory_items")
-    .select("*, inventory_batches(*), inventory_usages(*), student_inventory_assignments(status)")
+    .select("*, inventory_batches(*), inventory_usages(*), student_inventory_assignments(status, student_enrollments(academic_year_id))")
     .order("name");
   if (error) throw error;
-  return (data || []).map(mapItem);
+  return (data || []).map(row => {
+    const filteredRow = yearId
+      ? {
+          ...row,
+          student_inventory_assignments: (row.student_inventory_assignments || []).filter(
+            a => a.student_enrollments?.academic_year_id === yearId
+          ),
+        }
+      : row;
+    return mapItem(filteredRow);
+  });
 }
 
 export async function addInventoryItem(item) {
