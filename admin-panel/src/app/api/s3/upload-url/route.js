@@ -1,5 +1,7 @@
 Failed to run sql query: ERROR:  23514: new row for relation "inventory_items" violates check constraint "inventory_items_category_check"
-DETAIL:  Failing row contains (2fd6717c-6d81-454b-8834-15c5bf48346f, Single Line Notebook, stock, Set, 10, null, 2026-06-17 07:11:25.257862+00).import { NextResponse } from "next/server";
+DETAIL:  Failing row contains (2fd6717c-6d81-454b-8834-15c5bf48346f, Single Line Notebook, stock, Set, 10, null, 2026-06-17 07:11:25.257862+00).
+
+import { NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import s3, { S3_BUCKET } from "@/lib/s3";

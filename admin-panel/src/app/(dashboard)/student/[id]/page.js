@@ -104,11 +104,17 @@ function PersonalTab({ s }) {
         <InfoRow label="Previous Percentage" value={s.prevPercentage} />
         <div className="mt-4 pt-3 border-t border-gray-200">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Government IDs</p>
-          <InfoRow label="Aadhar No"   value={s.aadhar} />
-          <InfoRow label="Name on Aadhar" value={s.aadharName} />
-          <InfoRow label="UDISE No"    value={s.udise} />
-          <InfoRow label="PEN No"      value={s.pen} />
-          <InfoRow label="APAAR ID"    value={s.apaar} />
+          <InfoRow label="Aadhar No"          value={s.aadhar} />
+          <InfoRow label="Name on Aadhar"     value={s.aadharName} />
+          <InfoRow label="Father's Aadhar"    value={s.fatherAadhar} />
+          <InfoRow label="Father's Aadhar Name" value={s.fatherAadharName} />
+          <InfoRow label="Mother's Aadhar"    value={s.motherAadhar} />
+          <InfoRow label="Mother's Aadhar Name" value={s.motherAadharName} />
+          <InfoRow label="UDISE No"           value={s.udise} />
+          <InfoRow label="PEN No"             value={s.pen} />
+          <InfoRow label="APAAR ID"           value={s.apaar} />
+          <InfoRow label="Birth Cert Reg No"  value={s.birthCertRegNo} />
+          <InfoRow label="Birth Cert Reg Date" value={s.birthCertRegDate ? fmtDMY(s.birthCertRegDate) : ""} />
         </div>
       </div>
     </div>
@@ -695,9 +701,15 @@ function generateAdmissionFormHTML(s, logoUrl) {
   <div class="grid">
     <div class="field"><div class="fl">Aadhar Number</div><div class="fv">${s.aadhar || "Not Provided"}</div></div>
     <div class="field"><div class="fl">Name on Aadhar</div><div class="fv">${s.aadharName || "—"}</div></div>
+    <div class="field"><div class="fl">Father&apos;s Aadhar No</div><div class="fv">${s.fatherAadhar || "—"}</div></div>
+    <div class="field"><div class="fl">Father&apos;s Name (Aadhar)</div><div class="fv">${s.fatherAadharName || "—"}</div></div>
+    <div class="field"><div class="fl">Mother&apos;s Aadhar No</div><div class="fv">${s.motherAadhar || "—"}</div></div>
+    <div class="field"><div class="fl">Mother&apos;s Name (Aadhar)</div><div class="fv">${s.motherAadharName || "—"}</div></div>
     <div class="field"><div class="fl">UDISE Number</div><div class="fv">${s.udise || "—"}</div></div>
     <div class="field"><div class="fl">PEN Number</div><div class="fv">${s.pen || "—"}</div></div>
     <div class="field"><div class="fl">APAAR ID</div><div class="fv">${s.apaar || "—"}</div></div>
+    <div class="field"><div class="fl">Birth Cert Reg No</div><div class="fv">${s.birthCertRegNo || "—"}</div></div>
+    <div class="field"><div class="fl">Birth Cert Reg Date</div><div class="fv">${s.birthCertRegDate || "—"}</div></div>
   </div>
 
   ${discountBlock}

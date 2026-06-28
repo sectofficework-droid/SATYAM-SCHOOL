@@ -197,6 +197,8 @@ export default function AddStudentPage() {
   const photoRef = useRef(null);
 
   const [aadharDisplay, setAadharDisplay] = useState("");
+  const [fatherAadharDisplay, setFatherAadharDisplay] = useState("");
+  const [motherAadharDisplay, setMotherAadharDisplay] = useState("");
 
   const [checkedDocs, setCheckedDocs]       = useState({});
   const [uploadedFiles, setUploadedFiles]   = useState({}); // { docName: { fileName, key, uploading } }
@@ -241,9 +243,13 @@ export default function AddStudentPage() {
     prevPercentage: "",
     prevAttendanceDays: "",
     aadharName: "",
+    fatherAadharName: "",
+    motherAadharName: "",
     udise: "",
     pen: "",
     apaar: "",
+    birthCertRegNo: "",
+    birthCertRegDate: "",
   });
 
   const set      = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value.toUpperCase() }));
@@ -310,6 +316,16 @@ export default function AddStudentPage() {
     const formatted = digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim();
     setAadharDisplay(formatted);
     setForm((p) => ({ ...p, aadharRaw: digits }));
+  };
+  const handleFatherAadharInput = (e) => {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 12);
+    setFatherAadharDisplay(digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim());
+    setForm((p) => ({ ...p, fatherAadharRaw: digits }));
+  };
+  const handleMotherAadharInput = (e) => {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 12);
+    setMotherAadharDisplay(digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim());
+    setForm((p) => ({ ...p, motherAadharRaw: digits }));
   };
 
   // Photo
@@ -488,11 +504,17 @@ export default function AddStudentPage() {
       pinCode:        form.pinCode,
       address:        form.address,
       // Govt IDs
-      aadhar:         form.aadharRaw || null,
-      aadharName:     form.aadharName,
-      udise:          form.udise,
-      pen:            form.pen,
-      apaar:          form.apaar,
+      aadhar:            form.aadharRaw || null,
+      aadharName:        form.aadharName,
+      fatherAadhar:      form.fatherAadharRaw || null,
+      fatherAadharName:  form.fatherAadharName,
+      motherAadhar:      form.motherAadharRaw || null,
+      motherAadharName:  form.motherAadharName,
+      udise:             form.udise,
+      pen:               form.pen,
+      apaar:             form.apaar,
+      birthCertRegNo:    form.birthCertRegNo,
+      birthCertRegDate:  form.birthCertRegDate,
       // Fees
       feeTotal:       feeTotal,
       discountAmount: hasDiscount ? Number(discountAmount) || 0 : 0,
@@ -794,6 +816,46 @@ export default function AddStudentPage() {
             </div>
 
             <div>
+              <FieldLabel>Father&apos;s Aadhar Number</FieldLabel>
+              <Input
+                placeholder="XXXX XXXX XXXX"
+                value={fatherAadharDisplay}
+                onChange={handleFatherAadharInput}
+                maxLength={14}
+                className="tracking-widest font-mono"
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Father&apos;s Name as per Aadhar</FieldLabel>
+              <Input
+                placeholder="Exact name on father's Aadhar"
+                value={form.fatherAadharName}
+                onChange={set("fatherAadharName")}
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Mother&apos;s Aadhar Number</FieldLabel>
+              <Input
+                placeholder="XXXX XXXX XXXX"
+                value={motherAadharDisplay}
+                onChange={handleMotherAadharInput}
+                maxLength={14}
+                className="tracking-widest font-mono"
+              />
+            </div>
+
+            <div>
+              <FieldLabel>Mother&apos;s Name as per Aadhar</FieldLabel>
+              <Input
+                placeholder="Exact name on mother's Aadhar"
+                value={form.motherAadharName}
+                onChange={set("motherAadharName")}
+              />
+            </div>
+
+            <div>
               <FieldLabel required>Date of Birth</FieldLabel>
               <Input type="date" value={form.dob} onChange={set("dob")} max={todayStr} required />
             </div>
@@ -978,9 +1040,29 @@ export default function AddStudentPage() {
         {/* ══ SECTION 7: Birth Details ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <SectionHeader number="7" title="Birth Details" />
-          <div className="max-w-sm">
-            <FieldLabel required>Place of Birth</FieldLabel>
-            <Input placeholder="City / Town where student was born" value={form.placeOfBirth} onChange={set("placeOfBirth")} required />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <FieldLabel required>Place of Birth</FieldLabel>
+              <Input placeholder="City / Town where student was born" value={form.placeOfBirth} onChange={set("placeOfBirth")} required />
+            </div>
+            <div />
+            <div>
+              <FieldLabel>Birth Certificate Reg. No.</FieldLabel>
+              <Input
+                placeholder="e.g. BDDR/2015/12345"
+                value={form.birthCertRegNo}
+                onChange={set("birthCertRegNo")}
+              />
+            </div>
+            <div>
+              <FieldLabel>Birth Certificate Reg. Date</FieldLabel>
+              <Input
+                type="date"
+                value={form.birthCertRegDate}
+                onChange={setExact("birthCertRegDate")}
+                max={todayStr}
+              />
+            </div>
           </div>
         </div>
 

@@ -117,7 +117,8 @@ function decorateStudentForEntry(st) {
     religionCaste:        `${st.religion || "-"}${st.caste ? " - " + st.caste : ""}`,
     lastSchoolGrSchool:   `${st.lastSchoolGrNo || "-"} - ${st.lastSchoolName || "-"}`,
     firstAdmissionStd:    st.joinClass,
-    studentFatherSurname: `${st.fatherName || ""} ${st.surname || ""}`.trim(),
+    studentFatherSurname: `${st.firstName || ""} ${st.fatherName || ""} ${st.surname || ""}`.trim(),
+    fullAddress:          [st.plotNo, st.society, st.landmark, st.area, "Surat", "Gujarat", st.pinCode].filter(Boolean).join(", "),
   };
 }
 
@@ -164,11 +165,18 @@ const STUDENT_FIELD_POOL = [
   { key:"mobile2",        label:"Mobile No 2" },
   { key:"remarks",        label:"Remarks" },
   { key:"followUp",       label:"Follow Up" },
-  { key:"placeOfBirth",   label:"Place of Birth" },
-  { key:"lastSchoolName", label:"Last School Name" },
-  { key:"roll",           label:"Roll No" },
-  { key:"joinDate",       label:"Date of Admission", isDate:true },
-  { key:"dob",            label:"Date of Birth",     isDate:true },
+  { key:"placeOfBirth",      label:"Place of Birth" },
+  { key:"lastSchoolName",    label:"Last School Name" },
+  { key:"roll",              label:"Roll No" },
+  { key:"joinDate",          label:"Date of Admission",      isDate:true },
+  { key:"dob",               label:"Date of Birth",          isDate:true },
+  { key:"fatherAadhar",      label:"Father's Aadhar No" },
+  { key:"fatherAadharName",  label:"Father's Name as per Aadhar" },
+  { key:"motherAadhar",      label:"Mother's Aadhar No" },
+  { key:"motherAadharName",  label:"Mother's Name as per Aadhar" },
+  { key:"birthCertRegNo",    label:"Birth Cert Reg No" },
+  { key:"birthCertRegDate",  label:"Birth Cert Reg Date",    isDate:true },
+  { key:"fullAddress",       label:"Full Address" },
 ];
 
 const GR_REGISTER_COLUMNS = [
@@ -238,6 +246,17 @@ const UDISE_ENTRY_COLUMNS = [
   { key:"prevPercentage",       label:"If Given Percentage" },
   { key:"mobile1",               label:"Mobile No 1" },
   { key:"mobile2",               label:"Mobile No 2" },
+];
+
+const ID_CARD_COLUMNS = [
+  { key:"name",        label:"Student Name" },
+  { key:"cls",         label:"Class" },
+  { key:"fatherName",  label:"Father's Name" },
+  { key:"motherName",  label:"Mother's Name" },
+  { key:"dob",         label:"Date of Birth", isDate:true },
+  { key:"mobile1",     label:"Mobile No. 1" },
+  { key:"mobile2",     label:"Mobile No. 2" },
+  { key:"fullAddress", label:"Full Address" },
 ];
 
 // insert the optional "extra field"(s) into the fixed column order at the chosen position
@@ -519,6 +538,17 @@ const REPORT_CONFIGS = {
     getData: entryGetData,
     getSummary: entryGetSummary(PEN_ENTRY_COLUMNS),
   },
+  idCard: {
+    label:"ID Card Data", icon:FileText,
+    isFixedEntry:true,
+    fixedColumns: ID_CARD_COLUMNS,
+    extraFieldPool: STUDENT_FIELD_POOL.filter(f => !ID_CARD_COLUMNS.some(c => c.key === f.key)),
+    quickFilters: ENTRY_QUICK_FILTERS,
+    dateField:null, dateLabel:null,
+    columns: ID_CARD_COLUMNS,
+    getData: entryGetData,
+    getSummary: entryGetSummary(ID_CARD_COLUMNS),
+  },
 };
 
 // ── Color Map ─────────────────────────────────────────────────────────────────
@@ -568,10 +598,11 @@ export default function ReportPage() {
   const [search,   setSearch]   = useState("");
 
   // fixed-entry (GR/UDISE/PEN) — optional one-off extra field(s) inserted into the fixed order
-  const [extraFields,   setExtraFields]   = useState([]); // [{key, label, position, isDate}]
-  const [showAddExtra,  setShowAddExtra]  = useState(false);
-  const [extraFieldKey, setExtraFieldKey] = useState("");
-  const [extraFieldPos, setExtraFieldPos] = useState(1);
+  const [extraFields,    setExtraFields]    = useState([]); // [{key, label, position, isDate}]
+  const [showAddExtra,   setShowAddExtra]   = useState(false);
+  const [extraFieldKey,  setExtraFieldKey]  = useState("");
+  const [extraFieldPos,  setExtraFieldPos]  = useState(1);
+  const [hiddenFixedCols,setHiddenFixedCols] = useState([]); // keys of fixed cols user has hidden
 
   // DB data
   const [dbStudents,  setDbStudents]  = useState([]);
@@ -628,6 +659,7 @@ export default function ReportPage() {
     const init = activeCols.filter(c => c.dflt).map(c => c.key);
     setSelCols(init);
     setExtraFields([]);
+    setHiddenFixedCols([]);
     setShowAddExtra(false);
     setExtraFieldKey(""); setExtraFieldPos(1);
     setFilters({});
@@ -645,7 +677,7 @@ export default function ReportPage() {
   const data    = ecfg.getData(sourceData, filters, dateFrom, dateTo, search);
   // actCols follows selection order; fixed-entry types use locked order + inserted extra fields
   const actCols = ecfg.isFixedEntry
-    ? buildFixedCols(ecfg.fixedColumns, extraFields)
+    ? buildFixedCols(ecfg.fixedColumns, extraFields).filter(c => !hiddenFixedCols.includes(c.key))
     : selCols.map(key => ecfg.columns.find(c => c.key === key)).filter(Boolean);
   const summary = ecfg.getSummary(data);
 
@@ -913,29 +945,50 @@ export default function ReportPage() {
           </div>
         )}
 
-        {/* Fixed-entry registers (GR / UDISE / PEN) — fields auto-selected in required order, plus optional extra field */}
+        {/* Fixed-entry registers (GR / UDISE / PEN / ID Card) — fields selectable, extra fields insertable */}
         {ecfg.isFixedEntry && (
           <div className="space-y-3">
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
-                Fixed Fields — Auto-Selected in Required Order
+                Fixed Fields — {actCols.length} of {buildFixedCols(ecfg.fixedColumns, extraFields).length} selected &nbsp;
+                {hiddenFixedCols.length > 0 && (
+                  <button onClick={() => setHiddenFixedCols([])}
+                    className="text-school-navy underline font-semibold normal-case">
+                    Restore all
+                  </button>
+                )}
               </p>
               <div className="flex flex-wrap gap-2">
-                {actCols.map((col, i) => (
-                  <span key={`${col.key}-${i}`}
-                    className={`relative px-2.5 py-1 rounded-lg text-xs font-semibold ${col.isExtra ? "bg-amber-500 text-white" : "bg-school-navy text-white"}`}>
-                    {col.label}{col.isExtra && " (extra)"}
-                    <span className="absolute -top-2 -right-2 w-4 h-4 bg-yellow-400 text-school-navy text-[9px] font-bold rounded-full flex items-center justify-center leading-none shadow-sm">
-                      {i + 1}
-                    </span>
-                    {col.isExtra && (
+                {buildFixedCols(ecfg.fixedColumns, extraFields).map((col, i) => {
+                  const isHidden = hiddenFixedCols.includes(col.key);
+                  const activePos = actCols.findIndex(c => c.key === col.key);
+                  return (
+                    <span key={`${col.key}-${i}`}
+                      className={`relative px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 ${
+                        isHidden   ? "bg-gray-100 text-gray-400" :
+                        col.isExtra ? "bg-amber-500 text-white"  : "bg-school-navy text-white"
+                      }`}>
+                      {!isHidden && (
+                        <span className="absolute -top-2 -left-1 w-4 h-4 bg-yellow-400 text-school-navy text-[9px] font-bold rounded-full flex items-center justify-center leading-none shadow-sm">
+                          {activePos + 1}
+                        </span>
+                      )}
+                      <span className={isHidden ? "line-through" : ""}>{col.label}{col.isExtra && !isHidden && " (extra)"}</span>
                       <button
-                        onClick={() => setExtraFields(prev => prev.filter(ef => ef.key !== col.key))}
-                        className="ml-1.5 text-white/80 hover:text-white font-bold"
-                      >×</button>
-                    )}
-                  </span>
-                ))}
+                        onClick={() => {
+                          if (isHidden) {
+                            setHiddenFixedCols(prev => prev.filter(k => k !== col.key));
+                          } else if (col.isExtra) {
+                            setExtraFields(prev => prev.filter(ef => ef.key !== col.key));
+                          } else {
+                            setHiddenFixedCols(prev => [...prev, col.key]);
+                          }
+                        }}
+                        className={`font-bold leading-none ${isHidden ? "text-gray-400 hover:text-gray-700" : "text-white/70 hover:text-white"}`}
+                      >{isHidden ? "+" : "×"}</button>
+                    </span>
+                  );
+                })}
               </div>
             </div>
 

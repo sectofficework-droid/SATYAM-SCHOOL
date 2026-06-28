@@ -58,6 +58,8 @@ const IMPORT_FIELDS = [
   { key:"fatherName",        label:"Father Name",                    required:true  },
   { key:"motherName",        label:"Mother Name",                    required:true  },
   { key:"dob",               label:"Date of Birth (DD-MM-YYYY)",     required:true  },
+  { key:"birthCertRegNo",    label:"Birth Cert Reg No",              required:false },
+  { key:"birthCertRegDate",  label:"Birth Cert Reg Date (DD-MM-YYYY)", required:false },
   { key:"gender",            label:"Gender (Male/Female/Other)",     required:true  },
   { key:"placeOfBirth",      label:"Place of Birth",                 required:true  },
   { key:"motherTongue",      label:"Mother Tongue",                  required:true  },
@@ -78,6 +80,10 @@ const IMPORT_FIELDS = [
   // ── IDs & Documents ─────────────────────────────────────────────
   { key:"aadharNo",          label:"Aadhar Number",                  required:false },
   { key:"aadharName",        label:"Aadhar Name",                    required:false },
+  { key:"fatherAadhar",      label:"Father's Aadhar Number",         required:false },
+  { key:"fatherAadharName",  label:"Father's Name as per Aadhar",    required:false },
+  { key:"motherAadhar",      label:"Mother's Aadhar Number",         required:false },
+  { key:"motherAadharName",  label:"Mother's Name as per Aadhar",    required:false },
   { key:"udise",             label:"UDISE Number",                   required:false },
   { key:"pen",               label:"PEN Number",                     required:false },
   { key:"apaar",             label:"APAAR ID",                       required:false },
@@ -136,11 +142,15 @@ const EXAMPLE_ROW = [
   "GR001","5th","5th","A","1","01-06-2026","15500","0","",
   // Personal Info
   "Arjun","Patel","Rajesh Patel","Meena Patel","15-06-2015",
+  "BC2015/001","01-01-2016",
   "Male","Surat","Gujarati","Hindu","General","Patel","120","25",
   // Contact
   "9876543210","","12","Gandhi Nagar","Near Park","Adajan","395009","12 Gandhi Nagar, Adajan, Surat",
   // IDs
-  "1234 5678 9012","Arjun Rajesh Patel","","","",
+  "1234 5678 9012","Arjun Rajesh Patel",
+  "9876 5432 1012","Rajesh Kumar Patel",
+  "8765 4321 0123","Meena Rajesh Patel",
+  "","","",
   // Previous School
   "City Primary School","4th","","Gujarati","Surat","200","Yes","75.5",
 ];
@@ -171,7 +181,9 @@ const FIELD_GROUPS = [
     { key:"mobile2",         label:"Mobile 2",        icon:Phone,         type:"text"   },
   ]},
   { group:"Birth", fields:[
-    { key:"placeOfBirth",    label:"Place of Birth",  icon:MapPin,        type:"text"   },
+    { key:"placeOfBirth",    label:"Place of Birth",        icon:MapPin,     type:"text" },
+    { key:"birthCertRegNo",  label:"Birth Cert Reg No",     icon:Hash,       type:"text" },
+    { key:"birthCertRegDate",label:"Birth Cert Reg Date",   icon:Calendar,   type:"date" },
   ]},
   { group:"Previous School", fields:[
     { key:"lastSchoolName",  label:"School Name",     icon:GraduationCap, type:"text"   },
@@ -180,8 +192,12 @@ const FIELD_GROUPS = [
     { key:"lastSchoolPlace", label:"School Location", icon:MapPin,        type:"text"   },
   ]},
   { group:"Aadhar", fields:[
-    { key:"aadharNo",        label:"Aadhar Number",   icon:CreditCard,    type:"text"   },
-    { key:"aadharName",      label:"Name on Aadhar",  icon:User,          type:"text"   },
+    { key:"aadharNo",          label:"Aadhar Number",           icon:CreditCard, type:"text" },
+    { key:"aadharName",        label:"Name on Aadhar",          icon:User,       type:"text" },
+    { key:"fatherAadhar",      label:"Father's Aadhar No",      icon:CreditCard, type:"text" },
+    { key:"fatherAadharName",  label:"Father's Name (Aadhar)",  icon:User,       type:"text" },
+    { key:"motherAadhar",      label:"Mother's Aadhar No",      icon:CreditCard, type:"text" },
+    { key:"motherAadharName",  label:"Mother's Name (Aadhar)",  icon:User,       type:"text" },
   ]},
   { group:"Govt IDs", fields:[
     { key:"udise",           label:"UDISE Number",    icon:Hash,          type:"text"   },
@@ -293,15 +309,21 @@ function mapFormForUpdate(form) {
     mobile2:          form.mobile2,
     roomPlotNo:       form.roomPlotNo,
     address:          form.address,
-    aadhar:           form.aadharNo?.replace(/\s/g, "") || null,
-    aadharName:       form.aadharName,
-    udise:            form.udise,
-    pen:              form.pen,
-    apaar:            form.apaar,
-    lastSchoolName:   form.lastSchoolName,
-    lastSchoolClass:  form.lastSchoolClass,
-    lastSchoolMedium: form.lastSchoolMedium,
-    lastSchoolPlace:  form.lastSchoolPlace,
+    aadhar:            form.aadharNo?.replace(/\s/g, "") || null,
+    aadharName:        form.aadharName,
+    fatherAadhar:      form.fatherAadhar?.replace(/\s/g, "") || null,
+    fatherAadharName:  form.fatherAadharName,
+    motherAadhar:      form.motherAadhar?.replace(/\s/g, "") || null,
+    motherAadharName:  form.motherAadharName,
+    birthCertRegNo:    form.birthCertRegNo,
+    birthCertRegDate:  form.birthCertRegDate,
+    udise:             form.udise,
+    pen:               form.pen,
+    apaar:             form.apaar,
+    lastSchoolName:    form.lastSchoolName,
+    lastSchoolClass:   form.lastSchoolClass,
+    lastSchoolMedium:  form.lastSchoolMedium,
+    lastSchoolPlace:   form.lastSchoolPlace,
   };
 }
 
@@ -2328,9 +2350,15 @@ function ImportStudentsPanel({ onImportDone }) {
           landmark:          s.landmark || "",
           area:              s.area || "",
           pinCode:           s.pinCode || "",
-          address:           s.address || [s.roomPlotNo, s.society, s.landmark, s.area, s.pinCode].filter(Boolean).join(", "),
+          address:           s.address || [s.roomPlotNo, s.society, s.landmark, s.area, "SURAT", "GUJARAT", s.pinCode].filter(Boolean).join(", "),
           aadhar:            s.aadharNo || "",
           aadharName:        s.aadharName || "",
+          fatherAadhar:      s.fatherAadhar?.replace(/\s/g, "") || null,
+          fatherAadharName:  s.fatherAadharName || null,
+          motherAadhar:      s.motherAadhar?.replace(/\s/g, "") || null,
+          motherAadharName:  s.motherAadharName || null,
+          birthCertRegNo:    s.birthCertRegNo || null,
+          birthCertRegDate:  normalizeDate(s.birthCertRegDate) || null,
           udise:             s.udise || "",
           pen:               s.pen || "",
           apaar:             s.apaar || "",
@@ -2379,7 +2407,7 @@ function ImportStudentsPanel({ onImportDone }) {
               </div>
             </div>
             <ul className="text-xs text-blue-700 space-y-1 pl-1">
-              {["Contains all student fields (43 columns)","Row 2 shows which fields are required","Row 3 shows example data — replace with real data","Do not change column headers or order"].map(t => (
+              {[`Contains all student fields (${IMPORT_FIELDS.length} columns)`,"Row 2 shows which fields are required","Row 3 shows example data — replace with real data","Do not change column headers or order"].map(t => (
                 <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0"/>{t}</li>
               ))}
             </ul>

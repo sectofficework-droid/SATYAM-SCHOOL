@@ -86,13 +86,19 @@ function mapToEditForm(student) {
     prevPercentage:      student.prevPercentage || "",
     prevAttendanceDays:  student.prevAttendanceDays || "",
     lastExamGiven:       student.lastExamGiven || "No",
-    aadhar:       student.aadhar || "",
-    aadharName:   student.aadharName || "",
-    udise:        student.udise || "",
-    pen:          student.pen || "",
-    apaar:        student.apaar || "",
-    hasAadhar:    !!student.aadhar,
-    hasSibling:   (student.siblings?.length || 0) > 0,
+    aadhar:           student.aadhar || "",
+    aadharName:       student.aadharName || "",
+    fatherAadhar:     student.fatherAadhar || "",
+    fatherAadharName: student.fatherAadharName || "",
+    motherAadhar:     student.motherAadhar || "",
+    motherAadharName: student.motherAadharName || "",
+    udise:            student.udise || "",
+    pen:              student.pen || "",
+    apaar:            student.apaar || "",
+    birthCertRegNo:   student.birthCertRegNo || "",
+    birthCertRegDate: student.birthCertRegDate || "",
+    hasAadhar:        !!student.aadhar,
+    hasSibling:       (student.siblings?.length || 0) > 0,
     siblings:     student.siblings?.map(sib => ({
       id: sib.id || Date.now(),
       name: sib.name || "",
@@ -219,8 +225,10 @@ function EditForm({ existing, id, router }) {
     setSiblings((p) =>
       p.map((s) => s.id === id ? { ...s, [field]: val, ...(field === "cls" ? { name: "" } : {}) } : s)
     );
-  const [hasAadhar, setHasAadhar]         = useState(existing.hasAadhar);
-  const [lastExamGiven, setLastExamGiven] = useState(existing.lastExamGiven === "Yes");
+  const [hasAadhar, setHasAadhar]               = useState(existing.hasAadhar);
+  const [lastExamGiven, setLastExamGiven]       = useState(existing.lastExamGiven === "Yes");
+  const [fatherAadharDisplay, setFatherAadharDisplay] = useState(existing.fatherAadhar || "");
+  const [motherAadharDisplay, setMotherAadharDisplay] = useState(existing.motherAadhar || "");
   const [photo, setPhoto]                 = useState(null);
   const [photoPreview, setPhotoPreview]   = useState(null);
   const [photoError, setPhotoError]       = useState("");
@@ -288,9 +296,13 @@ function EditForm({ existing, id, router }) {
     prevPercentage:        existing.prevPercentage || "",
     prevAttendanceDays:    existing.prevAttendanceDays || "",
     aadharName:       existing.aadharName,
+    fatherAadharName: existing.fatherAadharName || "",
+    motherAadharName: existing.motherAadharName || "",
     udise:            existing.udise,
     pen:              existing.pen,
     apaar:            existing.apaar,
+    birthCertRegNo:   existing.birthCertRegNo || "",
+    birthCertRegDate: existing.birthCertRegDate || "",
   });
 
   const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value.toUpperCase() }));
@@ -300,6 +312,16 @@ function EditForm({ existing, id, router }) {
     const formatted = digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim();
     setAadharDisplay(formatted);
     setForm((p) => ({ ...p, aadharRaw: digits }));
+  };
+  const handleFatherAadharInput = (e) => {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 12);
+    setFatherAadharDisplay(digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim());
+    setForm((p) => ({ ...p, fatherAadharRaw: digits }));
+  };
+  const handleMotherAadharInput = (e) => {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 12);
+    setMotherAadharDisplay(digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim());
+    setForm((p) => ({ ...p, motherAadharRaw: digits }));
   };
 
   const handlePhoto = (e) => {
@@ -440,11 +462,17 @@ function EditForm({ existing, id, router }) {
         area:         form.area,
         pinCode:      form.pinCode,
         address:      form.address,
-        aadhar:       rawAadhar || null,
-        aadharName:   form.aadharName,
-        udise:        form.udise,
-        pen:          form.pen,
-        apaar:        form.apaar,
+        aadhar:            rawAadhar || null,
+        aadharName:        form.aadharName,
+        fatherAadhar:      form.fatherAadharRaw !== undefined ? form.fatherAadharRaw : (existing.fatherAadhar?.replace(/\s/g, "") || null),
+        fatherAadharName:  form.fatherAadharName,
+        motherAadhar:      form.motherAadharRaw !== undefined ? form.motherAadharRaw : (existing.motherAadhar?.replace(/\s/g, "") || null),
+        motherAadharName:  form.motherAadharName,
+        udise:             form.udise,
+        pen:               form.pen,
+        apaar:             form.apaar,
+        birthCertRegNo:    form.birthCertRegNo,
+        birthCertRegDate:  form.birthCertRegDate,
         lastSchoolName:     hasPrevSchool ? form.lastSchoolName : "",
         lastSchoolGrNo:     form.lastSchoolGrNo,
         lastSchoolClass:    form.lastSchoolClass,
@@ -695,6 +723,42 @@ function EditForm({ existing, id, router }) {
             <FieldError>{errors.motherName}</FieldError>
           </div>
           <div>
+            <FieldLabel>Father&apos;s Aadhar Number</FieldLabel>
+            <Input
+              placeholder="XXXX XXXX XXXX"
+              value={fatherAadharDisplay}
+              onChange={handleFatherAadharInput}
+              maxLength={14}
+              className="tracking-widest font-mono"
+            />
+          </div>
+          <div>
+            <FieldLabel>Father&apos;s Name as per Aadhar</FieldLabel>
+            <Input
+              placeholder="Exact name on father's Aadhar"
+              value={form.fatherAadharName}
+              onChange={set("fatherAadharName")}
+            />
+          </div>
+          <div>
+            <FieldLabel>Mother&apos;s Aadhar Number</FieldLabel>
+            <Input
+              placeholder="XXXX XXXX XXXX"
+              value={motherAadharDisplay}
+              onChange={handleMotherAadharInput}
+              maxLength={14}
+              className="tracking-widest font-mono"
+            />
+          </div>
+          <div>
+            <FieldLabel>Mother&apos;s Name as per Aadhar</FieldLabel>
+            <Input
+              placeholder="Exact name on mother's Aadhar"
+              value={form.motherAadharName}
+              onChange={set("motherAadharName")}
+            />
+          </div>
+          <div>
             <ReadOnlyField label="Date of Birth" value={fmtDMY(form.dob)} />
           </div>
           <div>
@@ -862,8 +926,28 @@ function EditForm({ existing, id, router }) {
       {/* ══ SECTION 7: Birth Details ══ */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
         <SectionHeader number="7" title="Birth Details" />
-        <div className="max-w-sm">
-          <ReadOnlyField label="Place of Birth" value={form.placeOfBirth} />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <ReadOnlyField label="Place of Birth" value={form.placeOfBirth} />
+          </div>
+          <div />
+          <div>
+            <FieldLabel>Birth Certificate Reg. No.</FieldLabel>
+            <Input
+              placeholder="e.g. BDDR/2015/12345"
+              value={form.birthCertRegNo}
+              onChange={set("birthCertRegNo")}
+            />
+          </div>
+          <div>
+            <FieldLabel>Birth Certificate Reg. Date</FieldLabel>
+            <Input
+              type="date"
+              value={form.birthCertRegDate}
+              onChange={(e) => setForm((p) => ({ ...p, birthCertRegDate: e.target.value }))}
+              max={todayStr}
+            />
+          </div>
         </div>
       </div>
 

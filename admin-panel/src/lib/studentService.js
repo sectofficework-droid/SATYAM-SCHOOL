@@ -87,11 +87,19 @@ export function mapToStudent(enrollment) {
     address:        s.address || "",
 
     // Govt IDs
-    aadhar:         s.aadhar ? s.aadhar.replace(/(\d{4})(?=\d)/g, "$1 ").trim() : "",
-    aadharName:     s.aadhar_name || "",
-    udise:          s.udise || "",
-    pen:            s.pen || "",
-    apaar:          s.apaar || "",
+    aadhar:            s.aadhar ? s.aadhar.replace(/(\d{4})(?=\d)/g, "$1 ").trim() : "",
+    aadharName:        s.aadhar_name || "",
+    fatherAadhar:      s.father_aadhar ? s.father_aadhar.replace(/(\d{4})(?=\d)/g, "$1 ").trim() : "",
+    fatherAadharName:  s.father_aadhar_name || "",
+    motherAadhar:      s.mother_aadhar ? s.mother_aadhar.replace(/(\d{4})(?=\d)/g, "$1 ").trim() : "",
+    motherAadharName:  s.mother_aadhar_name || "",
+    udise:             s.udise || "",
+    pen:               s.pen || "",
+    apaar:             s.apaar || "",
+
+    // Birth certificate
+    birthCertRegNo:    s.birth_cert_reg_no || "",
+    birthCertRegDate:  s.birth_cert_reg_date || "",
 
     // Status
     status:         s.status || "Active",
@@ -278,7 +286,11 @@ export async function getStudents(yearId = null) {
       student:students(
         id, first_name, last_name, photo_url, grno,
         dob, gender, mobile1, mobile2, status,
-        father_name, mother_name, aadhar, aadhar_name, udise, pen, apaar,
+        father_name, mother_name,
+        aadhar, aadhar_name,
+        father_aadhar, father_aadhar_name, mother_aadhar, mother_aadhar_name,
+        udise, pen, apaar,
+        birth_cert_reg_no, birth_cert_reg_date,
         address, pincode, room_plot_no, society, landmark, area,
         student_documents(status, document_types(name)),
         student_previous_school(school_name)
@@ -313,7 +325,10 @@ export async function getStudentByEnrollment(enrollmentNo) {
         height_cm, weight_kg, status,
         father_name, mother_name,
         room_plot_no, society, landmark, area, pincode, address,
-        aadhar, aadhar_name, udise, pen, apaar,
+        aadhar, aadhar_name,
+        father_aadhar, father_aadhar_name, mother_aadhar, mother_aadhar_name,
+        udise, pen, apaar,
+        birth_cert_reg_no, birth_cert_reg_date,
         student_previous_school(
           school_name, grno, class, medium, place,
           attendance_days, last_exam_given, percentage
@@ -398,12 +413,18 @@ export async function addStudent(formData) {
       area:          formData.area || null,
       pincode:       formData.pinCode || null,
       address:       formData.address || null,
-      aadhar:        formData.aadhar ? formData.aadhar.replace(/\s/g, "") : null,
-      aadhar_name:   formData.aadharName || null,
-      udise:         formData.udise || null,
-      pen:           formData.pen || null,
-      apaar:         formData.apaar || null,
-      status:        "Active",
+      aadhar:              formData.aadhar ? formData.aadhar.replace(/\s/g, "") : null,
+      aadhar_name:         formData.aadharName || null,
+      father_aadhar:       formData.fatherAadhar ? formData.fatherAadhar.replace(/\s/g, "") : null,
+      father_aadhar_name:  formData.fatherAadharName || null,
+      mother_aadhar:       formData.motherAadhar ? formData.motherAadhar.replace(/\s/g, "") : null,
+      mother_aadhar_name:  formData.motherAadharName || null,
+      udise:               formData.udise || null,
+      pen:                 formData.pen || null,
+      apaar:               formData.apaar || null,
+      birth_cert_reg_no:   formData.birthCertRegNo || null,
+      birth_cert_reg_date: formData.birthCertRegDate || null,
+      status:              "Active",
     })
     .select()
     .single();
@@ -520,12 +541,18 @@ export async function updateStudent(studentId, formData) {
       area:          formData.area || null,
       pincode:       formData.pinCode || null,
       address:       formData.address || null,
-      aadhar:        formData.aadhar ? formData.aadhar.replace(/\s/g, "") : null,
-      aadhar_name:   formData.aadharName || null,
-      udise:         formData.udise || null,
-      pen:           formData.pen || null,
-      apaar:         formData.apaar || null,
-      updated_at:    new Date().toISOString(),
+      aadhar:              formData.aadhar ? formData.aadhar.replace(/\s/g, "") : null,
+      aadhar_name:         formData.aadharName || null,
+      father_aadhar:       formData.fatherAadhar ? formData.fatherAadhar.replace(/\s/g, "") : null,
+      father_aadhar_name:  formData.fatherAadharName || null,
+      mother_aadhar:       formData.motherAadhar ? formData.motherAadhar.replace(/\s/g, "") : null,
+      mother_aadhar_name:  formData.motherAadharName || null,
+      udise:               formData.udise || null,
+      pen:                 formData.pen || null,
+      apaar:               formData.apaar || null,
+      birth_cert_reg_no:   formData.birthCertRegNo || null,
+      birth_cert_reg_date: formData.birthCertRegDate || null,
+      updated_at:          new Date().toISOString(),
     })
     .eq("id", studentId);
   if (error) throw error;
