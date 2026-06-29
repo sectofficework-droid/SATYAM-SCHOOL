@@ -110,6 +110,11 @@ function computeCollectionSummary(payments) {
 }
 
 // ── Fixed-Structure Register Entries (GR / UDISE / PEN) ───────────────────────
+const RED_BAG_CLASSES = new Set(["JR.KG", "SR.KG", "Balvatika", "1st", "2nd"]);
+function getBagColor(cls) {
+  return RED_BAG_CLASSES.has(cls) ? "Red" : "Blue";
+}
+
 function decorateStudentForEntry(st) {
   return {
     ...st,
@@ -119,6 +124,7 @@ function decorateStudentForEntry(st) {
     firstAdmissionStd:    st.joinClass,
     studentFatherSurname: `${st.firstName || ""} ${st.fatherName || ""} ${st.surname || ""}`.trim(),
     fullAddress:          [st.plotNo, st.society, st.landmark, st.area, "Surat", "Gujarat", st.pinCode].filter(Boolean).join(", "),
+    bagColor:             getBagColor(st.cls),
   };
 }
 
@@ -177,6 +183,7 @@ const STUDENT_FIELD_POOL = [
   { key:"birthCertRegNo",    label:"Birth Cert Reg No" },
   { key:"birthCertRegDate",  label:"Birth Cert Reg Date",    isDate:true },
   { key:"fullAddress",       label:"Full Address" },
+  { key:"bagColor",          label:"Bag Color" },
 ];
 
 const GR_REGISTER_COLUMNS = [
@@ -257,6 +264,7 @@ const ID_CARD_COLUMNS = [
   { key:"mobile1",     label:"Mobile No. 1" },
   { key:"mobile2",     label:"Mobile No. 2" },
   { key:"fullAddress", label:"Full Address" },
+  { key:"bagColor",    label:"Bag Color" },
 ];
 
 // insert the optional "extra field"(s) into the fixed column order at the chosen position

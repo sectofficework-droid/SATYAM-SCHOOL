@@ -1303,9 +1303,21 @@ export default function StudentPage() {
                               <Trash2 className="w-4 h-4 flex-shrink-0" /> Deactivate
                             </button>
                           </div>
-                          {canPromote && student.session !== CURRENT_SESSION && getNextClass(student.std) && (
+                          {student.session !== CURRENT_SESSION && getNextClass(student.std) && (
                             <div className="pt-2 border-t border-gray-100 space-y-1.5">
-                              {hasPendingFees ? (
+                              {!readmissionDate ? (
+                                <>
+                                  <button
+                                    disabled
+                                    className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-bold bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                                  >
+                                    <ArrowUpCircle className="w-4 h-4 flex-shrink-0" /> Promote to {getNextClass(student.std)}
+                                  </button>
+                                  <p className="text-[10px] text-gray-400 font-semibold text-center">
+                                    Set re-admission date in Settings to enable
+                                  </p>
+                                </>
+                              ) : hasPendingFees ? (
                                 <>
                                   <button
                                     disabled

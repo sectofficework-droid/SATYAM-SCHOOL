@@ -312,7 +312,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
       setClassList(names);
       const withSec = cls.flatMap(c => {
         const secs = (c.sections || []).map(s => s.name);
-        return (secs.length > 0 ? secs : SECTIONS).map(s => `${c.name}-${s}`);
+        return secs.length > 0 ? secs.map(s => `${c.name}-${s}`) : [c.name];
       });
       setClassesWithSections(withSec);
     }).catch(() => {});
