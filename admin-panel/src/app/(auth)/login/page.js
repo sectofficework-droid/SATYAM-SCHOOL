@@ -17,6 +17,19 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [fieldErrors, setFieldErrors] = useState({});
+  const [stats, setStats] = useState({ students: null, employees: null });
+
+  useEffect(() => {
+    Promise.all([
+      supabase.from("students").select("*", { count: "exact", head: true }),
+      supabase.from("employees").select("*", { count: "exact", head: true }),
+    ]).then(([s, e]) => {
+      setStats({
+        students: s.count ?? null,
+        employees: e.count ?? null,
+      });
+    }).catch(() => {});
+  }, []);
 
   // Only handle PASSWORD_RECOVERY event (from recovery email link landing here)
   // Do NOT handle SIGNED_IN here — it fires during normal form login too and causes loops
@@ -126,12 +139,16 @@ export default function LoginPage() {
           {/* Stats row */}
           <div className="hidden lg:flex items-center gap-6 mt-8 pt-6 border-t border-white/15 w-full max-w-xs">
             <div className="text-center flex-1">
-              <p className="text-2xl font-bold text-[#f59e0b]">1000+</p>
+              <p className="text-2xl font-bold text-[#f59e0b]">
+                {stats.students === null ? "—" : stats.students.toLocaleString("en-IN")}
+              </p>
               <p className="text-xs text-white/60 mt-0.5">Students</p>
             </div>
             <div className="w-px h-8 bg-white/20" />
             <div className="text-center flex-1">
-              <p className="text-2xl font-bold text-[#f59e0b]">50+</p>
+              <p className="text-2xl font-bold text-[#f59e0b]">
+                {stats.employees === null ? "—" : stats.employees.toLocaleString("en-IN")}
+              </p>
               <p className="text-xs text-white/60 mt-0.5">Faculty</p>
             </div>
             <div className="w-px h-8 bg-white/20" />
