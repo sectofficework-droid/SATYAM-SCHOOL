@@ -887,7 +887,11 @@ function EditEmployeeModal({ emp, onClose, onSave }) {
   const [saving,    setSaving]    = useState(false);
   const [err,       setErr]       = useState("");
 
-  useEffect(() => { setDesig(""); }, [type]);
+  const typeInitialized = useRef(false);
+  useEffect(() => {
+    if (!typeInitialized.current) { typeInitialized.current = true; return; }
+    setDesig("");
+  }, [type]);
 
   async function handleSave() {
     if (!name.trim()) { setErr("Name is required."); return; }
