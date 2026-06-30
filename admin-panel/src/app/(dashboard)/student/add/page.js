@@ -430,6 +430,10 @@ export default function AddStudentPage() {
       errs.prevPercentage = "Enter a valid percentage (0-100).";
     }
 
+    if (form.birthCertRegDate && form.dob && form.birthCertRegDate <= form.dob) {
+      errs.birthCertRegDate = "Registration date must be after the date of birth.";
+    }
+
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -1060,8 +1064,10 @@ export default function AddStudentPage() {
                 type="date"
                 value={form.birthCertRegDate}
                 onChange={setExact("birthCertRegDate")}
+                min={form.dob ? (() => { const d = new Date(form.dob); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })() : ""}
                 max={todayStr}
               />
+              <FieldError>{errors.birthCertRegDate}</FieldError>
             </div>
           </div>
         </div>

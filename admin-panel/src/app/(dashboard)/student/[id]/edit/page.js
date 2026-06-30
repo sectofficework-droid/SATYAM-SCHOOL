@@ -413,6 +413,10 @@ function EditForm({ existing, id, router }) {
       errs.prevPercentage = "Enter a valid percentage (0-100).";
     }
 
+    if (form.birthCertRegDate && form.dob && form.birthCertRegDate <= form.dob) {
+      errs.birthCertRegDate = "Registration date must be after the date of birth.";
+    }
+
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -945,8 +949,10 @@ function EditForm({ existing, id, router }) {
               type="date"
               value={form.birthCertRegDate}
               onChange={(e) => setForm((p) => ({ ...p, birthCertRegDate: e.target.value }))}
+              min={form.dob ? (() => { const d = new Date(form.dob); d.setDate(d.getDate() + 1); return d.toISOString().split("T")[0]; })() : ""}
               max={todayStr}
             />
+            <FieldError>{errors.birthCertRegDate}</FieldError>
           </div>
         </div>
       </div>
