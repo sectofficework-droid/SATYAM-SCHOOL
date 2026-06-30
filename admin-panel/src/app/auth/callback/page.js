@@ -21,40 +21,58 @@ function AuthCallbackInner() {
   const [message, setMessage] = useState("Verifying your link...");
 
   useEffect(() => {
+    let done = false;
+
+    const goToSetPassword = () => {
+      if (done) return;
+      done = true;
+      router.replace("/auth/set-password");
+    };
+
+    const goToLogin = (msg) => {
+      if (done) return;
+      done = true;
+      setMessage(msg);
+      setTimeout(() => router.replace("/login"), 3000);
+    };
+
+    // Supabase auto-processes hash tokens (#access_token=...) and fires this event
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+        goToSetPassword();
+      }
+    });
+
     const code       = searchParams.get("code");
     const token_hash = searchParams.get("token_hash");
     const type       = searchParams.get("type");
 
     if (code) {
+      // PKCE flow
       supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
-        if (error) {
-          setMessage("Link expired or already used. Request a new one from the login page.");
-          setTimeout(() => router.replace("/login"), 3000);
-          return;
-        }
-        router.replace("/auth/set-password");
+        if (error) goToLogin("Link expired or already used. Request a new one from the login page.");
+        else goToSetPassword();
       });
-      return;
-    }
-
-    if (token_hash && type) {
+    } else if (token_hash && type) {
+      // OTP flow
       supabase.auth.verifyOtp({ token_hash, type }).then(({ error }) => {
-        if (error) {
-          setMessage("Link expired or already used. Request a new one from the login page.");
-          setTimeout(() => router.replace("/login"), 3000);
-          return;
-        }
-        if (type === "invite" || type === "recovery") {
-          router.replace("/auth/set-password");
-        } else {
-          router.replace("/dashboard");
-        }
+        if (error) goToLogin("Link expired or already used. Request a new one from the login page.");
+        else goToSetPassword();
       });
-      return;
+    } else {
+      // Hash-based flow — onAuthStateChange above will fire within ~1s
+      // If nothing fires after 5s, the link is truly invalid
+      const timeout = setTimeout(() => {
+        goToLogin("Invalid or expired link. Redirecting to login...");
+      }, 5000);
+
+      return () => {
+        subscription.unsubscribe();
+        clearTimeout(timeout);
+      };
     }
 
-    setMessage("Invalid link. Redirecting to login...");
-    setTimeout(() => router.replace("/login"), 2000);
+    return () => subscription.unsubscribe();
   }, []);
 
   return <Spinner message={message} />;
