@@ -1,10 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import supabase from "@/lib/supabase";
 
-export default function AuthCallbackPage() {
+function Spinner({ message }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center space-y-4">
+        <div className="w-10 h-10 border-2 border-[#1e3a5f]/30 border-t-[#1e3a5f] rounded-full animate-spin mx-auto" />
+        <p className="text-sm text-gray-600">{message}</p>
+      </div>
+    </div>
+  );
+}
+
+function AuthCallbackInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [message, setMessage] = useState("Verifying your link...");
@@ -15,7 +26,6 @@ export default function AuthCallbackPage() {
     const type       = searchParams.get("type");
 
     if (code) {
-      // PKCE flow — Gmail pre-fetch cannot complete this without the browser secret
       supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
         if (error) {
           setMessage("Link expired or already used. Request a new one from the login page.");
@@ -28,7 +38,6 @@ export default function AuthCallbackPage() {
     }
 
     if (token_hash && type) {
-      // Legacy OTP flow (invite links)
       supabase.auth.verifyOtp({ token_hash, type }).then(({ error }) => {
         if (error) {
           setMessage("Link expired or already used. Request a new one from the login page.");
@@ -48,12 +57,13 @@ export default function AuthCallbackPage() {
     setTimeout(() => router.replace("/login"), 2000);
   }, []);
 
+  return <Spinner message={message} />;
+}
+
+export default function AuthCallbackPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="text-center space-y-4">
-        <div className="w-10 h-10 border-2 border-[#1e3a5f]/30 border-t-[#1e3a5f] rounded-full animate-spin mx-auto" />
-        <p className="text-sm text-gray-600">{message}</p>
-      </div>
-    </div>
+    <Suspense fallback={<Spinner message="Verifying your link..." />}>
+      <AuthCallbackInner />
+    </Suspense>
   );
 }
