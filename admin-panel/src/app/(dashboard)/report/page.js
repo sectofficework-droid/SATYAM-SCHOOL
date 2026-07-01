@@ -647,7 +647,8 @@ export default function ReportPage() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const [feesView, setFeesView] = useState("collection"); // "collection" | "status"
+  const [feesView, setFeesView] = useState("status"); // "collection" | "status"
+  const [partialMaxAmount, setPartialMaxAmount] = useState("");
 
   const cfg  = REPORT_CONFIGS[rType];
   const ecfg = cfg.isFeesModule
@@ -671,8 +672,8 @@ export default function ReportPage() {
     setShowAddExtra(false);
     setExtraFieldKey(""); setExtraFieldPos(1);
     setFilters({});
-    setDateFrom(""); setDateTo(""); setSearch("");
-    if (!cfg.isFeesModule) setFeesView("collection");
+    setDateFrom(""); setDateTo(""); setSearch(""); setPartialMaxAmount("");
+    if (!cfg.isFeesModule) setFeesView("status");
   }, [rType, feesView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sourceData =
@@ -682,7 +683,13 @@ export default function ReportPage() {
     rType === "inventory"                         ? dbInventory :
     /* student, eligibility, grRegister, udiseEntry, penEntry */ dbStudents;
 
-  const data    = ecfg.getData(sourceData, filters, dateFrom, dateTo, search);
+  let data = ecfg.getData(sourceData, filters, dateFrom, dateTo, search);
+  if (rType === "fees" && feesView === "status" && filters.status === "Partial" && partialMaxAmount !== "") {
+    const maxAmt = Number(partialMaxAmount);
+    if (!isNaN(maxAmt) && maxAmt >= 0) {
+      data = data.filter(x => x.totalPaid <= maxAmt).sort((a, b) => b.totalPaid - a.totalPaid);
+    }
+  }
   // actCols follows selection order; fixed-entry types use locked order + inserted extra fields
   const actCols = ecfg.isFixedEntry
     ? buildFixedCols(ecfg.fixedColumns, extraFields).filter(c => !hiddenFixedCols.includes(c.key))
@@ -863,13 +870,13 @@ export default function ReportPage() {
         {/* Fees module sub-tabs */}
         {cfg.isFeesModule && (
           <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-            <button onClick={() => setFeesView("collection")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${feesView === "collection" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-              Collection
-            </button>
             <button onClick={() => setFeesView("status")}
               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${feesView === "status" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
               Fee Status
+            </button>
+            <button onClick={() => setFeesView("collection")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${feesView === "collection" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              Collection
             </button>
           </div>
         )}
@@ -885,6 +892,19 @@ export default function ReportPage() {
               </select>
             </div>
           ))}
+          {rType === "fees" && feesView === "status" && filters.status === "Partial" && (
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Paid ≤ Amount (Rs)</label>
+              <input
+                type="number"
+                min="0"
+                placeholder="e.g. 8000"
+                value={partialMaxAmount}
+                onChange={e => setPartialMaxAmount(e.target.value)}
+                className="border-2 border-amber-400 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 w-32"
+              />
+            </div>
+          )}
           {ecfg.isCollection && (
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Exact Date</label>
@@ -914,7 +934,7 @@ export default function ReportPage() {
                 placeholder="Search by name or enroll no" value={search} onChange={e=>setSearch(e.target.value)}/>
             </div>
           </div>
-          <button onClick={()=>{setFilters({});setDateFrom("");setDateTo("");setSearch("");}}
+          <button onClick={()=>{setFilters({});setDateFrom("");setDateTo("");setSearch("");setPartialMaxAmount("");}}
             className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-red-300 hover:text-red-500 transition-colors self-end">
             <RefreshCw className="w-3 h-3"/>Reset
           </button>
