@@ -332,7 +332,7 @@ function ViewModal({ student, onClose, feesMap }) {
             {classPayments.length === 0 ? (
               <p className="px-4 py-6 text-center text-sm text-gray-400">No payments recorded for {student.std} yet</p>
             ) : (
-              <table className="w-full text-sm">
+              <div className="overflow-x-auto"><table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50/60">
                     <th className="text-left px-4 py-2.5 text-[11px] font-bold text-gray-500 uppercase tracking-wide">#</th>
@@ -351,7 +351,7 @@ function ViewModal({ student, onClose, feesMap }) {
                     </tr>
                   ))}
                 </tbody>
-              </table>
+              </table></div>
             )}
           </div>
 

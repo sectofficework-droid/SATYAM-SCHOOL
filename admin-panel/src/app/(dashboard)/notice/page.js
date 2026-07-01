@@ -367,13 +367,13 @@ export default function NoticePage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4">
           {[
             { label: "Active",   value: activeCount,   icon: Bell,    bg: "bg-blue-50",  color: "text-blue-600"  },
             { label: "Pinned",   value: pinnedCount,   icon: Pin,     bg: "bg-amber-50", color: "text-amber-600" },
             { label: "Archived", value: archivedCount, icon: Archive, bg: "bg-gray-100", color: "text-gray-500"  },
           ].map(({ label, value, icon: Icon, bg, color }) => (
-            <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
+            <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-2 sm:p-4 flex items-center gap-2 sm:gap-3">
               <div className={`w-10 h-10 ${bg} rounded-xl flex items-center justify-center flex-shrink-0`}>
                 <Icon className={`w-5 h-5 ${color}`}/>
               </div>

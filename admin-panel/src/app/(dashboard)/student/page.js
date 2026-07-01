@@ -1019,8 +1019,77 @@ export default function StudentPage() {
                     )}
                   </div>
 
-                  {/* ── 6-Column Grid Body ── */}
-                  <div className="grid" style={{ gridTemplateColumns: "148px 1fr 155px 185px 175px 205px" }}>
+                  {/* ── Mobile Card (shown on phones, hidden on md+) ── */}
+                  <div className="md:hidden">
+                    <div className="flex gap-3 p-3">
+                      <div className={`relative w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 ${a.photoBg}`}>
+                        <S3Image
+                          s3Key={student.photo}
+                          alt={student.name}
+                          className="w-full h-full object-cover absolute inset-0"
+                          fallback={
+                            <div className="w-full h-full absolute inset-0 flex items-center justify-center">
+                              <User className={`w-8 h-8 ${a.photoIcon}`} />
+                            </div>
+                          }
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-start justify-between gap-1.5">
+                          <h3 className="font-bold text-gray-900 text-sm leading-tight truncate">{student.name}</h3>
+                          {isPromoted ? (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">Promoted</span>
+                          ) : (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${student.status === "Active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                              {student.status}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 mt-0.5">#{student.enrollment} · {student.std}{student.section ? `-${student.section}` : ""}</p>
+                        <p className="text-xs text-gray-500 truncate">{student.fatherName}</p>
+                        <p className="text-xs font-semibold text-gray-700">{student.mobile}</p>
+                      </div>
+                    </div>
+                    {(() => {
+                      const actual  = Math.max(feeTotal - feeDiscount, 0);
+                      const paidPct = actual > 0 ? Math.round((feePaid / actual) * 100) : 0;
+                      const due     = Math.max(actual - feePaid, 0);
+                      return (
+                        <div className="px-3 pb-2 flex items-center gap-2">
+                          <div className="flex-1 bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                            <div className={`h-1.5 rounded-full ${due === 0 ? "bg-green-500" : paidPct >= 50 ? "bg-blue-500" : "bg-red-400"}`} style={{ width: `${paidPct}%` }} />
+                          </div>
+                          <span className="text-[10px] text-gray-400 flex-shrink-0">{paidPct}%</span>
+                          {due > 0
+                            ? <span className="text-[10px] font-bold text-red-500 flex-shrink-0">₹{due.toLocaleString("en-IN")} due</span>
+                            : <span className="text-[10px] font-bold text-green-600 flex-shrink-0">Cleared</span>
+                          }
+                        </div>
+                      );
+                    })()}
+                    <div className="flex gap-2 px-3 pb-3 pt-1.5 border-t border-gray-50">
+                      {isPromoted ? (
+                        <Link href={`/student/${student.enrollment}?session=${student.session}`}
+                          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-school-navy text-white">
+                          <Eye className="w-3.5 h-3.5 flex-shrink-0"/> View Profile
+                        </Link>
+                      ) : (
+                        <>
+                          <Link href={`/student/${student.enrollment}/edit`}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                            <Edit className="w-3.5 h-3.5 flex-shrink-0"/> Update
+                          </Link>
+                          <Link href={`/student/${student.enrollment}?session=${student.session}`}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-school-navy text-white">
+                            <Eye className="w-3.5 h-3.5 flex-shrink-0"/> View
+                          </Link>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* ── Desktop 6-Column Grid Body (hidden on mobile) ── */}
+                  <div className="hidden md:grid" style={{ gridTemplateColumns: "148px 1fr 155px 185px 175px 205px" }}>
 
                     {/* ── Column 1: Photo — full card height ── */}
                     <div className={`relative overflow-hidden border-r border-gray-100 ${a.photoBg}`} style={{ minHeight: "168px" }}>

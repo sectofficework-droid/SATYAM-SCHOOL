@@ -247,24 +247,24 @@ function FeesTab({ fees }) {
   return (
     <div className="space-y-5">
       {/* Summary — 3 cards */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="bg-blue-50 rounded-2xl p-4 text-center border border-blue-100">
-          <p className="text-xs text-blue-500 font-bold uppercase tracking-wide mb-1">Total Fees</p>
-          <p className="text-2xl font-bold text-blue-700">₹{actualFees.toLocaleString("en-IN")}</p>
-          {discount > 0 && <p className="text-xs text-amber-600 font-semibold mt-1">₹{totalFees.toLocaleString("en-IN")} - ₹{discount.toLocaleString("en-IN")} discount</p>}
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="bg-blue-50 rounded-2xl p-2 sm:p-4 text-center border border-blue-100">
+          <p className="text-[10px] sm:text-xs text-blue-500 font-bold uppercase tracking-wide mb-1">Total Fees</p>
+          <p className="text-sm sm:text-2xl font-bold text-blue-700">₹{actualFees.toLocaleString("en-IN")}</p>
+          {discount > 0 && <p className="text-[10px] sm:text-xs text-amber-600 font-semibold mt-1 hidden sm:block">₹{totalFees.toLocaleString("en-IN")} - ₹{discount.toLocaleString("en-IN")} disc</p>}
         </div>
-        <div className="bg-green-50 rounded-2xl p-4 text-center border border-green-100">
-          <p className="text-xs text-green-500 font-bold uppercase tracking-wide mb-1">Total Paid</p>
-          <p className="text-2xl font-bold text-green-700">₹{totalPaid.toLocaleString("en-IN")}</p>
-          <p className="text-xs text-green-400 mt-1">{paidPct}% paid</p>
+        <div className="bg-green-50 rounded-2xl p-2 sm:p-4 text-center border border-green-100">
+          <p className="text-[10px] sm:text-xs text-green-500 font-bold uppercase tracking-wide mb-1">Total Paid</p>
+          <p className="text-sm sm:text-2xl font-bold text-green-700">₹{totalPaid.toLocaleString("en-IN")}</p>
+          <p className="text-[10px] sm:text-xs text-green-400 mt-1">{paidPct}%</p>
         </div>
-        <div className={`rounded-2xl p-4 text-center border ${totalDue === 0 ? "bg-gray-50 border-gray-100" : "bg-red-50 border-red-100"}`}>
-          <p className={`text-xs font-bold uppercase tracking-wide mb-1 ${totalDue === 0 ? "text-gray-400" : "text-red-500"}`}>Balance Due</p>
-          <p className={`text-2xl font-bold ${totalDue === 0 ? "text-gray-500" : "text-red-600"}`}>
+        <div className={`rounded-2xl p-2 sm:p-4 text-center border ${totalDue === 0 ? "bg-gray-50 border-gray-100" : "bg-red-50 border-red-100"}`}>
+          <p className={`text-[10px] sm:text-xs font-bold uppercase tracking-wide mb-1 ${totalDue === 0 ? "text-gray-400" : "text-red-500"}`}>Balance</p>
+          <p className={`text-sm sm:text-2xl font-bold ${totalDue === 0 ? "text-gray-500" : "text-red-600"}`}>
             {totalDue === 0 ? "Cleared" : `₹${totalDue.toLocaleString("en-IN")}`}
           </p>
-          <p className={`text-xs mt-1 ${totalDue === 0 ? "text-gray-400" : "text-red-400"}`}>
-            {totalDue === 0 ? "Fully paid ✓" : `of ₹${actualFees.toLocaleString("en-IN")} payable`}
+          <p className={`text-[10px] sm:text-xs mt-1 hidden sm:block ${totalDue === 0 ? "text-gray-400" : "text-red-400"}`}>
+            {totalDue === 0 ? "Fully paid ✓" : `of ₹${actualFees.toLocaleString("en-IN")}`}
           </p>
         </div>
       </div>
@@ -295,6 +295,7 @@ function FeesTab({ fees }) {
             {payments.length} payment{payments.length !== 1 ? "s" : ""}
           </span>
         </div>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50">
@@ -329,6 +330,7 @@ function FeesTab({ fees }) {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -353,6 +355,7 @@ function AttendanceTab({ attendance }) {
       </div>
       {/* Month-wise */}
       <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50">
@@ -387,6 +390,7 @@ function AttendanceTab({ attendance }) {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
