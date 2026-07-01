@@ -17,6 +17,7 @@ import {
   LogOut,
   TrendingDown,
   Bell,
+  FolderOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import useStore from "@/lib/store";
@@ -30,6 +31,7 @@ const navItems = [
   { href: "/expenses",  label: "Expenses",             icon: TrendingDown },
   { href: "/notice",    label: "Notice Board",         icon: Bell },
   { href: "/report", label: "Report", icon: BarChart3 },
+  { href: "/documents", label: "Documents", icon: FolderOpen },
   { href: "/tasks", label: "Task Management", icon: ClipboardList },
   { href: "/super-admin", label: "Super Admin", icon: ShieldCheck },
   { href: "/settings", label: "Setting", icon: Settings },
