@@ -344,7 +344,7 @@ function EditForm({ existing, id, router }) {
         setPhotoSize(compressed.size);
         return uploadFileToS3(compressed, key).then(() => setPhotoKey(key));
       })
-      .catch(() => setPhotoError("Photo upload failed — please try again."))
+      .catch((err) => setPhotoError("Photo upload failed: " + (err?.message || "Unknown error")))
       .finally(() => setPhotoUploading(false));
   };
 

@@ -13,10 +13,13 @@ export async function uploadFileToS3(file, key) {
 
   const putRes = await fetch(uploadUrl, {
     method: "PUT",
-    headers: { "Content-Type": file.type },
+    headers: { "Content-Type": file.type || "application/octet-stream" },
     body: file,
   });
-  if (!putRes.ok) throw new Error("Upload to S3 failed");
+  if (!putRes.ok) {
+    const body = await putRes.text().catch(() => "");
+    throw new Error(`S3 upload failed (${putRes.status}): ${body.slice(0, 200)}`);
+  }
 
   return key;
 }
