@@ -43,9 +43,14 @@ export async function POST(request) {
     return NextResponse.json({ key });
   } catch (err) {
     console.error("S3 upload error:", err);
-    return NextResponse.json(
-      { error: err.message || "Upload failed" },
-      { status: 500 }
-    );
+    const detail = [
+      err.name,
+      err.Code || err.code,
+      err.message,
+      err.$metadata?.httpStatusCode ? `HTTP ${err.$metadata.httpStatusCode}` : null,
+      `Bucket: ${S3_BUCKET}`,
+      `Region: ${process.env.AWS_REGION}`,
+    ].filter(Boolean).join(" | ");
+    return NextResponse.json({ error: detail }, { status: 500 });
   }
 }
