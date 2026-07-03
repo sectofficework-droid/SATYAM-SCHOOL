@@ -1,24 +1,19 @@
-// Client-side helpers — upload/view go through the server API routes so the
-// AWS secret key never reaches the browser. The browser only ever talks to S3
-// using a short-lived presigned URL.
+// Client-side helpers — all S3 traffic goes through Next.js API routes so
+// AWS credentials never reach the browser and no S3 CORS policy is needed.
 
 export async function uploadFileToS3(file, key) {
-  const res = await fetch("/api/s3/upload-url", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ key, contentType: file.type }),
-  });
-  if (!res.ok) throw new Error("Could not get upload URL");
-  const { uploadUrl } = await res.json();
+  const form = new FormData();
+  form.append("file", file);
+  form.append("key", key);
 
-  const putRes = await fetch(uploadUrl, {
-    method: "PUT",
-    headers: { "Content-Type": file.type || "application/octet-stream" },
-    body: file,
+  const res = await fetch("/api/s3/upload", {
+    method: "POST",
+    body: form,
   });
-  if (!putRes.ok) {
-    const body = await putRes.text().catch(() => "");
-    throw new Error(`S3 upload failed (${putRes.status}): ${body.slice(0, 200)}`);
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Upload failed (${res.status})`);
   }
 
   return key;
