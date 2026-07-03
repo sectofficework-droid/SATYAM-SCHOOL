@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import s3, { S3_BUCKET } from "@/lib/s3";
 
-export const config = { api: { bodyParser: false } };
-
 function isAllowedKey(key) {
   return (
     typeof key === "string" &&
