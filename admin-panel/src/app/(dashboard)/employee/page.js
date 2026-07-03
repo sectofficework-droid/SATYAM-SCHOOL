@@ -408,7 +408,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
         setPhotoSize(compressed.size);
         return uploadFileToS3(compressed, key).then(() => setPhotoKey(key));
       })
-      .catch(() => setPhotoError("Photo upload failed — please try again."))
+      .catch((err) => setPhotoError("Upload failed: " + (err?.message || "Unknown error")))
       .finally(() => setPhotoUploading(false));
   };
 
