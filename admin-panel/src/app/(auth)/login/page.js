@@ -8,24 +8,9 @@ import { isValidEmail, isStrongPassword } from "@/lib/validators";
 import supabase from "@/lib/supabase";
 import useStore from "@/lib/store";
 
-// Detects recovery/invite codes in the URL and forwards to /auth/callback
-function RecoveryRedirector() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  useEffect(() => {
-    const code       = searchParams.get("code");
-    const tokenHash  = searchParams.get("token_hash");
-    const type       = searchParams.get("type");
-    if (code || tokenHash) {
-      // Forward all params to the callback handler
-      router.replace("/auth/callback?" + searchParams.toString());
-    }
-  }, []);
-  return null;
-}
-
 function LoginPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const setAuthUser = useStore((s) => s.setAuthUser);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
@@ -38,6 +23,26 @@ function LoginPageInner() {
   const [showForgot, setShowForgot] = useState(false);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotLoading, setForgotLoading] = useState(false);
+
+  // Forward any auth codes that land here to the callback handler,
+  // and handle hash-based PASSWORD_RECOVERY (implicit flow fallback).
+  useEffect(() => {
+    // PKCE: code in query params (e.g. ?code=xxx redirected from root or Supabase)
+    const code      = searchParams.get("code");
+    const tokenHash = searchParams.get("token_hash");
+    if (code || tokenHash) {
+      router.replace("/auth/callback?" + searchParams.toString());
+      return;
+    }
+
+    // Implicit / hash flow: Supabase fires PASSWORD_RECOVERY when #access_token is in URL
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        router.replace("/auth/set-password");
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     Promise.all([
@@ -88,7 +93,6 @@ function LoginPageInner() {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
-      <Suspense fallback={null}><RecoveryRedirector /></Suspense>
 
       {/* ── Left Panel ── */}
       <div className="relative lg:w-[58%] h-56 sm:h-72 lg:h-screen flex-shrink-0">
