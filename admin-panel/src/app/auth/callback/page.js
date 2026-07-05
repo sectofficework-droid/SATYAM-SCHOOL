@@ -36,19 +36,12 @@ function AuthCallbackInner() {
       setTimeout(() => router.replace("/login"), 3000);
     };
 
-    // Supabase auto-processes hash tokens (#access_token=...) and fires this event
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
-        goToSetPassword();
-      }
-    });
-
     const code       = searchParams.get("code");
     const token_hash = searchParams.get("token_hash");
     const type       = searchParams.get("type");
 
     if (code) {
-      // PKCE flow
+      // PKCE flow — exchange code, Supabase will fire PASSWORD_RECOVERY event
       supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
         if (error) goToLogin("Link expired or already used. Request a new one from the login page.");
         else goToSetPassword();
@@ -60,8 +53,13 @@ function AuthCallbackInner() {
         else goToSetPassword();
       });
     } else {
-      // Hash-based flow — onAuthStateChange above will fire within ~1s
-      // If nothing fires after 5s, the link is truly invalid
+      // Hash-based implicit flow — Supabase auto-processes #access_token in URL and fires an event
+      const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+        if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+          goToSetPassword();
+        }
+      });
+
       const timeout = setTimeout(() => {
         goToLogin("Invalid or expired link. Redirecting to login...");
       }, 5000);
@@ -71,8 +69,6 @@ function AuthCallbackInner() {
         clearTimeout(timeout);
       };
     }
-
-    return () => subscription.unsubscribe();
   }, []);
 
   return <Spinner message={message} />;
