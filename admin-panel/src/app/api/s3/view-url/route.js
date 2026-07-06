@@ -3,8 +3,18 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import s3, { S3_BUCKET } from "@/lib/s3";
 
+const CORS = {
+  "Access-Control-Allow-Origin":  "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
 function isAllowedKey(key) {
   return typeof key === "string" && (key.startsWith("students/") || key.startsWith("employees/"));
+}
+
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS });
 }
 
 export async function GET(request) {
@@ -13,7 +23,7 @@ export async function GET(request) {
   const filename = params.get("filename");
 
   if (!isAllowedKey(key)) {
-    return NextResponse.json({ error: "Invalid key" }, { status: 400 });
+    return NextResponse.json({ error: "Invalid key" }, { status: 400, headers: CORS });
   }
 
   const commandInput = { Bucket: S3_BUCKET, Key: key };
@@ -25,5 +35,5 @@ export async function GET(request) {
   const command = new GetObjectCommand(commandInput);
   const viewUrl = await getSignedUrl(s3, command, { expiresIn: 900 });
 
-  return NextResponse.json({ viewUrl });
+  return NextResponse.json({ viewUrl }, { headers: CORS });
 }
