@@ -8,8 +8,8 @@ class TeacherProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final profile = AuthService.to.profile.value ?? {};
-    final name    = profile['full_name'] ?? '—';
-    final empId   = profile['employee_id'] ?? '—';
+    final name    = profile['name'] ?? '—';
+    final empId   = profile['emp_code'] ?? '—';
 
     return Scaffold(
       appBar: AppBar(title: const Text('My Profile')),
@@ -26,16 +26,16 @@ class TeacherProfilePage extends StatelessWidget {
             const SizedBox(height: 12),
             Text(name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.text)),
             const SizedBox(height: 4),
-            Text(profile['designation'] ?? '',
+            Text(profile['designation'] ?? profile['type'] ?? '',
               style: const TextStyle(color: AppColors.textLight, fontSize: 14)),
             const SizedBox(height: 24),
 
             _section('Employee Details', [
-              _row('Employee ID',     empId),
-              _row('Class Assigned',  profile['class_assigned'] ?? '—'),
-              _row('Subject',         profile['subject'] ?? '—'),
+              _row('Employee Code',   empId),
+              _row('Designation',    profile['designation'] ?? profile['type'] ?? '—'),
+              _row('Department',     profile['department'] ?? '—'),
               _row('Phone',          profile['phone'] ?? '—'),
-              _row('Qualification',  profile['qualification'] ?? '—'),
+              _row('Email',          profile['email'] ?? '—'),
             ]),
 
             const SizedBox(height: 16),

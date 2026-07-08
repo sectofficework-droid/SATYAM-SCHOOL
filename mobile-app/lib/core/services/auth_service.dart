@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:get/get.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'supabase_service.dart';
@@ -13,28 +14,28 @@ class AuthService extends GetxService {
   final profile    = Rx<Map<String, dynamic>?>(null);
   final isLoggedIn = false.obs;
 
-  /// Called explicitly from main() before runApp so the initial route is correct.
-  Future<void> initSession() => _restoreSession();
-
-  Future<void> _restoreSession() async {
-    final user = SupabaseService.currentUser;
-    if (user == null) return;
-
-    final savedRole = await _storage.read(key: 'user_role');
-    if (savedRole == 'teacher') {
-      await _loadTeacherProfile(user.id);
-    } else if (savedRole == 'student') {
-      await _loadStudentProfile(user.id);
-    }
+  Future<void> initSession() async {
+    final roleStr     = await _storage.read(key: 'user_role');
+    final profileJson = await _storage.read(key: 'user_profile');
+    if (roleStr == null || profileJson == null) return;
+    try {
+      final p = jsonDecode(profileJson) as Map<String, dynamic>;
+      profile.value    = p;
+      role.value       = roleStr == 'teacher' ? UserRole.teacher : UserRole.student;
+      isLoggedIn.value = true;
+    } catch (_) {}
   }
 
   Future<String?> loginTeacher(String empId, String password) async {
     try {
-      final res = await SupabaseService.signInTeacher(empId, password);
-      if (res.user == null) return 'Login failed. Check Employee ID and password.';
-      await _storage.write(key: 'user_role', value: 'teacher');
-      await _loadTeacherProfile(res.user!.id);
-      return null; // success
+      final result = await SupabaseService.client.rpc(
+        'teacher_login',
+        params: {'p_employee_id': empId.trim(), 'p_password': password},
+      );
+      if (result == null) return 'Incorrect Employee ID or password.';
+      final p = (result is Map) ? Map<String, dynamic>.from(result) : jsonDecode(result as String) as Map<String, dynamic>;
+      await _saveSession('teacher', p);
+      return null;
     } catch (e) {
       return _friendlyError(e.toString());
     }
@@ -42,41 +43,30 @@ class AuthService extends GetxService {
 
   Future<String?> loginStudent(String enrollNo, String password) async {
     try {
-      final res = await SupabaseService.signInStudent(enrollNo, password);
-      if (res.user == null) return 'Login failed. Check Enrollment No. and password.';
-      await _storage.write(key: 'user_role', value: 'student');
-      await _loadStudentProfile(res.user!.id);
+      final result = await SupabaseService.client.rpc(
+        'student_login',
+        params: {'p_enrollment_no': enrollNo.trim(), 'p_password': password},
+      );
+      if (result == null) return 'Incorrect Enrollment No. or password.';
+      final p = (result is Map) ? Map<String, dynamic>.from(result) : jsonDecode(result as String) as Map<String, dynamic>;
+      await _saveSession('student', p);
       return null;
     } catch (e) {
       return _friendlyError(e.toString());
     }
   }
 
-  Future<void> _loadTeacherProfile(String userId) async {
-    final data = await SupabaseService.fetchTeacherProfile(userId);
-    if (data == null) {
-      await signOut();
-      return;
-    }
-    profile.value  = data;
-    role.value     = UserRole.teacher;
-    isLoggedIn.value = true;
-  }
-
-  Future<void> _loadStudentProfile(String userId) async {
-    final data = await SupabaseService.fetchStudentProfile(userId);
-    if (data == null) {
-      await signOut();
-      return;
-    }
-    profile.value  = data;
-    role.value     = UserRole.student;
+  Future<void> _saveSession(String roleStr, Map<String, dynamic> p) async {
+    await _storage.write(key: 'user_role',    value: roleStr);
+    await _storage.write(key: 'user_profile', value: jsonEncode(p));
+    profile.value    = p;
+    role.value       = roleStr == 'teacher' ? UserRole.teacher : UserRole.student;
     isLoggedIn.value = true;
   }
 
   Future<void> signOut() async {
-    await SupabaseService.signOut();
     await _storage.delete(key: 'user_role');
+    await _storage.delete(key: 'user_profile');
     profile.value    = null;
     role.value       = UserRole.none;
     isLoggedIn.value = false;
@@ -84,9 +74,7 @@ class AuthService extends GetxService {
   }
 
   String _friendlyError(String raw) {
-    if (raw.contains('Invalid login credentials')) return 'Incorrect ID or password.';
-    if (raw.contains('Email not confirmed'))        return 'Account not activated. Contact admin.';
-    if (raw.contains('network'))                    return 'No internet connection.';
+    if (raw.contains('network') || raw.contains('SocketException')) return 'No internet connection.';
     return 'Something went wrong. Please try again.';
   }
 }

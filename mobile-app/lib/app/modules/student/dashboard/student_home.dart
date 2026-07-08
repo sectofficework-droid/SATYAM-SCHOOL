@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
+import '../profile/student_profile_page.dart';
 import '../attendance/student_attendance_page.dart';
 import '../marks/student_marks_page.dart';
 import '../fees/student_fees_page.dart';
@@ -28,8 +29,9 @@ class _StudentHomeState extends State<StudentHome> {
 
   @override
   Widget build(BuildContext context) {
-    final profile = AuthService.to.profile.value ?? {};
-    final name    = profile['full_name'] ?? 'Student';
+    final profile    = AuthService.to.profile.value ?? {};
+    final name       = '${profile['first_name'] ?? ''} ${profile['last_name'] ?? ''}'.trim();
+    final className  = profile['class_name']?.toString() ?? '';
 
     return Scaffold(
       appBar: AppBar(
@@ -38,13 +40,24 @@ class _StudentHomeState extends State<StudentHome> {
           children: [
             Text('Hello, ${name.split(' ').first}',
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Colors.white)),
-            Text('Class: ${profile['class'] ?? '—'}',
+            Text(className.isNotEmpty ? 'Class $className' : 'Student',
               style: const TextStyle(fontSize: 11, color: Colors.white60)),
           ],
         ),
         actions: [
-          IconButton(icon: const Icon(Icons.person_outline),
-            onPressed: () => Get.toNamed(Routes.studentProfile)),
+          GestureDetector(
+            onTap: () => Get.toNamed(Routes.studentProfile),
+            child: Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: ClipOval(
+                child: SizedBox(
+                  width: 36, height: 36,
+                  child: StudentProfilePage.buildAvatar(
+                    profile['photo_url'] as String?, name, 18),
+                ),
+              ),
+            ),
+          ),
           IconButton(icon: const Icon(Icons.logout),
             onPressed: () async {
               final c = await Get.dialog<bool>(AlertDialog(
@@ -85,9 +98,10 @@ class _StudentDashboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final profile    = AuthService.to.profile.value ?? {};
-    final className  = profile['class'] ?? '—';
-    final rollNo     = profile['roll_no'] ?? '—';
-    final enrollNo   = profile['enrollment_no'] ?? '—';
+    final className  = profile['class_name']?.toString() ?? '—';
+    final section    = profile['section_name']?.toString() ?? '';
+    final rollNo     = profile['roll_no']?.toString() ?? '—';
+    final enrollNo   = profile['enrollment_no']?.toString() ?? '—';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -108,10 +122,11 @@ class _StudentDashboard extends StatelessWidget {
               Expanded(child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Class', style: TextStyle(color: Colors.white60, fontSize: 12)),
+                  Text(section.isNotEmpty ? '$className · $section' : className,
+                    style: const TextStyle(color: Colors.white60, fontSize: 12)),
                   Text(className, style: const TextStyle(
-                    color: Colors.white, fontSize: 28, fontWeight: FontWeight.w700)),
-                  Text('Roll No: $rollNo · Enroll: $enrollNo',
+                    color: Colors.white, fontSize: 24, fontWeight: FontWeight.w700)),
+                  Text('Enroll: $enrollNo  ·  Roll: $rollNo',
                     style: const TextStyle(color: AppColors.amber, fontSize: 11)),
                 ],
               )),

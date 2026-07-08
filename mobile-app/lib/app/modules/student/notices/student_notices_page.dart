@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/supabase_service.dart';
-import '../../../modules/teacher/notices/teacher_notices_page.dart' show _NoticeCard;
+import '../../../../common/widgets/notice_card.dart';
 
 class StudentNoticesPage extends StatefulWidget {
   final bool embedded;
@@ -34,7 +34,7 @@ class _StudentNoticesPageState extends State<StudentNoticesPage> {
                   padding: const EdgeInsets.all(16),
                   itemCount: _notices.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
-                  itemBuilder: (_, i) => _NoticeCard(notice: _notices[i]),
+                  itemBuilder: (_, i) => NoticeCard(notice: _notices[i]),
                 ),
               );
 

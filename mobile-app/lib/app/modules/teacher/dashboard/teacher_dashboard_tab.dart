@@ -25,7 +25,7 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab> {
 
   Future<void> _load() async {
     final profile = AuthService.to.profile.value ?? {};
-    final cls = profile['class_assigned'] as String?;
+    final cls = profile['class_teacher_of_section_id']?.toString();
     if (cls != null) {
       final students = await SupabaseService.fetchClassStudents(cls);
       final hw = await SupabaseService.fetchHomework(className: cls);
@@ -46,8 +46,8 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab> {
   @override
   Widget build(BuildContext context) {
     final profile   = AuthService.to.profile.value ?? {};
-    final className = profile['class_assigned'] as String? ?? '—';
-    final subject   = profile['subject'] as String? ?? '';
+    final className = profile['class_teacher_of_section_id']?.toString() ?? '—';
+    final subject   = '';
 
     return RefreshIndicator(
       onRefresh: _load,

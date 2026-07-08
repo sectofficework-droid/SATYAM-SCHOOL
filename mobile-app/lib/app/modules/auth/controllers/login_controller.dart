@@ -32,7 +32,7 @@ class LoginController extends GetxController {
     errorMsg.value = '';
     final id   = idCtrl.text.trim();
     final pass = passCtrl.text;
-    if (id.isEmpty)   { errorMsg.value = 'Enter your ${tab.value == LoginTab.teacher ? "Employee ID" : "Enrollment No."}'; return; }
+    if (id.isEmpty)   { errorMsg.value = 'Enter your ${tab.value == LoginTab.teacher ? "Employee Code" : "Enrollment No."}'; return; }
     if (pass.isEmpty) { errorMsg.value = 'Enter your password'; return; }
 
     loading.value = true;

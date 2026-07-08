@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
   static const navy      = Color(0xFF1E3A5F);
@@ -22,7 +23,7 @@ class AppColors {
 class AppTheme {
   static ThemeData get light => ThemeData(
     useMaterial3: true,
-    fontFamily: 'Poppins',
+    textTheme: GoogleFonts.poppinsTextTheme(),
     colorScheme: ColorScheme.fromSeed(
       seedColor: AppColors.navy,
       primary: AppColors.navy,
@@ -37,8 +38,7 @@ class AppTheme {
       elevation: 0,
       centerTitle: false,
       titleTextStyle: TextStyle(
-        fontFamily: 'Poppins',
-        fontSize: 18,
+          fontSize: 18,
         fontWeight: FontWeight.w600,
         color: Colors.white,
       ),
@@ -50,8 +50,7 @@ class AppTheme {
         minimumSize: const Size.fromHeight(52),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         textStyle: const TextStyle(
-          fontFamily: 'Poppins',
-          fontSize: 15,
+              fontSize: 15,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -78,7 +77,7 @@ class AppTheme {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       hintStyle: const TextStyle(color: AppColors.textHint, fontSize: 14),
     ),
-    cardTheme: CardTheme(
+    cardTheme: CardThemeData(
       elevation: 0,
       color: AppColors.card,
       shape: RoundedRectangleBorder(

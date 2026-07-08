@@ -21,8 +21,10 @@ dependencies:
   cached_network_image: ^3.3.1
   shimmer: ^3.0.0
   fl_chart: ^0.68.0
+  google_fonts: ^6.2.1
 
   # Utils
+  http: ^1.2.1
   intl: ^0.19.0
   shared_preferences: ^2.2.3
   flutter_secure_storage: ^9.0.0
@@ -41,13 +43,3 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
-  fonts:
-    - family: Poppins
-      fonts:
-        - asset: assets/fonts/Poppins-Regular.ttf
-        - asset: assets/fonts/Poppins-Medium.ttf
-          weight: 500
-        - asset: assets/fonts/Poppins-SemiBold.ttf
-          weight: 600
-        - asset: assets/fonts/Poppins-Bold.ttf
-          weight: 700

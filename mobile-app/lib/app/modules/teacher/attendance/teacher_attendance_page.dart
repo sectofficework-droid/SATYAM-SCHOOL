@@ -26,10 +26,10 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
   }
 
   Future<void> _loadStudents() async {
-    final profile   = AuthService.to.profile.value ?? {};
-    final className = profile['class_assigned'] as String? ?? '';
-    if (className.isEmpty) { setState(() => _loading = false); return; }
-    final students = await SupabaseService.fetchClassStudents(className);
+    final profile    = AuthService.to.profile.value ?? {};
+    final sectionId  = profile['class_teacher_of_section_id']?.toString() ?? '';
+    if (sectionId.isEmpty) { setState(() => _loading = false); return; }
+    final students = await SupabaseService.fetchClassStudents(sectionId);
     setState(() {
       _students = students;
       for (final s in students) _status[s['id'] as String] ??= 'P';
@@ -46,7 +46,7 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
       'student_id': s['id'],
       'date':       dateStr,
       'status':     _status[s['id'] as String] ?? 'P',
-      'class':      profile['class_assigned'],
+      'section_id': profile['class_teacher_of_section_id']?.toString() ?? '',
       'marked_by':  teacherId,
     }).toList();
     await SupabaseService.saveAttendanceBatch(records);
@@ -125,9 +125,9 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
                           Expanded(child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(s['full_name'] ?? '',
+                              Text('${s['first_name'] ?? ''} ${s['last_name'] ?? ''}'.trim(),
                                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                              Text(s['enrollment_no'] ?? '',
+                              Text(s['grno'] ?? '',
                                 style: const TextStyle(color: AppColors.textLight, fontSize: 12)),
                             ],
                           )),

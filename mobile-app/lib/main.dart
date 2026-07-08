@@ -7,10 +7,10 @@ import 'core/services/auth_service.dart';
 import 'app/routes/app_pages.dart';
 import 'app/routes/app_routes.dart';
 
-// ⚠️  Replace these with your actual Supabase project values.
-// Find them in: Supabase Dashboard → Settings → API
-const _supabaseUrl = 'https://YOUR_PROJECT_ID.supabase.co';
-const _supabaseKey = 'YOUR_ANON_KEY';
+const _supabaseUrl = 'https://hxkowdaugkkumvzyfsai.supabase.co';
+const _supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh4a293ZGF1Z2trdW12enlmc2FpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2NDY0MDksImV4cCI6MjA5NzIyMjQwOX0.uD3gr1gggx6h0wfgT4ee-QOK0krb4TT08_iXorN4wU0';
+
+const adminPanelUrl = 'https://satyam-stars-international-school-admin-61n7y0ovt.vercel.app';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

@@ -8,35 +8,58 @@ class LoginView extends GetView<LoginController> {
 
   @override
   Widget build(BuildContext context) {
+    final screenH = MediaQuery.of(context).size.height;
+
     return Scaffold(
       backgroundColor: AppColors.navy,
+      resizeToAvoidBottomInset: true,
       body: SafeArea(
         child: Column(
           children: [
             // ── Header ──────────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-              child: Column(
-                children: [
-                  Container(
-                    width: 80, height: 80,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
+            SizedBox(
+              height: screenH * 0.28,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 88, height: 88,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(22),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(.2),
+                            blurRadius: 18, offset: const Offset(0, 6)),
+                        ],
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(22),
+                        child: Image.asset(
+                          'assets/images/school_logo.jpg',
+                          fit: BoxFit.cover,
+                        ),
+                      ),
                     ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: Image.asset('assets/images/school_logo.png', fit: BoxFit.contain),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Satyam Stars International School',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.3,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text('Satyam Stars International School',
-                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700),
-                    textAlign: TextAlign.center),
-                  const SizedBox(height: 4),
-                  const Text('School Management App',
-                    style: TextStyle(color: Colors.white60, fontSize: 13)),
-                ],
+                    const SizedBox(height: 4),
+                    const Text(
+                      'School Management App',
+                      style: TextStyle(color: Colors.white54, fontSize: 12),
+                    ),
+                  ],
+                ),
               ),
             ),
 
@@ -48,14 +71,12 @@ class LoginView extends GetView<LoginController> {
                   borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
                 ),
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
+                  padding: const EdgeInsets.fromLTRB(24, 28, 24, 24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      const SizedBox(height: 8),
-
                       // Role tabs
-                      Obx(() => Container(
+                      Container(
                         decoration: BoxDecoration(
                           color: AppColors.border,
                           borderRadius: BorderRadius.circular(12),
@@ -65,9 +86,9 @@ class LoginView extends GetView<LoginController> {
                           _tab('Teacher', LoginTab.teacher),
                           _tab('Student', LoginTab.student),
                         ]),
-                      )),
+                      ),
 
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 24),
 
                       // ID field
                       Obx(() => TextFormField(
@@ -77,14 +98,14 @@ class LoginView extends GetView<LoginController> {
                         textCapitalization: TextCapitalization.characters,
                         decoration: InputDecoration(
                           labelText: controller.tab.value == LoginTab.teacher
-                              ? 'Employee ID' : 'Enrollment Number',
+                              ? 'Employee Code' : 'Enrollment No.',
                           hintText: controller.tab.value == LoginTab.teacher
                               ? 'e.g. EMP001' : 'e.g. 2024001',
                           prefixIcon: const Icon(Icons.badge_outlined, color: AppColors.navy),
                         ),
                       )),
 
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 14),
 
                       // Password field
                       Obx(() => TextFormField(
@@ -97,7 +118,9 @@ class LoginView extends GetView<LoginController> {
                           prefixIcon: const Icon(Icons.lock_outline, color: AppColors.navy),
                           suffixIcon: IconButton(
                             icon: Icon(
-                              controller.showPass.value ? Icons.visibility_off : Icons.visibility,
+                              controller.showPass.value
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
                               color: AppColors.textHint,
                             ),
                             onPressed: () => controller.showPass.toggle(),
@@ -105,13 +128,13 @@ class LoginView extends GetView<LoginController> {
                         ),
                       )),
 
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
 
                       // Error message
                       Obx(() => controller.errorMsg.value.isEmpty
                           ? const SizedBox.shrink()
                           : Container(
-                              margin: const EdgeInsets.only(bottom: 8),
+                              margin: const EdgeInsets.only(bottom: 6),
                               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                               decoration: BoxDecoration(
                                 color: AppColors.redLight,
@@ -126,29 +149,33 @@ class LoginView extends GetView<LoginController> {
                               ]),
                             )),
 
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 6),
 
                       // Login button
-                      Obx(() => ElevatedButton(
-                        onPressed: controller.loading.value ? null : controller.login,
-                        child: controller.loading.value
-                            ? const SizedBox(width: 22, height: 22,
-                                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                            : const Text('Sign In'),
+                      Obx(() => SizedBox(
+                        height: 50,
+                        child: ElevatedButton(
+                          onPressed: controller.loading.value ? null : controller.login,
+                          child: controller.loading.value
+                              ? const SizedBox(width: 22, height: 22,
+                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                              : const Text('Sign In',
+                                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                        ),
                       )),
 
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
 
-                      // Help text
                       const Center(
                         child: Text(
-                          'Forgot your password? Contact the school admin.',
+                          'Forgot password? Contact school admin.',
                           style: TextStyle(color: AppColors.textLight, fontSize: 12),
                           textAlign: TextAlign.center,
                         ),
                       ),
 
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 24),
+
                       const Center(
                         child: Text('© 2026 Satyam Stars International School',
                           style: TextStyle(color: AppColors.textHint, fontSize: 11)),

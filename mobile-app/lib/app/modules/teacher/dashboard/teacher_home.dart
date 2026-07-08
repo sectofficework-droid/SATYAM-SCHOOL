@@ -29,7 +29,7 @@ class _TeacherHomeState extends State<TeacherHome> {
   @override
   Widget build(BuildContext context) {
     final profile = AuthService.to.profile.value ?? {};
-    final name    = profile['full_name'] ?? 'Teacher';
+    final name    = profile['name'] ?? 'Teacher';
 
     return Scaffold(
       appBar: AppBar(
@@ -38,7 +38,7 @@ class _TeacherHomeState extends State<TeacherHome> {
           children: [
             Text('Hello, ${name.split(' ').first}',
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Colors.white)),
-            Text(profile['designation'] ?? '',
+            Text(profile['designation'] ?? profile['type'] ?? '',
               style: const TextStyle(fontSize: 11, color: Colors.white60)),
           ],
         ),
