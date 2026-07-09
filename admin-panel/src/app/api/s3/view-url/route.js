@@ -33,7 +33,12 @@ export async function GET(request) {
   }
 
   const command = new GetObjectCommand(commandInput);
-  const viewUrl = await getSignedUrl(s3, command, { expiresIn: 900 });
+  const viewUrl = await getSignedUrl(s3, command, { expiresIn: 3600 });
+
+  // ?redirect=1 → used by Flutter app to load images directly (avoids CORS on XHR)
+  if (params.get("redirect") === "1") {
+    return NextResponse.redirect(viewUrl);
+  }
 
   return NextResponse.json({ viewUrl }, { headers: CORS });
 }
