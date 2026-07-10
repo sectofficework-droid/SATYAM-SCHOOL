@@ -1,9 +1,7 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import '../../main.dart' show adminPanelUrl;
 
-class S3Image extends StatefulWidget {
+class S3Image extends StatelessWidget {
   final String? s3Key;
   final double  width;
   final double  height;
@@ -19,69 +17,29 @@ class S3Image extends StatefulWidget {
     required this.fallback,
   });
 
-  @override
-  State<S3Image> createState() => _S3ImageState();
-}
-
-class _S3ImageState extends State<S3Image> {
-  String? _url;
-  bool    _failed = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchUrl();
-  }
-
-  @override
-  void didUpdateWidget(S3Image old) {
-    super.didUpdateWidget(old);
-    if (old.s3Key != widget.s3Key) {
-      setState(() { _url = null; _failed = false; });
-      _fetchUrl();
-    }
-  }
-
-  Future<void> _fetchUrl() async {
-    final key = widget.s3Key;
-    if (key == null || key.isEmpty) {
-      if (mounted) setState(() => _failed = true);
-      return;
-    }
-    try {
-      final res = await http.get(
-        Uri.parse('$adminPanelUrl/api/s3/view-url?key=${Uri.encodeComponent(key)}'),
-      ).timeout(const Duration(seconds: 15));
-      if (res.statusCode == 200) {
-        final url = (jsonDecode(res.body) as Map)['viewUrl'] as String?;
-        if (url != null && mounted) {
-          setState(() => _url = url);
-          return;
-        }
-      }
-      debugPrint('S3Image: view-url returned ${res.statusCode} for key=$key');
-    } catch (e) {
-      debugPrint('S3Image error: $e');
-    }
-    if (mounted) setState(() => _failed = true);
+  // Vercel serves image bytes directly with CORS headers — no redirect, no XHR issues
+  static String? imageUrl(String? key) {
+    if (key == null || key.isEmpty) return null;
+    return '$adminPanelUrl/api/s3/view-url?serve=1&key=${Uri.encodeComponent(key)}';
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_failed)          return widget.fallback(context);
-    if (_url == null) {
-      return SizedBox(
-        width:  widget.width,
-        height: widget.height,
-        child:  const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      );
-    }
+    final url = imageUrl(s3Key);
+    if (url == null) return fallback(context);
     return Image.network(
-      _url!,
-      width:   widget.width,
-      height:  widget.height,
-      fit:     widget.fit,
-      errorBuilder: (_, __, ___) => widget.fallback(context),
+      url,
+      width:  width,
+      height: height,
+      fit:    fit,
+      loadingBuilder: (_, child, progress) => progress == null
+          ? child
+          : SizedBox(
+              width:  width,
+              height: height,
+              child:  const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+      errorBuilder: (_, __, ___) => fallback(context),
     );
   }
 }
