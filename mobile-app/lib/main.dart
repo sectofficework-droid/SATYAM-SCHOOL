@@ -47,6 +47,8 @@ class SatyamSchoolApp extends StatelessWidget {
       title: 'Satyam School',
       theme: AppTheme.light,
       debugShowCheckedModeBanner: false,
+      defaultTransition: Transition.cupertino,
+      transitionDuration: const Duration(milliseconds: 280),
       initialRoute: initialRoute,
       getPages: AppPages.routes,
     );
