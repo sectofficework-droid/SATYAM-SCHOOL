@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../../main.dart' show adminPanelUrl;
+
+const _s3Base = 'https://satyam-stars-international-school.s3.ap-south-1.amazonaws.com';
 
 class S3Image extends StatelessWidget {
   final String? s3Key;
@@ -17,10 +18,9 @@ class S3Image extends StatelessWidget {
     required this.fallback,
   });
 
-  // Vercel serves image bytes directly with CORS headers — no redirect, no XHR issues
   static String? imageUrl(String? key) {
     if (key == null || key.isEmpty) return null;
-    return '$adminPanelUrl/api/s3/view-url?serve=1&key=${Uri.encodeComponent(key)}';
+    return '$_s3Base/$key';
   }
 
   @override
