@@ -104,7 +104,7 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 crossAxisSpacing: 12, mainAxisSpacing: 12,
-                childAspectRatio: 1.3,
+                childAspectRatio: 1.1,
                 children: [
                   StatCard(label: 'Students',       value: '$_studentCount',    icon: Icons.people,        color: AppColors.blue,  bgColor: AppColors.blueLight,  onTap: () => Get.toNamed(Routes.teacherAttend)),
                   StatCard(label: 'Pending Tasks',  value: '$_pendingHomework', icon: Icons.assignment,    color: AppColors.amber, bgColor: AppColors.amberLight, onTap: () => Get.toNamed(Routes.teacherHomework)),
