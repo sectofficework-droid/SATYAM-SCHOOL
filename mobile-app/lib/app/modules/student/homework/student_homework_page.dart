@@ -20,7 +20,7 @@ class _StudentHomeworkPageState extends State<StudentHomeworkPage> {
 
   Future<void> _load() async {
     final profile   = AuthService.to.profile.value ?? {};
-    final className = profile['class'] as String?;
+    final className = profile['class_name'] as String?;
     final hw        = await SupabaseService.fetchHomework(className: className);
     setState(() { _list = hw; _loading = false; });
   }
@@ -90,6 +90,12 @@ class _StudentHomeworkPageState extends State<StudentHomeworkPage> {
               );
 
     if (widget.embedded) return body;
-    return Scaffold(appBar: AppBar(title: const Text('Homework')), body: body);
+    return Scaffold(
+      appBar: AppBar(
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: AppColors.navyGradient)),
+        title: const Text('Homework'),
+      ),
+      body: body,
+    );
   }
 }

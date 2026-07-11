@@ -15,7 +15,10 @@ class StudentProfilePage extends StatelessWidget {
     final section   = profile['section_name']?.toString() ?? '';
 
     return Scaffold(
-      appBar: AppBar(title: const Text('My Profile')),
+      appBar: AppBar(
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: AppColors.navyGradient)),
+        title: const Text('My Profile'),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(

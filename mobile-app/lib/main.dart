@@ -35,21 +35,13 @@ class SatyamSchoolApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final auth = AuthService.to;
-    String initialRoute = Routes.login;
-    if (auth.isLoggedIn.value) {
-      initialRoute = auth.role.value == UserRole.teacher
-          ? Routes.teacherHome
-          : Routes.studentHome;
-    }
-
     return GetMaterialApp(
       title: 'Satyam School',
       theme: AppTheme.light,
       debugShowCheckedModeBanner: false,
       defaultTransition: Transition.cupertino,
       transitionDuration: const Duration(milliseconds: 280),
-      initialRoute: initialRoute,
+      initialRoute: Routes.splash,
       getPages: AppPages.routes,
     );
   }

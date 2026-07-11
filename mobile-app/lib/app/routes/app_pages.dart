@@ -1,4 +1,5 @@
 import 'package:get/get.dart';
+import '../modules/splash/splash_screen.dart';
 import '../modules/auth/views/login_view.dart';
 import '../modules/auth/controllers/login_controller.dart';
 import '../modules/teacher/dashboard/teacher_home.dart';
@@ -18,13 +19,14 @@ import 'app_routes.dart';
 
 class AppPages {
   static final routes = [
+    GetPage(name: Routes.splash, page: () => const SplashScreen()),
     GetPage(
       name: Routes.login,
       page: () => const LoginView(),
       binding: BindingsBuilder(() => Get.lazyPut(() => LoginController())),
     ),
 
-    // ── Teacher ────────────────────────────────────────────────────────────────
+    // ── Teacher ──────────────────────────────────────────────────────────────
     GetPage(name: Routes.teacherHome,     page: () => const TeacherHome()),
     GetPage(name: Routes.teacherAttend,   page: () => const TeacherAttendancePage()),
     GetPage(name: Routes.teacherMarks,    page: () => const TeacherMarksPage()),
@@ -32,7 +34,7 @@ class AppPages {
     GetPage(name: Routes.teacherNotices,  page: () => const TeacherNoticesPage()),
     GetPage(name: Routes.teacherProfile,  page: () => const TeacherProfilePage()),
 
-    // ── Student ─────────────────────────────────────────────────────────────
+    // ── Student ──────────────────────────────────────────────────────────────
     GetPage(name: Routes.studentHome,     page: () => const StudentHome()),
     GetPage(name: Routes.studentAttend,   page: () => const StudentAttendancePage()),
     GetPage(name: Routes.studentMarks,    page: () => const StudentMarksPage()),

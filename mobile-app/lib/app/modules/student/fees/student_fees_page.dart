@@ -43,7 +43,13 @@ class _StudentFeesPageState extends State<StudentFeesPage> {
             : _buildContent();
 
     if (widget.embedded) return body;
-    return Scaffold(appBar: AppBar(title: const Text('Fee Status')), body: body);
+    return Scaffold(
+      appBar: AppBar(
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: AppColors.navyGradient)),
+        title: const Text('Fee Status'),
+      ),
+      body: body,
+    );
   }
 
   Widget _buildContent() {

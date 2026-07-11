@@ -132,7 +132,13 @@ class _StudentAttendancePageState extends State<StudentAttendancePage> {
           ]);
 
     if (widget.embedded) return body;
-    return Scaffold(appBar: AppBar(title: const Text('My Attendance')), body: body);
+    return Scaffold(
+      appBar: AppBar(
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: AppColors.navyGradient)),
+        title: const Text('My Attendance'),
+      ),
+      body: body,
+    );
   }
 
   Widget _statPill(String label, String value, Color color) => Column(children: [

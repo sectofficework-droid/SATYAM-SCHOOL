@@ -39,6 +39,12 @@ class _StudentNoticesPageState extends State<StudentNoticesPage> {
               );
 
     if (widget.embedded) return body;
-    return Scaffold(appBar: AppBar(title: const Text('Notices')), body: body);
+    return Scaffold(
+      appBar: AppBar(
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: AppColors.navyGradient)),
+        title: const Text('Notices'),
+      ),
+      body: body,
+    );
   }
 }

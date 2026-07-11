@@ -21,7 +21,7 @@ class _StudentMarksPageState extends State<StudentMarksPage> {
 
   Future<void> _load() async {
     final profile   = AuthService.to.profile.value ?? {};
-    final className = profile['class'] as String? ?? '';
+    final className = profile['class_name'] as String? ?? '';
     final studentId = profile['id'] as String? ?? '';
 
     final exams = await SupabaseService.fetchExams(className: className);
@@ -113,6 +113,12 @@ class _StudentMarksPageState extends State<StudentMarksPage> {
               );
 
     if (widget.embedded) return body;
-    return Scaffold(appBar: AppBar(title: const Text('My Results')), body: body);
+    return Scaffold(
+      appBar: AppBar(
+        flexibleSpace: Container(decoration: const BoxDecoration(gradient: AppColors.navyGradient)),
+        title: const Text('My Results'),
+      ),
+      body: body,
+    );
   }
 }
