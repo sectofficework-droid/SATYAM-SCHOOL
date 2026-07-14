@@ -5,8 +5,8 @@ class SupabaseService {
 
   // Attendance ────────────────────────────────────────────────────────────────
 
-  static Future<List<Map<String, dynamic>>> fetchClassStudents(String className) async {
-    final res = await client.rpc('get_class_students', params: {'p_class': className});
+  static Future<List<Map<String, dynamic>>> fetchClassStudents(String sectionId) async {
+    final res = await client.rpc('get_class_students', params: {'p_section_id': sectionId});
     if (res == null) return [];
     return List<Map<String, dynamic>>.from(res as List);
   }

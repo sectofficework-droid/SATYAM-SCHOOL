@@ -10,7 +10,7 @@ import {
   isValidName, isValidPhone, isValidEmail, isValidAadhar,
   isNonEmpty, isPastOrTodayDate, isValidUploadFile,
 } from "@/lib/validators";
-import { getActiveClasses } from "@/lib/settingsService";
+import { getActiveClasses, getClassesWithSections } from "@/lib/settingsService";
 import { getEmployees, addEmployee, updateEmployee } from "@/lib/employeeService";
 import { uploadFileToS3, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile, formatFileSize } from "@/lib/fileCompression";
@@ -134,6 +134,16 @@ function ViewEmployeeModal({ emp, onClose }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
+  const [sections, setSections] = useState([]);
+  useEffect(() => {
+    if (emp.classTeacherOf) {
+      getClassesWithSections().then(cls => {
+        setSections(cls.flatMap(c => (c.sections || []).map(s => ({ id: s.id, label: `${c.name}-${s.name}` }))));
+      }).catch(() => {});
+    }
+  }, [emp.classTeacherOf]);
+  const classTeacherLabel = sections.find(s => s.id === emp.classTeacherOf)?.label || "";
+
   const bg        = avatarBg(emp.empId);
   const age       = calcAge(emp.dob);
   const done      = docsDone(emp);
@@ -222,7 +232,7 @@ function ViewEmployeeModal({ emp, onClose }) {
                     <GraduationCap className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 mt-0.5" />
                     <div>
                       <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Class Teacher Of</p>
-                      <p className="text-sm font-bold text-school-navy">{emp.classTeacherOf}</p>
+                      <p className="text-sm font-bold text-school-navy">{classTeacherLabel || "…"}</p>
                     </div>
                   </div>
                 )}
@@ -304,17 +314,10 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
   const [sessionId] = useState(() => crypto.randomUUID());
 
   const [classList,          setClassList]          = useState([]);
-  const [classesWithSections, setClassesWithSections] = useState([]);
 
   useEffect(() => {
     getActiveClasses().then(cls => {
-      const names = cls.map(c => c.name);
-      setClassList(names);
-      const withSec = cls.flatMap(c => {
-        const secs = (c.sections || []).map(s => s.name);
-        return secs.length > 0 ? secs.map(s => `${c.name}-${s}`) : [c.name];
-      });
-      setClassesWithSections(withSec);
+      setClassList(cls.map(c => c.name));
     }).catch(() => {});
   }, []);
 
@@ -344,8 +347,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
   const [joining, setJoining]   = useState("");
   const [status, setStatus]     = useState("Active");
 
-  // Academic — class teacher + subject→class mappings
-  const [ctOf, setCtOf]         = useState("");
+  // Academic — subject→class mappings (class teacher assignment lives in Settings → Classes & Sections)
   const [mappings, setMappings] = useState([]); // [{subject:"", classes:[]}]
 
   // Documents — selected: checkbox toggled; file uploaded only when fileName set
@@ -479,7 +481,6 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
       email: email.trim(), address: address.trim(),
       aadhar: aadharDisplay, pan: pan.trim(),
       joiningDate: joining, employmentType: empType, status,
-      classTeacherOf: type === "teaching" ? ctOf || null : null,
       subjectMappings: type === "teaching"
         ? mappings.filter((m) => m.subject && m.classes.length > 0)
         : [],
@@ -692,15 +693,6 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
               </div>
             ) : (
               <>
-                {/* Class teacher */}
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Class Teacher Of</label>
-                  <select className={IPT} value={ctOf} onChange={(e) => setCtOf(e.target.value)}>
-                    <option value="">None / Not a class teacher</option>
-                    {classesWithSections.map((c) => <option key={c}>{c}</option>)}
-                  </select>
-                </div>
-
                 {/* Subject-class mappings */}
                 <div>
                   <div className="flex items-center justify-between mb-2">

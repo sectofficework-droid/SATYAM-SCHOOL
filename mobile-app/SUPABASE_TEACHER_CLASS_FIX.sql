@@ -1,5 +1,6 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- TEACHER + STUDENT LOGIN FIX: return class_name and section_name
+-- TEACHER + STUDENT LOGIN FIX: return class_name and section_name,
+-- and fetch a class's students by section_id (not by class name).
 -- Run this in Supabase Dashboard → SQL Editor
 -- ─────────────────────────────────────────────────────────────────────────────
 
@@ -90,3 +91,34 @@ BEGIN
 END;
 $$;
 GRANT EXECUTE ON FUNCTION student_login(TEXT, TEXT) TO anon;
+
+-- ── get_class_students: fetch a section's roster by section_id ────────────────
+-- The app always calls this with the teacher's class_teacher_of_section_id
+-- (a UUID), so it must filter by section_id, not by class name.
+-- Existing function has a differently-named parameter (p_class) — Postgres
+-- won't let CREATE OR REPLACE rename it, so drop it first.
+DROP FUNCTION IF EXISTS get_class_students(TEXT);
+CREATE OR REPLACE FUNCTION get_class_students(p_section_id TEXT)
+RETURNS JSON LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  RETURN (
+    SELECT json_agg(row_to_json(r))
+    FROM (
+      SELECT
+        s.id,
+        s.first_name,
+        s.last_name,
+        s.grno,
+        s.photo_url,
+        e.enrollment_no,
+        e.roll_no
+      FROM students s
+      JOIN student_enrollments e ON e.student_id = s.id
+      WHERE e.section_id = p_section_id::UUID
+      ORDER BY e.roll_no, s.first_name
+    ) r
+  );
+END;
+$$;
+GRANT EXECUTE ON FUNCTION get_class_students(TEXT) TO anon;

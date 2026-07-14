@@ -24,6 +24,7 @@ import {
   getAcademicYears, addAcademicYear, deleteAcademicYear, saveCurrentYear,
   getFeeStructuresForYear, saveFeeStructuresForYear,
   getClassesWithSections, setClassActiveInDB, insertSection, deleteSectionFromDB, updateSectionTeacher,
+  getTeachingEmployees,
 } from "@/lib/settingsService";
 
 function FieldError({ msg }) {
@@ -875,6 +876,7 @@ function ClassSectionsTab() {
 
   // rows: [{id, cls, isActive, sections:[{id,name}], sectionTeachers:{}}]
   const [rows,     setRows]     = useState([]);
+  const [teachers, setTeachers] = useState([]); // [{id, name}] — real teaching staff
   const [loading,  setLoading]  = useState(true);
   const [saved,    setSaved]    = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -896,6 +898,7 @@ function ClassSectionsTab() {
       setActiveClassesInStore(mapped.filter(r => r.isActive).map(r => dbToStore(r.cls)));
       setLoading(false);
     }).catch(() => setLoading(false));
+    getTeachingEmployees().then(setTeachers).catch(() => {});
   }, [setActiveClassesInStore]);
 
   const activeRows   = rows.filter(r => r.isActive);
@@ -920,14 +923,18 @@ function ClassSectionsTab() {
       for (const sec of row.sections) {
         const origSec = orig.sections.find(s => s.name === sec.name);
         if (!origSec) {
-          // New section — insert with teacher name
-          ops.push(insertSection(row.id, sec.name, row.sectionTeachers?.[sec.name] || null));
+          // New section — insert with teacher name + real employee link
+          const teacherName = row.sectionTeachers?.[sec.name] || null;
+          const teacherId   = teachers.find(t => t.name === teacherName)?.id || null;
+          ops.push(insertSection(row.id, sec.name, teacherName, teacherId));
         } else {
           // Existing section — save teacher if changed
           const newTeacher  = row.sectionTeachers?.[sec.name]  || null;
           const origTeacher = orig.sectionTeachers?.[sec.name] || null;
-          if (newTeacher !== origTeacher)
-            ops.push(updateSectionTeacher(sec.id, newTeacher));
+          if (newTeacher !== origTeacher) {
+            const teacherId = teachers.find(t => t.name === newTeacher)?.id || null;
+            ops.push(updateSectionTeacher(sec.id, newTeacher, teacherId));
+          }
         }
       }
       for (const sec of orig.sections) {
@@ -1073,7 +1080,7 @@ function ClassSectionsTab() {
                               onChange={e => setSectionTeacher(row.cls, sec.name, e.target.value)}
                             >
                               <option value="">— Not Assigned —</option>
-                              {TEACHERS_TT.map(t => <option key={t} value={t}>{t}</option>)}
+                              {teachers.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
                             </select>
                           ) : (
                             <span className={`text-sm font-medium ${row.sectionTeachers?.[sec.name] ? "text-gray-700" : "text-gray-300"}`}>

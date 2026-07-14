@@ -134,25 +134,58 @@ export async function setClassActiveInDB(classId, isActive) {
   if (error) throw error;
 }
 
-export async function insertSection(classId, name, classTeacher = null) {
+export async function insertSection(classId, name, classTeacherName = null, teacherId = null) {
   const { data, error } = await supabase
     .from("sections")
-    .insert({ class_id: classId, name, class_teacher: classTeacher || null })
+    .insert({ class_id: classId, name, class_teacher: classTeacherName || null })
     .select()
     .single();
   if (error) throw error;
+  if (teacherId) await linkClassTeacher(data.id, teacherId);
   return data;
 }
 
-export async function updateSectionTeacher(sectionId, teacher) {
+// Teaching staff, for the Classes & Sections "class teacher" picker.
+export async function getTeachingEmployees() {
+  const { data, error } = await supabase
+    .from("employees")
+    .select("id, name")
+    .eq("type", "teaching")
+    .order("name");
+  if (error) throw error;
+  return data || [];
+}
+
+// Points employees.class_teacher_of_section_id at this section (and frees
+// whichever employee previously held it) — this is the field the mobile
+// app's teacher_login RPC actually reads.
+async function linkClassTeacher(sectionId, teacherId) {
+  const { error: clearErr } = await supabase
+    .from("employees")
+    .update({ class_teacher_of_section_id: null })
+    .eq("class_teacher_of_section_id", sectionId);
+  if (clearErr) throw clearErr;
+
+  if (teacherId) {
+    const { error: linkErr } = await supabase
+      .from("employees")
+      .update({ class_teacher_of_section_id: sectionId })
+      .eq("id", teacherId);
+    if (linkErr) throw linkErr;
+  }
+}
+
+export async function updateSectionTeacher(sectionId, teacherName, teacherId = null) {
+  await linkClassTeacher(sectionId, teacherId);
   const { error } = await supabase
     .from("sections")
-    .update({ class_teacher: teacher || null })
+    .update({ class_teacher: teacherName || null })
     .eq("id", sectionId);
   if (error) throw error;
 }
 
 export async function deleteSectionFromDB(sectionId) {
+  await linkClassTeacher(sectionId, null);
   const { error } = await supabase
     .from("sections")
     .delete()
