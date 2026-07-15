@@ -36,6 +36,15 @@ const CLASSES = [
   "11th - Commerce","12th - Commerce",
 ];
 const GENDERS   = ["Male","Female","Other"];
+
+// Excel entries commonly vary in case/spacing ("SR KG", "1ST", "MALE").
+// Match loosely against the canonical lists above, then return the canonical form.
+function normalizeAgainstList(raw, list) {
+  if (!raw) return raw;
+  const key = raw.trim().toUpperCase().replace(/\./g, " ").replace(/\s+/g, " ");
+  const match = list.find(c => c.toUpperCase().replace(/\./g, " ").replace(/\s+/g, " ") === key);
+  return match || raw;
+}
 const RELIGIONS = ["Hindu","Muslim","Christian","Jain","Sikh","Buddhist","Parsi","Other"];
 const CASTES    = ["General","OBC","SC","ST","EWS","SEBC","Other"];
 const MEDIUMS   = ["English","Gujarati","Hindi","Other"];
@@ -2301,10 +2310,14 @@ function ImportStudentsPanel({ onImportDone }) {
             const raw = colMap[f.key] !== undefined ? (row[colMap[f.key]] ?? "") : "";
             s[f.key] = raw instanceof Date ? normalizeDate(raw) || "" : String(raw).trim();
           });
+          if (s.cls)    s.cls    = normalizeAgainstList(s.cls, CLASSES);
+          if (s.gender) s.gender = normalizeAgainstList(s.gender, GENDERS);
+          if (s.admissionClass) s.admissionClass = normalizeAgainstList(s.admissionClass, CLASSES);
+
           if (!s.firstName) s._errors.push("First Name missing");
           if (!s.cls)       s._errors.push("Class missing");
           if (s.cls && !CLASSES.includes(s.cls)) s._errors.push('Unknown class "' + s.cls + '"');
-          if (s.gender && !["Male","Female","Other"].includes(s.gender)) s._errors.push('Invalid gender "' + s.gender + '"');
+          if (s.gender && !GENDERS.includes(s.gender)) s._errors.push('Invalid gender "' + s.gender + '"');
           result.push(s);
           if (s._errors.length) errs.push("Row " + s._row + ": " + s._errors.join(", "));
         });
