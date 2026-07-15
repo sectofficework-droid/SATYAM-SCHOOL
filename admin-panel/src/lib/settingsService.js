@@ -88,6 +88,27 @@ export async function getFeeStructuresForYear(yearId) {
   );
 }
 
+// { [className]: tuition+uniform } for the current academic year — used to
+// auto-fill a student's fee total from their class instead of manual entry.
+export async function getCurrentYearClassFees() {
+  const { data: yr } = await supabase
+    .from("academic_years")
+    .select("id")
+    .eq("is_current", true)
+    .single();
+  if (!yr) return {};
+  const { data, error } = await supabase
+    .from("fee_structures")
+    .select("tuition_amount, uniform_amount, classes(name)")
+    .eq("academic_year_id", yr.id);
+  if (error || !data) return {};
+  return Object.fromEntries(
+    data
+      .filter(r => r.classes?.name)
+      .map(r => [r.classes.name, (Number(r.tuition_amount) || 0) + (Number(r.uniform_amount) || 0)])
+  );
+}
+
 export async function saveFeeStructuresForYear(yearId, rows, oldDiscount) {
   const { error } = await supabase
     .from("fee_structures")

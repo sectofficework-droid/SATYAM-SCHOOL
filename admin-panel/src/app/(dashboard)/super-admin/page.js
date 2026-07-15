@@ -18,6 +18,7 @@ import {
   isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
 import { getStudents, getClasses, addStudent as dbAddStudent, updateStudent as dbUpdateStudent } from "@/lib/studentService";
+import { getCurrentYearClassFees } from "@/lib/settingsService";
 import { DEFAULT_DOCS } from "@/lib/constants";
 import { uploadFileToS3, getS3ViewUrl, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile, formatFileSize } from "@/lib/fileCompression";
@@ -2256,6 +2257,16 @@ function ImportStudentsPanel({ onImportDone }) {
   const [rowErrors, setRowErrors] = useState([]);
   const [importing, setImporting] = useState(false);
   const [importLog, setImportLog] = useState([]);
+  const [classFees, setClassFees] = useState({}); // { [className]: tuition+uniform } for current year
+
+  useEffect(() => {
+    getCurrentYearClassFees().then(setClassFees).catch(() => {});
+  }, []);
+
+  // Excel value wins if provided; otherwise fall back to the class fee structure.
+  function feeForRow(s) {
+    return s.feeTotal ? Number(s.feeTotal) : (classFees[s.cls] || 0);
+  }
 
   function downloadTemplate() {
     // Build a styled HTML table — Excel opens HTML-format XLS and preserves inline styles
@@ -2376,7 +2387,7 @@ function ImportStudentsPanel({ onImportDone }) {
           pen:               s.pen || "",
           apaar:             s.apaar || "",
           dateOfJoin:        normalizeDate(s.joinDate) || new Date().toISOString().split("T")[0],
-          feeTotal:          s.feeTotal ? Number(s.feeTotal) : 0,
+          feeTotal:          feeForRow(s),
           discountAmount:    s.discountAmount ? Number(s.discountAmount) : 0,
           discountReason:    s.discountReason || "",
           lastSchoolName:    s.lastSchoolName || "",
@@ -2484,7 +2495,7 @@ function ImportStudentsPanel({ onImportDone }) {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-school-navy text-white">
-                    {["#","Name","Class","Section","Father","Mobile","Gender"].map(h => (
+                    {["#","Name","Class","Section","Father","Mobile","Gender","Fee Total"].map(h => (
                       <th key={h} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -2499,10 +2510,11 @@ function ImportStudentsPanel({ onImportDone }) {
                       <td className="px-3 py-2 text-gray-600">{s.fatherName || "—"}</td>
                       <td className="px-3 py-2 text-gray-600">{s.mobile1 || "—"}</td>
                       <td className="px-3 py-2">{s.gender}</td>
+                      <td className="px-3 py-2 text-gray-700 font-semibold">₹{feeForRow(s).toLocaleString("en-IN")}</td>
                     </tr>
                   ))}
                   {valid.length > 10 && (
-                    <tr><td colSpan={7} className="px-3 py-2 text-center text-xs text-gray-400">... and {valid.length - 10} more students</td></tr>
+                    <tr><td colSpan={8} className="px-3 py-2 text-center text-xs text-gray-400">... and {valid.length - 10} more students</td></tr>
                   )}
                 </tbody>
               </table>
