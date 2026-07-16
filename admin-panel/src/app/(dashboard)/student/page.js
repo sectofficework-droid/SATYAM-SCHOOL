@@ -6,6 +6,7 @@ import useStore from "@/lib/store";
 import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabase";
 import S3Image from "@/components/S3Image";
+import DateInputDMY from "@/components/DateInputDMY";
 import {
   getStudents as fetchStudentsFromDB,
   deactivateStudent as svcDeactivate,
@@ -158,8 +159,7 @@ function DeactivateModal({ student, onClose, onConfirm }) {
 
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Date of Deactivation <span className="text-red-500">*</span></label>
-            <input
-              type="date"
+            <DateInputDMY
               value={date}
               max={todayVal}
               onChange={(e) => setDate(e.target.value)}

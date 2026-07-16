@@ -13,6 +13,7 @@ import {
 import { getDashboardStats, getRecentNotices, getInventoryAlerts, getRecentActivities } from "@/lib/dashboardService";
 import { getDashboardTasks } from "@/lib/taskService";
 import useStore from "@/lib/store";
+import DateInputDMY from "@/components/DateInputDMY";
 
 // ── Dummy Data ────────────────────────────────────────────────
 
@@ -158,8 +159,7 @@ export default function DashboardPage() {
         {/* Date Picker */}
         <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3.5 py-2.5 shadow-sm self-start sm:self-auto">
           <Calendar className="w-4 h-4 text-school-navy flex-shrink-0" />
-          <input
-            type="date"
+          <DateInputDMY
             value={selectedDate}
             max={todayStr}
             onChange={(e) => setSelectedDate(e.target.value)}

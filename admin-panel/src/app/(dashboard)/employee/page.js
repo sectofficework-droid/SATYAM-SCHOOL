@@ -1161,13 +1161,13 @@ function AttendanceSection({ employees, salaries, setAttendanceSummary }) {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">From Date</label>
-            <input type="date" value={fromDate} max={toDate || today}
+            <DateInputDMY value={fromDate} max={toDate || today}
               onChange={e => { setFromDate(e.target.value); setPeriodType("custom"); setRecords([]); setStatus(null); }}
               className={INP}/>
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">To Date</label>
-            <input type="date" value={toDate} min={fromDate} max={today}
+            <DateInputDMY value={toDate} min={fromDate} max={today}
               onChange={e => { setToDate(e.target.value); setPeriodType("custom"); setRecords([]); setStatus(null); }}
               className={INP}/>
           </div>
