@@ -15,6 +15,7 @@ import { getEmployees, addEmployee, updateEmployee } from "@/lib/employeeService
 import { uploadFileToS3, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile, formatFileSize } from "@/lib/fileCompression";
 import S3Image from "@/components/S3Image";
+import DateInputDMY from "@/components/DateInputDMY";
 import {
   Users, Plus, Search, X, Phone, Mail, MapPin,
   Calendar, GraduationCap, Briefcase, Pencil,
@@ -567,7 +568,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date of Birth</label>
-                  <input type="date" className={IPT} value={dob} onChange={(e) => setDob(e.target.value)} />
+                  <DateInputDMY className={IPT} value={dob} onChange={(e) => setDob(e.target.value)} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -659,7 +660,7 @@ function AddEmployeeModal({ employees, onClose, onSave }) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">Joining Date *</label>
-                  <input type="date" className={IPT} value={joining}
+                  <DateInputDMY className={IPT} value={joining}
                     onChange={(e) => setJoining(e.target.value)} />
                   {joining.length > 0 && !joiningValid && (
                     <p className="text-xs text-red-500 mt-1">Joining date cannot be in the future</p>

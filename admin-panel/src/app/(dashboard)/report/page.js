@@ -13,6 +13,7 @@ import {
   getEmployeesForReport, getInventoryForReport,
   getPaymentsForReport, getAcademicYearLabels,
 } from "@/lib/reportService";
+import DateInputDMY from "@/components/DateInputDMY";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CLASSES   = ["JR.KG","SR.KG","Balvatika","1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th","11th - Commerce","12th - Commerce"];
@@ -908,7 +909,7 @@ export default function ReportPage() {
           {ecfg.isCollection && (
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Exact Date</label>
-              <input type="date"
+              <DateInputDMY
                 value={dateFrom === dateTo && dateFrom ? dateFrom : ""}
                 onChange={e => { setDateFrom(e.target.value); setDateTo(e.target.value); }}
                 className="border-2 border-school-navy rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy"/>
@@ -917,12 +918,12 @@ export default function ReportPage() {
           {ecfg.dateField && (<>
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{ecfg.dateLabel} From</label>
-              <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
+              <DateInputDMY value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
                 className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy"/>
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{ecfg.dateLabel} To</label>
-              <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}
+              <DateInputDMY value={dateTo} onChange={e=>setDateTo(e.target.value)}
                 className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy"/>
             </div>
           </>)}

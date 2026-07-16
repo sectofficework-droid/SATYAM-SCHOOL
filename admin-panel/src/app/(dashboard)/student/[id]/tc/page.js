@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { isDateOnOrAfter, isValidLength } from "@/lib/validators";
 import { fmtDMY } from "@/lib/utils";
+import DateInputDMY from "@/components/DateInputDMY";
 import {
   getStudentByEnrollment,
   saveTransferCertificate,
@@ -46,10 +47,13 @@ function FieldLabel({ children, required }) {
   );
 }
 
-function Input({ className = "", ...props }) {
+function Input({ className = "", type, ...props }) {
+  const cls = `w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy transition-all bg-white placeholder:text-gray-300 ${className}`;
+  if (type === "date") return <DateInputDMY className={cls} {...props} />;
   return (
     <input
-      className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy transition-all bg-white placeholder:text-gray-300 ${className}`}
+      type={type}
+      className={cls}
       {...props}
     />
   );

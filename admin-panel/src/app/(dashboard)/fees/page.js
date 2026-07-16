@@ -17,6 +17,7 @@ import {
   markInventoryGiven,
 } from "@/lib/feesService";
 import { getActiveClasses } from "@/lib/settingsService";
+import DateInputDMY from "@/components/DateInputDMY";
 
 // ── Default Fees Structure (fallback when DB has no fee_structures rows) ──
 const DEFAULT_FEES = {
@@ -211,8 +212,8 @@ function NotificationModal({ student, onClose, feesMap }) {
           </div>
           <div>
             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Last Date for Payment</label>
-            <input
-              type="date" value={lastDate} min={todayStr}
+            <DateInputDMY
+              value={lastDate} min={todayStr}
               onChange={(e) => handleDateChange(e.target.value)}
               className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
             />
@@ -821,8 +822,8 @@ export default function FeesPage() {
                     {/* Last date */}
                     <div>
                       <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Last Date for Payment</label>
-                      <input
-                        type="date" value={msgLastDate} min={todayStr}
+                      <DateInputDMY
+                        value={msgLastDate} min={todayStr}
                         onChange={(e) => handleReminderDateChange(e.target.value)}
                         className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
                       />
@@ -1142,8 +1143,7 @@ export default function FeesPage() {
                       <div className="px-4 py-3 bg-amber-50 border-t border-amber-100 flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
                           <label className="text-xs font-bold text-amber-800 uppercase tracking-wide whitespace-nowrap">Given Date</label>
-                          <input
-                            type="date"
+                          <DateInputDMY
                             value={invGivenDate}
                             max={todayStr}
                             onChange={(e) => setInvGivenDate(e.target.value)}
@@ -1205,8 +1205,8 @@ export default function FeesPage() {
                         </div>
                         <div>
                           <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date of Payment <span className="text-red-500">*</span></label>
-                          <input
-                            type="date" value={newDate} max={todayStr}
+                          <DateInputDMY
+                            value={newDate} max={todayStr}
                             onChange={(e) => setNewDate(e.target.value)}
                             className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white"
                           />

@@ -12,6 +12,7 @@ import {
   getTasks, addTask, updateTask, deleteTask,
   updateTaskStatus, getEmployeesForTasks,
 } from "@/lib/taskService";
+import DateInputDMY from "@/components/DateInputDMY";
 
 // ── Constants ──────────────────────────────────────────────────
 const PRIORITIES = ["High", "Medium", "Low"];
@@ -283,7 +284,7 @@ function TaskModal({ task, employees, onClose, onSave }) {
             <div className="grid grid-cols-2 gap-2">
               <div className="relative">
                 <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"/>
-                <input type="date"
+                <DateInputDMY
                   className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy ${errors.deadline ? "border-red-400" : "border-gray-200"}`}
                   value={form.deadline}
                   onChange={e => { set("deadline")(e); setErrors(p => ({...p, deadline:""})); }}

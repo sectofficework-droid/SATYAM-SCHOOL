@@ -14,6 +14,7 @@ import {
   Users, Archive, X, ArrowUpCircle, MinusCircle, Info,
   MapPin, LogOut, LogIn, Cpu, Clock, ChevronRight,
 } from "lucide-react";
+import DateInputDMY from "@/components/DateInputDMY";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const RECEIVERS = ["Sunil Pradhan", "Rajesh Biswal", "BK Debiprasad Das", "Sandeep Pradhan", "Gaurang Polai", "Rudra Prasad Muni", "Ayeshkant Rout", "Other"];
@@ -446,7 +447,7 @@ function AddStockModal({ items, onClose, onSave }) {
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
-                <input type="date" className={IPT} value={date} onChange={(e) => setDate(e.target.value)} />
+                <DateInputDMY className={IPT} value={date} onChange={(e) => setDate(e.target.value)} />
               </div>
             </div>
             <div>
@@ -563,7 +564,7 @@ function UseStockModal({ items, onClose, onSave }) {
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
-              <input type="date" className={IPT} value={date} onChange={(e) => setDate(e.target.value)} />
+              <DateInputDMY className={IPT} value={date} onChange={(e) => setDate(e.target.value)} />
             </div>
           </div>
           <div>
@@ -700,7 +701,7 @@ function TakeAssetModal({ asset, onClose, onSave }) {
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">Date *</label>
-            <input type="date" className={IPT} value={date} onChange={(e) => setDate(e.target.value)} />
+            <DateInputDMY className={IPT} value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
         </div>
         <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
@@ -750,7 +751,7 @@ function ReturnAssetModal({ asset, onClose, onSave }) {
           )}
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">Return Date *</label>
-            <input type="date" className={IPT} value={date} onChange={(e) => setDate(e.target.value)} />
+            <DateInputDMY className={IPT} value={date} onChange={(e) => setDate(e.target.value)} />
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">Note</label>

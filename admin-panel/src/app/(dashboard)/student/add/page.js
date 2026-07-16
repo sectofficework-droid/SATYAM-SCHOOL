@@ -15,6 +15,7 @@ import {
 } from "@/lib/validators";
 import { uploadFileToS3, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile, formatFileSize } from "@/lib/fileCompression";
+import DateInputDMY from "@/components/DateInputDMY";
 
 // ── Options ────────────────────────────────────────────────────
 function getCurrentSession() {
@@ -93,13 +94,10 @@ function FieldLabel({ children, required }) {
   );
 }
 
-function Input({ className = "", ...props }) {
-  return (
-    <input
-      className={`w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy transition-all bg-white placeholder:text-gray-300 ${className}`}
-      {...props}
-    />
-  );
+function Input({ className = "", type, ...props }) {
+  const cls = `w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy transition-all bg-white placeholder:text-gray-300 ${className}`;
+  if (type === "date") return <DateInputDMY className={cls} {...props} />;
+  return <input type={type} className={cls} {...props} />;
 }
 
 function SelectField({ children, value, onChange, disabled, required }) {
