@@ -15,6 +15,7 @@ import {
   Download, FileSpreadsheet, MessageSquare, CalendarRange,
 } from "lucide-react";
 import YearPlanningTab from "./YearPlanningTab";
+import DateInputDMY from "@/components/DateInputDMY";
 import {
   isNonEmpty, isValidEmail, isValidPhone, isValidPincode, isValidName,
   isValidAddressText, isValidLength, isPositiveAmount, isDateOnOrAfter, hasNoErrors,
@@ -573,12 +574,12 @@ function AcademicYearTab() {
           </Field>
           <Field label="New Admission Start Date">
             {editMode
-              ? <input type="date" className={inp} value={form.newAdmissionDate} onChange={e => { set("newAdmissionDate")(e); setDateError(""); }}/>
+              ? <DateInputDMY className={inp} value={form.newAdmissionDate} onChange={e => { set("newAdmissionDate")(e); setDateError(""); }}/>
               : <ViewVal val={fmt(form.newAdmissionDate)}/>}
           </Field>
           <Field label="Re-admission Date (Promotion)">
             {editMode
-              ? <input type="date" className={inp} value={form.readmissionDate} onChange={e => { set("readmissionDate")(e); setDateError(""); }}/>
+              ? <DateInputDMY className={inp} value={form.readmissionDate} onChange={e => { set("readmissionDate")(e); setDateError(""); }}/>
               : <ViewVal val={fmt(form.readmissionDate)}/>}
           </Field>
         </div>

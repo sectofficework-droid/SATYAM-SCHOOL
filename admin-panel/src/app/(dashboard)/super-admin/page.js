@@ -27,6 +27,7 @@ import { getFeesForSuperAdmin } from "@/lib/reportService";
 import { updateFeesForEnrollment, markInventoryGiven, markInventoryPending } from "@/lib/feesService";
 import { getAssets, getInventoryItems } from "@/lib/inventoryService";
 import * as XLSX from "xlsx";
+import DateInputDMY from "@/components/DateInputDMY";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -1009,9 +1010,9 @@ function FeesPanel({ fees }) {
                                         <td className="px-2 py-2 text-gray-400">{pIdx+1}</td>
                                         <td className="px-2 py-1.5"><input className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none w-28 bg-white" value={p.label} onChange={e=>updatePay(pIdx,"label",e.target.value)}/></td>
                                         <td className="px-2 py-1.5"><input type="number" min="0" className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none w-20 bg-white" value={p.amount} onChange={e=>updatePay(pIdx,"amount",Number(e.target.value))}/></td>
-                                        <td className="px-2 py-1.5"><input type="date" className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none bg-white" value={p.dueDate} onChange={e=>updatePay(pIdx,"dueDate",e.target.value)}/></td>
+                                        <td className="px-2 py-1.5"><DateInputDMY className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none bg-white" value={p.dueDate} onChange={e=>updatePay(pIdx,"dueDate",e.target.value)}/></td>
                                         <td className="px-2 py-1.5"><input type="number" min="0" className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none w-20 bg-white" value={p.paid} onChange={e=>updatePay(pIdx,"paid",Number(e.target.value))}/></td>
-                                        <td className="px-2 py-1.5"><input type="date" className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none bg-white" value={p.paidDate} onChange={e=>updatePay(pIdx,"paidDate",e.target.value)}/></td>
+                                        <td className="px-2 py-1.5"><DateInputDMY className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none bg-white" value={p.paidDate} onChange={e=>updatePay(pIdx,"paidDate",e.target.value)}/></td>
                                         <td className={`px-2 py-2 font-semibold ${bal<=0?"text-green-600":"text-red-500"}`}>{bal<=0?"Cleared":`₹${bal.toLocaleString()}`}</td>
                                         <td className="px-2 py-2"><span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${p.paid>=p.amount?"bg-green-100 text-green-700":p.paid>0?"bg-yellow-100 text-yellow-700":"bg-red-100 text-red-700"}`}>{p.paid>=p.amount?"Paid":p.paid>0?"Partial":"Unpaid"}</span></td>
                                         <td className="px-2 py-2"><button onClick={()=>removePayment(pIdx)} className="text-red-400 hover:text-red-600"><Trash2 className="w-3.5 h-3.5"/></button></td>
@@ -1217,7 +1218,7 @@ function InventoryPanel({ students }) {
                               {a.history.map((h,hIdx)=>(
                                 <tr key={h.id} className="border-t border-gray-100">
                                   <td className="px-2 py-1.5 text-gray-400">{hIdx+1}</td>
-                                  <td className="px-2 py-1.5"><input type="date" className="border border-gray-200 rounded px-2 py-1 text-xs bg-white focus:outline-none w-32" value={h.date} onChange={e=>updateHistEntry(a.id,hIdx,"date",e.target.value)}/></td>
+                                  <td className="px-2 py-1.5"><DateInputDMY className="border border-gray-200 rounded px-2 py-1 text-xs bg-white focus:outline-none w-32" value={h.date} onChange={e=>updateHistEntry(a.id,hIdx,"date",e.target.value)}/></td>
                                   <td className="px-2 py-1.5"><select className="border border-gray-200 rounded px-2 py-1 text-xs bg-white focus:outline-none" value={h.action} onChange={e=>updateHistEntry(a.id,hIdx,"action",e.target.value)}>{ASSET_ACTIONS.map(ac=><option key={ac}>{ac}</option>)}</select></td>
                                   <td className="px-2 py-1.5"><input className="border border-gray-200 rounded px-2 py-1 text-xs bg-white focus:outline-none w-24" value={h.from} onChange={e=>updateHistEntry(a.id,hIdx,"from",e.target.value)}/></td>
                                   <td className="px-2 py-1.5"><input className="border border-gray-200 rounded px-2 py-1 text-xs bg-white focus:outline-none w-24" value={h.to} onChange={e=>updateHistEntry(a.id,hIdx,"to",e.target.value)}/></td>
@@ -1286,7 +1287,7 @@ function InventoryPanel({ students }) {
                 <span className="text-sm font-semibold text-gray-700 min-w-24">{it.item}</span>
                 <div className="flex items-center gap-2">
                   <label className="text-xs text-gray-500">Date:</label>
-                  <input type="date" disabled={!it.given} className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none disabled:opacity-40" value={it.date} onChange={e=>setStuItems(prev=>prev.map((x,i)=>i===j?{...x,date:e.target.value}:x))}/>
+                  <DateInputDMY disabled={!it.given} className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none disabled:opacity-40" value={it.date} onChange={e=>setStuItems(prev=>prev.map((x,i)=>i===j?{...x,date:e.target.value}:x))}/>
                 </div>
               </div>
             ))}
@@ -2059,7 +2060,7 @@ function EmployeePanel({ employees: propEmployees }) {
                         </div>
                         <div className="flex flex-col gap-0.5">
                           <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Join Date</label>
-                          <input type="date" className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form.joiningDate||""} onChange={e=>setForm({...form,joiningDate:e.target.value})}/>
+                          <DateInputDMY className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:ring-1 focus:ring-purple-400" value={form.joiningDate||""} onChange={e=>setForm({...form,joiningDate:e.target.value})}/>
                         </div>
                         <div className="flex flex-col gap-0.5">
                           <label className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Monthly Salary</label>
