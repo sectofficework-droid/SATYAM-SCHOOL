@@ -945,6 +945,10 @@ function FeesPanel({ fees }) {
       setFeeError("Fee amounts and discount cannot be negative.");
       return;
     }
+    if (editRec.discount > 0 && !editRec.discountReason?.trim()) {
+      setFeeError("Please give a reason for the discount.");
+      return;
+    }
     setFeeError("");
     const originalRec = feeRecs.find(r => r.id === editRec.id);
     const originalPaymentIds = (originalRec?.payments || [])
@@ -953,6 +957,7 @@ function FeesPanel({ fees }) {
     try {
       await updateFeesForEnrollment(editRec.id, {
         discount: editRec.discount,
+        discountReason: editRec.discount > 0 ? editRec.discountReason?.trim() : "",
         payments: editRec.payments,
         originalPaymentIds,
       });
@@ -1022,13 +1027,18 @@ function FeesPanel({ fees }) {
                       {isExp && editRec && (
                         <tr key={`exp-${rec.id}`}><td colSpan={NCOLS} className="px-4 py-4 bg-emerald-50/40">
                           <div className="bg-white rounded-xl border border-emerald-200 p-4">
-                            <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                               <h4 className="text-sm font-bold text-gray-800">{rec.name} —" {rec.cls}</h4>
                               <div className="flex items-center gap-3 text-xs text-gray-500">
                                 <span>Annual: ₹{editRec.totalFee.toLocaleString()}</span>
                                 <span className="text-orange-600">Discount:
                                   <input type="number" min="0" className="ml-1 w-20 border border-gray-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" value={editRec.discount} onChange={e=>setEditRec({...editRec,discount:Math.max(0, Math.min(Number(e.target.value) || 0, 10000000))})}/>
                                 </span>
+                                {editRec.discount > 0 && (
+                                  <span className="text-orange-600">Reason:
+                                    <input type="text" placeholder="e.g. Sibling discount" className="ml-1 w-40 border border-gray-200 rounded px-1.5 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" value={editRec.discountReason || ""} onChange={e=>setEditRec({...editRec,discountReason:e.target.value})}/>
+                                  </span>
+                                )}
                               </div>
                             </div>
                             <div className="overflow-x-auto mb-3">

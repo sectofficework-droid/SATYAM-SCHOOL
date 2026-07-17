@@ -1,4 +1,5 @@
 import supabase from "./supabase";
+import { getFeeStructure } from "./feesService";
 
 const CLASS_NAME_MAP = {
   "JR KG": "JR.KG", "SR KG": "SR.KG",
@@ -230,10 +231,12 @@ export async function getFeesForSuperAdmin() {
     .from("academic_years").select("id").eq("is_current", true).single();
   if (!year) return [];
 
+  const classFees = await getFeeStructure(year.id);
+
   const { data, error } = await supabase
     .from("student_enrollments")
     .select(`
-      id, enrollment_no, fee_total, fee_discount,
+      id, enrollment_no, fee_total, fee_discount, discount_reason,
       student:students(first_name, last_name),
       class:classes!student_enrollments_class_id_fkey(name),
       fee_payments(id, amount, payment_date)
@@ -256,13 +259,15 @@ export async function getFeesForSuperAdmin() {
         paid:     Number(p.amount) || 0,
         paidDate: p.payment_date || "",
       }));
+    const cls = normClass(row.class?.name);
     return {
       id:       row.id,
       enrollNo: row.enrollment_no || "",
       name:     `${s.first_name} ${s.last_name}`.trim(),
-      cls:      normClass(row.class?.name),
-      totalFee: Number(row.fee_total) || 0,
-      discount: Number(row.fee_discount) || 0,
+      cls,
+      totalFee:       classFees[cls] || 0,
+      discount:       Number(row.fee_discount) || 0,
+      discountReason: row.discount_reason || "",
       payments,
     };
   }).filter(Boolean);

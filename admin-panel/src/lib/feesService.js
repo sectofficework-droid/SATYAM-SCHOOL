@@ -113,11 +113,11 @@ export async function saveFeePayment(enrollmentId, studentId, { amount, paymentD
   if (error) throw error;
 }
 
-export async function updateFeesForEnrollment(enrollmentId, { discount, payments, originalPaymentIds }) {
+export async function updateFeesForEnrollment(enrollmentId, { discount, discountReason, payments, originalPaymentIds }) {
   // 1. Update discount on enrollment
   const { error: discErr } = await supabase
     .from("student_enrollments")
-    .update({ fee_discount: discount })
+    .update({ fee_discount: discount, discount_reason: discount > 0 ? (discountReason || "") : "" })
     .eq("id", enrollmentId);
   if (discErr) throw discErr;
 
