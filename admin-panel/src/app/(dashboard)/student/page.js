@@ -57,14 +57,14 @@ function getNextClass(cls) {
 }
 
 function calcAge(dobStr) {
-  try {
-    const dob = new Date(dobStr);
-    const now = new Date();
-    let age = now.getFullYear() - dob.getFullYear();
-    const m = now.getMonth() - dob.getMonth();
-    if (m < 0 || (m === 0 && now.getDate() < dob.getDate())) age--;
-    return isNaN(age) ? "—" : age;
-  } catch { return "—"; }
+  const match = String(dobStr || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return "—";
+  const [, y, mo, d] = match.map(Number);
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  const mDiff = (now.getMonth() + 1) - mo;
+  if (mDiff < 0 || (mDiff === 0 && now.getDate() < d)) age--;
+  return age;
 }
 
 

@@ -91,20 +91,24 @@ function initials(name) {
 
 function fmtDate(d) {
   if (!d) return "—";
-  try {
-    return new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-  } catch { return d; }
+  const m = String(d).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return d;
+  // Parse as UTC and format in UTC so the displayed date can't drift a day
+  // depending on the viewer's browser timezone.
+  const date = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 function calcAge(dob) {
   if (!dob) return null;
-  try {
-    const d = new Date(dob); const now = new Date();
-    let age = now.getFullYear() - d.getFullYear();
-    const m = now.getMonth() - d.getMonth();
-    if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
-    return age;
-  } catch { return null; }
+  const m = String(dob).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const [, y, mo, d] = m.map(Number);
+  const now = new Date();
+  let age = now.getFullYear() - y;
+  const mDiff = (now.getMonth() + 1) - mo;
+  if (mDiff < 0 || (mDiff === 0 && now.getDate() < d)) age--;
+  return age;
 }
 
 function avatarBg(empId) { const n = parseInt(String(empId).replace(/\D/g,""),10)||0; return AVATAR_BG[n % AVATAR_BG.length]; }

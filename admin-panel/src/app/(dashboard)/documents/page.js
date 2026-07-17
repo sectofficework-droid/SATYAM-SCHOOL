@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getStudents } from "@/lib/studentService";
 import { getS3ViewUrl } from "@/lib/s3Upload";
+import { fmtDMY } from "@/lib/utils";
 import S3Image from "@/components/S3Image";
 import {
   CreditCard, Award, FileText, Search, Download,
@@ -38,12 +39,6 @@ const DESIGNS = [
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function fmtDOB(dob) {
-  if (!dob) return "";
-  const d = new Date(dob);
-  if (isNaN(d.getTime())) return String(dob);
-  return `${String(d.getDate()).padStart(2,"0")}-${String(d.getMonth()+1).padStart(2,"0")}-${d.getFullYear()}`;
-}
 function fmtAddr(s) {
   return [s.roomPlotNo, s.address].filter(Boolean).join(", ") || "";
 }
@@ -215,7 +210,7 @@ async function drawCard(doc, s, design, logoB64, photoB64, cx, cy) {
   const rows = [
     { color:[29,78,216],   label:"Father's Name", val: s.fatherName||""  },
     { color:[234,88,12],   label:"Mother's Name", val: s.motherName||""  },
-    { color:[146,64,14],   label:"Date of Birth", val: fmtDOB(s.dob)||"" },
+    { color:[146,64,14],   label:"Date of Birth", val: fmtDMY(s.dob) },
     { color:[29,78,216],   label:"Phone",          val: s.mobile||s.mobile1||"" },
     { color:[220,38,38],   label:"Address",        val: fmtAddr(s)||""   },
   ];
@@ -318,7 +313,7 @@ function CardPreview({ student, design, photoUrl, logoUrl }) {
   const infoRows = [
     { bg: "#1d4ed8", label:"Father's Name", val: s.fatherName||"—" },
     { bg: "#ea580c", label:"Mother's Name", val: s.motherName||"—" },
-    { bg: "#92400e", label:"Date of Birth", val: fmtDOB(s.dob)||"—" },
+    { bg: "#92400e", label:"Date of Birth", val: fmtDMY(s.dob) },
     { bg: "#1d4ed8", label:"Phone",          val: s.mobile||s.mobile1||"—" },
     { bg: "#dc2626", label:"Address",        val: fmtAddr(s)||"—" },
   ];
