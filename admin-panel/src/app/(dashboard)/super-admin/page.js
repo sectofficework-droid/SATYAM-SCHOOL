@@ -528,7 +528,8 @@ function SingleStudentTool({ students, onStudentUpdated }) {
             };
           });
         if (upserts.length) {
-          await supabase.from("student_documents").upsert(upserts, { onConflict: "student_id,document_type_id" });
+          const { error: docErr } = await supabase.from("student_documents").upsert(upserts, { onConflict: "student_id,document_type_id" });
+          if (docErr) throw docErr;
         }
       }
 
@@ -753,7 +754,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
 }
 
 // ── Spreadsheet bulk editor (shared logic) ────────────────────────────────────
-function SpreadsheetEditor({ students, title }) {
+function SpreadsheetEditor({ students, title, onSaved }) {
   const [selClass,      setSelClass]      = useState("All");
   const [search,        setSearch]        = useState("");
   const [selFields,     setSelFields]     = useState([]);
@@ -786,6 +787,9 @@ function SpreadsheetEditor({ students, title }) {
       setEdits({});
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
+      // Re-fetch from Supabase so the table shows what's actually saved,
+      // not stale local state — this is the proof the save really took.
+      if (onSaved) onSaved();
     } catch (err) {
       setSaveError("Bulk save failed: " + (err?.message || "Unknown error"));
     } finally {
@@ -1566,11 +1570,17 @@ function SalaryPanel({ employees: propEmployees }) {
     const amount  = getSal(emp);
     const date    = new Date().toISOString().split("T")[0];
     const monthDate = month + "-01";
-    await supabase.from("salary_payments").insert({ employee_id: emp.id, month: monthDate, amount, paid_on: date, paid_by: "Sunil Pradhan" });
-    await addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount, date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId }).catch(() => {});
-    await loadPayments(month);
-    await loadAllPayments();
-    setPaying(false);
+    try {
+      const { error } = await supabase.from("salary_payments").insert({ employee_id: emp.id, month: monthDate, amount, paid_on: date, paid_by: "Sunil Pradhan" });
+      if (error) throw error;
+      await addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount, date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId }).catch(() => {});
+      await loadPayments(month);
+      await loadAllPayments();
+    } catch (err) {
+      alert("Failed to record salary payment: " + (err?.message || "Unknown error"));
+    } finally {
+      setPaying(false);
+    }
   }
 
   async function payAll() {
@@ -1579,13 +1589,19 @@ function SalaryPanel({ employees: propEmployees }) {
     const date      = new Date().toISOString().split("T")[0];
     const monthDate = month + "-01";
     const rows = unpaidThisMonth.map(emp => ({ employee_id: emp.id, month: monthDate, amount: getSal(emp), paid_on: date, paid_by: "Sunil Pradhan" }));
-    await supabase.from("salary_payments").insert(rows);
-    await Promise.allSettled(unpaidThisMonth.map(emp =>
-      addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount: getSal(emp), date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId })
-    ));
-    await loadPayments(month);
-    await loadAllPayments();
-    setPaying(false);
+    try {
+      const { error } = await supabase.from("salary_payments").insert(rows);
+      if (error) throw error;
+      await Promise.allSettled(unpaidThisMonth.map(emp =>
+        addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount: getSal(emp), date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId })
+      ));
+      await loadPayments(month);
+      await loadAllPayments();
+    } catch (err) {
+      alert("Failed to record salary payments: " + (err?.message || "Unknown error"));
+    } finally {
+      setPaying(false);
+    }
   }
 
   const safePayments = allPayments;
@@ -1912,7 +1928,10 @@ function EmployeePanel({ employees: propEmployees }) {
     try {
       const { updateEmployee } = await import("@/lib/employeeService");
       await updateEmployee(editId, { ...emp, ...empFields, photo, documents });
-    } catch { }
+    } catch (err) {
+      alert("Failed to save employee: " + (err?.message || "Unknown error"));
+      return;
+    }
     const updated = employees.map(e => e.id === editId ? { ...e, ...empFields, photo, documents } : e);
     setEmployees(updated);
     if (emp && salVal && !isNaN(Number(salVal)) && Number(salVal) > 0) {
@@ -2706,7 +2725,7 @@ export default function SuperAdminPage() {
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5">
             {dataLoading && <div className="text-center py-8 text-sm text-gray-400">Loading data…</div>}
             {!dataLoading && activeTab==="single"  && <SingleStudentTool students={dbStudents} onStudentUpdated={() => loadData()}/>}
-            {!dataLoading && activeTab==="bulk"    && <SpreadsheetEditor students={dbStudents} title="Bulk Edit Students"/>}
+            {!dataLoading && activeTab==="bulk"    && <SpreadsheetEditor students={dbStudents} title="Bulk Edit Students" onSaved={() => loadData()}/>}
             {!dataLoading && activeTab==="pending" && <PendingDetailsPanel students={dbStudents}/>}
             {activeTab==="import"  && <ImportStudentsPanel onImportDone={loadData}/>}
           </div>
@@ -2766,7 +2785,7 @@ export default function SuperAdminPage() {
                   })}
                 </div>
                 {dataLoading && <div className="text-center py-8 text-sm text-gray-400">Loading data…</div>}
-                {!dataLoading && studentsSubTab==="spreadsheet" && <SpreadsheetEditor students={dbStudents} title="Student Records"/>}
+                {!dataLoading && studentsSubTab==="spreadsheet" && <SpreadsheetEditor students={dbStudents} title="Student Records" onSaved={() => loadData()}/>}
                 {!dataLoading && studentsSubTab==="single"      && <SingleStudentTool students={dbStudents} onStudentUpdated={() => loadData()}/>}
                 {!dataLoading && studentsSubTab==="pending"     && <PendingDetailsPanel students={dbStudents}/>}
                 {studentsSubTab==="import"      && <ImportStudentsPanel onImportDone={loadData}/>}

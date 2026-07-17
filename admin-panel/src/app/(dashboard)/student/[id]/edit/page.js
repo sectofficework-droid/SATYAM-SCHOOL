@@ -546,7 +546,8 @@ function EditForm({ existing, id, router }) {
           });
         }
         if (upserts.length) {
-          await supabase.from("student_documents").upsert(upserts, { onConflict: "student_id,document_type_id" });
+          const { error: docErr } = await supabase.from("student_documents").upsert(upserts, { onConflict: "student_id,document_type_id" });
+          if (docErr) throw docErr;
         }
       }
 

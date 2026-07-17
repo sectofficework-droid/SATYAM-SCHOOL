@@ -263,16 +263,20 @@ export default function ExpensesPage() {
     try {
       const saved = await addExpense(exp);
       setExpenses(prev => [saved, ...prev]);
-    } catch { }
-    setAddOpen(false);
+      setAddOpen(false);
+    } catch (err) {
+      alert("Failed to save expense: " + (err?.message || "Unknown error"));
+    }
   }
 
   async function handleEditSave(exp) {
     try {
       const saved = await updateExpense(editTarget.id, exp);
       setExpenses(prev => prev.map(e => e.id === saved.id ? saved : e));
-    } catch { }
-    setEditTarget(null);
+      setEditTarget(null);
+    } catch (err) {
+      alert("Failed to save expense: " + (err?.message || "Unknown error"));
+    }
   }
 
   async function handleDelete(id) {
@@ -280,7 +284,9 @@ export default function ExpensesPage() {
     try {
       await deleteExpense(id);
       setExpenses(prev => prev.filter(e => e.id !== id));
-    } catch { }
+    } catch (err) {
+      alert("Failed to delete expense: " + (err?.message || "Unknown error"));
+    }
   }
 
   function exportExcel() {

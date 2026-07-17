@@ -1100,7 +1100,11 @@ function AttendanceSection({ employees, salaries, setAttendanceSummary }) {
       paid_by:     "Sunil Pradhan",
     }));
     if (rows.length) {
-      await supabase.from("salary_payments").insert(rows);
+      const { error } = await supabase.from("salary_payments").insert(rows);
+      if (error) {
+        alert("Failed to save salary payments: " + error.message);
+        return;
+      }
       await Promise.allSettled(paid.map(r =>
         addExpense({
           title:   "Salary \u2014 " + label + " \u2014 " + r.emp.name,
@@ -1383,8 +1387,10 @@ export default function EmployeePage() {
     try {
       await updateEmployee(updatedEmp.id, updatedEmp);
       setEmployees(prev => prev.map(e => e.id === updatedEmp.id ? { ...e, ...updatedEmp } : e));
-    } catch { }
-    setEditEmp(null);
+      setEditEmp(null);
+    } catch (err) {
+      alert("Failed to save employee: " + (err?.message || "Unknown error"));
+    }
   };
 
   return (

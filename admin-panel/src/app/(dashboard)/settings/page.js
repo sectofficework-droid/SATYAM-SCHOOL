@@ -277,8 +277,8 @@ function SchoolProfileTab() {
     try {
       await saveSchoolProfile(form);
       setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2500);
-    } catch {
-      setErrors(prev => ({ ...prev, _save: "Save failed. Try again." }));
+    } catch (err) {
+      alert("Failed to save school profile: " + (err?.message || "Unknown error"));
     }
   }
 
@@ -443,7 +443,9 @@ function AcademicYearTab() {
       setNewYear("");
       setAddError("");
       setTimeout(() => setSaved(false), 2500);
-    } catch { /* silently fail */ }
+    } catch (err) {
+      alert("Failed to save: " + (err?.message || "Unknown error"));
+    }
     finally { setSaving(false); }
   }
 
@@ -958,10 +960,12 @@ function ClassSectionsTab() {
           ),
         };
       }));
-    } catch { /* silently fail — local state remains */ }
-    setSaved(true);
-    setEditMode(false);
-    setTimeout(() => setSaved(false), 2500);
+      setSaved(true);
+      setEditMode(false);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      alert("Failed to save classes/sections: " + (err?.message || "Unknown error"));
+    }
   }
 
   async function handleActivate(row) {
@@ -970,7 +974,9 @@ function ClassSectionsTab() {
       const updated = rows.map(r => r.id === row.id ? { ...r, isActive: true } : r);
       setRows(updated);
       setActiveClassesInStore(updated.filter(r => r.isActive).map(r => dbToStore(r.cls)));
-    } catch { /* silently fail */ }
+    } catch (err) {
+      alert("Failed to activate class: " + (err?.message || "Unknown error"));
+    }
   }
 
   async function handleDeactivate(row) {
@@ -980,7 +986,9 @@ function ClassSectionsTab() {
       setRows(updated);
       setActiveClassesInStore(updated.filter(r => r.isActive).map(r => dbToStore(r.cls)));
       setExpanded(null);
-    } catch { /* silently fail */ }
+    } catch (err) {
+      alert("Failed to deactivate class: " + (err?.message || "Unknown error"));
+    }
   }
 
   function addSectionLocal(cls) {
@@ -1263,6 +1271,10 @@ function UsersRolesTab() {
       const { error } = await supabase.from("admin_users").update({ name: form.name.trim(), initials: form.initials.trim().toUpperCase(), role: form.role }).eq("id", editId);
       if (error) { setUserSaveErr("Failed to update: " + error.message); return; }
       setUsers(prev => prev.map(u => u.id === editId ? { ...u, name: form.name.trim(), initials: form.initials.trim().toUpperCase(), role: form.role } : u));
+    } else {
+      const { data, error } = await supabase.from("admin_users").insert({ name: form.name.trim(), initials: form.initials.trim().toUpperCase(), role: form.role }).select().single();
+      if (error) { setUserSaveErr("Failed to add: " + error.message); return; }
+      setUsers(prev => [...prev, data]);
     }
     setShowForm(false);
     setEditId(null);
@@ -1273,7 +1285,8 @@ function UsersRolesTab() {
   async function deleteUser(id) {
     if (!confirm("Remove this user's admin access? Their Supabase Auth account will remain.")) return;
     const { error } = await supabase.from("admin_users").delete().eq("id", id);
-    if (!error) setUsers(prev => prev.filter(u => u.id !== id));
+    if (error) { alert("Failed to remove user: " + error.message); return; }
+    setUsers(prev => prev.filter(u => u.id !== id));
   }
 
   return (
@@ -1616,8 +1629,18 @@ function TimetableTab() {
         });
       });
     });
-    await supabase.from("timetables").delete().eq("academic_year", selYear);
-    if (rows.length) await supabase.from("timetables").insert(rows);
+    const { error: delErr } = await supabase.from("timetables").delete().eq("academic_year", selYear);
+    if (delErr) {
+      alert("Failed to save timetable: " + delErr.message);
+      return;
+    }
+    if (rows.length) {
+      const { error: insErr } = await supabase.from("timetables").insert(rows);
+      if (insErr) {
+        alert("Timetable was cleared but the new schedule failed to save: " + insErr.message + " — please try saving again.");
+        return;
+      }
+    }
     setSaved(true); setEditMode(false); setActiveCell(null); setTimeout(() => setSaved(false), 2500);
   }
   const isCellActive = (group, slotId, cls) =>
