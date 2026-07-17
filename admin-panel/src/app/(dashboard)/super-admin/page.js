@@ -28,6 +28,7 @@ import { updateFeesForEnrollment, markInventoryGiven, markInventoryPending } fro
 import { getAssets, getInventoryItems } from "@/lib/inventoryService";
 import * as XLSX from "xlsx";
 import DateInputDMY from "@/components/DateInputDMY";
+import { fmtDMY } from "@/lib/utils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -109,11 +110,19 @@ const IMPORT_FIELDS = [
   { key:"prevPercentage",    label:"Previous Percentage",            required:false },
 ];
 
+const DATE_IMPORT_KEYS = new Set(["joinDate", "dob", "birthCertRegDate"]);
+
 // Converts any common date format to YYYY-MM-DD for the database.
-// Handles: JS Date objects, DD/MM/YYYY, DD-MM-YYYY, Excel serials, YYYY-MM-DD (passthrough).
+// Handles: JS Date objects, DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, Excel serials, YYYY-MM-DD (passthrough).
+// Returns null (never a garbage string) when the value can't be parsed, so a bad
+// cell shows up as a missing date instead of silently corrupting the database.
 function normalizeDate(val) {
   if (!val) return null;
-  // JS Date object (from XLSX cellDates:true)
+  // JS Date object (from XLSX cellDates:true). SheetJS constructs these so
+  // that LOCAL getters recover the calendar date that was actually in the
+  // cell — the object's UTC representation is intentionally offset by the
+  // machine's timezone. Since this app is used from browsers in India, local
+  // getters give the correct date; UTC getters would be off by a day.
   if (val instanceof Date) {
     if (isNaN(val.getTime())) return null;
     const y = val.getFullYear();
@@ -121,21 +130,17 @@ function normalizeDate(val) {
     const d = String(val.getDate()).padStart(2, "0");
     return `${y}-${m}-${d}`;
   }
-  const s = String(val).trim();
+  const s = String(val).replace(/\s+/g, " ").trim();
   if (!s) return null;
   // Already ISO
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  // DD/MM/YYYY or D/M/YYYY (India standard)
-  const slashMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slashMatch) {
-    const [, d, m, y] = slashMatch;
-    return `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
-  }
-  // DD-MM-YYYY
-  const dashMatch = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (dashMatch) {
-    const [, d, m, y] = dashMatch;
-    return `${y}-${m.padStart(2,"0")}-${d.padStart(2,"0")}`;
+  // DD/MM/YYYY, DD-MM-YYYY or DD.MM.YYYY (India standard, day first)
+  const dmyMatch = s.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})$/);
+  if (dmyMatch) {
+    const [, d, m, y] = dmyMatch;
+    const dd = d.padStart(2, "0"), mm = m.padStart(2, "0");
+    if (Number(mm) < 1 || Number(mm) > 12 || Number(dd) < 1 || Number(dd) > 31) return null;
+    return `${y}-${mm}-${dd}`;
   }
   // Excel serial number
   const serial = Number(s);
@@ -145,7 +150,7 @@ function normalizeDate(val) {
       return `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,"0")}-${String(date.getUTCDate()).padStart(2,"0")}`;
     }
   }
-  return s;
+  return null;
 }
 
 const EXAMPLE_ROW = [
@@ -422,6 +427,15 @@ function FieldCell({ field, value, onChange, compact, error }) {
       <select className={cls} value={value || ""} onChange={e => onChange(e.target.value)}>
         {field.options.map(o => <option key={o}>{o}</option>)}
       </select>
+    );
+  }
+  if (field.type === "date") {
+    return (
+      <DateInputDMY
+        className={cls}
+        value={value || ""}
+        onChange={e => onChange(e.target.value)}
+      />
     );
   }
   return (
@@ -2320,7 +2334,15 @@ function ImportStudentsPanel({ onImportDone }) {
           const s = { _row: i + 3, _errors: [] };
           IMPORT_FIELDS.forEach(f => {
             const raw = colMap[f.key] !== undefined ? (row[colMap[f.key]] ?? "") : "";
-            s[f.key] = raw instanceof Date ? normalizeDate(raw) || "" : String(raw).trim();
+            if (DATE_IMPORT_KEYS.has(f.key)) {
+              // Normalize immediately (not just at confirm) so a bad/ambiguous
+              // date is caught here and shown in the preview, not discovered
+              // later in Supabase.
+              s[f.key]              = raw ? (normalizeDate(raw) || "") : "";
+              s["_raw_" + f.key]    = raw instanceof Date ? raw.toDateString() : String(raw).trim();
+            } else {
+              s[f.key] = raw instanceof Date ? normalizeDate(raw) || "" : String(raw).trim();
+            }
           });
           if (s.cls)    s.cls    = normalizeAgainstList(s.cls, CLASSES);
           if (s.gender) s.gender = normalizeAgainstList(s.gender, GENDERS);
@@ -2330,6 +2352,8 @@ function ImportStudentsPanel({ onImportDone }) {
           if (!s.cls)       s._errors.push("Class missing");
           if (s.cls && !CLASSES.includes(s.cls)) s._errors.push('Unknown class "' + s.cls + '"');
           if (s.gender && !GENDERS.includes(s.gender)) s._errors.push('Invalid gender "' + s.gender + '"');
+          if (!s.dob && s._raw_dob) s._errors.push(`Date of Birth "${s._raw_dob}" is not a valid date — use DD-MM-YYYY`);
+          if (!s.dob && !s._raw_dob) s._errors.push("Date of Birth missing");
           result.push(s);
           if (s._errors.length) errs.push("Row " + s._row + ": " + s._errors.join(", "));
         });
@@ -2359,7 +2383,7 @@ function ImportStudentsPanel({ onImportDone }) {
           fatherName:        s.fatherName || "",
           motherName:        s.motherName || "",
           gender:            s.gender,
-          dob:               normalizeDate(s.dob),
+          dob:               s.dob || null,
           placeOfBirth:      s.placeOfBirth || "",
           motherTongue:      s.motherTongue || "",
           religion:          s.religion || "",
@@ -2383,11 +2407,11 @@ function ImportStudentsPanel({ onImportDone }) {
           motherAadhar:      s.motherAadhar?.replace(/\s/g, "") || null,
           motherAadharName:  s.motherAadharName || null,
           birthCertRegNo:    s.birthCertRegNo || null,
-          birthCertRegDate:  normalizeDate(s.birthCertRegDate) || null,
+          birthCertRegDate:  s.birthCertRegDate || null,
           udise:             s.udise || "",
           pen:               s.pen || "",
           apaar:             s.apaar || "",
-          dateOfJoin:        normalizeDate(s.joinDate) || new Date().toISOString().split("T")[0],
+          dateOfJoin:        s.joinDate || new Date().toISOString().split("T")[0],
           feeTotal:          feeForRow(s),
           discountAmount:    s.discountAmount ? Number(s.discountAmount) : 0,
           discountReason:    s.discountReason || "",
@@ -2496,7 +2520,7 @@ function ImportStudentsPanel({ onImportDone }) {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-school-navy text-white">
-                    {["#","Name","Class","Section","Father","Mobile","Gender","Fee Total"].map(h => (
+                    {["#","Name","DOB","Class","Section","Father","Mobile","Gender","Fee Total"].map(h => (
                       <th key={h} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
@@ -2506,6 +2530,7 @@ function ImportStudentsPanel({ onImportDone }) {
                     <tr key={i} className={"border-b border-gray-50 " + (i % 2 === 0 ? "bg-white" : "bg-gray-50/40")}>
                       <td className="px-3 py-2 text-gray-400">{s._row}</td>
                       <td className="px-3 py-2 font-semibold text-gray-800">{s.firstName} {s.lastName}</td>
+                      <td className="px-3 py-2 font-semibold text-orange-600 whitespace-nowrap">{fmtDMY(s.dob)}</td>
                       <td className="px-3 py-2 text-school-navy font-semibold">{s.cls}</td>
                       <td className="px-3 py-2">{s.section || "—"}</td>
                       <td className="px-3 py-2 text-gray-600">{s.fatherName || "—"}</td>
@@ -2515,7 +2540,7 @@ function ImportStudentsPanel({ onImportDone }) {
                     </tr>
                   ))}
                   {valid.length > 10 && (
-                    <tr><td colSpan={8} className="px-3 py-2 text-center text-xs text-gray-400">... and {valid.length - 10} more students</td></tr>
+                    <tr><td colSpan={9} className="px-3 py-2 text-center text-xs text-gray-400">... and {valid.length - 10} more students</td></tr>
                   )}
                 </tbody>
               </table>
