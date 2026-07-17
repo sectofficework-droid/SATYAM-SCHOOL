@@ -266,20 +266,6 @@ const EMP_DEPARTMENTS = ["Administration", "Primary", "Secondary", "Higher Secon
 const EMP_TYPES = [["management","Management"],["teaching","Teaching"],["non-teaching","Non-Teaching"],["media","Media"]];
 const EMP_EMP_TYPES = ["Permanent", "Contractual", "Part-time"];
 
-const PHOTO_GROUP = {
-  group: "Photo",
-  fields: [{ key:"photo", label:"Student Photo", icon:Camera, type:"photo" }],
-};
-const DOC_FIELDS_GROUP = {
-  group: "Documents",
-  fields: DEFAULT_DOCS.map(doc => ({
-    key: `doc__${doc.replace(/[\s']+/g,"_")}`,
-    label: doc,
-    icon: FileText,
-    type: "doc",
-  })),
-};
-
 const PENDING_ID_FIELDS = [
   { key:"aadharNo", label:"Aadhar No"  },
   { key:"udise",    label:"UDISE"      },
@@ -774,8 +760,38 @@ function SpreadsheetEditor({ students, title }) {
   const [showPicker,    setShowPicker]    = useState(true);
   const [edits,         setEdits]         = useState({});
   const [saved,         setSaved]         = useState(false);
-  const ALL_GROUPS     = [...FIELD_GROUPS, PHOTO_GROUP, DOC_FIELDS_GROUP];
+  const [saving,        setSaving]        = useState(false);
+  const [saveError,     setSaveError]     = useState("");
+  // Photo/document fields aren't included here — bulk photo upload and document
+  // status need S3 upload + document-type plumbing that this table doesn't have,
+  // so offering them here would silently discard those particular edits.
+  const ALL_GROUPS     = FIELD_GROUPS;
   const ALL_FIELDS_EXT = ALL_GROUPS.flatMap(g => g.fields);
+
+  async function saveAllChanges() {
+    const editedIds = Object.keys(edits).filter(id => Object.keys(edits[id] || {}).length > 0);
+    if (editedIds.length === 0) return;
+    setSaving(true);
+    setSaveError("");
+    try {
+      for (const stuId of editedIds) {
+        const original = students.find(s => s.id === stuId);
+        if (!original) continue;
+        const merged = { ...original, ...edits[stuId] };
+        await dbUpdateStudent(original._studentId, {
+          ...mapFormForUpdate(merged),
+          enrollmentId: original._enrollmentId,
+        });
+      }
+      setEdits({});
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      setSaveError("Bulk save failed: " + (err?.message || "Unknown error"));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const filtered = students.filter(s =>
     (selClass==="All"||s.cls===selClass) &&
@@ -796,6 +812,7 @@ function SpreadsheetEditor({ students, title }) {
   }
 
   const selectedFields = ALL_FIELDS_EXT.filter(f => selFields.includes(f.key));
+  const editedCount = Object.keys(edits).filter(id => Object.keys(edits[id] || {}).length > 0).length;
 
   return (
     <div className="space-y-4">
@@ -846,7 +863,7 @@ function SpreadsheetEditor({ students, title }) {
       {selFields.length === 0 && (
         <div className="text-center py-10 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
           <p className="text-sm text-gray-400 font-medium">Select fields above to start editing</p>
-          <p className="text-xs text-gray-300 mt-1">Pick from student info, photo, or documents</p>
+          <p className="text-xs text-gray-300 mt-1">Pick from admission, personal, contact, or other student info</p>
         </div>
       )}
 
@@ -854,6 +871,7 @@ function SpreadsheetEditor({ students, title }) {
       {selFields.length > 0 && (
         <>
           {saved && <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-2.5 text-sm"><CheckCircle2 className="w-4 h-4"/>All changes saved!</div>}
+          {saveError && <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-2.5 text-sm"><AlertCircle className="w-4 h-4"/>{saveError}</div>}
           <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
             <table className="text-xs w-full">
               <thead>
@@ -886,8 +904,12 @@ function SpreadsheetEditor({ students, title }) {
             </table>
           </div>
           <div className="flex gap-3">
-            <button onClick={()=>{setSaved(true);setTimeout(()=>setSaved(false),2500);}} className="flex items-center gap-2 bg-school-navy text-white px-6 py-2.5 rounded-lg text-sm font-semibold">
-              <Save className="w-4 h-4"/>Save All Changes ({filtered.length} students)
+            <button onClick={saveAllChanges} disabled={saving || editedCount === 0}
+              className="flex items-center gap-2 bg-school-navy text-white px-6 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-50">
+              {saving
+                ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/>Saving...</>
+                : <><Save className="w-4 h-4"/>Save All Changes ({editedCount} student{editedCount !== 1 ? "s" : ""})</>
+              }
             </button>
           </div>
         </>
