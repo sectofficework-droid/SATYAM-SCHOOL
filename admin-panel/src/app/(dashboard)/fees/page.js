@@ -17,6 +17,7 @@ import {
   markInventoryGiven,
 } from "@/lib/feesService";
 import { getActiveClasses } from "@/lib/settingsService";
+import { bagItemAllowedForClass } from "@/lib/studentService";
 import DateInputDMY from "@/components/DateInputDMY";
 
 // ── Default Fees Structure (fallback when DB has no fee_structures rows) ──
@@ -266,8 +267,9 @@ function NotificationModal({ student, onClose, feesMap }) {
 function ViewModal({ student, onClose, feesMap }) {
   const { totalFees, discount, actualFees, paidFees, dueFees, classPayments } = calcSummary(student, feesMap);
   const status = getPaymentStatus(student, feesMap);
-  const givenItems   = student.inventory.filter((i) => i.given);
-  const pendingItems = student.inventory.filter((i) => !i.given);
+  const applicableInventory = student.inventory.filter(i => bagItemAllowedForClass(i.item, student.std));
+  const givenItems   = applicableInventory.filter((i) => i.given);
+  const pendingItems = applicableInventory.filter((i) => !i.given);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
@@ -372,7 +374,7 @@ function ViewModal({ student, onClose, feesMap }) {
               </div>
             </div>
             <div className="divide-y divide-gray-50">
-              {[...student.inventory].sort((a, b) => (b.given ? 1 : 0) - (a.given ? 1 : 0)).map((inv, i) => (
+              {[...applicableInventory].sort((a, b) => (b.given ? 1 : 0) - (a.given ? 1 : 0)).map((inv, i) => (
                 <div key={i} className={`flex items-center justify-between px-4 py-3 ${inv.given ? "" : "bg-amber-50/40"}`}>
                   <div className="flex items-center gap-2.5">
                     <div className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${inv.given ? "bg-green-50 border border-green-200" : "bg-amber-50 border border-amber-200"}`}>
@@ -542,7 +544,9 @@ export default function FeesPage() {
     : null;
 
   const allInvItems = entryStudent
-    ? [...entryStudent.inventory].sort((a, b) => (b.given ? 1 : 0) - (a.given ? 1 : 0))
+    ? [...entryStudent.inventory]
+        .filter(i => bagItemAllowedForClass(i.item, entryStudent.std))
+        .sort((a, b) => (b.given ? 1 : 0) - (a.given ? 1 : 0))
     : [];
   const pendingInvItems = allInvItems.filter(i => !i.given);
 
@@ -1080,15 +1084,15 @@ export default function FeesPage() {
                         <ReadOnlyBadge />
                         <span className="text-[10px] bg-amber-100 text-amber-700 font-semibold px-2 py-0.5 rounded-full flex items-center gap-1">
                           <Package className="w-2.5 h-2.5" />
-                          {entryStudent.inventory.filter((i) => i.given).length} given
+                          {allInvItems.filter((i) => i.given).length} given
                         </span>
                       </div>
                     </div>
-                    {entryStudent.inventory.filter((i) => i.given).length === 0 ? (
+                    {allInvItems.filter((i) => i.given).length === 0 ? (
                       <p className="px-4 py-6 text-center text-sm text-gray-400">No inventory distributed yet</p>
                     ) : (
                       <div className="divide-y divide-gray-50">
-                        {entryStudent.inventory.filter((i) => i.given).map((inv, i) => (
+                        {allInvItems.filter((i) => i.given).map((inv, i) => (
                           <div key={i} className="flex items-center justify-between px-4 py-3">
                             <div className="flex items-center gap-2.5">
                               <div className="w-7 h-7 rounded-lg bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0">

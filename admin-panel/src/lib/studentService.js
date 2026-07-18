@@ -12,6 +12,16 @@ function normClass(name) {
   return CLASS_NAME_MAP[name] || name || "";
 }
 
+// Red Bag is for Balvatika/JR.KG/SR.KG/1st/2nd, Blue Bag is for 3rd and above —
+// a student should only ever get the one that matches their class.
+const JUNIOR_CLASSES = new Set(["JR.KG", "SR.KG", "Balvatika", "1st", "2nd", "JR KG", "SR KG"]);
+export function bagItemAllowedForClass(itemName, std) {
+  const isJunior = JUNIOR_CLASSES.has(String(std || "").trim());
+  if (itemName === "Red Bag")  return isJunior;
+  if (itemName === "Blue Bag") return !isJunior;
+  return true;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 // Convert DB row (enrollment + student join) → frontend student shape
@@ -497,14 +507,16 @@ export async function addStudent(formData) {
     );
   }
 
-  // 9. Create inventory assignments — only category='student' items
+  // 9. Create inventory assignments — only category='student' items,
+  // skipping whichever bag colour doesn't match this student's class.
   const { data: inventoryItems } = await supabase
     .from("inventory_items")
-    .select("id")
+    .select("id, name")
     .eq("category", "student");
-  if (inventoryItems?.length > 0) {
+  const applicableItems = (inventoryItems || []).filter(item => bagItemAllowedForClass(item.name, formData.std));
+  if (applicableItems.length > 0) {
     await supabase.from("student_inventory_assignments").insert(
-      inventoryItems.map(item => ({
+      applicableItems.map(item => ({
         enrollment_id: enrollment.id,
         item_id:       item.id,
         status:        "Pending",
@@ -673,14 +685,16 @@ export async function promoteStudent(studentId, fromEnrollmentId, nextClassName,
     to_enrollment_id:   newEnrollment.id,
   });
 
-  // Create inventory assignments for the new enrollment — only category='student' items
+  // Create inventory assignments for the new enrollment — only category='student' items,
+  // skipping whichever bag colour doesn't match the class being promoted into.
   const { data: inventoryItems } = await supabase
     .from("inventory_items")
-    .select("id")
+    .select("id, name")
     .eq("category", "student");
-  if (inventoryItems?.length > 0) {
+  const applicableItems = (inventoryItems || []).filter(item => bagItemAllowedForClass(item.name, nextClassName));
+  if (applicableItems.length > 0) {
     await supabase.from("student_inventory_assignments").insert(
-      inventoryItems.map(item => ({
+      applicableItems.map(item => ({
         enrollment_id: newEnrollment.id,
         item_id:       item.id,
         status:        "Pending",

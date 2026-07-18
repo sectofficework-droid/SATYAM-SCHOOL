@@ -17,7 +17,7 @@ import {
   isValidName, isValidPhone, isValidEmail, isValidAadhar, isValidPincode,
   isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
-import { getStudents, getClasses, addStudent as dbAddStudent, updateStudent as dbUpdateStudent } from "@/lib/studentService";
+import { getStudents, getClasses, addStudent as dbAddStudent, updateStudent as dbUpdateStudent, bagItemAllowedForClass } from "@/lib/studentService";
 import { getCurrentYearClassFees } from "@/lib/settingsService";
 import { DEFAULT_DOCS } from "@/lib/constants";
 import { uploadFileToS3, getS3ViewUrl, slugify, fileExt } from "@/lib/s3Upload";
@@ -1167,12 +1167,14 @@ function InventoryPanel({ students }) {
         name:     s.name,
         cls:      s.std,
         enrollNo: s.enrollment,
-        items: dbItemNames.map(itemName => {
-          const db = dbMap[itemName];
-          return db
-            ? { item: itemName, given: db.given, date: db.givenDateRaw || (db.given ? todayIso : ""), _assignmentId: db._assignmentId }
-            : { item: itemName, given: false, date: "", _assignmentId: null };
-        }),
+        items: dbItemNames
+          .filter(itemName => bagItemAllowedForClass(itemName, s.std))
+          .map(itemName => {
+            const db = dbMap[itemName];
+            return db
+              ? { item: itemName, given: db.given, date: db.givenDateRaw || (db.given ? todayIso : ""), _assignmentId: db._assignmentId }
+              : { item: itemName, given: false, date: "", _assignmentId: null };
+          }),
       };
     }));
   }, [students, dbItemNames]);
