@@ -168,13 +168,13 @@ function SelectField({ children, value, onChange, disabled, required }) {
   );
 }
 
-function YesNoToggle({ value, onChange }) {
+function YesNoToggle({ value, onChange, disabled }) {
   return (
     <div className="flex gap-2 max-w-xs">
       {["Yes", "No"].map((opt) => (
         <button
-          key={opt} type="button" onClick={() => onChange(opt === "Yes")}
-          className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-all ${
+          key={opt} type="button" disabled={disabled} onClick={() => onChange(opt === "Yes")}
+          className={`flex-1 py-2.5 rounded-xl text-sm font-semibold border transition-all disabled:cursor-not-allowed disabled:opacity-60 ${
             (opt === "Yes" && value) || (opt === "No" && !value)
               ? "bg-school-navy text-white border-school-navy shadow-sm"
               : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
@@ -1052,8 +1052,14 @@ function EditForm({ existing, id, router }) {
             <FieldLabel>Does the student have an Aadhar Card?</FieldLabel>
             <YesNoToggle
               value={hasAadhar}
+              disabled={existing.hasAadhar}
               onChange={(val) => { setHasAadhar(val); setAadharDisplay(""); setForm((p) => ({ ...p, aadharRaw: "", aadharName: "" })); }}
             />
+            {existing.hasAadhar && (
+              <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
+                <Lock className="w-3 h-3" /> Aadhar already on file — contact Super Admin to remove or change it.
+              </p>
+            )}
           </div>
           {hasAadhar && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
