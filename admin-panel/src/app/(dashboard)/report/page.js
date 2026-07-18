@@ -71,12 +71,16 @@ function computeElig(st) {
   const udiseElig = hasBirthCert;
   const penElig   = hasBirthCert && hasAadhar;
   const apaarElig = hasBirthCert && hasAadhar && nameMatch;
+  // "Done" reflects whether the student actually has the number on file —
+  // independent of eligibility. A student can already have a UDISE/PEN number
+  // (e.g. entered from a previous school) even if their birth certificate
+  // upload isn't marked done in this system; eligibility shouldn't hide that.
   return {
     hasBirthCert, hasAadhar, nameMatch,
     udiseElig, penElig, apaarElig,
-    udiseDone: udiseElig && !!(st.udise && st.udise.trim()),
-    penDone:   penElig   && !!(st.pen   && st.pen.trim()),
-    apaarDone: apaarElig && !!(st.apaar && st.apaar.trim()),
+    udiseDone: !!(st.udise && st.udise.trim()),
+    penDone:   !!(st.pen   && st.pen.trim()),
+    apaarDone: !!(st.apaar && st.apaar.trim()),
   };
 }
 
@@ -592,8 +596,8 @@ function DocBadge({ yes }) {
 }
 
 function EligBadge({ eligible, done }) {
-  if (!eligible) return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-400">Not Eligible</span>;
   if (done)      return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-700">Completed</span>;
+  if (!eligible) return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-400">Not Eligible</span>;
   return             <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700">Eligible</span>;
 }
 
