@@ -2424,9 +2424,18 @@ function ImportStudentsPanel({ onImportDone }) {
     setImporting(true);
     setImportLog([]);
     const log = [];
+    // Fields to verify after insert — [payload key, students-table column]. This is
+    // what actually saved wrong in the 15 Jul import incident; checking the insert's
+    // own returned row catches a repeat of that instead of trusting a non-throwing
+    // insert call to mean everything was written.
+    const VERIFY_FIELDS = [
+      ["placeOfBirth", "place_of_birth"], ["motherTongue", "mother_tongue"],
+      ["religion", "religion"], ["society", "society"], ["landmark", "landmark"],
+      ["area", "area"], ["pinCode", "pincode"], ["dob", "dob"], ["gender", "gender"],
+    ];
     for (const s of valid) {
       try {
-        await dbAddStudent({
+        const payload = {
           std:               s.cls,
           admissionClass:    s.admissionClass || s.cls,
           section:           s.section || "A",
@@ -2476,8 +2485,17 @@ function ImportStudentsPanel({ onImportDone }) {
           prevAttendanceDays: s.prevAttendanceDays || "",
           lastExamGiven:     s.lastExamGiven || "No",
           prevPercentage:    s.prevPercentage || "",
+        };
+        const result = await dbAddStudent(payload);
+        const mismatches = VERIFY_FIELDS
+          .filter(([sentKey]) => payload[sentKey])
+          .filter(([sentKey, dbKey]) => !result?.student?.[dbKey])
+          .map(([sentKey]) => sentKey);
+        log.push({
+          name: s.firstName + " " + s.lastName,
+          ok: true,
+          warning: mismatches.length ? `Didn't save: ${mismatches.join(", ")}` : null,
         });
-        log.push({ name: s.firstName + " " + s.lastName, ok: true });
       } catch(err) {
         log.push({ name: s.firstName + " " + s.lastName, ok: false, err: err?.message || "Error" });
       }
@@ -2626,11 +2644,19 @@ function ImportStudentsPanel({ onImportDone }) {
           <p className="text-sm text-gray-500">
             <span className="font-bold text-green-700">{importLog.filter(l=>l.ok).length} students</span> imported successfully.
             {importLog.filter(l=>!l.ok).length > 0 && <><br/><span className="text-red-500">{importLog.filter(l=>!l.ok).length} failed</span> — check errors below.</>}
+            {importLog.filter(l=>l.ok && l.warning).length > 0 && <><br/><span className="text-amber-600">{importLog.filter(l=>l.ok && l.warning).length} saved with missing fields</span> — check warnings below.</>}
           </p>
           {importLog.filter(l=>!l.ok).length > 0 && (
             <div className="bg-red-50 border border-red-200 rounded-xl p-4 w-full max-w-md text-left space-y-1 max-h-40 overflow-y-auto">
               {importLog.filter(l=>!l.ok).map((l,i)=>(
                 <p key={i} className="text-xs text-red-600">{l.name}: {l.err}</p>
+              ))}
+            </div>
+          )}
+          {importLog.filter(l=>l.ok && l.warning).length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 w-full max-w-md text-left space-y-1 max-h-40 overflow-y-auto">
+              {importLog.filter(l=>l.ok && l.warning).map((l,i)=>(
+                <p key={i} className="text-xs text-amber-700">{l.name}: {l.warning}</p>
               ))}
             </div>
           )}
