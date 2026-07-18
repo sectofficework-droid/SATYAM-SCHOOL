@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import useStore from "@/lib/store";
 import { useParams, useRouter } from "next/navigation";
-import { getStudentByEnrollment } from "@/lib/studentService";
+import { getStudentByEnrollment, bagItemAllowedForClass } from "@/lib/studentService";
 import { fmtDMY } from "@/lib/utils";
 import S3Image from "@/components/S3Image";
 import { getS3ViewUrl, buildDocDownloadName } from "@/lib/s3Upload";
@@ -962,7 +962,9 @@ export default function StudentDetailPage() {
               !notRequired.includes(d.name) &&
               !(hasBCWarning && d.name === "Birth Certificate")
             );
-            const pendingInv  = (student.inventory ?? []).filter((i) => !i.given);
+            const pendingInv  = (student.inventory ?? [])
+              .filter((i) => bagItemAllowedForClass(i.item, student.std))
+              .filter((i) => !i.given);
             const hasDiscount = student.discount?.applied;
             const hasAnything = pendingDocs.length > 0 || pendingInv.length > 0 || hasDiscount || hasTCWarning || hasBCWarning;
             if (!hasAnything) return null;
@@ -1105,7 +1107,7 @@ export default function StudentDetailPage() {
           {activeTab === "fees"       && <FeesTab       fees={student.fees} />}
           {activeTab === "attendance" && <AttendanceTab attendance={student.attendance ?? []} />}
           {activeTab === "results"    && <ResultsTab    results={student.results ?? []} />}
-          {activeTab === "inventory"  && <InventoryTab  inventory={student.inventory ?? []} />}
+          {activeTab === "inventory"  && <InventoryTab  inventory={(student.inventory ?? []).filter(i => bagItemAllowedForClass(i.item, student.std))} />}
         </div>
       </div>
     </div>

@@ -43,12 +43,14 @@ export function mapToStudent(enrollment) {
   const notRequired   = hasPrevSchool ? [] : ["Leaving Certificate", "Marksheet"];
   const pendingDocs   = DEFAULT_DOCS.filter(name => !uploadedDocNames.has(name) && !notRequired.includes(name));
 
-  const pendingInventory = enrollment.student_inventory_assignments
-    ? enrollment.student_inventory_assignments
-        .filter(a => a.status === "Pending")
-        .map(a => a.inventory_items?.name)
-        .filter(Boolean)
-    : [];
+  const std = normClass(enrollment.class?.name);
+  const applicableAssignments = (enrollment.student_inventory_assignments || [])
+    .filter(a => bagItemAllowedForClass(a.inventory_items?.name, std));
+
+  const pendingInventory = applicableAssignments
+    .filter(a => a.status === "Pending")
+    .map(a => a.inventory_items?.name)
+    .filter(Boolean);
 
   return {
     // Internal DB IDs (needed for updates)
@@ -64,7 +66,7 @@ export function mapToStudent(enrollment) {
     grNo:           s.grno || "",
 
     // Academic placement
-    std:            normClass(enrollment.class?.name),
+    std,
     section:        enrollment.section?.name || "",
     rollNo:         String(enrollment.roll_no || ""),
     session:        enrollment.academic_year?.label || "",
@@ -153,17 +155,15 @@ export function mapToStudent(enrollment) {
       : [],
 
     // Full inventory list (populated when student_inventory_assignments is loaded)
-    inventory: enrollment.student_inventory_assignments
-      ? enrollment.student_inventory_assignments.map(a => ({
-          item:          a.inventory_items?.name || "",
-          givenDate:     a.given_date
-            ? new Date(a.given_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-            : "",
-          givenDateRaw:  a.given_date || "",
-          given:         a.status === "Given",
-          _assignmentId: a.id,
-        }))
-      : [],
+    inventory: applicableAssignments.map(a => ({
+      item:          a.inventory_items?.name || "",
+      givenDate:     a.given_date
+        ? new Date(a.given_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+        : "",
+      givenDateRaw:  a.given_date || "",
+      given:         a.status === "Given",
+      _assignmentId: a.id,
+    })),
 
     // Fee payments (populated when fee_payments is loaded)
     feePayments: enrollment.fee_payments && enrollment.fee_payments.length > 0

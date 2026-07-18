@@ -1,4 +1,5 @@
 import supabase from "./supabase";
+import { bagItemAllowedForClass } from "./studentService";
 
 const CLASS_NAME_MAP = {
   "JR KG": "JR.KG",
@@ -50,14 +51,16 @@ function mapFeeStudent(row) {
       }))
       .sort((a, b) => new Date(a.date) - new Date(b.date)),
 
-    inventory: (row.student_inventory_assignments || []).map(a => ({
-      item:          a.inventory_items?.name || "",
-      givenDate:     a.given_date
-        ? new Date(a.given_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
-        : "",
-      given:         a.status === "Given",
-      _assignmentId: a.id,
-    })),
+    inventory: (row.student_inventory_assignments || [])
+      .filter(a => bagItemAllowedForClass(a.inventory_items?.name, className))
+      .map(a => ({
+        item:          a.inventory_items?.name || "",
+        givenDate:     a.given_date
+          ? new Date(a.given_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })
+          : "",
+        given:         a.status === "Given",
+        _assignmentId: a.id,
+      })),
   };
 }
 
