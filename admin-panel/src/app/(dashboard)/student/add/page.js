@@ -33,7 +33,7 @@ const prevStandards = [
 const genders   = ["Male", "Female", "Other"];
 const religions = ["Hindu", "Muslim", "Christian", "Jain", "Sikh", "Buddhist", "Parsi", "Other"];
 const castes    = ["General", "OBC", "SC", "ST", "EWS", "SEBC", "Other"];
-const mediums   = ["English", "Gujarati", "Hindi", "Other"];
+const mediums   = ["English", "Gujarati", "Hindi", "Odia", "Other"];
 const todayStr = new Date().toISOString().split("T")[0];
 
 const DISCOUNT_REASONS = [

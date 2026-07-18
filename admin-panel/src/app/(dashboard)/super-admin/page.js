@@ -50,7 +50,7 @@ function normalizeAgainstList(raw, list) {
 }
 const RELIGIONS = ["Hindu","Muslim","Christian","Jain","Sikh","Buddhist","Parsi","Other"];
 const CASTES    = ["General","OBC","SC","ST","EWS","SEBC","Other"];
-const MEDIUMS   = ["English","Gujarati","Hindi","Other"];
+const MEDIUMS   = ["English","Gujarati","Hindi","Odia","Other"];
 const PREV_CLS  = ["Nursery / KG","1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th","11th","12th"];
 
 const IMPORT_FIELDS = [
@@ -2397,9 +2397,12 @@ function ImportStudentsPanel({ onImportDone }) {
               s[f.key] = raw instanceof Date ? normalizeDate(raw) || "" : String(raw).trim();
             }
           });
-          if (s.cls)    s.cls    = normalizeAgainstList(s.cls, CLASSES);
-          if (s.gender) s.gender = normalizeAgainstList(s.gender, GENDERS);
+          if (s.cls)      s.cls      = normalizeAgainstList(s.cls, CLASSES);
+          if (s.gender)   s.gender   = normalizeAgainstList(s.gender, GENDERS);
           if (s.admissionClass) s.admissionClass = normalizeAgainstList(s.admissionClass, CLASSES);
+          if (s.religion) s.religion = normalizeAgainstList(s.religion, RELIGIONS);
+          if (s.caste)    s.caste    = normalizeAgainstList(s.caste, CASTES);
+          if (s.lastSchoolMedium) s.lastSchoolMedium = normalizeAgainstList(s.lastSchoolMedium, MEDIUMS);
 
           if (!s.firstName) s._errors.push("First Name missing");
           if (!s.cls)       s._errors.push("Class missing");
