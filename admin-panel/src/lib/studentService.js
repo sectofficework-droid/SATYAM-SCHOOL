@@ -491,7 +491,7 @@ export async function addStudent(formData) {
       medium:          formData.lastSchoolMedium || null,
       place:           formData.lastSchoolPlace || null,
       attendance_days: formData.prevAttendanceDays ? parseInt(formData.prevAttendanceDays) : null,
-      last_exam_given: formData.lastExamGiven === "Yes",
+      last_exam_given: String(formData.lastExamGiven || "").trim().toLowerCase() === "yes",
       percentage:      formData.prevPercentage ? parseFloat(formData.prevPercentage) : null,
     });
   }
@@ -598,7 +598,7 @@ export async function updateStudent(studentId, formData) {
         medium:          formData.lastSchoolMedium || null,
         place:           formData.lastSchoolPlace || null,
         attendance_days: formData.prevAttendanceDays ? parseInt(formData.prevAttendanceDays) : null,
-        last_exam_given: formData.lastExamGiven === "Yes",
+        last_exam_given: String(formData.lastExamGiven || "").trim().toLowerCase() === "yes",
         percentage:      formData.prevPercentage ? parseFloat(formData.prevPercentage) : null,
       }, { onConflict: "student_id" });
   }
