@@ -61,6 +61,26 @@ function formatCellValue(col, value) {
   return col.isDate ? fmtDate(value) : value;
 }
 
+// ── Father/Mother Name with Surname ──────────────────────────────────────────
+function nameWithSurname(name, surname) {
+  return [name, surname].filter(Boolean).join(" ").trim();
+}
+
+// ── DOB split into Year / Month ("1-Jan") / Date ─────────────────────────────
+const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function dobParts(dateStr) {
+  if (!dateStr) return { birthYear: "", birthMonth: "", birthDate: "" };
+  const parts = String(dateStr).split("-");
+  if (parts.length !== 3) return { birthYear: "", birthMonth: "", birthDate: "" };
+  const [y, m, d] = parts;
+  const mi = parseInt(m, 10), di = parseInt(d, 10);
+  return {
+    birthYear:  y || "",
+    birthMonth: mi ? `${mi}-${MONTH_ABBR[mi - 1]}` : "",
+    birthDate:  di ? String(di) : "",
+  };
+}
+
 // ── Eligibility Logic ─────────────────────────────────────────────────────────
 function computeElig(st) {
   const hasAadhar    = !!(st.aadharNo && st.aadharNo.trim());
@@ -124,10 +144,13 @@ function decorateStudentForEntry(st) {
   return {
     ...st,
     dobInWords:           dobToWords(st.dob),
+    ...dobParts(st.dob),
     religionCaste:        `${st.religion || "-"}${st.caste ? " - " + st.caste : ""}`,
     lastSchoolGrSchool:   `${st.lastSchoolGrNo || "-"} - ${st.lastSchoolName || "-"}`,
     firstAdmissionStd:    st.joinClass,
     studentFatherSurname: `${st.firstName || ""} ${st.fatherName || ""} ${st.surname || ""}`.trim(),
+    fatherName:           nameWithSurname(st.fatherName, st.surname),
+    motherName:           nameWithSurname(st.motherName, st.surname),
     fullAddress:          [st.plotNo, st.society, st.landmark, st.area, "Surat", "Gujarat", st.pinCode].filter(Boolean).join(", "),
     bagColor:             getBagColor(st.cls),
   };
@@ -177,6 +200,9 @@ const STUDENT_FIELD_POOL = [
   { key:"remarks",        label:"Remarks" },
   { key:"followUp",       label:"Follow Up" },
   { key:"placeOfBirth",      label:"Place of Birth" },
+  { key:"birthState",        label:"Birth State" },
+  { key:"birthDistrict",     label:"Birth District" },
+  { key:"birthCity",         label:"Birth City" },
   { key:"lastSchoolName",    label:"Last School Name" },
   { key:"roll",              label:"Roll No" },
   { key:"joinDate",          label:"Date of Admission",      isDate:true },
@@ -189,6 +215,10 @@ const STUDENT_FIELD_POOL = [
   { key:"birthCertRegDate",  label:"Birth Cert Reg Date",    isDate:true },
   { key:"fullAddress",       label:"Full Address" },
   { key:"bagColor",          label:"Bag Color" },
+  { key:"subCaste",          label:"Sub Caste" },
+  { key:"prevAttendanceDays",label:"Previous Year Attendance Days" },
+  { key:"lastExamGiven",     label:"Last Exam Given or Not" },
+  { key:"prevPercentage",    label:"If Given Percentage" },
 ];
 
 const GR_REGISTER_COLUMNS = [
@@ -233,31 +263,31 @@ const PEN_ENTRY_COLUMNS = [
 
 const UDISE_ENTRY_COLUMNS = [
   { key:"cls",               label:"Class" },
-  { key:"name",               label:"Student Name" },
-  { key:"fatherName",         label:"Father's Name" },
-  { key:"motherName",         label:"Mother's Name" },
-  { key:"surname",            label:"Surname" },
-  { key:"dob",                 label:"Date of Birth", isDate:true },
-  { key:"grNo",                label:"GR No" },
-  { key:"roll",                label:"Roll No" },
-  { key:"plotNo",              label:"Plot Number" },
-  { key:"society",             label:"Society" },
-  { key:"landmark",            label:"Landmark" },
-  { key:"area",                label:"Area" },
-  { key:"pinCode",             label:"Pin Code" },
-  { key:"motherTongue",        label:"Mother Tongue" },
-  { key:"joinDate",             label:"Date of Join", isDate:true },
-  { key:"gender",               label:"Gender" },
-  { key:"caste",                label:"Caste" },
-  { key:"subCaste",             label:"Sub Caste" },
-  { key:"religion",             label:"Religion" },
-  { key:"aadharNo",             label:"Aadhar Card No" },
-  { key:"aadharName",           label:"Name as per Aadhar" },
-  { key:"prevAttendanceDays",   label:"Previous Year Attendance Days" },
-  { key:"lastExamGiven",        label:"Last Exam Given or Not" },
-  { key:"prevPercentage",       label:"If Given Percentage" },
-  { key:"mobile1",               label:"Mobile No 1" },
-  { key:"mobile2",               label:"Mobile No 2" },
+  { key:"birthCertRegNo",    label:"Birth Cert Reg No" },
+  { key:"birthYear",         label:"Birth Year" },
+  { key:"birthMonth",        label:"Birth Month" },
+  { key:"birthDate",         label:"Birth Date" },
+  { key:"gender",            label:"Gender" },
+  { key:"birthState",        label:"Birth State" },
+  { key:"birthDistrict",     label:"Birth District" },
+  { key:"birthCity",         label:"Birth City" },
+  { key:"firstName",         label:"Student Name" },
+  { key:"fatherName",        label:"Father's Name" },
+  { key:"motherName",        label:"Mother's Name" },
+  { key:"surname",           label:"Surname" },
+  { key:"grNo",               label:"GR No" },
+  { key:"roll",               label:"Roll No" },
+  { key:"plotNo",             label:"Plot Number" },
+  { key:"society",            label:"Society" },
+  { key:"landmark",           label:"Landmark" },
+  { key:"area",               label:"Area" },
+  { key:"pinCode",            label:"Pin Code" },
+  { key:"motherTongue",       label:"Mother Tongue" },
+  { key:"joinDate",           label:"Date of Join", isDate:true },
+  { key:"aadharNo",           label:"Aadhar Card No" },
+  { key:"aadharName",         label:"Name as per Aadhar" },
+  { key:"mobile1",             label:"Mobile No 1" },
+  { key:"mobile2",             label:"Mobile No 2" },
 ];
 
 const ID_CARD_COLUMNS = [
@@ -325,7 +355,12 @@ const REPORT_CONFIGS = {
       {key:"followUp",       label:"Follow Up",       dflt:false },
     ],
     getData(sourceData, f, df, dt, s) {
-      let d = (sourceData || []).map(st => ({ ...st, dobInWords: dobToWords(st.dob) }));
+      let d = (sourceData || []).map(st => ({
+        ...st,
+        dobInWords: dobToWords(st.dob),
+        fatherName: nameWithSurname(st.fatherName, st.surname),
+        motherName: nameWithSurname(st.motherName, st.surname),
+      }));
       if (f.cls      && f.cls      !== "All") d = d.filter(x => x.cls      === f.cls);
       if (f.status   && f.status   !== "All") d = d.filter(x => x.status   === f.status);
       if (f.session  && f.session  !== "All") d = d.filter(x => x.session  === f.session);
