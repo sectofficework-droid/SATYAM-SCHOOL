@@ -79,6 +79,9 @@ function mapToEditForm(student) {
     mobile1:       student.mobile || "",
     mobile2:       student.mobile2 || "",
     placeOfBirth:  student.placeOfBirth || "",
+    birthState:    student.birthState || "",
+    birthDistrict: student.birthDistrict || "",
+    birthCity:     student.birthCity || "",
     lastSchoolName:   student.lastSchoolName || "",
     lastSchoolGrNo:   student.lastSchoolGrNo || "",
     lastSchoolClass:  student.lastSchoolClass || "",
@@ -286,6 +289,9 @@ function EditForm({ existing, id, router }) {
     mobile1:          existing.mobile1,
     mobile2:          existing.mobile2,
     placeOfBirth:     existing.placeOfBirth,
+    birthState:       existing.birthState || "",
+    birthDistrict:    existing.birthDistrict || "",
+    birthCity:        existing.birthCity || "",
     lastSchoolName:   existing.lastSchoolName,
     lastSchoolClass:  existing.lastSchoolClass,
     lastSchoolMedium: existing.lastSchoolMedium,
@@ -450,6 +456,9 @@ function EditForm({ existing, id, router }) {
         dob:          form.dob,
         gender:       form.gender,
         placeOfBirth: form.placeOfBirth,
+        birthState:    form.birthState,
+        birthDistrict: form.birthDistrict,
+        birthCity:     form.birthCity,
         photo:        photoKey || existing.photo || null,
         fatherName:   form.fatherName,
         motherName:   form.motherName,
@@ -935,6 +944,16 @@ function EditForm({ existing, id, router }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <ReadOnlyField label="Place of Birth" value={form.placeOfBirth} />
+          </div>
+          <div />
+          <div>
+            <ReadOnlyField label="Birth State" value={form.birthState} />
+          </div>
+          <div>
+            <ReadOnlyField label="Birth District" value={form.birthDistrict} />
+          </div>
+          <div>
+            <ReadOnlyField label="Birth City" value={form.birthCity} />
           </div>
           <div />
           <div>

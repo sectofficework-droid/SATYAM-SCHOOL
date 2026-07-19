@@ -36,6 +36,11 @@ const castes    = ["General", "OBC", "SC", "ST", "EWS", "SEBC", "Other"];
 const mediums   = ["English", "Gujarati", "Hindi", "Odia", "Other"];
 const todayStr = new Date().toISOString().split("T")[0];
 
+// ── Place of Birth (derived from City / District / State) ────────
+function composePlaceOfBirth(city, district, state) {
+  return [city, district, state].map(v => (v || "").trim()).filter(Boolean).join(", ");
+}
+
 const DISCOUNT_REASONS = [
   "Financial Weak",
   "3 Kids",
@@ -232,7 +237,9 @@ export default function AddStudentPage() {
     address: "",
     mobile1: "",
     mobile2: "",
-    placeOfBirth: "",
+    birthState: "",
+    birthDistrict: "",
+    birthCity: "",
     lastSchoolName: "",
     lastSchoolClass: "",
     lastSchoolMedium: "",
@@ -477,7 +484,10 @@ export default function AddStudentPage() {
       grNo:           form.grNo,
       dob:            form.dob,
       gender:         form.gender,
-      placeOfBirth:   form.placeOfBirth,
+      placeOfBirth:   composePlaceOfBirth(form.birthCity, form.birthDistrict, form.birthState),
+      birthState:     form.birthState,
+      birthDistrict:  form.birthDistrict,
+      birthCity:      form.birthCity,
       // Photo
       photo:          photoKey,
       // Academic
@@ -1044,10 +1054,27 @@ export default function AddStudentPage() {
           <SectionHeader number="7" title="Birth Details" />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <FieldLabel required>Place of Birth</FieldLabel>
-              <Input placeholder="City / Town where student was born" value={form.placeOfBirth} onChange={set("placeOfBirth")} required />
+              <FieldLabel required>Birth City</FieldLabel>
+              <Input placeholder="e.g. Surat" value={form.birthCity} onChange={set("birthCity")} required />
             </div>
-            <div />
+            <div>
+              <FieldLabel>Birth District</FieldLabel>
+              <Input placeholder="e.g. Surat" value={form.birthDistrict} onChange={set("birthDistrict")} />
+            </div>
+            <div>
+              <FieldLabel>Birth State</FieldLabel>
+              <Input placeholder="e.g. Gujarat" value={form.birthState} onChange={set("birthState")} />
+            </div>
+            <div>
+              <FieldLabel>Place of Birth</FieldLabel>
+              <div className="flex items-center gap-2 px-3.5 py-2.5 border border-gray-200 rounded-xl bg-gray-50">
+                <Lock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+                <span className="text-sm font-semibold text-gray-700">
+                  {composePlaceOfBirth(form.birthCity, form.birthDistrict, form.birthState) || "—"}
+                </span>
+                <span className="text-xs text-gray-400 ml-auto">Auto-filled</span>
+              </div>
+            </div>
             <div>
               <FieldLabel>Birth Certificate Reg. No.</FieldLabel>
               <Input

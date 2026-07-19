@@ -73,7 +73,9 @@ const IMPORT_FIELDS = [
   { key:"birthCertRegNo",    label:"Birth Cert Reg No",              required:false },
   { key:"birthCertRegDate",  label:"Birth Cert Reg Date (DD-MM-YYYY)", required:false },
   { key:"gender",            label:"Gender (Male/Female/Other)",     required:true  },
-  { key:"placeOfBirth",      label:"Place of Birth",                 required:true  },
+  { key:"birthCity",         label:"Birth City",                     required:true  },
+  { key:"birthDistrict",     label:"Birth District",                 required:false },
+  { key:"birthState",        label:"Birth State",                    required:false },
   { key:"motherTongue",      label:"Mother Tongue",                  required:true  },
   { key:"religion",          label:"Religion",                       required:true  },
   { key:"caste",             label:"Category / Caste",              required:true  },
@@ -159,7 +161,7 @@ const EXAMPLE_ROW = [
   // Personal Info
   "Arjun","Patel","Rajesh Patel","Meena Patel","15-06-2015",
   "BC2015/001","01-01-2016",
-  "Male","Surat","Gujarati","Hindu","General","Patel","120","25",
+  "Male","Surat","Surat","Gujarat","Gujarati","Hindu","General","Patel","120","25",
   // Contact
   "9876543210","","12","Gandhi Nagar","Near Park","Adajan","395009","12 Gandhi Nagar, Adajan, Surat",
   // IDs
@@ -197,7 +199,11 @@ const FIELD_GROUPS = [
     { key:"mobile2",         label:"Mobile 2",        icon:Phone,         type:"text"   },
   ]},
   { group:"Birth", fields:[
-    { key:"placeOfBirth",    label:"Place of Birth",        icon:MapPin,     type:"text" },
+    // Place of Birth is not directly editable — it's derived from City/District/State
+    // by mapFormForUpdate() on save, so only the 3 source fields are shown here.
+    { key:"birthCity",       label:"Birth City",            icon:MapPin,     type:"text" },
+    { key:"birthDistrict",   label:"Birth District",        icon:MapPin,     type:"text" },
+    { key:"birthState",      label:"Birth State",           icon:MapPin,     type:"text" },
     { key:"birthCertRegNo",  label:"Birth Cert Reg No",     icon:Hash,       type:"text" },
     { key:"birthCertRegDate",label:"Birth Cert Reg Date",   icon:Calendar,   type:"date" },
   ]},
@@ -292,6 +298,14 @@ function mapStudentForSuperAdmin(st) {
   };
 }
 
+// Place of Birth is derived from Birth City / District / State, not typed directly —
+// falls back to whatever Place of Birth was already stored if all three are blank
+// (older records that predate the split fields), so a save never wipes it to empty.
+function composePlaceOfBirth(city, district, state) {
+  const derived = [city, district, state].map(v => (v || "").trim()).filter(Boolean).join(", ");
+  return derived;
+}
+
 // Reverse-maps super-admin form data to the shape updateStudent() expects
 function mapFormForUpdate(form) {
   return {
@@ -306,7 +320,10 @@ function mapFormForUpdate(form) {
     gender:           form.gender,
     religion:         form.religion,
     caste:            form.caste,
-    placeOfBirth:     form.placeOfBirth,
+    placeOfBirth:     composePlaceOfBirth(form.birthCity, form.birthDistrict, form.birthState) || form.placeOfBirth,
+    birthState:       form.birthState,
+    birthDistrict:    form.birthDistrict,
+    birthCity:        form.birthCity,
     mobile:           form.mobile1,
     mobile2:          form.mobile2,
     roomPlotNo:       form.roomPlotNo,
@@ -2435,6 +2452,7 @@ function ImportStudentsPanel({ onImportDone }) {
       ["placeOfBirth", "place_of_birth"], ["motherTongue", "mother_tongue"],
       ["religion", "religion"], ["society", "society"], ["landmark", "landmark"],
       ["area", "area"], ["pinCode", "pincode"], ["dob", "dob"], ["gender", "gender"],
+      ["birthState", "birth_state"], ["birthDistrict", "birth_district"], ["birthCity", "birth_city"],
     ];
     for (const s of valid) {
       try {
@@ -2449,7 +2467,10 @@ function ImportStudentsPanel({ onImportDone }) {
           motherName:        s.motherName || "",
           gender:            s.gender,
           dob:               s.dob || null,
-          placeOfBirth:      s.placeOfBirth || "",
+          placeOfBirth:      composePlaceOfBirth(s.birthCity, s.birthDistrict, s.birthState),
+          birthState:        s.birthState || "",
+          birthDistrict:     s.birthDistrict || "",
+          birthCity:         s.birthCity || "",
           motherTongue:      s.motherTongue || "",
           religion:          s.religion || "",
           caste:             s.caste || "General",

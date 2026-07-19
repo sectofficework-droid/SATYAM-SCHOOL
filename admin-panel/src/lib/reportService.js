@@ -23,7 +23,7 @@ export async function getStudentsForReport() {
       fee_total, fee_discount, deactivate_reason,
       student:students(
         id, first_name, last_name, grno, dob, gender,
-        place_of_birth, mobile1, mobile2, status,
+        place_of_birth, birth_state, birth_district, birth_city, mobile1, mobile2, status,
         religion, caste, sub_caste, mother_tongue,
         height_cm, weight_kg,
         father_name, mother_name,
@@ -73,6 +73,9 @@ export async function getStudentsForReport() {
       subCaste:           s.sub_caste || "",
       motherTongue:       s.mother_tongue || "",
       placeOfBirth:       s.place_of_birth || "",
+      birthState:         s.birth_state || "",
+      birthDistrict:      s.birth_district || "",
+      birthCity:          s.birth_city || "",
       height:             s.height_cm || "",
       weight:             s.weight_kg || "",
       plotNo:             s.room_plot_no || "",

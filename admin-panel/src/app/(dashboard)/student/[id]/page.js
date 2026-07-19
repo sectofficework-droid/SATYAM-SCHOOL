@@ -91,6 +91,9 @@ function PersonalTab({ s }) {
         <InfoRow label="Pin Code"      value={s.pinCode} />
         <InfoRow label="Address"       value={s.address} />
         <InfoRow label="Place of Birth" value={s.placeOfBirth} />
+        <InfoRow label="Birth State"    value={s.birthState} />
+        <InfoRow label="Birth District" value={s.birthDistrict} />
+        <InfoRow label="Birth City"     value={s.birthCity} />
       </div>
       <div className="bg-gray-50 rounded-2xl p-5">
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Previous School</p>
@@ -676,6 +679,9 @@ function generateAdmissionFormHTML(s, logoUrl) {
     <div class="field"><div class="fl">Height</div><div class="fv">${s.height ? s.height + " cm" : "—"}</div></div>
     <div class="field"><div class="fl">Weight</div><div class="fv">${s.weight ? s.weight + " kg" : "—"}</div></div>
     <div class="field"><div class="fl">Place of Birth</div><div class="fv">${s.placeOfBirth}</div></div>
+    <div class="field"><div class="fl">Birth State</div><div class="fv">${s.birthState || "—"}</div></div>
+    <div class="field"><div class="fl">Birth District</div><div class="fv">${s.birthDistrict || "—"}</div></div>
+    <div class="field"><div class="fl">Birth City</div><div class="fv">${s.birthCity || "—"}</div></div>
   </div>
 
   <div class="sec">Contact &amp; Address</div>
