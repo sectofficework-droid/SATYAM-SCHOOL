@@ -149,6 +149,8 @@ function decorateStudentForEntry(st) {
     lastSchoolGrSchool:   `${st.lastSchoolGrNo || "-"} - ${st.lastSchoolName || "-"}`,
     firstAdmissionStd:    st.joinClass,
     studentFatherSurname: `${st.firstName || ""} ${st.fatherName || ""} ${st.surname || ""}`.trim(),
+    fatherNameOnly:       st.fatherName || "",
+    motherNameOnly:       st.motherName || "",
     fatherName:           nameWithSurname(st.fatherName, st.surname),
     motherName:           nameWithSurname(st.motherName, st.surname),
     fullAddress:          [st.plotNo, st.society, st.landmark, st.area, "Surat", "Gujarat", st.pinCode].filter(Boolean).join(", "),
@@ -263,6 +265,7 @@ const PEN_ENTRY_COLUMNS = [
 
 const UDISE_ENTRY_COLUMNS = [
   { key:"cls",               label:"Class" },
+  { key:"udise",             label:"UDISE No" },
   { key:"birthCertRegNo",    label:"Birth Cert Reg No" },
   { key:"birthYear",         label:"Birth Year" },
   { key:"birthMonth",        label:"Birth Month" },
@@ -272,8 +275,8 @@ const UDISE_ENTRY_COLUMNS = [
   { key:"birthDistrict",     label:"Birth District" },
   { key:"birthCity",         label:"Birth City" },
   { key:"firstName",         label:"Student Name" },
-  { key:"fatherName",        label:"Father's Name" },
-  { key:"motherName",        label:"Mother's Name" },
+  { key:"fatherNameOnly",    label:"Father's Name" },
+  { key:"motherNameOnly",    label:"Mother's Name" },
   { key:"surname",           label:"Surname" },
   { key:"grNo",               label:"GR No" },
   { key:"roll",               label:"Roll No" },
