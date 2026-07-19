@@ -299,6 +299,8 @@ export async function getStudents(yearId = null) {
       student:students(
         id, first_name, last_name, photo_url, grno,
         dob, gender, mobile1, mobile2, status,
+        religion, caste,
+        place_of_birth, birth_state, birth_district, birth_city,
         father_name, mother_name,
         aadhar, aadhar_name,
         father_aadhar, father_aadhar_name, mother_aadhar, mother_aadhar_name,
