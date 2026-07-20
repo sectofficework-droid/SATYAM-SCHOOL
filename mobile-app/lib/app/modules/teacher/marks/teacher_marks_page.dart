@@ -34,7 +34,32 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
     if (mounted) setState(() { _exams = exams; _loading = false; });
   }
 
+  // Marks can only be entered on or after the exam date - not before, even
+  // if the exam was already created for a future date.
+  bool _isUpcoming(Map<String, dynamic> exam) {
+    final d = exam['date'] as String?;
+    if (d == null || d.isEmpty) return false;
+    final examDate = DateTime.tryParse(d);
+    if (examDate == null) return false;
+    final today = DateTime.now();
+    final examDay = DateTime(examDate.year, examDate.month, examDate.day);
+    final todayDay = DateTime(today.year, today.month, today.day);
+    return examDay.isAfter(todayDay);
+  }
+
   Future<void> _selectExam(Map<String, dynamic> exam) async {
+    if (_isUpcoming(exam)) {
+      final d = DateTime.tryParse(exam['date'] as String);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Marks can be entered on or after the exam date'
+            '${d != null ? " (${DateFormat('d MMM yyyy').format(d)})" : ""}.'),
+        backgroundColor: AppColors.amber,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ));
+      return;
+    }
     setState(() { _selExam = exam; _markCtrl.clear(); _students = []; _loadingRoster = true; });
 
     final profile     = AuthService.to.profile.value ?? {};
@@ -327,7 +352,8 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (_, i) {
         final e = _exams[i];
-        final date = e['date'] != null ? DateTime.tryParse(e['date']) : null;
+        final date    = e['date'] != null ? DateTime.tryParse(e['date']) : null;
+        final upcoming = _isUpcoming(e);
         return TweenAnimationBuilder<double>(
           tween: Tween(begin: 0.0, end: 1.0),
           duration: Duration(milliseconds: 300 + i * 60),
@@ -336,7 +362,9 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
             child: Transform.translate(offset: Offset(0, 20 * (1 - v)), child: child)),
           child: GestureDetector(
             onTap: () => _selectExam(e),
-            child: Container(
+            child: Opacity(
+              opacity: upcoming ? 0.65 : 1.0,
+              child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: AppColors.card,
@@ -366,6 +394,8 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                         _tag('Class ${e['class']}', AppColors.greenLight, AppColors.green),
                       _tag(e['subject'] ?? '', AppColors.blueLight, AppColors.blue),
                       _tag('Max: ${e['max_marks'] ?? ''}', AppColors.amberLight, AppColors.amber),
+                      if (upcoming)
+                        _tag('Upcoming', AppColors.amberLight, AppColors.amber),
                     ]),
                     if (date != null) Padding(
                       padding: const EdgeInsets.only(top: 4),
@@ -378,8 +408,9 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                     ),
                   ],
                 )),
-                const Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
+                Icon(upcoming ? Icons.lock_outline_rounded : Icons.chevron_right_rounded, color: AppColors.textHint),
               ]),
+            ),
             ),
           ),
         );
