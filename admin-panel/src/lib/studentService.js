@@ -299,7 +299,7 @@ export async function getStudents(yearId = null) {
       student:students(
         id, first_name, last_name, photo_url, grno,
         dob, gender, mobile1, mobile2, status,
-        religion, caste, mother_tongue,
+        religion, caste, mother_tongue, sub_caste, height_cm, weight_kg,
         place_of_birth, birth_state, birth_district, birth_city,
         father_name, mother_name,
         aadhar, aadhar_name,
@@ -308,7 +308,7 @@ export async function getStudents(yearId = null) {
         birth_cert_reg_no, birth_cert_reg_date,
         address, pincode, room_plot_no, society, landmark, area,
         student_documents(status, document_types(name)),
-        student_previous_school(school_name)
+        student_previous_school(school_name, grno, class, medium, place, attendance_days, last_exam_given, percentage)
       ),
       student_inventory_assignments(id, status, given_date, inventory_items(name)),
       class:classes!student_enrollments_class_id_fkey(id, name),

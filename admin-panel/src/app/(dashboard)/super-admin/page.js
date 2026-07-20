@@ -191,7 +191,10 @@ const FIELD_GROUPS = [
     { key:"gender",          label:"Gender",          icon:User,          type:"select", options:GENDERS   },
     { key:"religion",        label:"Religion",        icon:Tag,           type:"select", options:RELIGIONS },
     { key:"caste",           label:"Category/Caste",  icon:Tag,           type:"select", options:CASTES    },
+    { key:"subCaste",        label:"Sub Caste",       icon:Tag,           type:"text"   },
     { key:"motherTongue",    label:"Mother Tongue",   icon:Tag,           type:"text"   },
+    { key:"height",          label:"Height (cm)",     icon:Hash,          type:"text"   },
+    { key:"weight",          label:"Weight (kg)",     icon:Hash,          type:"text"   },
   ]},
   { group:"Contact", fields:[
     { key:"roomPlotNo",      label:"Room / Plot No",  icon:MapPin,        type:"text"   },
@@ -214,9 +217,13 @@ const FIELD_GROUPS = [
   ]},
   { group:"Previous School", fields:[
     { key:"lastSchoolName",  label:"School Name",     icon:GraduationCap, type:"text"   },
+    { key:"lastSchoolGrNo",  label:"Last School GR No", icon:Hash,        type:"text"   },
     { key:"lastSchoolClass", label:"Last Class",      icon:GraduationCap, type:"select", options:PREV_CLS },
     { key:"lastSchoolMedium",label:"Medium",          icon:BookOpen,      type:"select", options:MEDIUMS   },
     { key:"lastSchoolPlace", label:"School Location", icon:MapPin,        type:"text"   },
+    { key:"prevAttendanceDays", label:"Previous Attendance Days", icon:Hash, type:"text" },
+    { key:"lastExamGiven",   label:"Last Exam Given", icon:BookOpen,      type:"select", options:["Yes","No"] },
+    { key:"prevPercentage",  label:"Previous Percentage", icon:Hash,      type:"text"   },
   ]},
   { group:"Aadhar", fields:[
     { key:"aadharNo",          label:"Aadhar Number",           icon:CreditCard, type:"text" },
@@ -325,7 +332,10 @@ function mapFormForUpdate(form) {
     gender:           form.gender,
     religion:         form.religion,
     caste:            form.caste,
+    subCaste:         form.subCaste,
     motherTongue:     form.motherTongue,
+    height:           form.height,
+    weight:           form.weight,
     placeOfBirth:     composePlaceOfBirth(form.birthCity, form.birthDistrict, form.birthState) || form.placeOfBirth,
     birthState:       form.birthState,
     birthDistrict:    form.birthDistrict,
@@ -350,9 +360,13 @@ function mapFormForUpdate(form) {
     pen:               form.pen,
     apaar:             form.apaar,
     lastSchoolName:    form.lastSchoolName,
+    lastSchoolGrNo:    form.lastSchoolGrNo,
     lastSchoolClass:   form.lastSchoolClass,
     lastSchoolMedium:  form.lastSchoolMedium,
     lastSchoolPlace:   form.lastSchoolPlace,
+    prevAttendanceDays: form.prevAttendanceDays,
+    lastExamGiven:      form.lastExamGiven,
+    prevPercentage:     form.prevPercentage,
   };
 }
 
