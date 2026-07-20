@@ -14,6 +14,7 @@ class TeacherTasksPage extends StatefulWidget {
 
 class _TeacherTasksPageState extends State<TeacherTasksPage> {
   List<Map<String, dynamic>> _assignments = [];
+  String? _employeeId;
   bool _loading = true;
 
   @override
@@ -35,14 +36,18 @@ class _TeacherTasksPageState extends State<TeacherTasksPage> {
       if (db.isEmpty) return -1;
       return da.compareTo(db);
     });
-    if (mounted) setState(() { _assignments = list; _loading = false; });
+    if (mounted) setState(() { _assignments = list; _employeeId = employeeId; _loading = false; });
   }
 
-  Future<void> _updateStatus(String assigneeRowId, String newStatus) async {
-    await SupabaseService.updateTaskAssigneeStatus(assigneeRowId, newStatus);
+  // task_assignees has a composite key (task_id, employee_id) - no row id -
+  // so a status update is addressed by that pair.
+  Future<void> _updateStatus(String taskId, String newStatus) async {
+    final employeeId = _employeeId;
+    if (employeeId == null) return;
+    await SupabaseService.updateTaskAssigneeStatus(taskId, employeeId, newStatus);
     if (!mounted) return;
     setState(() {
-      final idx = _assignments.indexWhere((a) => a['id'] == assigneeRowId);
+      final idx = _assignments.indexWhere((a) => a['task_id'] == taskId);
       if (idx != -1) _assignments[idx]['status'] = newStatus;
     });
   }
@@ -71,7 +76,7 @@ class _TeacherTasksPageState extends State<TeacherTasksPage> {
               child: Transform.translate(offset: Offset(0, 20 * (1-v)), child: child)),
             child: _TaskCard(
               assignment: _assignments[i],
-              onStatusChange: (status) => _updateStatus(_assignments[i]['id'] as String, status),
+              onStatusChange: (status) => _updateStatus(_assignments[i]['task_id'] as String, status),
             ),
           ),
         ),

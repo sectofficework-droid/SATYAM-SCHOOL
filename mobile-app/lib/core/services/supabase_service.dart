@@ -100,19 +100,21 @@ class SupabaseService {
 
   // Tasks ─────────────────────────────────────────────────────────────────────
 
+  // task_assignees has a composite primary key (task_id, employee_id) - no
+  // single id column - so rows are addressed by that pair, not a row id.
   static Future<List<Map<String, dynamic>>> fetchTeacherTasks(String employeeId) async {
     final res = await client
         .from('task_assignees')
-        .select('id, status, task:tasks(*)')
+        .select('task_id, status, task:tasks(*)')
         .eq('employee_id', employeeId);
     return List<Map<String, dynamic>>.from(res);
   }
 
-  static Future<void> updateTaskAssigneeStatus(String assigneeRowId, String status) async {
+  static Future<void> updateTaskAssigneeStatus(String taskId, String employeeId, String status) async {
     await client.from('task_assignees').update({
       'status': status,
       'status_updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', assigneeRowId);
+    }).eq('task_id', taskId).eq('employee_id', employeeId);
   }
 
   // Notices ───────────────────────────────────────────────────────────────────
