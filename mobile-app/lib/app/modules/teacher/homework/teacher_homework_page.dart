@@ -4,6 +4,7 @@ import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
+import '../../../../core/utils/teacher_classes.dart';
 
 class TeacherHomeworkPage extends StatefulWidget {
   final bool embedded;
@@ -21,9 +22,9 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final profile   = AuthService.to.profile.value ?? {};
-    final className = profile['class_name'] as String?;   // fixed: was class_assigned
-    final hw        = await SupabaseService.fetchHomework(className: className);
+    final profile = AuthService.to.profile.value ?? {};
+    final classes  = teacherClasses(profile);
+    final hw       = await SupabaseService.fetchHomework(classNames: classes);
     if (mounted) setState(() { _list = hw; _loading = false; });
   }
 
@@ -31,6 +32,11 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
     final descCtrl    = TextEditingController();
     final subjectCtrl = TextEditingController();
     DateTime? dueDate;
+    final profile    = AuthService.to.profile.value ?? {};
+    final myClasses  = teacherClasses(profile);
+    String? selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
+        ? profile['class_name'] as String
+        : (myClasses.isNotEmpty ? myClasses.first : null);
 
     showModalBottomSheet(
       context: context,
@@ -70,6 +76,23 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                   IconButton(icon: const Icon(Icons.close_rounded, color: AppColors.textHint), onPressed: () => Navigator.pop(ctx)),
                 ]),
                 const SizedBox(height: 20),
+                if (myClasses.isEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: AppColors.redLight, borderRadius: BorderRadius.circular(10)),
+                    child: const Text(
+                      'No classes are assigned to you yet. Ask admin to set your Subject/Class mapping.',
+                      style: TextStyle(color: AppColors.red, fontSize: 12),
+                    ),
+                  )
+                else
+                  DropdownButtonFormField<String>(
+                    value: selectedClass,
+                    decoration: const InputDecoration(labelText: 'Class', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
+                    items: myClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                    onChanged: (v) => setS(() => selectedClass = v),
+                  ),
+                const SizedBox(height: 14),
                 TextField(
                   controller: subjectCtrl,
                   decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
@@ -114,16 +137,15 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                 const SizedBox(height: 20),
                 GestureDetector(
                   onTap: () async {
-                    if (descCtrl.text.isEmpty || dueDate == null) {
+                    if (descCtrl.text.isEmpty || dueDate == null || selectedClass == null) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Please fill description and due date'),
+                        content: Text('Please select a class and fill description and due date'),
                         behavior: SnackBarBehavior.floating,
                       ));
                       return;
                     }
-                    final profile = AuthService.to.profile.value ?? {};
                     await SupabaseService.createHomework({
-                      'class':       profile['class_name'],   // fixed: was class_assigned
+                      'class':       selectedClass,
                       'subject':     subjectCtrl.text.trim(),
                       'description': descCtrl.text.trim(),
                       'due_date':    DateFormat('yyyy-MM-dd').format(dueDate!),
@@ -192,7 +214,7 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                       ? Border.all(color: AppColors.amber.withOpacity(.3))
                       : null,
                 ),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   Container(
                     width: 5,
                     decoration: BoxDecoration(
@@ -216,13 +238,23 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                         ),
                         const SizedBox(width: 12),
                         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          if ((hw['subject'] ?? '').isNotEmpty)
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 4),
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(color: AppColors.blueLight, borderRadius: BorderRadius.circular(6)),
-                              child: Text(hw['subject'], style: const TextStyle(color: AppColors.blue, fontSize: 11, fontWeight: FontWeight.w700)),
-                            ),
+                          if ((hw['subject'] ?? '').isNotEmpty || (hw['class'] ?? '').isNotEmpty)
+                            Wrap(spacing: 6, runSpacing: 4, children: [
+                              if ((hw['class'] ?? '').isNotEmpty)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(color: AppColors.greenLight, borderRadius: BorderRadius.circular(6)),
+                                  child: Text('Class ${hw['class']}', style: const TextStyle(color: AppColors.green, fontSize: 11, fontWeight: FontWeight.w700)),
+                                ),
+                              if ((hw['subject'] ?? '').isNotEmpty)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(color: AppColors.blueLight, borderRadius: BorderRadius.circular(6)),
+                                  child: Text(hw['subject'], style: const TextStyle(color: AppColors.blue, fontSize: 11, fontWeight: FontWeight.w700)),
+                                ),
+                            ]),
                           Text(hw['description'] ?? '',
                             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.text)),
                           const SizedBox(height: 6),
@@ -243,7 +275,7 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                       ]),
                     ),
                   ),
-                ]),
+                ])),
               ),
             );
           },

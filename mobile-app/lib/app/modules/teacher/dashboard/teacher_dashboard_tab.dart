@@ -17,6 +17,7 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
     with SingleTickerProviderStateMixin {
   int _studentCount    = 0;
   int _pendingHomework = 0;
+  int _pendingTasks    = 0;
   bool _loading = true;
   late AnimationController _animCtrl;
   late Animation<double> _fadeAnim;
@@ -39,6 +40,13 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
     setState(() => _loading = true);
     final profile    = AuthService.to.profile.value ?? {};
     final sectionId  = profile['class_teacher_of_section_id']?.toString();
+    final employeeId = profile['id'] as String?;
+
+    final tasks = employeeId != null
+        ? await SupabaseService.fetchTeacherTasks(employeeId)
+        : <Map<String, dynamic>>[];
+    final pendingTasks = tasks.where((t) => t['status'] != 'Completed').length;
+
     if (sectionId != null && sectionId.isNotEmpty) {
       final className = profile['class_name'] as String? ?? '';
       final students  = await SupabaseService.fetchClassStudents(sectionId);
@@ -50,10 +58,11 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
           final due = DateTime.tryParse(h['due_date'] ?? '');
           return due != null && due.isAfter(now);
         }).length;
+        _pendingTasks = pendingTasks;
         _loading = false;
       });
     } else {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() { _pendingTasks = pendingTasks; _loading = false; });
     }
     _animCtrl.forward(from: 0);
   }
@@ -131,6 +140,12 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                     color: AppColors.purple, bgColor: AppColors.purpleLight,
                     onTap: () => Get.toNamed(Routes.teacherMarks),
                   )),
+                  _AnimEntry(delay: 420, child: StatCard(
+                    label: 'My Tasks', value: '$_pendingTasks',
+                    icon: Icons.task_alt_rounded,
+                    color: AppColors.navy, bgColor: AppColors.blueLight,
+                    onTap: () => Get.toNamed(Routes.teacherTasks),
+                  )),
                 ],
               ),
             ),
@@ -160,6 +175,13 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
               subtitle: 'Update test scores',
               color: AppColors.purple, bg: AppColors.purpleLight,
               onTap: () => Get.toNamed(Routes.teacherMarks),
+            )),
+            const SizedBox(height: 10),
+            _AnimEntry(delay: 640, child: _QuickAction(
+              icon: Icons.task_alt_rounded, label: 'View My Tasks',
+              subtitle: 'Tasks assigned to you by admin',
+              color: AppColors.navy, bg: AppColors.blueLight,
+              onTap: () => Get.toNamed(Routes.teacherTasks),
             )),
           ],
         ),
@@ -294,7 +316,7 @@ class _ShimmerGrid extends StatelessWidget {
     physics: const NeverScrollableScrollPhysics(),
     crossAxisSpacing: 12, mainAxisSpacing: 12,
     childAspectRatio: 1.1,
-    children: List.generate(4, (_) => Shimmer.fromColors(
+    children: List.generate(5, (_) => Shimmer.fromColors(
       baseColor: const Color(0xFFE2E8F0),
       highlightColor: const Color(0xFFF8FAFC),
       child: Container(

@@ -27,9 +27,16 @@ class SupabaseService {
 
   // Homework ──────────────────────────────────────────────────────────────────
 
-  static Future<List<Map<String, dynamic>>> fetchHomework({String? className}) async {
+  // classNames takes precedence when provided (a teacher can teach more than
+  // one class); className stays for backward compatibility with callers that
+  // only need a single class (e.g. a student's own class).
+  static Future<List<Map<String, dynamic>>> fetchHomework({String? className, List<String>? classNames}) async {
     var query = client.from('homework').select();
-    if (className != null) query = query.eq('class', className);
+    if (classNames != null && classNames.isNotEmpty) {
+      query = query.inFilter('class', classNames);
+    } else if (className != null) {
+      query = query.eq('class', className);
+    }
     final res = await query.order('due_date');
     return List<Map<String, dynamic>>.from(res);
   }
@@ -40,11 +47,34 @@ class SupabaseService {
 
   // Exam marks ────────────────────────────────────────────────────────────────
 
-  static Future<List<Map<String, dynamic>>> fetchExams({String? className}) async {
+  // Returns exams in any of classNames UNION exams created by createdBy, so a
+  // subject teacher sees every class they teach, and a class teacher also
+  // sees exams they personally conducted for other classes. Runs as two
+  // simple queries merged client-side rather than one hand-built OR filter
+  // string, since class names can contain spaces/hyphens (e.g. "11th -
+  // Commerce") that would need careful escaping in a raw PostgREST filter.
+  static Future<List<Map<String, dynamic>>> fetchExams({String? className, List<String>? classNames, String? createdBy}) async {
+    if (classNames != null && classNames.isNotEmpty) {
+      final byClass = await client.from('exams').select().inFilter('class', classNames);
+      final merged  = List<Map<String, dynamic>>.from(byClass);
+      if (createdBy != null) {
+        final byCreator = await client.from('exams').select().eq('created_by', createdBy);
+        final seenIds    = merged.map((e) => e['id']).toSet();
+        for (final e in List<Map<String, dynamic>>.from(byCreator)) {
+          if (!seenIds.contains(e['id'])) merged.add(e);
+        }
+      }
+      merged.sort((a, b) => ('${b['date'] ?? ''}').compareTo('${a['date'] ?? ''}'));
+      return merged;
+    }
     var query = client.from('exams').select();
     if (className != null) query = query.eq('class', className);
     final res = await query.order('date', ascending: false);
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<void> createExam(Map<String, dynamic> data) async {
+    await client.from('exams').insert(data);
   }
 
   static Future<List<Map<String, dynamic>>> fetchExamMarks(String examId) async {
@@ -57,6 +87,32 @@ class SupabaseService {
 
   static Future<void> saveMarksBatch(List<Map<String, dynamic>> records) async {
     await client.from('exam_marks').upsert(records);
+  }
+
+  // Same shape as fetchClassStudents, but looks a class up by name instead of
+  // section_id — needed for a subject teacher entering marks/homework for a
+  // class they aren't the class-teacher of (so they have no section_id).
+  static Future<List<Map<String, dynamic>>> fetchClassStudentsByName(String className) async {
+    final res = await client.rpc('get_class_students_by_name', params: {'p_class_name': className});
+    if (res == null) return [];
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
+  // Tasks ─────────────────────────────────────────────────────────────────────
+
+  static Future<List<Map<String, dynamic>>> fetchTeacherTasks(String employeeId) async {
+    final res = await client
+        .from('task_assignees')
+        .select('id, status, task:tasks(*)')
+        .eq('employee_id', employeeId);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<void> updateTaskAssigneeStatus(String assigneeRowId, String status) async {
+    await client.from('task_assignees').update({
+      'status': status,
+      'status_updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', assigneeRowId);
   }
 
   // Notices ───────────────────────────────────────────────────────────────────

@@ -5,6 +5,7 @@ abstract class Routes {
   static const teacherAttend    = '/teacher/attendance';
   static const teacherMarks     = '/teacher/marks';
   static const teacherHomework  = '/teacher/homework';
+  static const teacherTasks     = '/teacher/tasks';
   static const teacherNotices   = '/teacher/notices';
   static const teacherProfile   = '/teacher/profile';
   static const studentHome      = '/student/home';

@@ -468,6 +468,21 @@ function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
           </span>
         </div>
 
+        {/* Per-assignee status — each employee marks their own progress from the mobile app */}
+        {Array.isArray(task.assigneeStatuses) && task.assigneeStatuses.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {task.assigneeStatuses.map(a => {
+              const as = STATUS_STYLES[a.status] || STATUS_STYLES.Pending;
+              return (
+                <span key={a.id}
+                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-semibold ${as.badge}`}>
+                  {a.name}: {a.status}
+                </span>
+              );
+            })}
+          </div>
+        )}
+
         {/* Deadline */}
         <div className={`flex items-center gap-1 text-xs font-semibold mt-auto ${
           overdue ? "text-red-600"

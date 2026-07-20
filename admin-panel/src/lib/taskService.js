@@ -2,7 +2,7 @@ import supabase from "./supabase";
 
 function mapTask(row) {
   const assignees = (row.task_assignees || [])
-    .map(a => ({ id: a.employee?.id, name: a.employee?.name || "" }))
+    .map(a => ({ id: a.employee?.id, name: a.employee?.name || "", status: a.status || "Pending" }))
     .filter(a => a.id);
   return {
     id:              row.id,
@@ -15,6 +15,7 @@ function mapTask(row) {
     createdAt:       row.created_at?.slice(0, 10) || "",
     assignedTo:      assignees.map(a => a.name),
     assigneeIds:     assignees.map(a => a.id),
+    assigneeStatuses:assignees,
     showOnDashboard: row.show_on_dashboard || false,
   };
 }
@@ -22,7 +23,7 @@ function mapTask(row) {
 export async function getTasks() {
   const { data, error } = await supabase
     .from("tasks")
-    .select("*, task_assignees(employee:employees(id, name))")
+    .select("*, task_assignees(status, employee:employees(id, name))")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data || []).map(mapTask);
@@ -76,16 +77,45 @@ export async function updateTask(id, form) {
 
   await supabase.from("tasks").update({ show_on_dashboard: form.showOnDashboard || false }).eq("id", id);
 
-  await supabase.from("task_assignees").delete().eq("task_id", id);
-  const ids = form.assigneeIds || [];
-  if (ids.length) {
+  // Diff assignees instead of delete-all + reinsert, so an assignee who's
+  // unchanged keeps their in-progress status instead of it resetting to
+  // Pending every time the task is edited.
+  const { data: existingRows, error: existErr } = await supabase
+    .from("task_assignees")
+    .select("employee_id")
+    .eq("task_id", id);
+  if (existErr) throw existErr;
+  const existingIds = (existingRows || []).map(r => r.employee_id);
+  const newIds       = form.assigneeIds || [];
+
+  const toRemove = existingIds.filter(eid => !newIds.includes(eid));
+  const toAdd    = newIds.filter(eid => !existingIds.includes(eid));
+
+  if (toRemove.length) {
+    const { error: rErr } = await supabase
+      .from("task_assignees")
+      .delete()
+      .eq("task_id", id)
+      .in("employee_id", toRemove);
+    if (rErr) throw rErr;
+  }
+  if (toAdd.length) {
     const { error: aErr } = await supabase
       .from("task_assignees")
-      .insert(ids.map(eid => ({ task_id: id, employee_id: eid })));
+      .insert(toAdd.map(eid => ({ task_id: id, employee_id: eid })));
     if (aErr) throw aErr;
   }
 
-  return { ...form, id };
+  // Re-fetch so the returned task reflects real assignee status (including
+  // any progress an employee already logged from the mobile app), not just
+  // the form's own fields.
+  const { data: fresh, error: freshErr } = await supabase
+    .from("tasks")
+    .select("*, task_assignees(status, employee:employees(id, name))")
+    .eq("id", id)
+    .single();
+  if (freshErr) throw freshErr;
+  return mapTask(fresh);
 }
 
 export async function deleteTask(id) {
