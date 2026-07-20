@@ -191,6 +191,7 @@ const FIELD_GROUPS = [
     { key:"gender",          label:"Gender",          icon:User,          type:"select", options:GENDERS   },
     { key:"religion",        label:"Religion",        icon:Tag,           type:"select", options:RELIGIONS },
     { key:"caste",           label:"Category/Caste",  icon:Tag,           type:"select", options:CASTES    },
+    { key:"motherTongue",    label:"Mother Tongue",   icon:Tag,           type:"text"   },
   ]},
   { group:"Contact", fields:[
     { key:"roomPlotNo",      label:"Room / Plot No",  icon:MapPin,        type:"text"   },
@@ -324,6 +325,7 @@ function mapFormForUpdate(form) {
     gender:           form.gender,
     religion:         form.religion,
     caste:            form.caste,
+    motherTongue:     form.motherTongue,
     placeOfBirth:     composePlaceOfBirth(form.birthCity, form.birthDistrict, form.birthState) || form.placeOfBirth,
     birthState:       form.birthState,
     birthDistrict:    form.birthDistrict,
