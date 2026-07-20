@@ -284,15 +284,24 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
     }
 
     if (widget.embedded) {
-      return Scaffold(
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: _showAddSheet,
-          backgroundColor: AppColors.navy,
-          icon: const Icon(Icons.add, color: Colors.white),
-          label: const Text('Add', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+      // A nested Scaffold's floatingActionButton can render behind/clipped
+      // by the outer tab shell's custom bottom nav bar (extendBody: true) -
+      // a Stack + Positioned button avoids depending on Scaffold's FAB
+      // docking logic entirely.
+      return Stack(children: [
+        Positioned.fill(child: body),
+        Positioned(
+          // 72 clears the outer tab shell's custom bottom nav bar, which
+          // this embedded page's body renders behind (extendBody: true).
+          right: 16, bottom: 88,
+          child: FloatingActionButton.extended(
+            onPressed: _showAddSheet,
+            backgroundColor: AppColors.navy,
+            icon: const Icon(Icons.add, color: Colors.white),
+            label: const Text('Add', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+          ),
         ),
-        body: body,
-      );
+      ]);
     }
     return Scaffold(
       appBar: AppBar(

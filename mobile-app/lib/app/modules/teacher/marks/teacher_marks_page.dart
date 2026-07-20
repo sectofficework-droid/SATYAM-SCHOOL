@@ -278,7 +278,16 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
         : null;
 
     if (widget.embedded) {
-      return Scaffold(floatingActionButton: fab, body: body);
+      // A nested Scaffold's floatingActionButton can render behind/clipped
+      // by the outer tab shell's custom bottom nav bar (extendBody: true) -
+      // a Stack + Positioned button avoids depending on Scaffold's FAB
+      // docking logic entirely.
+      return Stack(children: [
+        Positioned.fill(child: body),
+        // 88 clears the outer tab shell's custom bottom nav bar, which this
+        // embedded page's body renders behind (extendBody: true).
+        if (fab != null) Positioned(right: 16, bottom: 88, child: fab),
+      ]);
     }
     return Scaffold(
       appBar: AppBar(
