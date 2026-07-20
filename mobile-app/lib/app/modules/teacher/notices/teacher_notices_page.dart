@@ -117,7 +117,7 @@ class _NoticeCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: AppShadows.card,
       ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Container(
           width: 5,
           decoration: BoxDecoration(
@@ -162,7 +162,7 @@ class _NoticeCard extends StatelessWidget {
             ])),
           ]),
         )),
-      ]),
+      ])),
     );
   }
 }
