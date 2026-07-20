@@ -12,7 +12,11 @@ class SupabaseService {
   }
 
   static Future<void> saveAttendanceBatch(List<Map<String, dynamic>> records) async {
-    await client.from('student_attendance').upsert(records);
+    // Records don't carry the row's own id (student_attendance.id), so an
+    // upsert with no onConflict target would try to INSERT every row and
+    // fail on the table's UNIQUE(student_id, date) constraint whenever a
+    // teacher re-saves attendance already marked for that day.
+    await client.from('student_attendance').upsert(records, onConflict: 'student_id,date');
   }
 
   static Future<List<Map<String, dynamic>>> fetchStudentAttendance(String studentId) async {

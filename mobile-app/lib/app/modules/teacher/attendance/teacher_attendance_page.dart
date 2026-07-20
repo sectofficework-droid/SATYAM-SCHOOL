@@ -40,13 +40,13 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
     setState(() => _saving = true);
     final profile   = AuthService.to.profile.value ?? {};
     final teacherId = profile['id'] as String?;
-    final sectionId = profile['class_teacher_of_section_id']?.toString() ?? '';
+    final className = profile['class_name'] as String? ?? '';
     final dateStr   = DateFormat('yyyy-MM-dd').format(_date);
     final records   = _students.map((s) => {
       'student_id': s['id'],
       'date':       dateStr,
       'status':     _status[s['id'] as String] ?? 'P',
-      'section_id': sectionId,
+      'class':      className,
       'marked_by':  teacherId,
     }).toList();
     await SupabaseService.saveAttendanceBatch(records);
