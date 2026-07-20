@@ -19,6 +19,19 @@ class _StudentMarksPageState extends State<StudentMarksPage> {
   @override
   void initState() { super.initState(); _load(); }
 
+  // Marks aren't entered until on/after the exam date - show a clear
+  // "Upcoming" state for such exams instead of an unexplained blank score.
+  bool _isUpcoming(Map<String, dynamic> exam) {
+    final d = exam['date'] as String?;
+    if (d == null || d.isEmpty) return false;
+    final examDate = DateTime.tryParse(d);
+    if (examDate == null) return false;
+    final today    = DateTime.now();
+    final examDay  = DateTime(examDate.year, examDate.month, examDate.day);
+    final todayDay = DateTime(today.year, today.month, today.day);
+    return examDay.isAfter(todayDay);
+  }
+
   Future<void> _load() async {
     final profile   = AuthService.to.profile.value ?? {};
     final className = profile['class_name'] as String? ?? '';
@@ -51,8 +64,9 @@ class _StudentMarksPageState extends State<StudentMarksPage> {
                 separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (_, i) {
                   final m       = _marks[i];
+                  final upcoming = _isUpcoming(m);
                   final max     = (m['max_marks'] as num?)?.toDouble() ?? 100;
-                  final obt     = (m['obtained'] as num?)?.toDouble();
+                  final obt     = upcoming ? null : (m['obtained'] as num?)?.toDouble();
                   final pct     = obt == null ? null : obt / max * 100;
                   final color   = pct == null ? AppColors.textHint
                       : pct >= 75 ? AppColors.green : pct >= 50 ? AppColors.amber : AppColors.red;
@@ -72,8 +86,17 @@ class _StudentMarksPageState extends State<StudentMarksPage> {
                           Expanded(child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(m['name'] ?? '',
-                                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                              Row(children: [
+                                Expanded(child: Text(m['name'] ?? '',
+                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
+                                if (upcoming)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(color: AppColors.amberLight, borderRadius: BorderRadius.circular(6)),
+                                    child: const Text('Upcoming',
+                                      style: TextStyle(color: AppColors.amber, fontSize: 11, fontWeight: FontWeight.w700)),
+                                  ),
+                              ]),
                               Text('${m['subject'] ?? ''} · Max: ${max.toInt()}',
                                 style: const TextStyle(color: AppColors.textLight, fontSize: 12)),
                               if (date != null)
@@ -84,10 +107,15 @@ class _StudentMarksPageState extends State<StudentMarksPage> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Text(obt == null ? '—' : '${obt.toStringAsFixed(0)}',
-                                style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: color)),
-                              Text('/ ${max.toInt()}',
-                                style: const TextStyle(color: AppColors.textLight, fontSize: 12)),
+                              Text(upcoming ? 'Not held' : (obt == null ? '—' : '${obt.toStringAsFixed(0)}'),
+                                style: TextStyle(
+                                  fontSize: upcoming ? 13 : 28,
+                                  fontWeight: FontWeight.w700,
+                                  color: upcoming ? AppColors.textHint : color,
+                                )),
+                              if (!upcoming)
+                                Text('/ ${max.toInt()}',
+                                  style: const TextStyle(color: AppColors.textLight, fontSize: 12)),
                             ],
                           ),
                         ]),

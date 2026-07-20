@@ -22,9 +22,10 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final profile = AuthService.to.profile.value ?? {};
-    final classes  = teacherClasses(profile);
-    final hw       = await SupabaseService.fetchHomework(classNames: classes);
+    // Any teacher can give homework to any class, so show homework across
+    // every class here too - not just whatever this teacher happens to be
+    // mapped to (most teachers never get a subject/class mapping set up).
+    final hw = await SupabaseService.fetchHomework();
     if (mounted) setState(() { _list = hw; _loading = false; });
   }
 
@@ -36,7 +37,7 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
     final myClasses  = teacherClasses(profile);
     String? selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
         ? profile['class_name'] as String
-        : (myClasses.isNotEmpty ? myClasses.first : null);
+        : (myClasses.isNotEmpty ? myClasses.first : allSchoolClasses.first);
 
     showModalBottomSheet(
       context: context,
@@ -76,22 +77,12 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                   IconButton(icon: const Icon(Icons.close_rounded, color: AppColors.textHint), onPressed: () => Navigator.pop(ctx)),
                 ]),
                 const SizedBox(height: 20),
-                if (myClasses.isEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: AppColors.redLight, borderRadius: BorderRadius.circular(10)),
-                    child: const Text(
-                      'No classes are assigned to you yet. Ask admin to set your Subject/Class mapping.',
-                      style: TextStyle(color: AppColors.red, fontSize: 12),
-                    ),
-                  )
-                else
-                  DropdownButtonFormField<String>(
-                    value: selectedClass,
-                    decoration: const InputDecoration(labelText: 'Class', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
-                    items: myClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                    onChanged: (v) => setS(() => selectedClass = v),
-                  ),
+                DropdownButtonFormField<String>(
+                  value: selectedClass,
+                  decoration: const InputDecoration(labelText: 'Class', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
+                  items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                  onChanged: (v) => setS(() => selectedClass = v),
+                ),
                 const SizedBox(height: 14),
                 TextField(
                   controller: subjectCtrl,

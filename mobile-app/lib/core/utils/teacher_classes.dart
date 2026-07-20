@@ -1,7 +1,18 @@
-// Every class a teacher is associated with: the class they're the class
-// teacher of (profile['class_name']) plus every class listed in any of
-// their subject mappings (profile['subject_mappings'], shape
-// [{subject, classes: [...]}], set in the admin panel's Employee form).
+// Every class in the school, in natural (not alphabetical) order - matches
+// the admin panel's CLASSES list. Any teacher can give homework or conduct
+// an exam for any class, so this is the source of truth for those pickers,
+// not profile['subject_mappings'] - most teachers never get a subject/class
+// mapping configured in the admin panel at all, which made class selection
+// look "restricted to my own class" for everyone except a class teacher.
+const List<String> allSchoolClasses = [
+  'JR.KG', 'SR.KG', 'Balvatika',
+  '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th',
+  '11th - Commerce', '12th - Commerce',
+];
+
+// Classes worth defaulting a teacher's picker to first: their own class (if
+// they're a class teacher) plus anything in their subject mappings, if set.
+// The full allSchoolClasses list is always offered too.
 List<String> teacherClasses(Map profile) {
   final classes = <String>{};
 

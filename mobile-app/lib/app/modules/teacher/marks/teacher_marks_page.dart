@@ -27,10 +27,10 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
 
   Future<void> _load() async {
     setState(() { _loading = true; _selExam = null; _students = []; });
-    final profile    = AuthService.to.profile.value ?? {};
-    final classes    = teacherClasses(profile);
-    final employeeId = profile['id'] as String?;
-    final exams      = await SupabaseService.fetchExams(classNames: classes, createdBy: employeeId);
+    // Any teacher can conduct an exam for any class, so show exams across
+    // every class here too - not just whatever this teacher happens to be
+    // mapped to (most teachers never get a subject/class mapping set up).
+    final exams = await SupabaseService.fetchExams();
     if (mounted) setState(() { _exams = exams; _loading = false; });
   }
 
@@ -93,7 +93,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
     final myClasses = teacherClasses(profile);
     String? selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
         ? profile['class_name'] as String
-        : (myClasses.isNotEmpty ? myClasses.first : null);
+        : (myClasses.isNotEmpty ? myClasses.first : allSchoolClasses.first);
     String? selectedSubject;
     DateTime? examDate;
 
@@ -142,22 +142,12 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                     decoration: const InputDecoration(labelText: 'Exam Name (e.g. Unit Test 1)', prefixIcon: Icon(Icons.edit_outlined, color: AppColors.navy, size: 20)),
                   ),
                   const SizedBox(height: 14),
-                  if (myClasses.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(color: AppColors.redLight, borderRadius: BorderRadius.circular(10)),
-                      child: const Text(
-                        'No classes are assigned to you yet. Ask admin to set your Subject/Class mapping.',
-                        style: TextStyle(color: AppColors.red, fontSize: 12),
-                      ),
-                    )
-                  else
-                    DropdownButtonFormField<String>(
-                      value: selectedClass,
-                      decoration: const InputDecoration(labelText: 'Class', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
-                      items: myClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                      onChanged: (v) => setS(() { selectedClass = v; selectedSubject = null; }),
-                    ),
+                  DropdownButtonFormField<String>(
+                    value: selectedClass,
+                    decoration: const InputDecoration(labelText: 'Class', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
+                    items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                    onChanged: (v) => setS(() { selectedClass = v; selectedSubject = null; }),
+                  ),
                   const SizedBox(height: 14),
                   if (subjectOptions.isNotEmpty)
                     DropdownButtonFormField<String>(
