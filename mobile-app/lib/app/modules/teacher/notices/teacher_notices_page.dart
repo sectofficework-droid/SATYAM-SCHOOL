@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/supabase_service.dart';
+import '../../../../core/utils/notice_types.dart';
+import '../../../../common/widgets/notice_type_filter.dart';
 
 class TeacherNoticesPage extends StatefulWidget {
   final bool embedded;
@@ -13,6 +15,7 @@ class TeacherNoticesPage extends StatefulWidget {
 
 class _TeacherNoticesPageState extends State<TeacherNoticesPage> {
   List<Map<String, dynamic>> _notices = [];
+  String _typeFilter = 'All';
   bool _loading = true;
 
   @override
@@ -20,25 +23,34 @@ class _TeacherNoticesPageState extends State<TeacherNoticesPage> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final notices = await SupabaseService.fetchNotices();
+    // A teacher should see notices meant for staff, plus anything meant for
+    // everyone - not notices aimed only at students/parents.
+    final notices = await SupabaseService.fetchNotices(
+      audiences: const ['Everyone', 'All Staff', 'Management'],
+    );
     if (mounted) setState(() { _notices = notices; _loading = false; });
   }
 
+  List<Map<String, dynamic>> get _filtered => _typeFilter == 'All'
+      ? _notices
+      : _notices.where((n) => n['type'] == _typeFilter).toList();
+
   @override
   Widget build(BuildContext context) {
-    Widget body;
+    final filtered = _filtered;
+    Widget listArea;
 
     if (_loading) {
-      body = _buildShimmer();
-    } else if (_notices.isEmpty) {
-      body = _emptyState();
+      listArea = _buildShimmer();
+    } else if (filtered.isEmpty) {
+      listArea = _emptyState();
     } else {
-      body = RefreshIndicator(
+      listArea = RefreshIndicator(
         color: AppColors.navy,
         onRefresh: _load,
         child: ListView.separated(
           padding: const EdgeInsets.all(16),
-          itemCount: _notices.length,
+          itemCount: filtered.length,
           separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (_, i) => TweenAnimationBuilder<double>(
             tween: Tween(begin: 0.0, end: 1.0),
@@ -46,11 +58,22 @@ class _TeacherNoticesPageState extends State<TeacherNoticesPage> {
             curve: Curves.easeOut,
             builder: (_, v, child) => Opacity(opacity: v,
               child: Transform.translate(offset: Offset(0, 20 * (1-v)), child: child)),
-            child: _NoticeCard(notice: _notices[i]),
+            child: _NoticeCard(notice: filtered[i]),
           ),
         ),
       );
     }
+
+    final body = Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+        child: NoticeTypeFilter(
+          selected: _typeFilter,
+          onChanged: (t) => setState(() => _typeFilter = t),
+        ),
+      ),
+      Expanded(child: listArea),
+    ]);
 
     if (widget.embedded) return body;
     return Scaffold(
@@ -91,25 +114,15 @@ class _NoticeCard extends StatelessWidget {
   final Map<String, dynamic> notice;
   const _NoticeCard({required this.notice});
 
-  Color get _color {
-    final t = (notice['type'] ?? '').toString().toLowerCase();
-    if (t.contains('urgent') || t.contains('exam')) return AppColors.red;
-    if (t.contains('event') || t.contains('holiday')) return AppColors.green;
-    return AppColors.blue;
-  }
-
-  Color get _lightColor {
-    final t = (notice['type'] ?? '').toString().toLowerCase();
-    if (t.contains('urgent') || t.contains('exam')) return AppColors.redLight;
-    if (t.contains('event') || t.contains('holiday')) return AppColors.greenLight;
-    return AppColors.blueLight;
-  }
+  Color get _color => noticeTypeColor(notice['type'] as String?);
+  Color get _lightColor => noticeTypeLight(notice['type'] as String?);
 
   @override
   Widget build(BuildContext context) {
-    final date = notice['created_at'] != null
-      ? DateTime.tryParse(notice['created_at'] as String)
-      : null;
+    // posted_date is the date admin set for the notice; created_at (insert
+    // time) is only a fallback for older rows that predate posted_date.
+    final dateStr = (notice['posted_date'] ?? notice['created_at']) as String?;
+    final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
 
     return Container(
       decoration: BoxDecoration(
@@ -145,9 +158,9 @@ class _NoticeCard extends StatelessWidget {
                 ),
               Text(notice['title'] ?? '',
                 style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.text)),
-              if ((notice['message'] ?? '').toString().isNotEmpty) ...[
+              if ((notice['content'] ?? '').toString().isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Text(notice['message'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis,
+                Text(notice['content'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.4)),
               ],
               if (date != null) ...[

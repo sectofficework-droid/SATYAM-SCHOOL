@@ -66,7 +66,10 @@ class _Header extends StatelessWidget {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(24),
-          child: Image.asset('assets/images/school_logo.jpg', fit: BoxFit.cover),
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: Image.asset('assets/images/school_logo.jpg', fit: BoxFit.contain),
+          ),
         ),
       ),
       const SizedBox(height: 18),
@@ -80,18 +83,6 @@ class _Header extends StatelessWidget {
           fontFamily: 'Poppins',
         ),
         textAlign: TextAlign.center,
-      ),
-      const SizedBox(height: 4),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.15),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Text(
-          'School Management App',
-          style: TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'Poppins'),
-        ),
       ),
     ],
   );

@@ -19,7 +19,6 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   late final Animation<double> _logoOpacity;
   late final Animation<Offset>  _nameSlide;
   late final Animation<double>  _nameOpacity;
-  late final Animation<double>  _tagOpacity;
   late final Animation<double>  _dotsOpacity;
   late final Animation<double>  _screenOpacity;
 
@@ -40,10 +39,8 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
         CurvedAnimation(parent: _textCtrl, curve: Curves.easeOutCubic));
     _nameOpacity = Tween(begin: 0.0, end: 1.0).animate(
         CurvedAnimation(parent: _textCtrl, curve: const Interval(0, 0.5, curve: Curves.easeOut)));
-    _tagOpacity  = Tween(begin: 0.0, end: 1.0).animate(
-        CurvedAnimation(parent: _textCtrl, curve: const Interval(0.45, 0.85, curve: Curves.easeOut)));
     _dotsOpacity = Tween(begin: 0.0, end: 1.0).animate(
-        CurvedAnimation(parent: _textCtrl, curve: const Interval(0.75, 1.0, curve: Curves.easeOut)));
+        CurvedAnimation(parent: _textCtrl, curve: const Interval(0.6, 1.0, curve: Curves.easeOut)));
 
     _screenOpacity = Tween(begin: 1.0, end: 0.0).animate(
         CurvedAnimation(parent: _exitCtrl, curve: Curves.easeIn));
@@ -138,9 +135,12 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                               ),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(30),
-                                child: Image.asset(
-                                  'assets/images/school_logo.jpg',
-                                  fit: BoxFit.cover,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(8),
+                                  child: Image.asset(
+                                    'assets/images/school_logo.jpg',
+                                    fit: BoxFit.contain,
+                                  ),
                                 ),
                               ),
                             ),
@@ -186,36 +186,6 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                         ),
                       ),
 
-                      const SizedBox(height: 20),
-
-                      // Tag badge
-                      AnimatedBuilder(
-                        animation: _textCtrl,
-                        builder: (_, __) => FadeTransition(
-                          opacity: _tagOpacity,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(.12),
-                              borderRadius: BorderRadius.circular(30),
-                              border: Border.all(color: Colors.white.withOpacity(.25)),
-                            ),
-                            child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(Icons.school_rounded, color: Colors.white70, size: 15),
-                              SizedBox(width: 7),
-                              Text(
-                                'School Management System',
-                                style: TextStyle(
-                                  color: Colors.white70,
-                                  fontSize: 13,
-                                  letterSpacing: 0.5,
-                                  fontFamily: 'Poppins',
-                                ),
-                              ),
-                            ]),
-                          ),
-                        ),
-                      ),
                     ],
                   ),
                 ),

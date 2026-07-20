@@ -13,11 +13,12 @@ import {
 } from "lucide-react";
 
 // ── Constants ──────────────────────────────────────────────────
-const NOTICE_TYPES = ["Academic", "Event", "Holiday", "Fee", "Circular", "General", "Urgent"];
+const NOTICE_TYPES = ["Academic", "Exam", "Event", "Holiday", "Fee", "Circular", "General", "Urgent"];
 const AUDIENCES    = ["Everyone", "All Students", "All Staff", "Parents", "Management"];
 
 const TYPE_COLOR = {
   Academic:  "bg-blue-100 text-blue-700 border-blue-200",
+  Exam:      "bg-indigo-100 text-indigo-700 border-indigo-200",
   Event:     "bg-pink-100 text-pink-700 border-pink-200",
   Holiday:   "bg-green-100 text-green-700 border-green-200",
   Fee:       "bg-amber-100 text-amber-700 border-amber-200",
@@ -27,7 +28,7 @@ const TYPE_COLOR = {
 };
 
 const TYPE_DOT = {
-  Academic: "bg-blue-400", Event: "bg-pink-400", Holiday: "bg-green-400",
+  Academic: "bg-blue-400", Exam: "bg-indigo-400", Event: "bg-pink-400", Holiday: "bg-green-400",
   Fee: "bg-amber-400", Circular: "bg-purple-400", General: "bg-gray-400", Urgent: "bg-red-500",
 };
 

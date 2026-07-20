@@ -123,9 +123,13 @@ class SupabaseService {
 
   // Notices ───────────────────────────────────────────────────────────────────
 
-  static Future<List<Map<String, dynamic>>> fetchNotices({String? audience}) async {
+  static Future<List<Map<String, dynamic>>> fetchNotices({String? audience, List<String>? audiences}) async {
     var query = client.from('notices').select();
-    if (audience != null) query = query.eq('audience', audience);
+    if (audiences != null && audiences.isNotEmpty) {
+      query = query.inFilter('audience', audiences);
+    } else if (audience != null) {
+      query = query.eq('audience', audience);
+    }
     final res = await query.order('created_at', ascending: false).limit(30);
     return List<Map<String, dynamic>>.from(res);
   }
