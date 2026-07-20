@@ -66,6 +66,16 @@ function nameWithSurname(name, surname) {
   return [name, surname].filter(Boolean).join(" ").trim();
 }
 
+// ── DOB as DD-MM-YYYY ─────────────────────────────────────────────────────────
+function fmtDateDMY(dateStr) {
+  if (!dateStr) return "";
+  const parts = String(dateStr).split("-");
+  if (parts.length !== 3) return "";
+  const [y, m, d] = parts;
+  if (!y || !m || !d) return "";
+  return `${d.padStart(2,"0")}-${m.padStart(2,"0")}-${y}`;
+}
+
 // ── DOB split into Year / Month ("1-Jan") / Date ─────────────────────────────
 const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 function dobParts(dateStr) {
@@ -144,6 +154,7 @@ function decorateStudentForEntry(st) {
   return {
     ...st,
     dobInWords:           dobToWords(st.dob),
+    dobDMY:               fmtDateDMY(st.dob),
     ...dobParts(st.dob),
     religionCaste:        `${st.religion || "-"}${st.caste ? " - " + st.caste : ""}`,
     lastSchoolGrSchool:   `${st.lastSchoolGrNo || "-"} - ${st.lastSchoolName || "-"}`,
@@ -278,6 +289,7 @@ const UDISE_ENTRY_COLUMNS = [
   { key:"fatherNameOnly",    label:"Father's Name" },
   { key:"motherNameOnly",    label:"Mother's Name" },
   { key:"surname",           label:"Surname" },
+  { key:"dobDMY",             label:"Date of Birth" },
   { key:"grNo",               label:"GR No" },
   { key:"roll",               label:"Roll No" },
   { key:"plotNo",             label:"Plot Number" },
