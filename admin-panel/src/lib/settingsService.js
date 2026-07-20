@@ -188,6 +188,25 @@ async function linkClassTeacher(sectionId, teacherId) {
   if (clearErr) throw clearErr;
 
   if (teacherId) {
+    // If this teacher was class teacher of a DIFFERENT section, clear that
+    // section's class_teacher text too — otherwise it keeps showing this
+    // teacher's name in Settings even after they've moved sections, while
+    // the mobile app (which reads the employee-side link) already sees them
+    // as having no section.
+    const { data: existing, error: fetchErr } = await supabase
+      .from("employees")
+      .select("class_teacher_of_section_id")
+      .eq("id", teacherId)
+      .single();
+    if (fetchErr) throw fetchErr;
+    if (existing?.class_teacher_of_section_id && existing.class_teacher_of_section_id !== sectionId) {
+      const { error: staleErr } = await supabase
+        .from("sections")
+        .update({ class_teacher: null })
+        .eq("id", existing.class_teacher_of_section_id);
+      if (staleErr) throw staleErr;
+    }
+
     const { error: linkErr } = await supabase
       .from("employees")
       .update({ class_teacher_of_section_id: sectionId })
