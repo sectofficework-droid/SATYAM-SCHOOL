@@ -15,6 +15,7 @@ Future<void> showRecentNoticesSheet(
   required String userKey,
   required VoidCallback onViewAll,
   ValueChanged<Map<String, dynamic>>? onDismissed,
+  ValueChanged<Map<String, dynamic>>? onItemTap,
 }) {
   return showModalBottomSheet(
     context: context,
@@ -25,6 +26,7 @@ Future<void> showRecentNoticesSheet(
       userKey: userKey,
       onViewAll: onViewAll,
       onDismissed: onDismissed,
+      onItemTap: onItemTap,
     ),
   );
 }
@@ -34,8 +36,9 @@ class _RecentNoticesSheet extends StatefulWidget {
   final String userKey;
   final VoidCallback onViewAll;
   final ValueChanged<Map<String, dynamic>>? onDismissed;
+  final ValueChanged<Map<String, dynamic>>? onItemTap;
   const _RecentNoticesSheet({
-    required this.notices, required this.userKey, required this.onViewAll, this.onDismissed,
+    required this.notices, required this.userKey, required this.onViewAll, this.onDismissed, this.onItemTap,
   });
 
   @override
@@ -110,46 +113,54 @@ class _RecentNoticesSheetState extends State<_RecentNoticesSheet> {
                     final light  = noticeTypeLight(type);
                     final dateStr = (n['posted_date'] ?? n['created_at']) as String?;
                     final date   = dateStr != null ? DateTime.tryParse(dateStr) : null;
+                    final tappable = n['_isTask'] == true && widget.onItemTap != null;
                     return Dismissible(
                       key: ValueKey(n['id'] ?? '${n['title']}_$i'),
                       direction: DismissDirection.horizontal,
                       onDismissed: (_) => _remove(n),
                       background: _swipeBg(Alignment.centerLeft),
                       secondaryBackground: _swipeBg(Alignment.centerRight),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: AppColors.bg,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Container(
-                            width: 8, height: 8,
-                            margin: const EdgeInsets.only(top: 5),
-                            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                      child: GestureDetector(
+                        onTap: tappable ? () { Navigator.pop(context); widget.onItemTap!(n); } : null,
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.bg,
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Row(children: [
-                              if ((type ?? '').isNotEmpty)
-                                Container(
-                                  margin: const EdgeInsets.only(right: 6),
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                                  decoration: BoxDecoration(color: light, borderRadius: BorderRadius.circular(5)),
-                                  child: Text(type!, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
-                                ),
-                              if (date != null)
-                                Text(DateFormat('h:mm a').format(date), style: const TextStyle(color: AppColors.textHint, fontSize: 10)),
-                            ]),
-                            const SizedBox(height: 3),
-                            Text(n['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.text)),
-                            if ((n['content'] ?? '').toString().isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(n['content'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 12, color: AppColors.textLight, height: 1.3)),
-                            ],
-                          ])),
-                        ]),
+                          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Container(
+                              width: 8, height: 8,
+                              margin: const EdgeInsets.only(top: 5),
+                              decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Row(children: [
+                                if ((type ?? '').isNotEmpty)
+                                  Container(
+                                    margin: const EdgeInsets.only(right: 6),
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(color: light, borderRadius: BorderRadius.circular(5)),
+                                    child: Text(type!, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700)),
+                                  ),
+                                if (date != null)
+                                  Text(DateFormat('h:mm a').format(date), style: const TextStyle(color: AppColors.textHint, fontSize: 10)),
+                              ]),
+                              const SizedBox(height: 3),
+                              Text(n['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.text)),
+                              if ((n['content'] ?? '').toString().isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(n['content'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12, color: AppColors.textLight, height: 1.3)),
+                              ],
+                            ])),
+                            if (tappable) const Padding(
+                              padding: EdgeInsets.only(left: 4, top: 5),
+                              child: Icon(Icons.chevron_right_rounded, color: AppColors.textHint, size: 18),
+                            ),
+                          ]),
+                        ),
                       ),
                     );
                   },

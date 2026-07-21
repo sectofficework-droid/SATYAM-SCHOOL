@@ -52,3 +52,24 @@ Future<List<Map<String, dynamic>>> visibleRecentNotices(
   final dismissed = await getDismissedNoticeIds(userKey);
   return recent.where((n) => !dismissed.contains('${n['id']}')).toList();
 }
+
+// Adapts a task_assignees row (as returned by SupabaseService.fetchTeacherTasks
+// - {task_id, status, task: {...}}) into the same shape as a notice, so a
+// newly assigned task can appear in the same notification bell/panel as
+// Notices instead of only being visible on the separate My Tasks screen.
+// "Recent" is judged by the task's own created_at, since task_assignees has
+// no per-assignee assigned-at timestamp of its own to go by.
+Map<String, dynamic> taskAsNoticeItem(Map<String, dynamic> assignment) {
+  final task = Map<String, dynamic>.from(assignment['task'] ?? {});
+  final taskId = assignment['task_id'] ?? task['id'];
+  return {
+    'id': 'task-$taskId',
+    'title': task['title'] ?? '',
+    'content': task['description'] ?? '',
+    'type': 'Task',
+    'posted_date': task['created_at'],
+    'created_at': task['created_at'],
+    '_isTask': true,
+    '_taskId': taskId,
+  };
+}

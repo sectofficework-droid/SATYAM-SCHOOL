@@ -48,10 +48,16 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
     if (employeeId == null) return;
     _userKey = 'teacher_$employeeId';
 
-    final all = await SupabaseService.fetchNotices(
+    // Merge Notices with newly assigned Tasks into one feed - a task
+    // assignment is "something new for this teacher" the same way a notice
+    // is, and previously only showed up on the separate My Tasks screen.
+    final notices = await SupabaseService.fetchNotices(
       audiences: const ['Everyone', 'All Staff', 'Management'],
     );
-    final visible = await visibleRecentNotices(all, _userKey!);
+    final taskAssignments = await SupabaseService.fetchTeacherTasks(employeeId);
+    final combined = [...notices, ...taskAssignments.map(taskAsNoticeItem)];
+
+    final visible = await visibleRecentNotices(combined, _userKey!);
     if (!mounted) return;
     setState(() => _recent = visible);
     if (visible.isEmpty) return;
@@ -68,6 +74,7 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
       userKey: _userKey!,
       onViewAll: () => _setTab(_noticesTabIndex),
       onDismissed: (notice) => setState(() => _recent.removeWhere((n) => n['id'] == notice['id'])),
+      onItemTap: (notice) { if (notice['_isTask'] == true) Get.toNamed(Routes.teacherTasks); },
     );
   }
 

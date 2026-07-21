@@ -16,6 +16,7 @@ Color noticeTypeColor(String? type) {
     case 'Fee':      return AppColors.amber;
     case 'Circular': return AppColors.purple;
     case 'Urgent':   return AppColors.red;
+    case 'Task':     return AppColors.green;
     default:         return AppColors.textLight; // General / unset
   }
 }
@@ -29,6 +30,7 @@ Color noticeTypeLight(String? type) {
     case 'Fee':      return AppColors.amberLight;
     case 'Circular': return AppColors.purpleLight;
     case 'Urgent':   return AppColors.redLight;
+    case 'Task':     return AppColors.greenLight;
     default:         return AppColors.border;
   }
 }
