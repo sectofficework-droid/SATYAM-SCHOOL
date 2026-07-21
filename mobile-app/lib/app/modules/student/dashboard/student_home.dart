@@ -34,6 +34,7 @@ class _StudentHomeState extends State<StudentHome> {
   ];
 
   static const _noticesTabIndex = 4;
+  String? _userKey; // 'student_<studentId>', used for once-a-day popup + swipe dismissals
 
   @override
   void initState() {
@@ -44,18 +45,30 @@ class _StudentHomeState extends State<StudentHome> {
   Future<void> _loadNotifications() async {
     final profile   = AuthService.to.profile.value ?? {};
     final studentId = profile['id'] as String?;
+    if (studentId == null) return;
+    _userKey = 'student_$studentId';
+
     final all = await SupabaseService.fetchNotices(
       audiences: const ['Everyone', 'All Students', 'Parents'],
     );
-    final recent = recentNotices(all);
+    final visible = await visibleRecentNotices(all, _userKey!);
     if (!mounted) return;
-    setState(() => _recent = recent);
+    setState(() => _recent = visible);
+    if (visible.isEmpty) return;
 
-    if (studentId == null || recent.isEmpty) return;
     final shouldShow = await shouldShowNoticePopupToday('notif_popup_shown_student_$studentId');
-    if (shouldShow && mounted) {
-      showRecentNoticesSheet(context, notices: recent, onViewAll: () => _setTab(_noticesTabIndex));
-    }
+    if (shouldShow && mounted) _showNotifications();
+  }
+
+  void _showNotifications() {
+    if (_userKey == null) return;
+    showRecentNoticesSheet(
+      context,
+      notices: _recent,
+      userKey: _userKey!,
+      onViewAll: () => _setTab(_noticesTabIndex),
+      onDismissed: (notice) => setState(() => _recent.removeWhere((n) => n['id'] == notice['id'])),
+    );
   }
 
   void _setTab(int i) {
@@ -89,7 +102,7 @@ class _StudentHomeState extends State<StudentHome> {
                 ])),
                 NotificationBell(
                   count: _recent.length,
-                  onTap: () => _setTab(_noticesTabIndex),
+                  onTap: _showNotifications,
                 ),
                 const SizedBox(width: 14),
                 GestureDetector(

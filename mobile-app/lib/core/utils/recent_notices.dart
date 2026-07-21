@@ -24,3 +24,31 @@ Future<bool> shouldShowNoticePopupToday(String storageKey) async {
   await prefs.setString(storageKey, today);
   return true;
 }
+
+// Swiped-away notices stay dismissed for the rest of the day - the key
+// bakes in today's date, so it naturally "resets" once the notice would
+// have rolled out of the 24h window anyway; no explicit cleanup needed.
+String _dismissedKey(String userKey) =>
+    'dismissed_notices_${userKey}_${DateTime.now().toIso8601String().substring(0, 10)}';
+
+Future<Set<String>> getDismissedNoticeIds(String userKey) async {
+  final prefs = await SharedPreferences.getInstance();
+  return (prefs.getStringList(_dismissedKey(userKey)) ?? const []).toSet();
+}
+
+Future<void> dismissNotice(String userKey, String noticeId) async {
+  final prefs = await SharedPreferences.getInstance();
+  final key = _dismissedKey(userKey);
+  final ids = (prefs.getStringList(key) ?? const []).toSet()..add(noticeId);
+  await prefs.setStringList(key, ids.toList());
+}
+
+// Convenience: recent notices minus whatever's already been swiped away today.
+Future<List<Map<String, dynamic>>> visibleRecentNotices(
+  List<Map<String, dynamic>> notices,
+  String userKey,
+) async {
+  final recent    = recentNotices(notices);
+  final dismissed = await getDismissedNoticeIds(userKey);
+  return recent.where((n) => !dismissed.contains('${n['id']}')).toList();
+}
