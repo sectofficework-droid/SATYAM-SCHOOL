@@ -3,7 +3,11 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
+import '../../../../core/services/supabase_service.dart';
+import '../../../../core/utils/recent_notices.dart';
 import '../../../../common/widgets/s3_image.dart';
+import '../../../../common/widgets/notification_bell.dart';
+import '../../../../common/widgets/recent_notices_sheet.dart';
 import '../../../../app/routes/app_routes.dart';
 import '../attendance/teacher_attendance_page.dart';
 import '../marks/teacher_marks_page.dart';
@@ -19,6 +23,7 @@ class TeacherHome extends StatefulWidget {
 
 class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStateMixin {
   int _tab = 0;
+  List<Map<String, dynamic>> _recent = [];
 
   static const _pages = [
     TeacherDashboardTab(),
@@ -27,6 +32,31 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
     TeacherHomeworkPage(embedded: true),
     TeacherNoticesPage(embedded: true),
   ];
+
+  static const _noticesTabIndex = 4;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadNotifications());
+  }
+
+  Future<void> _loadNotifications() async {
+    final profile    = AuthService.to.profile.value ?? {};
+    final employeeId = profile['id'] as String?;
+    final all = await SupabaseService.fetchNotices(
+      audiences: const ['Everyone', 'All Staff', 'Management'],
+    );
+    final recent = recentNotices(all);
+    if (!mounted) return;
+    setState(() => _recent = recent);
+
+    if (employeeId == null || recent.isEmpty) return;
+    final shouldShow = await shouldShowNoticePopupToday('notif_popup_shown_teacher_$employeeId');
+    if (shouldShow && mounted) {
+      showRecentNoticesSheet(context, notices: recent, onViewAll: () => _setTab(_noticesTabIndex));
+    }
+  }
 
   void _setTab(int i) {
     if (i == _tab) return;
@@ -73,6 +103,11 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
                   ],
                 ),
               ),
+              NotificationBell(
+                count: _recent.length,
+                onTap: () => _setTab(_noticesTabIndex),
+              ),
+              const SizedBox(width: 14),
               GestureDetector(
                 onTap: () => Get.toNamed(Routes.teacherProfile),
                 child: Container(
