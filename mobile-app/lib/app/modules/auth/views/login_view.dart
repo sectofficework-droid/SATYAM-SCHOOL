@@ -74,7 +74,7 @@ class _Header extends StatelessWidget {
       ),
       const SizedBox(height: 18),
       const Text(
-        'Satyam Stars International School',
+        'SATYAM STARS INTERNATIONAL SCHOOL',
         style: TextStyle(
           color: Colors.white,
           fontSize: 17,
