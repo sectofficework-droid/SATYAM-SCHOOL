@@ -2388,21 +2388,33 @@ function ImportStudentsPanel({ onImportDone }) {
 
   function downloadTemplate() {
     // A real .xlsx (not an HTML table wearing an .xls extension, which is
-    // what this used to be) so we can pre-format the long ID-number columns
-    // (UDISE/PEN/APAAR/Aadhar) as Text. That's the actual fix for numbers
-    // silently losing precision: Excel only mangles a cell into a rounded
-    // float if the cell's format is Number/General when the value is typed
-    // in. A cell already formatted as Text stores whatever is typed exactly,
-    // no matter how many digits — including in rows nobody has filled in
-    // yet, which is why this is pre-applied down to row 1000, not just the
-    // example row.
+    // what this used to be) so we can pre-format two categories of column as
+    // Text, each fixing a different silent-corruption mode:
+    //
+    // - Long ID numbers (UDISE/PEN/APAAR/Aadhar): Excel only rounds a value
+    //   into a lossy float if the cell's format is Number/General when it's
+    //   typed in. A cell already formatted as Text stores exactly what's
+    //   typed, no matter how many digits.
+    //
+    // - Dates (Date of Birth, Date of Joining, Birth Cert Reg Date): if
+    //   Excel is allowed to auto-convert a typed date into its own Date
+    //   type, it resolves DD-MM vs MM-DD ambiguity using whichever regional
+    //   format that PC's Excel happens to be set to - "01/07/2022" becomes
+    //   1-Jul or 7-Jan depending on locale, silently, with no way for us to
+    //   tell afterwards which one was meant. Keeping these columns as Text
+    //   stops Excel from interpreting the date at all, so our own import
+    //   parser (which always reads DD-MM-YYYY, unambiguously) is the only
+    //   thing that ever decides what the date means.
+    //
+    // Both are pre-applied down to row 1000, not just the example row, so
+    // this protects every row a school actually fills in.
     const headerRow = IMPORT_FIELDS.map(f => f.label);
     const reqRow     = IMPORT_FIELDS.map(f => f.required ? "Required *" : "Optional");
     const ws = XLSX.utils.aoa_to_sheet([headerRow, reqRow, EXAMPLE_ROW]);
 
     const TOTAL_ROWS = 1000;
     IMPORT_FIELDS.forEach((f, colIdx) => {
-      if (!LONG_ID_KEYS.has(f.key)) return;
+      if (!LONG_ID_KEYS.has(f.key) && !DATE_IMPORT_KEYS.has(f.key)) return;
       for (let r = 2; r < TOTAL_ROWS; r++) {
         const addr = XLSX.utils.encode_cell({ r, c: colIdx });
         if (ws[addr]) ws[addr].z = "@";
