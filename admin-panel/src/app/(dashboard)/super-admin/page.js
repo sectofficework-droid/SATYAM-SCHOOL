@@ -2387,30 +2387,34 @@ function ImportStudentsPanel({ onImportDone }) {
   }
 
   function downloadTemplate() {
-    // Build a styled HTML table — Excel opens HTML-format XLS and preserves inline styles
-    const td = (text, bg, color, bold) =>
-      `<td style="background:${bg};color:${color};font-weight:${bold?"bold":"normal"};font-family:Arial;font-size:11px;padding:4px 8px;border:1px solid #ccc;white-space:nowrap;">${text}</td>`;
+    // A real .xlsx (not an HTML table wearing an .xls extension, which is
+    // what this used to be) so we can pre-format the long ID-number columns
+    // (UDISE/PEN/APAAR/Aadhar) as Text. That's the actual fix for numbers
+    // silently losing precision: Excel only mangles a cell into a rounded
+    // float if the cell's format is Number/General when the value is typed
+    // in. A cell already formatted as Text stores whatever is typed exactly,
+    // no matter how many digits — including in rows nobody has filled in
+    // yet, which is why this is pre-applied down to row 1000, not just the
+    // example row.
+    const headerRow = IMPORT_FIELDS.map(f => f.label);
+    const reqRow     = IMPORT_FIELDS.map(f => f.required ? "Required *" : "Optional");
+    const ws = XLSX.utils.aoa_to_sheet([headerRow, reqRow, EXAMPLE_ROW]);
 
-    let rows = "";
-    // Row 1 — column headers (red = required, blue = optional)
-    rows += "<tr>" + IMPORT_FIELDS.map(f =>
-      td(f.label, f.required ? "#C0392B" : "#2471A3", "#FFFFFF", true)
-    ).join("") + "</tr>";
-    // Row 2 — required / optional label
-    rows += "<tr>" + IMPORT_FIELDS.map(f =>
-      td(f.required ? "Required *" : "Optional", f.required ? "#FADBD8" : "#D6EAF8", f.required ? "#922B21" : "#1A5276", true)
-    ).join("") + "</tr>";
-    // Row 3 — example data
-    rows += "<tr>" + EXAMPLE_ROW.map(v =>
-      td(v, "#FEFCE8", "#333333", false)
-    ).join("") + "</tr>";
+    const TOTAL_ROWS = 1000;
+    IMPORT_FIELDS.forEach((f, colIdx) => {
+      if (!LONG_ID_KEYS.has(f.key)) return;
+      for (let r = 2; r < TOTAL_ROWS; r++) {
+        const addr = XLSX.utils.encode_cell({ r, c: colIdx });
+        if (ws[addr]) ws[addr].z = "@";
+        else ws[addr] = { t: "s", v: "", z: "@" };
+      }
+    });
+    ws["!ref"]  = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: TOTAL_ROWS - 1, c: IMPORT_FIELDS.length - 1 } });
+    ws["!cols"] = IMPORT_FIELDS.map(() => ({ wch: 18 }));
 
-    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="UTF-8"/></head><body><table>${rows}</table></body></html>`;
-    const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href = url; a.download = "Student_Import_Template.xls"; a.click();
-    URL.revokeObjectURL(url);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Students");
+    XLSX.writeFile(wb, "Student_Import_Template.xlsx");
   }
 
   function handleFile(e) {
