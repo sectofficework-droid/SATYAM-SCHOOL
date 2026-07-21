@@ -114,6 +114,15 @@ const IMPORT_FIELDS = [
 
 const DATE_IMPORT_KEYS = new Set(["joinDate", "dob", "birthCertRegDate"]);
 
+// ID-number fields that can be long enough (student UDISE/PEN in particular
+// run to 18 digits) to exceed what a 64-bit float can represent exactly
+// (~15-17 significant digits). If Excel stored the cell as a Number rather
+// than Text, the trailing digits are already silently rounded to zero by
+// the time the file is read — e.g. "242215015482421573" becomes
+// "242215015482420000" — and there is no way to recover the true digits
+// from the file after that; the fix is to re-enter the value as Text.
+const LONG_ID_KEYS = new Set(["udise", "pen", "apaar", "aadharNo", "fatherAadhar", "motherAadhar"]);
+
 // Converts any common date format to YYYY-MM-DD for the database.
 // Handles: JS Date objects, DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, Excel serials, YYYY-MM-DD (passthrough).
 // Returns null (never a garbage string) when the value can't be parsed, so a bad
@@ -2436,6 +2445,15 @@ function ImportStudentsPanel({ onImportDone }) {
               s["_raw_" + f.key]    = raw instanceof Date ? raw.toDateString() : String(raw).trim();
             } else {
               s[f.key] = raw instanceof Date ? normalizeDate(raw) || "" : String(raw).trim();
+            }
+            if (LONG_ID_KEYS.has(f.key) && typeof raw === "number") {
+              const digits = String(Math.trunc(Math.abs(raw))).length;
+              if (digits >= 16) {
+                s._errors.push(
+                  `${f.label} "${s[f.key]}" was stored as a Number in Excel and may have lost precision ` +
+                  `(long ID numbers must be entered as Text) — re-enter this cell as Text and verify the value`
+                );
+              }
             }
           });
           if (s.cls)      s.cls      = normalizeAgainstList(s.cls, CLASSES);
