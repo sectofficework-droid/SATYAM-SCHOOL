@@ -31,6 +31,32 @@ const STATUS_STYLES = {
   "Overdue":     { badge:"bg-red-100 text-red-700",       Icon: AlertCircle   },
 };
 
+const STATUS_RANK = { "Pending": 0, "In Progress": 1, "Completed": 2 };
+
+// What assignees have actually done, from their own mobile-app updates —
+// null if there are no assignees (or none of them have any status yet) to
+// roll up, in which case the task's own manually-set status is all there is.
+function rollupFromAssignees(task) {
+  const list = task.assigneeStatuses || [];
+  if (!list.length) return null;
+  if (list.every(a => a.status === "Completed")) return "Completed";
+  if (list.some(a => a.status === "In Progress" || a.status === "Completed")) return "In Progress";
+  return "Pending";
+}
+
+// The status actually shown/used everywhere in this page: whichever is
+// further along between the task's own admin-set status and what its
+// assignees have reported from the mobile app, so starting or completing a
+// task from a teacher's phone shows up here immediately without the admin
+// having to separately click "Mark as..." to match it. Admin can still push
+// status further forward manually (e.g. force-complete a task with no
+// assignees, or before anyone's started) — that direction still works.
+function displayStatus(task) {
+  const roll = rollupFromAssignees(task);
+  if (!roll) return task.status;
+  return STATUS_RANK[roll] > STATUS_RANK[task.status] ? roll : task.status;
+}
+
 // ── Helpers ────────────────────────────────────────────────────
 function isOverdue(task) {
   if (task.status === "Completed") return false;
@@ -403,14 +429,17 @@ function TaskModal({ task, employees, onClose, onSave }) {
 
 // ── Task Card ──────────────────────────────────────────────────
 function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
-  const overdue         = isOverdue(task);
-  const effectiveStatus = overdue ? "Overdue" : task.status;
+  // Whichever is further along between the admin's own status and what
+  // assignees have reported from the mobile app — see displayStatus().
+  const status           = displayStatus(task);
+  const overdue          = isOverdue({ ...task, status });
+  const effectiveStatus  = overdue ? "Overdue" : status;
   const ps              = PRIORITY_STYLES[task.priority] || PRIORITY_STYLES.Medium;
   const ss              = STATUS_STYLES[effectiveStatus]  || STATUS_STYLES.Pending;
   const { Icon: SIcon } = ss;
   const days            = daysLeft(task.deadline);
-  const nextStatus      = task.status === "Pending" ? "In Progress"
-                        : task.status === "In Progress" ? "Completed"
+  const nextStatus      = status === "Pending" ? "In Progress"
+                        : status === "In Progress" ? "Completed"
                         : null;
   const assignees       = Array.isArray(task.assignedTo) ? task.assignedTo : [task.assignedTo];
 
@@ -497,7 +526,7 @@ function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
         </div>
 
         {/* Progress button */}
-        {task.status !== "Completed" && nextStatus && (
+        {status !== "Completed" && nextStatus && (
           <button onClick={() => onStatusChange(task.id, nextStatus)}
             className={`w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold transition-all border ${
               nextStatus === "In Progress"
@@ -507,7 +536,7 @@ function TaskCard({ task, onEdit, onDelete, onStatusChange }) {
             <ArrowRight className="w-3.5 h-3.5"/> Mark as {nextStatus}
           </button>
         )}
-        {task.status === "Completed" && (
+        {status === "Completed" && (
           <div className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold text-green-700 bg-green-50 border border-green-200">
             <CheckCheck className="w-3.5 h-3.5"/> Completed
           </div>
@@ -544,16 +573,21 @@ export default function TasksPage() {
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
-  const stats = useMemo(() => ({
-    total:      tasks.length,
-    pending:    tasks.filter(t => t.status === "Pending"     && !isOverdue(t)).length,
-    inProgress: tasks.filter(t => t.status === "In Progress" && !isOverdue(t)).length,
-    completed:  tasks.filter(t => t.status === "Completed").length,
-    overdue:    tasks.filter(t => isOverdue(t)).length,
-  }), [tasks]);
+  const stats = useMemo(() => {
+    const withDisplay = tasks.map(t => ({ t, status: displayStatus(t) }));
+    const withOverdue = withDisplay.map(({ t, status }) => ({ t, status, overdue: isOverdue({ ...t, status }) }));
+    return {
+      total:      tasks.length,
+      pending:    withOverdue.filter(x => x.status === "Pending"     && !x.overdue).length,
+      inProgress: withOverdue.filter(x => x.status === "In Progress" && !x.overdue).length,
+      completed:  withOverdue.filter(x => x.status === "Completed").length,
+      overdue:    withOverdue.filter(x => x.overdue).length,
+    };
+  }, [tasks]);
 
   const filtered = useMemo(() => tasks.filter(t => {
-    const eff       = isOverdue(t) ? "Overdue" : t.status;
+    const status    = displayStatus(t);
+    const eff       = isOverdue({ ...t, status }) ? "Overdue" : status;
     const assignees = Array.isArray(t.assignedTo) ? t.assignedTo : [t.assignedTo];
     if (statusF   !== "All" && eff !== statusF)                 return false;
     if (priorityF !== "All" && t.priority !== priorityF)        return false;
