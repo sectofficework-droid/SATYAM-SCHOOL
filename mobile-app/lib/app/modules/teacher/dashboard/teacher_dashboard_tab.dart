@@ -110,11 +110,11 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
             else FadeTransition(
               opacity: _fadeAnim,
               child: GridView.count(
-                crossAxisCount: 2,
+                crossAxisCount: 3,
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 crossAxisSpacing: 12, mainAxisSpacing: 12,
-                childAspectRatio: 1.1,
+                childAspectRatio: 0.92,
                 children: [
                   _AnimEntry(delay: 100, child: StatCard(
                     label: 'My Students', value: '$_studentCount',
@@ -149,40 +149,6 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                 ],
               ),
             ),
-
-            const SizedBox(height: 24),
-
-            _AnimEntry(delay: 400, child: const Text('Quick Actions',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
-            const SizedBox(height: 12),
-
-            _AnimEntry(delay: 460, child: _QuickAction(
-              icon: Icons.fact_check_rounded, label: 'Mark Today\'s Attendance',
-              subtitle: 'Track who\'s present today',
-              color: AppColors.green, bg: AppColors.greenLight,
-              onTap: () => Get.toNamed(Routes.teacherAttend),
-            )),
-            const SizedBox(height: 10),
-            _AnimEntry(delay: 520, child: _QuickAction(
-              icon: Icons.add_task_rounded, label: 'Assign Homework',
-              subtitle: 'Give tasks to your class',
-              color: AppColors.amber, bg: AppColors.amberLight,
-              onTap: () => Get.toNamed(Routes.teacherHomework),
-            )),
-            const SizedBox(height: 10),
-            _AnimEntry(delay: 580, child: _QuickAction(
-              icon: Icons.grading_rounded, label: 'Enter Exam Marks',
-              subtitle: 'Update test scores',
-              color: AppColors.purple, bg: AppColors.purpleLight,
-              onTap: () => Get.toNamed(Routes.teacherMarks),
-            )),
-            const SizedBox(height: 10),
-            _AnimEntry(delay: 640, child: _QuickAction(
-              icon: Icons.task_alt_rounded, label: 'View My Tasks',
-              subtitle: 'Tasks assigned to you by admin',
-              color: AppColors.navy, bg: AppColors.blueLight,
-              onTap: () => Get.toNamed(Routes.teacherTasks),
-            )),
           ],
         ),
       ),
@@ -255,67 +221,14 @@ class _GreetingBanner extends StatelessWidget {
   );
 }
 
-class _QuickAction extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String subtitle;
-  final Color color;
-  final Color bg;
-  final VoidCallback onTap;
-
-  const _QuickAction({
-    required this.icon, required this.label, required this.subtitle,
-    required this.color, required this.bg, required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.card,
-      ),
-      child: Row(children: [
-        Container(
-          width: 46, height: 46,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [color, color.withOpacity(.7)],
-              begin: Alignment.topLeft, end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(13),
-          ),
-          child: Icon(icon, color: Colors.white, size: 22),
-        ),
-        const SizedBox(width: 14),
-        Expanded(child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.text)),
-            Text(subtitle, style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
-          ],
-        )),
-        Container(
-          width: 28, height: 28,
-          decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
-          child: Icon(Icons.arrow_forward_ios_rounded, color: color, size: 13),
-        ),
-      ]),
-    ),
-  );
-}
-
 class _ShimmerGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GridView.count(
-    crossAxisCount: 2,
+    crossAxisCount: 3,
     shrinkWrap: true,
     physics: const NeverScrollableScrollPhysics(),
     crossAxisSpacing: 12, mainAxisSpacing: 12,
-    childAspectRatio: 1.1,
+    childAspectRatio: 0.92,
     children: List.generate(5, (_) => Shimmer.fromColors(
       baseColor: const Color(0xFFE2E8F0),
       highlightColor: const Color(0xFFF8FAFC),
