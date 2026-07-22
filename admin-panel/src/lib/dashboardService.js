@@ -39,6 +39,29 @@ export async function getDashboardStats(selectedDate) {
   };
 }
 
+// Student attendance is marked from the teacher app (student_attendance:
+// student_id, date, status, class) - grouped by class for the given date so
+// the dashboard can show a Present/Absent bar per class, same shape as the
+// Employee Attendance chart.
+export async function getStudentAttendanceSummary(date) {
+  const { data, error } = await supabase
+    .from("student_attendance")
+    .select("class, status")
+    .eq("date", date);
+  if (error || !data?.length) return { grouped: {}, total: 0 };
+
+  const grouped = {};
+  for (const row of data) {
+    const cls = row.class || "Unknown";
+    if (!grouped[cls]) grouped[cls] = { Present: 0, Absent: 0, Leave: 0, count: 0 };
+    grouped[cls].count += 1;
+    if (row.status === "P") grouped[cls].Present += 1;
+    else if (row.status === "A") grouped[cls].Absent += 1;
+    else if (row.status === "L") grouped[cls].Leave += 1;
+  }
+  return { grouped, total: data.length };
+}
+
 export async function getRecentNotices(limit = 4) {
   const { data, error } = await supabase
     .from("notices")

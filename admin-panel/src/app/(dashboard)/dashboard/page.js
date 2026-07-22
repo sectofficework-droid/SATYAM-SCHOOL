@@ -10,7 +10,7 @@ import {
   Bell, ArrowUpRight, Package, AlertCircle, Calendar,
   Activity, ClipboardList,
 } from "lucide-react";
-import { getDashboardStats, getRecentNotices, getInventoryAlerts, getRecentActivities } from "@/lib/dashboardService";
+import { getDashboardStats, getRecentNotices, getInventoryAlerts, getRecentActivities, getStudentAttendanceSummary } from "@/lib/dashboardService";
 import { getDashboardTasks } from "@/lib/taskService";
 import useStore from "@/lib/store";
 import DateInputDMY from "@/components/DateInputDMY";
@@ -34,6 +34,23 @@ function buildEmpChartData(grouped) {
       day:     EMP_TYPE_LABEL[k] || k,
       Present: grouped[k].count > 0 ? Math.round(grouped[k].Present / grouped[k].count) : 0,
       Absent:  grouped[k].count > 0 ? Math.round(grouped[k].Absent  / grouped[k].count) : 0,
+    }));
+}
+
+const CLASS_ORDER = [
+  "JR KG", "SR KG", "Balvatika",
+  "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th",
+  "11th Commerce", "12th Commerce",
+];
+
+function buildStudentChartData(grouped) {
+  const keys = [...new Set([...CLASS_ORDER, ...Object.keys(grouped)])];
+  return keys
+    .filter(k => grouped[k])
+    .map(k => ({
+      day:     k,
+      Present: grouped[k].Present,
+      Absent:  grouped[k].Absent,
     }));
 }
 
@@ -114,6 +131,7 @@ export default function DashboardPage() {
   const [dbPinnedTasks,      setDbPinnedTasks]      = useState([]);
   const [dbInventoryAlerts,  setDbInventoryAlerts]  = useState(null);
   const [dbRecentActivities, setDbRecentActivities] = useState(null);
+  const [dbStudentAttendance, setDbStudentAttendance] = useState(null);
 
   useEffect(() => {
     getDashboardStats().then(s => {
@@ -127,6 +145,13 @@ export default function DashboardPage() {
     getInventoryAlerts().then(setDbInventoryAlerts).catch(() => {});
     getRecentActivities().then(setDbRecentActivities).catch(() => {});
   }, []);
+
+  // Re-fetched whenever the date picker changes, same as the fee/expense
+  // "for this date" figures below.
+  useEffect(() => {
+    setDbStudentAttendance(null);
+    getStudentAttendanceSummary(selectedDate).then(setDbStudentAttendance).catch(() => {});
+  }, [selectedDate]);
 
   const isToday   = selectedDate === todayStr;
   const dateLabel = isToday ? "Today" : formatDateLabel(selectedDate);
@@ -142,6 +167,11 @@ export default function DashboardPage() {
   const empChartData = useMemo(
     () => attendanceSummary?.grouped ? buildEmpChartData(attendanceSummary.grouped) : [],
     [attendanceSummary]
+  );
+
+  const studentChartData = useMemo(
+    () => dbStudentAttendance?.grouped ? buildStudentChartData(dbStudentAttendance.grouped) : [],
+    [dbStudentAttendance]
   );
 
   return (
@@ -338,22 +368,38 @@ export default function DashboardPage() {
       {/* ── Attendance Graphs ── */}
       <div className="grid lg:grid-cols-2 gap-4">
 
-        {/* Student Attendance — Coming Soon */}
+        {/* Student Attendance — marked from the teacher app, grouped by class for the selected date */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
           <div className="flex items-center px-5 py-4 border-b border-gray-100 gap-2">
             <GraduationCap className="w-4 h-4 text-school-navy" />
             <h3 className="font-semibold text-gray-800 text-sm">Student Attendance</h3>
-            <span className="ml-auto text-xs bg-amber-100 text-amber-700 font-semibold px-2.5 py-1 rounded-lg">Coming Soon</span>
+            <span className="ml-auto text-xs text-gray-500 bg-gray-100 px-2.5 py-1 rounded-lg">{dateLabel}</span>
           </div>
-          <div className="flex flex-col items-center justify-center gap-3 p-8" style={{ height: 260 }}>
-            <div className="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center">
-              <GraduationCap className="w-7 h-7 text-amber-400" />
+          {studentChartData.length > 0 ? (
+            <div className="p-4" style={{ height: 260 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={studentChartData} barGap={4}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="day" tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} allowDecimals={false} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+                  <Bar dataKey="Present" fill="#34d399" radius={[4, 4, 0, 0]} maxBarSize={28} />
+                  <Bar dataKey="Absent"  fill="#f87171" radius={[4, 4, 0, 0]} maxBarSize={28} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-            <p className="text-sm font-semibold text-gray-600">Student Attendance Module</p>
-            <p className="text-xs text-gray-400 text-center max-w-xs">
-              Daily student attendance tracking will be available once the attendance module is set up.
-            </p>
-          </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center gap-3 p-8" style={{ height: 260 }}>
+              <div className="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center">
+                <GraduationCap className="w-7 h-7 text-amber-400" />
+              </div>
+              <p className="text-sm font-semibold text-gray-600">No Attendance Marked</p>
+              <p className="text-xs text-gray-400 text-center max-w-xs">
+                No teacher has marked student attendance for {dateLabel.toLowerCase() === "today" ? "today" : dateLabel} yet.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Employee Attendance */}

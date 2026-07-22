@@ -43,6 +43,21 @@ function fmtAddr(s) {
   return [s.roomPlotNo, s.address].filter(Boolean).join(", ") || "";
 }
 
+// Bonafide Certificate uses the same navy/gold brand colors as the "Satyam
+// Classic" ID card design, so the two document types read as one family
+// rather than each looking like a different app.
+const BONAFIDE_COLOR = { hdr: "#1a2b6b", acc: "#f97316", gld: "#f59e0b" };
+
+function pronouns(gender) {
+  const g = (gender || "").trim().toLowerCase();
+  if (g.startsWith("f")) return { title: "Ms.", parentTitle: "Mrs.", child: "Daughter", poss: "Her", subj: "She" };
+  return { title: "Mr.", parentTitle: "Mr.", child: "Son", poss: "His", subj: "He" };
+}
+
+function fmtIssueDate(d = new Date()) {
+  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" });
+}
+
 // ── Fetch image as base64 via blob (avoids CORS canvas issues) ────────────────
 async function fetchBase64(url) {
   if (!url) return null;
@@ -303,6 +318,183 @@ async function generatePDF(students, design, onProgress) {
   doc.save("ID_Cards_Satyam_Stars.pdf");
 }
 
+// ── Bonafide Certificate: jsPDF drawing (one full A4 page per student) ────────
+function drawBonafideCert(doc, s, logoB64) {
+  const PW = 210, PH = 297; // A4 mm
+  const [hr, hg, hb] = rgb(BONAFIDE_COLOR.hdr);
+  const [ar, ag, ab] = rgb(BONAFIDE_COLOR.acc);
+  const [gr, gg, gb] = rgb(BONAFIDE_COLOR.gld);
+  const p = pronouns(s.gender);
+
+  // Outer decorative border
+  doc.setDrawColor(hr, hg, hb);
+  doc.setLineWidth(1.2);
+  doc.rect(8, 8, PW - 16, PH - 16, "S");
+  doc.setDrawColor(gr, gg, gb);
+  doc.setLineWidth(0.4);
+  doc.rect(11, 11, PW - 22, PH - 22, "S");
+
+  // Header band
+  doc.setFillColor(hr, hg, hb);
+  doc.rect(11, 11, PW - 22, 34, "F");
+  if (logoB64) {
+    doc.setFillColor(255, 255, 255);
+    doc.circle(30, 28, 12, "F");
+    try { doc.addImage(logoB64, "JPEG", 20, 18, 20, 20); } catch {}
+  }
+  doc.setFontSize(6.5);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(220, 220, 220);
+  doc.text(TRUST, 48, 21);
+  doc.setFontSize(19);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(255, 255, 255);
+  doc.text("SATYAM STARS", 48, 30);
+  doc.setFontSize(12);
+  doc.setTextColor(gr, gg, gb);
+  doc.text("INTERNATIONAL SCHOOL", 48, 37);
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(255, 255, 255);
+  doc.text(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, PW - 15, 40, { align: "right" });
+
+  // Title
+  doc.setFontSize(20);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(hr, hg, hb);
+  doc.text("BONAFIDE CERTIFICATE", PW / 2, 62, { align: "center" });
+  doc.setDrawColor(gr, gg, gb);
+  doc.setLineWidth(0.6);
+  doc.line(PW / 2 - 38, 66, PW / 2 + 38, 66);
+
+  // Date of issue
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Date: ${fmtIssueDate()}`, PW - 20, 78, { align: "right" });
+
+  // Body paragraph
+  const cls = (s.std || "—") + (s.section ? " - " + s.section : "");
+  const session = s.session || "2025-26";
+  const body =
+    `This is to certify that ${p.title} ${(s.name || "").toUpperCase()}, ${p.child} of ` +
+    `${p.parentTitle} ${(s.fatherName || "—").toUpperCase()}, bearing Enrollment No. ${s.enrollment || "—"}, ` +
+    `is a bonafide student of SATYAM STARS INTERNATIONAL SCHOOL, studying in Class ${cls} ` +
+    `during the academic session ${session}.\n\n` +
+    `As per our school records, ${p.poss.toLowerCase()} Date of Birth is ${fmtDMY(s.dob) || "—"}.\n\n` +
+    `This certificate is issued upon request, for whatever purpose it may serve.`;
+
+  doc.setFontSize(12);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(30, 41, 59);
+  const lines = doc.splitTextToSize(body, PW - 50);
+  doc.text(lines, 25, 95, { lineHeightFactor: 1.9 });
+
+  // Signature block
+  const sigY = PH - 55;
+  doc.setDrawColor(ar, ag, ab);
+  doc.setFillColor(ar, ag, ab);
+  doc.circle(PW - 40, sigY - 4, 12, "F");
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(255, 255, 255);
+  doc.text("SCHOOL\nSEAL", PW - 40, sigY - 6, { align: "center", lineHeightFactor: 1.2 });
+  doc.setDrawColor(148, 163, 184);
+  doc.setLineWidth(0.3);
+  doc.line(PW - 65, sigY + 14, PW - 20, sigY + 14);
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(hr, hg, hb);
+  doc.text("PRINCIPAL", PW - 42.5, sigY + 20, { align: "center" });
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(100, 116, 139);
+  doc.text("Satyam Stars International School", PW - 42.5, sigY + 25, { align: "center" });
+
+  // Footer band
+  doc.setFillColor(hr, hg, hb);
+  doc.rect(11, PH - 24, PW - 22, 13, "F");
+  doc.setFontSize(7.5);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(255, 255, 255);
+  doc.text(`${ADDR1}, ${ADDR2}`, PW / 2, PH - 18.5, { align: "center" });
+  doc.text(`Phone: ${PHONE}`, PW / 2, PH - 14, { align: "center" });
+}
+
+async function generateBonafidePDF(students, onProgress) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const logoUrl = window.location.origin + "/school-logo.jpg";
+  const logoB64 = await fetchBase64(logoUrl);
+
+  for (let i = 0; i < students.length; i++) {
+    onProgress && onProgress(i + 1, students.length);
+    if (i > 0) doc.addPage();
+    drawBonafideCert(doc, students[i], logoB64);
+  }
+  doc.save("Bonafide_Certificates_Satyam_Stars.pdf");
+}
+
+// ── Bonafide Certificate: live preview (React, matches jsPDF output) ──────────
+function BonafidePreview({ student, logoUrl }) {
+  const s = student || {};
+  const p = pronouns(s.gender);
+  const cls = (s.std || "—") + (s.section ? " - " + s.section : "");
+  const session = s.session || "2025-26";
+  const { hdr, acc, gld } = BONAFIDE_COLOR;
+
+  return (
+    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", position: "relative", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", border: `2px solid ${hdr}`, flexShrink: 0 }}>
+      <div style={{ position: "absolute", inset: 6, border: `1px solid ${gld}` }} />
+
+      {/* Header */}
+      <div style={{ position: "absolute", top: 10, left: 10, right: 10, height: 46, background: hdr, display: "flex", alignItems: "center", padding: "0 10px", gap: 8 }}>
+        <div style={{ width: 34, height: 34, borderRadius: "50%", background: "white", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => e.target.style.display = "none"} /> : <span style={{ color: hdr, fontWeight: 900 }}>S</span>}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 5.5 }}>{TRUST}</div>
+          <div style={{ color: "white", fontSize: 13, fontWeight: 900, lineHeight: 1.1 }}>SATYAM STARS</div>
+          <div style={{ color: gld, fontSize: 8, fontWeight: 800 }}>INTERNATIONAL SCHOOL</div>
+        </div>
+      </div>
+
+      {/* Title */}
+      <div style={{ position: "absolute", top: 66, left: 0, right: 0, textAlign: "center" }}>
+        <div style={{ color: hdr, fontSize: 14, fontWeight: 900, letterSpacing: 1 }}>BONAFIDE CERTIFICATE</div>
+        <div style={{ margin: "4px auto 0", width: 70, height: 2, background: gld }} />
+      </div>
+
+      <div style={{ position: "absolute", top: 84, right: 18, fontSize: 7, color: "#475569" }}>Date: {fmtIssueDate()}</div>
+
+      {/* Body */}
+      <div style={{ position: "absolute", top: 96, left: 20, right: 20, fontSize: 7.5, lineHeight: 1.9, color: "#1e293b", textAlign: "justify" }}>
+        This is to certify that <b>{p.title} {(s.name || "—").toUpperCase()}</b>, {p.child} of{" "}
+        <b>{p.parentTitle} {(s.fatherName || "—").toUpperCase()}</b>, bearing Enrollment No.{" "}
+        <b>{s.enrollment || "—"}</b>, is a bonafide student of <b>SATYAM STARS INTERNATIONAL SCHOOL</b>,
+        {" "}studying in Class <b>{cls}</b> during the academic session <b>{session}</b>.
+        <br /><br />
+        As per our school records, {p.poss.toLowerCase()} Date of Birth is <b>{fmtDMY(s.dob) || "—"}</b>.
+        <br /><br />
+        This certificate is issued upon request, for whatever purpose it may serve.
+      </div>
+
+      {/* Signature */}
+      <div style={{ position: "absolute", bottom: 46, right: 22, textAlign: "center" }}>
+        <div style={{ width: 30, height: 30, borderRadius: "50%", background: acc, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 6px", color: "white", fontSize: 5.5, fontWeight: 700, lineHeight: 1.1, textAlign: "center" }}>SCHOOL<br />SEAL</div>
+        <div style={{ width: 60, borderTop: "1px solid #94a3b8", marginBottom: 3 }} />
+        <div style={{ fontSize: 8, fontWeight: 800, color: hdr }}>PRINCIPAL</div>
+      </div>
+
+      {/* Footer */}
+      <div style={{ position: "absolute", bottom: 10, left: 10, right: 10, height: 14, background: hdr, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1 }}>
+        <div style={{ color: "white", fontSize: 5.5 }}>{ADDR1}, {ADDR2}</div>
+        <div style={{ color: "white", fontSize: 5.5 }}>Phone: {PHONE}</div>
+      </div>
+    </div>
+  );
+}
+
 // ── Live card preview (React component, matches jsPDF output) ─────────────────
 function CardPreview({ student, design, photoUrl, logoUrl }) {
   const s = student || {};
@@ -475,6 +667,21 @@ export default function DocumentsPage() {
     }
   }, [selectedStudents, currentDesign]);
 
+  const handleDownloadBonafide = useCallback(async () => {
+    const targets = selectedStudents;
+    if (!targets.length) { alert("Please select at least one student."); return; }
+    setGenerating(true);
+    setProgress({ done:0, total:targets.length });
+    try {
+      await generateBonafidePDF(targets, (done, total) => setProgress({ done, total }));
+    } catch(e) {
+      alert("PDF generation failed: " + e.message);
+    } finally {
+      setGenerating(false);
+      setProgress({ done:0, total:0 });
+    }
+  }, [selectedStudents]);
+
   return (
     <div className="flex flex-col gap-5 max-w-7xl mx-auto">
       <div>
@@ -492,10 +699,15 @@ export default function DocumentsPage() {
         ))}
       </div>
 
-      {activeTab !== "idcard" && (
+      {(activeTab === "marksheet" || activeTab === "noc" || activeTab === "tc") && (
         <div className="flex flex-col items-center justify-center h-64 gap-4 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
           <FileText className="w-12 h-12 text-gray-300"/>
           <p className="text-gray-500 font-medium">Coming Soon</p>
+          {activeTab === "tc" && (
+            <p className="text-xs text-gray-400 -mt-2">
+              Transfer Certificates are generated per-student from each student's profile page in the meantime.
+            </p>
+          )}
         </div>
       )}
 
@@ -668,6 +880,145 @@ export default function DocumentsPage() {
 
           <p className="text-xs text-gray-400 text-center -mt-2">
             PDF downloads directly — 4 cards per A4 page (90mm × 140mm). Select students above then click Download PDF.
+          </p>
+        </div>
+      )}
+
+      {activeTab === "bonafide" && (
+        <div className="flex flex-col gap-5">
+
+          {/* Main content: list + preview */}
+          <div className="flex flex-col lg:flex-row gap-5">
+
+            {/* Student list */}
+            <div className="flex-1 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="flex flex-col sm:flex-row gap-3 p-4 border-b border-gray-100">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
+                  <input type="text" placeholder="Search by name, enrollment, father..." value={search}
+                    onChange={e=>setSearch(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-school-navy"/>
+                  {search && <button onClick={()=>setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="w-3.5 h-3.5"/></button>}
+                </div>
+                <select value={classFilter} onChange={e=>{setClassFilter(e.target.value);setSelected(new Set());}}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-school-navy min-w-32">
+                  <option value="All">All Classes</option>
+                  {CLASSES_LIST.map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+                <span className="flex items-center gap-1.5 text-sm text-gray-500 whitespace-nowrap">
+                  <Users className="w-4 h-4"/>{filtered.length}
+                </span>
+              </div>
+
+              {filtered.length > 0 && (
+                <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-100">
+                  <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700">
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} className="w-4 h-4 accent-school-navy"/>
+                    Select all {filtered.length}
+                  </label>
+                  {selected.size > 0 && <span className="text-xs text-school-navy font-semibold bg-school-navy/10 px-2.5 py-1 rounded-full">{selected.size} selected</span>}
+                </div>
+              )}
+
+              <div className="max-h-80 overflow-y-auto">
+                {loading ? (
+                  <div className="flex items-center justify-center h-40 gap-3">
+                    <div className="w-8 h-8 border-2 border-school-navy/20 border-t-school-navy rounded-full animate-spin"/>
+                    <span className="text-sm text-gray-500">Loading...</span>
+                  </div>
+                ) : filtered.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-40 gap-2">
+                    <GraduationCap className="w-10 h-10 text-gray-200"/>
+                    <p className="text-sm text-gray-400">No students found</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <tbody className="divide-y divide-gray-50">
+                      {filtered.map(s => {
+                        const isSel = selected.has(s.enrollment);
+                        return (
+                          <tr key={s.enrollment} onClick={()=>{ toggleOne(s.enrollment); setPreviewIdx(0); }}
+                            className={`cursor-pointer transition-colors ${isSel?"bg-school-navy/5":"hover:bg-gray-50"}`}>
+                            <td className="px-4 py-2.5 w-10">
+                              <input type="checkbox" checked={isSel} onChange={()=>{}} className="w-4 h-4 accent-school-navy"/>
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
+                                  {s.photo ? <S3Image s3Key={s.photo} alt={s.name} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center"><GraduationCap className="w-4 h-4 text-gray-400"/></div>}
+                                </div>
+                                <div>
+                                  <div className="font-medium text-gray-800 text-sm">{s.name}</div>
+                                  <div className="text-xs text-gray-400">{s.std}{s.section?" - "+s.section:""}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2.5 text-gray-500 text-xs hidden md:table-cell">{s.fatherName||"—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Live preview panel */}
+            <div className="lg:w-80 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col items-center gap-4">
+              <div className="text-sm font-semibold text-gray-700 self-start">Live Preview</div>
+
+              {previewStudent ? (
+                <>
+                  <BonafidePreview student={previewStudent} logoUrl={logoUrl}/>
+                  {selectedStudents.length > 1 && (
+                    <div className="flex items-center gap-3 text-sm text-gray-500">
+                      <button onClick={()=>setPreviewIdx(i=>Math.max(0,i-1))} disabled={previewIdx===0} className="p-1 rounded hover:bg-gray-100 disabled:opacity-30">
+                        <ChevronLeft className="w-4 h-4"/>
+                      </button>
+                      <span>{previewIdx+1} / {selectedStudents.length}</span>
+                      <button onClick={()=>setPreviewIdx(i=>Math.min(selectedStudents.length-1,i+1))} disabled={previewIdx===selectedStudents.length-1} className="p-1 rounded hover:bg-gray-100 disabled:opacity-30">
+                        <ChevronRight className="w-4 h-4"/>
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-64 gap-3 text-gray-300">
+                  <FileText className="w-16 h-16"/>
+                  <p className="text-sm text-gray-400">Select a student to preview</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Action bar */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+            <div className="flex items-center gap-3">
+              <CheckSquare className="w-4 h-4 text-school-navy"/>
+              <span className="text-sm text-gray-600">
+                <span className="font-bold text-school-navy">{selected.size}</span> student{selected.size!==1?"s":""} selected
+              </span>
+              {selected.size > 0 && <button onClick={()=>setSelected(new Set())} className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"><X className="w-3 h-3"/>Clear</button>}
+            </div>
+
+            {generating ? (
+              <div className="flex items-center gap-3 bg-school-navy/5 px-5 py-2.5 rounded-lg">
+                <div className="w-4 h-4 border-2 border-school-navy/30 border-t-school-navy rounded-full animate-spin"/>
+                <span className="text-sm text-school-navy font-medium">
+                  Generating {progress.done}/{progress.total} certificates...
+                </span>
+              </div>
+            ) : (
+              <button onClick={handleDownloadBonafide} disabled={selected.size===0}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-school-navy text-white text-sm font-medium hover:bg-school-navy/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
+                <Download className="w-4 h-4"/>
+                Download PDF ({selected.size} certificate{selected.size!==1?"s":""})
+              </button>
+            )}
+          </div>
+
+          <p className="text-xs text-gray-400 text-center -mt-2">
+            PDF downloads directly — one certificate per A4 page. Select students above then click Download PDF.
           </p>
         </div>
       )}
