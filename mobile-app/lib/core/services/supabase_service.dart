@@ -27,6 +27,13 @@ class SupabaseService {
     await client.from('student_attendance').upsert(records, onConflict: 'student_id,date');
   }
 
+  // Just the day's statuses for a class - used to show a real "X% present
+  // today" stat on the teacher dashboard instead of a static call-to-action.
+  static Future<List<Map<String, dynamic>>> fetchAttendanceForClassDate(String className, String date) async {
+    final res = await client.from('student_attendance').select('status').eq('class', className).eq('date', date);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
   static Future<List<Map<String, dynamic>>> fetchStudentAttendance(String studentId) async {
     final res = await client
         .from('student_attendance')
@@ -101,6 +108,14 @@ class SupabaseService {
 
   static Future<void> createExam(Map<String, dynamic> data) async {
     await client.from('exams').insert(data);
+  }
+
+  // Which of these exam ids already have at least one mark entered - used to
+  // count "pending" exams (held, but marks not started) on the dashboard.
+  static Future<Set<String>> fetchExamIdsWithMarks(List<String> examIds) async {
+    if (examIds.isEmpty) return {};
+    final res = await client.from('exam_marks').select('exam_id').inFilter('exam_id', examIds);
+    return List<Map<String, dynamic>>.from(res).map((r) => r['exam_id'].toString()).toSet();
   }
 
   static Future<List<Map<String, dynamic>>> fetchExamMarks(String examId) async {

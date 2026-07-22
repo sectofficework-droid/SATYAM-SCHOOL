@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
@@ -18,6 +19,8 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
   int _studentCount    = 0;
   int _pendingHomework = 0;
   int _pendingTasks    = 0;
+  String _attendanceStat = '—';
+  int _pendingExams       = 0;
   bool _loading = true;
   late AnimationController _animCtrl;
   late Animation<double> _fadeAnim;
@@ -63,18 +66,56 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
       return due != null && !due.isBefore(now);
     }).length;
 
+    // Attendance: today's % present for the class teacher's own class, or
+    // "Not marked" before anyone has taken attendance for today at all.
+    var attendanceStat = '—';
+    if (ownClass != null && ownClass.isNotEmpty) {
+      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final att   = await SupabaseService.fetchAttendanceForClassDate(ownClass, today);
+      if (att.isEmpty) {
+        attendanceStat = 'Not marked';
+      } else {
+        final present = att.where((a) => a['status'] == 'P').length;
+        attendanceStat = '${((present / att.length) * 100).round()}% Present';
+      }
+    }
+
+    // Exam Marks: exams that have already been held (on or before today) but
+    // have zero marks entered yet, across every exam visible to this teacher.
+    final exams = employeeId != null
+        ? await SupabaseService.fetchExams(
+            classNames: (ownClass != null && ownClass.isNotEmpty) ? [ownClass] : null,
+            createdBy:  employeeId,
+          )
+        : <Map<String, dynamic>>[];
+    final today = DateTime.now();
+    final todayDay = DateTime(today.year, today.month, today.day);
+    final heldExams = exams.where((e) {
+      final d = DateTime.tryParse(e['date'] ?? '');
+      if (d == null) return false;
+      final examDay = DateTime(d.year, d.month, d.day);
+      return !examDay.isAfter(todayDay);
+    }).toList();
+    final heldIds = heldExams.map((e) => e['id'].toString()).toList();
+    final withMarks = await SupabaseService.fetchExamIdsWithMarks(heldIds);
+    final pendingExams = heldExams.where((e) => !withMarks.contains(e['id'].toString())).length;
+
     if (sectionId != null && sectionId.isNotEmpty) {
       final students = await SupabaseService.fetchClassStudents(sectionId);
       if (mounted) setState(() {
         _studentCount    = students.length;
         _pendingHomework = pendingHomework;
         _pendingTasks    = pendingTasks;
+        _attendanceStat  = attendanceStat;
+        _pendingExams    = pendingExams;
         _loading         = false;
       });
     } else {
       if (mounted) setState(() {
         _pendingHomework = pendingHomework;
         _pendingTasks    = pendingTasks;
+        _attendanceStat  = attendanceStat;
+        _pendingExams    = pendingExams;
         _loading         = false;
       });
     }
@@ -143,13 +184,13 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                     onTap: () => Get.toNamed(Routes.teacherHomework),
                   )),
                   _AnimEntry(delay: 260, child: StatCard(
-                    label: 'Attendance', value: 'Mark Today',
+                    label: 'Attendance', value: _attendanceStat,
                     icon: Icons.fact_check_rounded,
                     color: AppColors.green, bgColor: AppColors.greenLight,
                     onTap: () => Get.toNamed(Routes.teacherAttend),
                   )),
                   _AnimEntry(delay: 340, child: StatCard(
-                    label: 'Exam Marks', value: 'Enter Now',
+                    label: 'Exam Marks', value: '$_pendingExams Pending',
                     icon: Icons.grading_rounded,
                     color: AppColors.purple, bgColor: AppColors.purpleLight,
                     onTap: () => Get.toNamed(Routes.teacherMarks),
