@@ -330,6 +330,11 @@ function composePlaceOfBirth(city, district, state) {
 // Reverse-maps super-admin form data to the shape updateStudent() expects
 function mapFormForUpdate(form) {
   return {
+    // updateStudent() writes `photo_url: formData.photo || null` unconditionally,
+    // so if this key were left out, every save through the Spreadsheet Bulk
+    // Editor (which has no photo field of its own) would silently wipe the
+    // student's photo even though nothing about it was touched.
+    photo:            form.photo,
     grNo:             form.grNo,
     rollNo:           form.roll ? Number(form.roll) : undefined,
     joinDate:         form.joinDate || undefined,
