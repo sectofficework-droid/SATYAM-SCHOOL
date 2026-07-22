@@ -243,6 +243,14 @@ class _StudentRow extends StatelessWidget {
                   Text('GR No: ${student['grno'] ?? '—'}',
                     style: const TextStyle(color: AppColors.textLight, fontSize: 12)),
                 ])),
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pop(),
+                  child: Container(
+                    width: 34, height: 34,
+                    decoration: BoxDecoration(color: AppColors.border, shape: BoxShape.circle),
+                    child: const Icon(Icons.close_rounded, color: AppColors.textLight, size: 18),
+                  ),
+                ),
               ]),
               const SizedBox(height: 20),
               _section('Student Details', [
