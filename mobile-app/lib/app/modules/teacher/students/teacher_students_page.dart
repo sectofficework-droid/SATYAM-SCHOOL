@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
@@ -178,13 +179,29 @@ class _StudentRow extends StatelessWidget {
     );
   }
 
+  // Admin panel already composes `address` from plot/society/landmark/
+  // area/city/pincode when the student record is saved - re-joining those
+  // parts here on top of `address` would just repeat them. Fall back to
+  // building it from the parts only if `address` itself is blank.
+  String _fullAddress() {
+    final composed = student['address']?.toString().trim() ?? '';
+    if (composed.isNotEmpty) return composed;
+    return [
+      student['room_plot_no'], student['society'], student['landmark'],
+      student['area'], student['pincode'],
+    ].where((v) => v != null && v.toString().trim().isNotEmpty).join(', ');
+  }
+
+  String _formatDob(dynamic raw) {
+    final str = raw?.toString() ?? '';
+    if (str.isEmpty) return '—';
+    final parsed = DateTime.tryParse(str);
+    return parsed == null ? str : DateFormat('dd-MM-yyyy').format(parsed);
+  }
+
   void _openDetails(BuildContext context) {
     final name = '${student['first_name'] ?? ''} ${student['last_name'] ?? ''}'.trim();
-    final address = [
-      student['room_plot_no'], student['society'], student['landmark'],
-      student['area'], student['address'],
-    ].where((v) => v != null && v.toString().trim().isNotEmpty).join(', ');
-    final pincode = student['pincode']?.toString() ?? '';
+    final address = _fullAddress();
 
     showModalBottomSheet(
       context: context,
@@ -231,7 +248,7 @@ class _StudentRow extends StatelessWidget {
               _section('Student Details', [
                 _row('Enrollment No.', student['enrollment_no']?.toString() ?? '—'),
                 _row('Roll No.',       student['roll_no']?.toString() ?? '—'),
-                _row('Date of Birth',  student['dob']?.toString() ?? '—'),
+                _row('Date of Birth',  _formatDob(student['dob'])),
                 _row('Gender',         student['gender']?.toString() ?? '—'),
               ]),
               const SizedBox(height: 12),
@@ -244,7 +261,6 @@ class _StudentRow extends StatelessWidget {
               const SizedBox(height: 12),
               _section('Address', [
                 _row('Address', address.isEmpty ? '—' : address),
-                _row('Pincode', pincode.isEmpty ? '—' : pincode),
               ]),
               const SizedBox(height: 20),
             ],
