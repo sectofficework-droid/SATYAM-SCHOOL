@@ -18,6 +18,7 @@ import {
   TrendingDown,
   Bell,
   FolderOpen,
+  CalendarCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import useStore from "@/lib/store";
@@ -25,6 +26,7 @@ import useStore from "@/lib/store";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/student", label: "Student", icon: GraduationCap },
+  { href: "/attendance", label: "Attendance", icon: CalendarCheck },
   { href: "/fees", label: "Fees", icon: IndianRupee },
   { href: "/employee", label: "Employee", icon: Users },
   { href: "/inventory", label: "Inventory Management", icon: Package },
