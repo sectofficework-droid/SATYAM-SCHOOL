@@ -297,11 +297,11 @@ class _StudentDashboard extends StatelessWidget {
           builder: (_, v, child) => Opacity(opacity: v,
             child: Transform.translate(offset: Offset(0, 20 * (1-v)), child: child)),
           child: GridView.count(
-            crossAxisCount: 2,
+            crossAxisCount: 3,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             crossAxisSpacing: 12, mainAxisSpacing: 12,
-            childAspectRatio: 1.1,
+            childAspectRatio: 0.85,
             children: [
               _Tile('Attendance',   Icons.event_note_rounded,            AppColors.green,  AppColors.greenLight,  () => Get.toNamed(Routes.studentAttend)),
               _Tile('Exam Marks',   Icons.bar_chart_rounded,             AppColors.blue,   AppColors.blueLight,   () => Get.toNamed(Routes.studentMarks)),
@@ -329,7 +329,7 @@ class _StudentDashboard extends StatelessWidget {
   );
 }
 
-class _Tile extends StatelessWidget {
+class _Tile extends StatefulWidget {
   final String label;
   final IconData icon;
   final Color color;
@@ -338,45 +338,75 @@ class _Tile extends StatelessWidget {
   const _Tile(this.label, this.icon, this.color, this.bg, this.onTap);
 
   @override
+  State<_Tile> createState() => _TileState();
+}
+
+class _TileState extends State<_Tile> {
+  bool _pressed = false;
+
+  @override
   Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(color: color.withOpacity(.12), blurRadius: 16, offset: const Offset(0, 4)),
-          const BoxShadow(color: Color(0x06000000), blurRadius: 8, offset: Offset(0, 2)),
-        ],
-      ),
-      // FittedBox scales the whole content down (never up) to fit whatever
-      // space the grid cell actually has, instead of hard-overflowing when a
-      // narrow viewport gives this tile less height than its fixed-size icon
-      // + two lines of text naturally need (same fix as StatCard).
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.centerLeft,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 46, height: 46,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [color, color.withOpacity(.7)],
-                  begin: Alignment.topLeft, end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: Icon(icon, color: Colors.white, size: 24),
-            ),
-            const SizedBox(height: 12),
-            Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.text)),
-            const SizedBox(height: 2),
-            const Text('Tap to view', style: TextStyle(fontSize: 10, color: AppColors.textHint)),
+    onTap: widget.onTap,
+    onTapDown: (_) => setState(() => _pressed = true),
+    onTapUp:   (_) => setState(() => _pressed = false),
+    onTapCancel: () => setState(() => _pressed = false),
+    child: AnimatedScale(
+      scale: _pressed ? 0.95 : 1,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOut,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        decoration: BoxDecoration(
+          color: widget.bg,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: widget.color.withOpacity(_pressed ? .5 : 0), width: 1.5),
+          boxShadow: [
+            BoxShadow(color: widget.color.withOpacity(.18), blurRadius: 14, offset: const Offset(0, 6)),
           ],
+        ),
+        // Same fixed-size icon badge + fixed-width text approach as
+        // StatCard, so every tile's icon renders at an identical size no
+        // matter how long its label is (see stat_card.dart for why).
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 46, height: 46,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [widget.color, widget.color.withOpacity(.75)],
+                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                  ),
+                  boxShadow: [
+                    BoxShadow(color: widget.color.withOpacity(.4), blurRadius: 8, offset: const Offset(0, 3)),
+                  ],
+                ),
+                child: Icon(widget.icon, color: Colors.white, size: 23),
+              ),
+              const SizedBox(height: 9),
+              SizedBox(
+                width: 92,
+                child: Text(widget.label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.text)),
+              ),
+              const SizedBox(height: 2),
+              SizedBox(
+                width: 92,
+                child: Text('Tap to view',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 10, color: widget.color.withOpacity(.75))),
+              ),
+            ],
+          ),
         ),
       ),
     ),

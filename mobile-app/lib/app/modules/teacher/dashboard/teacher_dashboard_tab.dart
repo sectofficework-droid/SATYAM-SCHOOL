@@ -114,7 +114,7 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 crossAxisSpacing: 12, mainAxisSpacing: 12,
-                childAspectRatio: 0.92,
+                childAspectRatio: 0.85,
                 children: [
                   _AnimEntry(delay: 100, child: StatCard(
                     label: 'My Students', value: '$_studentCount',
@@ -143,7 +143,7 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                   _AnimEntry(delay: 420, child: StatCard(
                     label: 'My Tasks', value: '$_pendingTasks',
                     icon: Icons.task_alt_rounded,
-                    color: AppColors.navy, bgColor: AppColors.blueLight,
+                    color: AppColors.pink, bgColor: AppColors.pinkLight,
                     onTap: () => Get.toNamed(Routes.teacherTasks),
                   )),
                 ],

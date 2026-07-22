@@ -15,6 +15,10 @@ class AppColors {
   static const blueLight = Color(0xFFDBEAFE);
   static const purple    = Color(0xFF8B5CF6);
   static const purpleLight = Color(0xFFEDE9FE);
+  static const pink      = Color(0xFFEC4899);
+  static const pinkLight = Color(0xFFFCE7F3);
+  static const teal      = Color(0xFF14B8A6);
+  static const tealLight = Color(0xFFCCFBF1);
   static const bg        = Color(0xFFF0F4FF);
   static const card      = Color(0xFFFFFFFF);
   static const border    = Color(0xFFE2E8F0);
