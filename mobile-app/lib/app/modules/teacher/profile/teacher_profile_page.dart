@@ -345,6 +345,10 @@ void _openChangePassword(BuildContext context) {
   bool saving = false;
   bool obscure = true;
   String? error;
+  // Two-step flow: the current password must verify correctly before the
+  // new-password fields even appear, and a wrong password sends the teacher
+  // to the admin office rather than letting them keep guessing here.
+  bool verified = false;
 
   showModalBottomSheet(
     context: context,
@@ -381,74 +385,121 @@ void _openChangePassword(BuildContext context) {
                 IconButton(icon: const Icon(Icons.close_rounded, color: AppColors.textHint), onPressed: () => Navigator.pop(ctx)),
               ]),
               const SizedBox(height: 16),
-              TextField(
-                controller: oldCtrl,
-                obscureText: obscure,
-                decoration: InputDecoration(
-                  labelText: 'Current Password',
-                  prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.navy, size: 20),
-                  suffixIcon: IconButton(
-                    icon: Icon(obscure ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 18, color: AppColors.textHint),
-                    onPressed: () => setS(() => obscure = !obscure),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: newCtrl,
-                obscureText: obscure,
-                decoration: const InputDecoration(labelText: 'New Password', prefixIcon: Icon(Icons.lock_outline_rounded, color: AppColors.navy, size: 20)),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: confirmCtrl,
-                obscureText: obscure,
-                decoration: const InputDecoration(labelText: 'Confirm New Password', prefixIcon: Icon(Icons.lock_outline_rounded, color: AppColors.navy, size: 20)),
-              ),
-              if (error != null) ...[
-                const SizedBox(height: 10),
-                Text(error!, style: const TextStyle(color: AppColors.red, fontSize: 12, fontWeight: FontWeight.w600)),
-              ],
-              const SizedBox(height: 20),
-              GestureDetector(
-                onTap: saving ? null : () async {
-                  final oldPw = oldCtrl.text;
-                  final newPw = newCtrl.text;
-                  final confirmPw = confirmCtrl.text;
-                  if (oldPw.isEmpty) { setS(() => error = 'Enter your current password.'); return; }
-                  if (newPw.length < 4) { setS(() => error = 'New password must be at least 4 characters.'); return; }
-                  if (newPw != confirmPw) { setS(() => error = 'New password and confirmation do not match.'); return; }
-                  if (newPw == oldPw) { setS(() => error = 'New password must be different from the current one.'); return; }
-                  if (employeeId == null) { setS(() => error = 'Session error - please sign in again.'); return; }
 
-                  setS(() { saving = true; error = null; });
-                  final ok = await SupabaseService.changeTeacherPassword(
-                    employeeId: employeeId, oldPassword: oldPw, newPassword: newPw,
-                  );
-                  if (!ok) {
-                    setS(() { saving = false; error = 'Current password is incorrect.'; });
-                    return;
-                  }
-                  if (ctx.mounted) Navigator.pop(ctx);
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                      content: Text('Password changed successfully'), behavior: SnackBarBehavior.floating,
-                      backgroundColor: AppColors.green,
-                    ));
-                  }
-                },
-                child: Container(
-                  height: 52,
-                  decoration: BoxDecoration(
-                    gradient: AppColors.navyGradient,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+              if (!verified) ...[
+                TextField(
+                  controller: oldCtrl,
+                  obscureText: obscure,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    labelText: 'Current Password',
+                    prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.navy, size: 20),
+                    suffixIcon: IconButton(
+                      icon: Icon(obscure ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 18, color: AppColors.textHint),
+                      onPressed: () => setS(() => obscure = !obscure),
+                    ),
                   ),
-                  child: Center(child: saving
-                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                    : const Text('Update Password', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins'))),
                 ),
-              ),
+                if (error != null) ...[
+                  const SizedBox(height: 10),
+                  Text(error!, style: const TextStyle(color: AppColors.red, fontSize: 12, fontWeight: FontWeight.w600, height: 1.4)),
+                ],
+                const SizedBox(height: 20),
+                GestureDetector(
+                  onTap: saving ? null : () async {
+                    final oldPw = oldCtrl.text;
+                    if (oldPw.isEmpty) { setS(() => error = 'Enter your current password.'); return; }
+                    if (employeeId == null) { setS(() => error = 'Session error - please sign in again.'); return; }
+
+                    setS(() { saving = true; error = null; });
+                    final ok = await SupabaseService.verifyTeacherPassword(employeeId: employeeId, password: oldPw);
+                    if (!ok) {
+                      setS(() { saving = false; error = 'Incorrect password. Please contact the admin office.'; });
+                      return;
+                    }
+                    setS(() { saving = false; verified = true; });
+                  },
+                  child: Container(
+                    height: 52,
+                    decoration: BoxDecoration(
+                      gradient: AppColors.navyGradient,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                    ),
+                    child: Center(child: saving
+                      ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                      : const Text('Verify', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins'))),
+                  ),
+                ),
+              ] else ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(color: AppColors.greenLight, borderRadius: BorderRadius.circular(12)),
+                  child: const Row(children: [
+                    Icon(Icons.check_circle_rounded, color: AppColors.green, size: 18),
+                    SizedBox(width: 8),
+                    Text('Current password verified', style: TextStyle(color: AppColors.green, fontSize: 13, fontWeight: FontWeight.w600)),
+                  ]),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: newCtrl,
+                  obscureText: obscure,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: 'New Password', prefixIcon: Icon(Icons.lock_outline_rounded, color: AppColors.navy, size: 20)),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: confirmCtrl,
+                  obscureText: obscure,
+                  decoration: const InputDecoration(labelText: 'Confirm New Password', prefixIcon: Icon(Icons.lock_outline_rounded, color: AppColors.navy, size: 20)),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 10),
+                  Text(error!, style: const TextStyle(color: AppColors.red, fontSize: 12, fontWeight: FontWeight.w600)),
+                ],
+                const SizedBox(height: 20),
+                GestureDetector(
+                  onTap: saving ? null : () async {
+                    final oldPw = oldCtrl.text;
+                    final newPw = newCtrl.text;
+                    final confirmPw = confirmCtrl.text;
+                    if (newPw.length < 4) { setS(() => error = 'New password must be at least 4 characters.'); return; }
+                    if (newPw != confirmPw) { setS(() => error = 'New password and confirmation do not match.'); return; }
+                    if (newPw == oldPw) { setS(() => error = 'New password must be different from the current one.'); return; }
+                    if (employeeId == null) { setS(() => error = 'Session error - please sign in again.'); return; }
+
+                    setS(() { saving = true; error = null; });
+                    final ok = await SupabaseService.changeTeacherPassword(
+                      employeeId: employeeId, oldPassword: oldPw, newPassword: newPw,
+                    );
+                    if (!ok) {
+                      // Only possible if the password changed elsewhere between
+                      // verifying and saving - re-verify from scratch.
+                      setS(() { saving = false; verified = false; error = 'Please verify your current password again.'; });
+                      return;
+                    }
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Password changed successfully'), behavior: SnackBarBehavior.floating,
+                        backgroundColor: AppColors.green,
+                      ));
+                    }
+                  },
+                  child: Container(
+                    height: 52,
+                    decoration: BoxDecoration(
+                      gradient: AppColors.navyGradient,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                    ),
+                    child: Center(child: saving
+                      ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+                      : const Text('Update Password', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins'))),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

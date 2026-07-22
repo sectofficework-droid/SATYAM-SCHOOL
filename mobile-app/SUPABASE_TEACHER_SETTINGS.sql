@@ -39,5 +39,19 @@ BEGIN
 END;
 $$;
 
+-- Verify-only step for the Change Password flow: the app checks the current
+-- password first and only reveals the new-password fields once this returns
+-- true, without touching app_password yet.
+CREATE OR REPLACE FUNCTION teacher_verify_password(p_employee_id TEXT, p_password TEXT)
+RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM employees WHERE id = p_employee_id::UUID AND app_password = p_password
+  );
+END;
+$$;
+
 GRANT EXECUTE ON FUNCTION teacher_update_profile(TEXT, TEXT, TEXT, TEXT) TO anon;
 GRANT EXECUTE ON FUNCTION teacher_change_password(TEXT, TEXT, TEXT) TO anon;
+GRANT EXECUTE ON FUNCTION teacher_verify_password(TEXT, TEXT) TO anon;

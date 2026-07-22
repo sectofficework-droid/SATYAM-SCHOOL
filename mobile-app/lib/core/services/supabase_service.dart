@@ -200,4 +200,15 @@ class SupabaseService {
     });
     return res == true;
   }
+
+  // Verify-only check used before revealing the new-password fields in the
+  // Change Password flow - doesn't touch app_password.
+  static Future<bool> verifyTeacherPassword({
+    required String employeeId, required String password,
+  }) async {
+    final res = await client.rpc('teacher_verify_password', params: {
+      'p_employee_id': employeeId, 'p_password': password,
+    });
+    return res == true;
+  }
 }
