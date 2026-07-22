@@ -47,7 +47,7 @@ class _StatCardState extends State<StatCard> {
         decoration: BoxDecoration(
           color: widget.bgColor,
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: widget.color.withOpacity(_pressed ? .5 : 0), width: 1.5),
+          border: Border.all(color: widget.color, width: _pressed ? 2.2 : 1.6),
           boxShadow: [
             BoxShadow(color: widget.color.withOpacity(.18), blurRadius: 14, offset: const Offset(0, 6)),
           ],

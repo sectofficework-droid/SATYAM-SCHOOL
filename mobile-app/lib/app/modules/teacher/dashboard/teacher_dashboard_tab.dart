@@ -120,7 +120,7 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                     label: 'My Students', value: '$_studentCount',
                     icon: Icons.people_alt_rounded,
                     color: AppColors.blue, bgColor: AppColors.blueLight,
-                    onTap: () => Get.toNamed(Routes.teacherAttend),
+                    onTap: () => Get.toNamed(Routes.teacherStudents),
                   )),
                   _AnimEntry(delay: 180, child: StatCard(
                     label: 'Pending HW', value: '$_pendingHomework',

@@ -11,6 +11,14 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res as List);
   }
 
+  // Same roster, plus personal-detail fields (DOB, gender, parents, contact,
+  // address) for the "My Students" module - see SUPABASE_TEACHER_STUDENT_DETAILS.sql.
+  static Future<List<Map<String, dynamic>>> fetchClassStudentDetails(String sectionId) async {
+    final res = await client.rpc('get_class_students_details', params: {'p_section_id': sectionId});
+    if (res == null) return [];
+    return List<Map<String, dynamic>>.from(res as List);
+  }
+
   static Future<void> saveAttendanceBatch(List<Map<String, dynamic>> records) async {
     // Records don't carry the row's own id (student_attendance.id), so an
     // upsert with no onConflict target would try to INSERT every row and

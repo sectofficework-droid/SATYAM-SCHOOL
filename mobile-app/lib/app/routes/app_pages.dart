@@ -4,6 +4,7 @@ import '../modules/auth/views/login_view.dart';
 import '../modules/auth/controllers/login_controller.dart';
 import '../modules/teacher/dashboard/teacher_home.dart';
 import '../modules/teacher/attendance/teacher_attendance_page.dart';
+import '../modules/teacher/students/teacher_students_page.dart';
 import '../modules/teacher/marks/teacher_marks_page.dart';
 import '../modules/teacher/homework/teacher_homework_page.dart';
 import '../modules/teacher/tasks/teacher_tasks_page.dart';
@@ -30,6 +31,7 @@ class AppPages {
     // ── Teacher ──────────────────────────────────────────────────────────────
     GetPage(name: Routes.teacherHome,     page: () => const TeacherHome()),
     GetPage(name: Routes.teacherAttend,   page: () => const TeacherAttendancePage()),
+    GetPage(name: Routes.teacherStudents, page: () => const TeacherStudentsPage()),
     GetPage(name: Routes.teacherMarks,    page: () => const TeacherMarksPage()),
     GetPage(name: Routes.teacherHomework, page: () => const TeacherHomeworkPage()),
     GetPage(name: Routes.teacherTasks,    page: () => const TeacherTasksPage()),
