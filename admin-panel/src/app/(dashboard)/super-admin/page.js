@@ -563,25 +563,23 @@ function SingleStudentTool({ students, onStudentUpdated }) {
       if (docTypes?.length) {
         const docTypeMap = Object.fromEntries(docTypes.map(d => [d.name, d.id]));
         const allDocNames = [...DEFAULT_DOCS, ...customDocs.filter(d => d.label.trim()).map(d => d.label)];
+        // checkedDocs/uploadedFiles always start empty when this modal opens for a
+        // student (selectStudent() -> resetMedia()), regardless of what's already
+        // on file - there's no "already uploaded" state shown, just a checkbox and
+        // an upload button. So checking a box WITHOUT attaching a file in this
+        // session must never produce an upsert row: that would write
+        // file_url: null and silently wipe a document that's genuinely already on
+        // record from an earlier save, the same class of bug as the photo wipe
+        // above. Only documents actually (re-)uploaded in this session are saved.
         const upserts = allDocNames
-          .filter(name => checkedDocs[name] && docTypeMap[name])
-          .map(name => {
-            // file_url must be included on every row with its real value (never omitted) —
-            // Supabase's bulk upsert pads any key missing from a row with NULL when other
-            // rows in the same batch DO have that key, which can wipe out a previously
-            // stored S3 key for documents not re-uploaded in the current save.
-            const existingVal = uploadedFiles[name];
-            const fileUrl = existingVal && typeof existingVal === "object"
-              ? (existingVal.key || null)
-              : (existingVal || null);
-            return {
-              student_id:       selected._studentId,
-              document_type_id: docTypeMap[name],
-              status:           "Uploaded",
-              uploaded_at:      new Date().toISOString(),
-              file_url:         fileUrl,
-            };
-          });
+          .filter(name => docTypeMap[name] && uploadedFiles[name]?.key)
+          .map(name => ({
+            student_id:       selected._studentId,
+            document_type_id: docTypeMap[name],
+            status:           "Uploaded",
+            uploaded_at:      new Date().toISOString(),
+            file_url:         uploadedFiles[name].key,
+          }));
         if (upserts.length) {
           const { error: docErr } = await supabase.from("student_documents").upsert(upserts, { onConflict: "student_id,document_type_id" });
           if (docErr) throw docErr;
