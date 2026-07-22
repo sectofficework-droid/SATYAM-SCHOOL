@@ -39,19 +39,29 @@ class SupabaseService {
 
   // Homework ──────────────────────────────────────────────────────────────────
 
-  // classNames takes precedence when provided (a teacher can teach more than
-  // one class); className stays for backward compatibility with callers that
-  // only need a single class (e.g. a student's own class). createdBy scopes
-  // the list to homework a given teacher personally assigned - used by the
-  // teacher app so each teacher only sees what they gave, not every other
-  // teacher's homework for the same class too.
+  // Returns homework in any of classNames UNION homework created by
+  // createdBy (merged client-side, same reasoning as fetchExams below) - so
+  // a class teacher sees every homework given to their own class (by any
+  // teacher) plus anything they personally assigned elsewhere, while a
+  // subject teacher with no class of their own just sees what they gave.
+  // className stays for backward compatibility with callers that only need
+  // a single class with no creator filter (e.g. a student's own class).
   static Future<List<Map<String, dynamic>>> fetchHomework({String? className, List<String>? classNames, String? createdBy}) async {
-    var query = client.from('homework').select();
     if (classNames != null && classNames.isNotEmpty) {
-      query = query.inFilter('class', classNames);
-    } else if (className != null) {
-      query = query.eq('class', className);
+      final byClass = await client.from('homework').select().inFilter('class', classNames);
+      final merged  = List<Map<String, dynamic>>.from(byClass);
+      if (createdBy != null) {
+        final byCreator = await client.from('homework').select().eq('created_by', createdBy);
+        final seenIds    = merged.map((h) => h['id']).toSet();
+        for (final h in List<Map<String, dynamic>>.from(byCreator)) {
+          if (!seenIds.contains(h['id'])) merged.add(h);
+        }
+      }
+      merged.sort((a, b) => ('${a['due_date'] ?? ''}').compareTo('${b['due_date'] ?? ''}'));
+      return merged;
     }
+    var query = client.from('homework').select();
+    if (className != null) query = query.eq('class', className);
     if (createdBy != null) query = query.eq('created_by', createdBy);
     final res = await query.order('due_date');
     return List<Map<String, dynamic>>.from(res);

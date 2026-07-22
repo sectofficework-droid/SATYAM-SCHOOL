@@ -47,12 +47,15 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
         : <Map<String, dynamic>>[];
     final pendingTasks = tasks.where((t) => t['status'] != 'Completed').length;
 
-    // Homework given by this teacher specifically (not the whole class's
-    // homework from every teacher) that isn't past its due date yet - any
-    // teacher can give homework, not just class teachers, so this no longer
-    // depends on having a class_teacher_of_section_id.
+    // Homework given by this teacher, plus (for a class teacher) anything
+    // given to their own class by other teachers too - matches the Homework
+    // module's own visibility rule - that isn't past its due date yet.
+    final ownClass = profile['class_name'] as String?;
     final hw = employeeId != null
-        ? await SupabaseService.fetchHomework(createdBy: employeeId)
+        ? await SupabaseService.fetchHomework(
+            classNames: (ownClass != null && ownClass.isNotEmpty) ? [ownClass] : null,
+            createdBy:  employeeId,
+          )
         : <Map<String, dynamic>>[];
     final now = DateTime.now();
     final pendingHomework = hw.where((h) {

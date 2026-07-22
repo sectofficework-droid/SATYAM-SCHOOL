@@ -29,12 +29,17 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    // Only what THIS teacher gave - not every teacher's homework for classes
-    // they happen to also teach.
+    // A class teacher sees homework given to their own class by ANY teacher,
+    // plus anything they personally assigned elsewhere; a subject teacher
+    // with no class of their own just sees what they personally gave.
     final profile    = AuthService.to.profile.value ?? {};
     final employeeId = profile['id'] as String?;
+    final ownClass    = profile['class_name'] as String?;
     final hw = employeeId != null
-        ? await SupabaseService.fetchHomework(createdBy: employeeId)
+        ? await SupabaseService.fetchHomework(
+            classNames: (ownClass != null && ownClass.isNotEmpty) ? [ownClass] : null,
+            createdBy:  employeeId,
+          )
         : <Map<String, dynamic>>[];
     if (mounted) setState(() { _list = hw; _loading = false; });
   }
