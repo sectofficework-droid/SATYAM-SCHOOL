@@ -47,22 +47,33 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
         : <Map<String, dynamic>>[];
     final pendingTasks = tasks.where((t) => t['status'] != 'Completed').length;
 
+    // Homework given by this teacher specifically (not the whole class's
+    // homework from every teacher) that isn't past its due date yet - any
+    // teacher can give homework, not just class teachers, so this no longer
+    // depends on having a class_teacher_of_section_id.
+    final hw = employeeId != null
+        ? await SupabaseService.fetchHomework(createdBy: employeeId)
+        : <Map<String, dynamic>>[];
+    final now = DateTime.now();
+    final pendingHomework = hw.where((h) {
+      final due = DateTime.tryParse(h['due_date'] ?? '');
+      return due != null && !due.isBefore(now);
+    }).length;
+
     if (sectionId != null && sectionId.isNotEmpty) {
-      final className = profile['class_name'] as String? ?? '';
-      final students  = await SupabaseService.fetchClassStudents(sectionId);
-      final hw        = await SupabaseService.fetchHomework(className: className);
-      final now       = DateTime.now();
+      final students = await SupabaseService.fetchClassStudents(sectionId);
       if (mounted) setState(() {
         _studentCount    = students.length;
-        _pendingHomework = hw.where((h) {
-          final due = DateTime.tryParse(h['due_date'] ?? '');
-          return due != null && due.isAfter(now);
-        }).length;
-        _pendingTasks = pendingTasks;
-        _loading = false;
+        _pendingHomework = pendingHomework;
+        _pendingTasks    = pendingTasks;
+        _loading         = false;
       });
     } else {
-      if (mounted) setState(() { _pendingTasks = pendingTasks; _loading = false; });
+      if (mounted) setState(() {
+        _pendingHomework = pendingHomework;
+        _pendingTasks    = pendingTasks;
+        _loading         = false;
+      });
     }
     _animCtrl.forward(from: 0);
   }

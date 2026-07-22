@@ -41,14 +41,18 @@ class SupabaseService {
 
   // classNames takes precedence when provided (a teacher can teach more than
   // one class); className stays for backward compatibility with callers that
-  // only need a single class (e.g. a student's own class).
-  static Future<List<Map<String, dynamic>>> fetchHomework({String? className, List<String>? classNames}) async {
+  // only need a single class (e.g. a student's own class). createdBy scopes
+  // the list to homework a given teacher personally assigned - used by the
+  // teacher app so each teacher only sees what they gave, not every other
+  // teacher's homework for the same class too.
+  static Future<List<Map<String, dynamic>>> fetchHomework({String? className, List<String>? classNames, String? createdBy}) async {
     var query = client.from('homework').select();
     if (classNames != null && classNames.isNotEmpty) {
       query = query.inFilter('class', classNames);
     } else if (className != null) {
       query = query.eq('class', className);
     }
+    if (createdBy != null) query = query.eq('created_by', createdBy);
     final res = await query.order('due_date');
     return List<Map<String, dynamic>>.from(res);
   }
@@ -148,5 +152,27 @@ class SupabaseService {
     final res = await client.rpc('get_student_fees', params: {'p_student_id': studentId});
     if (res == null) return {};
     return Map<String, dynamic>.from(res as Map);
+  }
+
+  // Teacher settings ──────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>?> updateTeacherProfile({
+    required String employeeId, required String name, required String phone, required String email,
+  }) async {
+    final res = await client.rpc('teacher_update_profile', params: {
+      'p_employee_id': employeeId, 'p_name': name, 'p_phone': phone, 'p_email': email,
+    });
+    return res == null ? null : Map<String, dynamic>.from(res as Map);
+  }
+
+  // Returns false when p_old_password didn't match - callers should surface
+  // that as a wrong-password error, not a generic failure.
+  static Future<bool> changeTeacherPassword({
+    required String employeeId, required String oldPassword, required String newPassword,
+  }) async {
+    final res = await client.rpc('teacher_change_password', params: {
+      'p_employee_id': employeeId, 'p_old_password': oldPassword, 'p_new_password': newPassword,
+    });
+    return res == true;
   }
 }

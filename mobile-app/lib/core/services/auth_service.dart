@@ -64,6 +64,15 @@ class AuthService extends GetxService {
     isLoggedIn.value = true;
   }
 
+  // Merges fields (e.g. after a profile edit) into the cached session
+  // without a full re-login, and re-persists so it survives an app restart.
+  Future<void> updateProfileFields(Map<String, dynamic> patch) async {
+    if (profile.value == null) return;
+    final updated = {...profile.value!, ...patch};
+    await _storage.write(key: 'user_profile', value: jsonEncode(updated));
+    profile.value = updated;
+  }
+
   Future<void> signOut() async {
     await _storage.delete(key: 'user_role');
     await _storage.delete(key: 'user_profile');
