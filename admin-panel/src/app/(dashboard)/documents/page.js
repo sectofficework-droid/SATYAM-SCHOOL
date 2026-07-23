@@ -481,7 +481,7 @@ function drawBonafidePage(doc, s, logoB64) {
   // The logo file itself is 1080x1200px (not square) - forcing it into a
   // square box was squashing it. Fixed height, width derived from the
   // real aspect ratio so it isn't distorted either way.
-  const logoY = 20, logoH = 32, logoW = logoH * (1080 / 1200);
+  const logoY = 18, logoH = 42, logoW = logoH * (1080 / 1200);
   if (logoB64) {
     try { doc.addImage(logoB64, "JPEG", marginX, logoY, logoW, logoH); } catch {}
   }
@@ -620,7 +620,7 @@ function BonafidePreview({ student, logoUrl }) {
             serif lines, a black rule under them, then the address
             left-aligned at the same X as the name (not centered). */}
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 40, height: 40, flexShrink: 0 }}>
+          <div style={{ width: 48, height: 48, flexShrink: 0 }}>
             {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
