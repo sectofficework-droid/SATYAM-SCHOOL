@@ -3,6 +3,7 @@ abstract class Routes {
   static const login            = '/login';
   static const teacherHome      = '/teacher/home';
   static const teacherAttend    = '/teacher/attendance';
+  static const teacherMyAttend  = '/teacher/my-attendance';
   static const teacherStudents  = '/teacher/students';
   static const teacherMarks     = '/teacher/marks';
   static const teacherHomework  = '/teacher/homework';
