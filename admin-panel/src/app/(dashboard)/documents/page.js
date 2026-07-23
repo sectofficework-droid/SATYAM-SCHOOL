@@ -515,17 +515,29 @@ function drawBonafidePage(doc, s, logoB64) {
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(size1);
   doc.text("SATYAM STARS", textX, baseline1);
+  const width1 = doc.getTextWidth("SATYAM STARS");
   doc.setFontSize(size2);
   doc.text("INTERNATIONAL SCHOOL", textX, baseline2);
+  const width2 = doc.getTextWidth("INTERNATIONAL SCHOOL");
 
+  // Rule spans exactly the text's own width (the wider of the two lines),
+  // not out to the page margin - it should align with where the name
+  // actually ends, not run on past it.
   const ruleY = baseline2 + 5;
+  const nameWidth = Math.max(width1, width2);
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.6);
-  doc.line(textX, ruleY, PW - marginX, ruleY);
+  doc.line(textX, ruleY, textX + nameWidth, ruleY);
 
+  // Address and phone as two separate lines, not one combined line -
+  // fills the gap under the rule instead of leaving it mostly blank.
   doc.setFont("helvetica", "normal");
-  fitFontSize(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, 10, 7);
-  doc.text(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, textX, ruleY + 6);
+  const addrLine = `${ADDR1}, ${ADDR2}`;
+  const phoneLine = `Ph: ${PHONE}`;
+  fitFontSize(addrLine, 10, 7);
+  doc.text(addrLine, textX, ruleY + 6);
+  fitFontSize(phoneLine, 10, 7);
+  doc.text(phoneLine, textX, ruleY + 12);
 
   // Gold divider before the title, plus the existing one after it - equal
   // whitespace gap on both sides of the text itself (not equal baseline
@@ -534,7 +546,7 @@ function drawBonafidePage(doc, s, logoB64) {
   // Also never sit above the logo's own bottom edge (with a small
   // clearance) - the logo is taller than the text block, so a rule
   // positioned purely from the text side can end up under the logo.
-  const preTitleRuleY = Math.max(ruleY + 15, logoY + logoH + 4);
+  const preTitleRuleY = Math.max(ruleY + 21, logoY + logoH + 4);
   doc.setDrawColor(gr, gg, gb);
   doc.setLineWidth(0.6);
   doc.line(marginX, preTitleRuleY, PW - marginX, preTitleRuleY);
@@ -628,11 +640,15 @@ function BonafidePreview({ student, logoUrl }) {
           <div style={{ width: 56, height: 56, flexShrink: 0 }}>
             {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
+          {/* width: fit-content so the rule/address below shrink-wrap to
+              the text's own widest line (matches drawBonafidePage()'s rule
+              spanning textX..textX+nameWidth, not out to the page margin). */}
+          <div style={{ width: "fit-content", maxWidth: "100%" }}>
             <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 23, lineHeight: 1.05, whiteSpace: "nowrap" }}>SATYAM STARS</div>
             <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 14, lineHeight: 1.1, marginTop: 2, whiteSpace: "nowrap" }}>INTERNATIONAL SCHOOL</div>
             <div style={{ borderTop: "1px solid black", margin: "5px 0 4px" }} />
-            <div style={{ fontSize: 6.5 }}>{ADDR1}, {ADDR2} &nbsp;|&nbsp; Ph: {PHONE}</div>
+            <div style={{ fontSize: 6.5, whiteSpace: "nowrap" }}>{ADDR1}, {ADDR2}</div>
+            <div style={{ fontSize: 6.5, whiteSpace: "nowrap" }}>Ph: {PHONE}</div>
           </div>
         </div>
 
