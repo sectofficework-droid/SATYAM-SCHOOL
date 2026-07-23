@@ -393,43 +393,46 @@ function drawBonafideBox(doc, s, logoB64, bx, by, bw, bh) {
   doc.rect(bx, by, bw, bh, "S");
 
   if (logoB64) {
-    try { doc.addImage(logoB64, "JPEG", bx + 6, by + 6, 20, 20); } catch {}
+    try { doc.addImage(logoB64, "JPEG", bx + 5, by + 5, 16, 16); } catch {}
   }
 
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
-  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", bx + bw / 2, by + 15, { align: "center" });
+  doc.setFontSize(13);
+  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", bx + bw / 2, by + 13, { align: "center" });
   doc.setLineWidth(0.4);
-  doc.line(bx + bw * 0.15, by + 19, bx + bw * 0.85, by + 19);
+  doc.line(bx + bw * 0.15, by + 16.5, bx + bw * 0.85, by + 16.5);
 
-  doc.setFontSize(24);
-  doc.text("BONAFIDE CERTIFICATE", bx + bw / 2, by + 32, { align: "center" });
+  doc.setFontSize(20);
+  doc.text("BONAFIDE CERTIFICATE", bx + bw / 2, by + 27, { align: "center" });
   doc.setLineWidth(0.5);
-  doc.line(bx + 4, by + 38, bx + bw - 4, by + 38);
+  doc.line(bx + 4, by + 32, bx + bw - 4, by + 32);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(11);
-  const lineHeight = 6.5;
-  const paraGap = 3;
-  let y = by + 49;
-  const left = bx + 8;
+  doc.setFontSize(9.5);
+  const lineHeight = 5.6;
+  const paraGap = 2.4;
+  let y = by + 41;
+  const left = bx + 7;
   for (const line of bonafideLines(s)) {
     if (line.length === 0) { y += paraGap; continue; }
     drawRun(doc, line, left, y);
     y += lineHeight;
   }
 
-  doc.setFontSize(10.5);
-  doc.text(`DATE : ${fmtIssueDateDMY()}`, bx + 8, by + bh - 8);
+  doc.setFontSize(9);
+  doc.text(`DATE : ${fmtIssueDateDMY()}`, bx + 7, by + bh - 7);
   doc.setFont("helvetica", "bold");
-  doc.text("PRINCIPAL", bx + bw - 10, by + bh - 8, { align: "right" });
+  doc.text("PRINCIPAL", bx + bw - 9, by + bh - 7, { align: "right" });
 }
 
 function drawBonafideCert(doc, s, logoB64) {
-  const PW = 210; // A4 mm
-  drawBonafideBox(doc, s, logoB64, 10, 10, PW - 20, 135);
-  drawBonafideBox(doc, s, logoB64, 10, 152, PW - 20, 135);
+  const PW = 210, PH = 297; // A4 mm
+  const SIDE_MARGIN = 25, GAP = 22;
+  const bw = PW - SIDE_MARGIN * 2;
+  const bh = (PH - GAP * 3) / 2;
+  drawBonafideBox(doc, s, logoB64, SIDE_MARGIN, GAP, bw, bh);
+  drawBonafideBox(doc, s, logoB64, SIDE_MARGIN, GAP * 2 + bh, bw, bh);
 }
 
 async function generateBonafidePDF(students, onProgress) {
@@ -490,7 +493,7 @@ function BonafideBoxPreview({ student, logoUrl }) {
 
 function BonafidePreview({ student, logoUrl }) {
   return (
-    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "10px 10px" }}>
+    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: 22, padding: "28px 22px" }}>
       <BonafideBoxPreview student={student} logoUrl={logoUrl} />
       <BonafideBoxPreview student={student} logoUrl={logoUrl} />
     </div>
