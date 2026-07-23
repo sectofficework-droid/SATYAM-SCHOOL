@@ -388,23 +388,47 @@ function bonafideParagraphs(s) {
 }
 
 // Greedily wraps space-separated tokens (each styled plain/strike/underline)
-// to fill maxWidth, the same way a normal paragraph reflows - returns the y
-// of the last line drawn.
-function drawWrappedParagraph(doc, tokens, x, startY, maxWidth, lineHeight) {
+// into lines that fit maxWidth - pure layout, no drawing, so the caller can
+// measure the total body height up front (needed to vertically center the
+// whole certificate block on the page - see drawBonafidePage).
+function wrapParagraph(doc, tokens, maxWidth) {
   const spaceWidth = doc.getTextWidth(" ");
-  let cx = x, y = startY;
+  const lines = [];
+  let current = [];
+  let cx = 0;
   for (const tok of tokens) {
     const tw = doc.getTextWidth(tok.text);
-    if (cx > x && cx + tw > x + maxWidth) { cx = x; y += lineHeight; }
-    doc.text(tok.text, cx, y);
-    if (tok.mode === "strike") {
-      doc.setLineWidth(0.25);
-      doc.line(cx, y - 1.4, cx + tw, y - 1.4);
-    } else if (tok.mode === "underline") {
-      doc.setLineWidth(0.2);
-      doc.line(cx, y + 0.8, cx + tw, y + 0.8);
-    }
+    if (current.length && cx + tw > maxWidth) { lines.push(current); current = []; cx = 0; }
+    current.push({ ...tok, width: tw });
     cx += tw + spaceWidth;
+  }
+  if (current.length) lines.push(current);
+  return lines;
+}
+
+// Draws pre-wrapped lines. The trailing space is baked into the same text
+// draw call as the word before it (`${tok.text} `) rather than left as a
+// separately-computed gap - two adjacent Tj text runs positioned exactly
+// edge-to-edge could render with no visible space between them, which is
+// what was happening (e.g. "PANIGRAHIis"); a space glyph inside one draw
+// call can't be dropped like that.
+function drawWrappedLines(doc, lines, x, startY, lineHeight) {
+  const spaceWidth = doc.getTextWidth(" ");
+  let y = startY;
+  for (const line of lines) {
+    let cx = x;
+    for (const tok of line) {
+      doc.text(`${tok.text} `, cx, y);
+      if (tok.mode === "strike") {
+        doc.setLineWidth(0.25);
+        doc.line(cx, y - 1.6, cx + tok.width, y - 1.6);
+      } else if (tok.mode === "underline") {
+        doc.setLineWidth(0.2);
+        doc.line(cx, y + 1, cx + tok.width, y + 1);
+      }
+      cx += tok.width + spaceWidth;
+    }
+    y += lineHeight;
   }
   return y;
 }
@@ -414,57 +438,89 @@ function drawWrappedParagraph(doc, tokens, x, startY, maxWidth, lineHeight) {
 // print with the browser/OS print dialog's "Pages per sheet: 2" option to
 // get both copies on one physical sheet, same as the original two-copies-
 // per-print intent, without fighting a cramped hand-built layout for it.
+//
+// The whole content block (letterhead -> title -> body -> footer) is
+// measured up front and vertically centered on the page - anchoring
+// everything to the top and letting the footer fall wherever the body
+// happened to end left most of the page as a single ugly dead zone at the
+// bottom, which read as broken rather than a real certificate.
 function drawBonafidePage(doc, s, logoB64) {
   const PW = 210, PH = 297; // A4 mm
-  const marginX = 18;
+  const marginX = 20;
+  const [nr, ng, nb] = rgb("#1a2b6b");
+  const [gr, gg, gb] = rgb("#f59e0b");
 
-  doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.6);
-  doc.rect(12, 12, PW - 24, PH - 24, "S");
+  // Double-line frame, like a real certificate border.
+  doc.setDrawColor(nr, ng, nb);
+  doc.setLineWidth(1);
+  doc.rect(10, 10, PW - 20, PH - 20, "S");
+  doc.setLineWidth(0.3);
+  doc.rect(13, 13, PW - 26, PH - 26, "S");
+
+  const logoSize = 26;
+  const headerBlockH = logoSize + 9;
+  const titleBlockH = 24;
+  const gapTitleToBody = 16;
+  const bodyFontSize = 13.5;
+  const lineHeight = 8.6;
+  const paraGap = 6.5;
+  const left = marginX + 5;
+  const bodyWidth = PW - marginX * 2 - 10;
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(bodyFontSize);
+  const wrappedParas = bonafideParagraphs(s).map(p => wrapParagraph(doc, p, bodyWidth));
+  const bodyLineCount = wrappedParas.reduce((n, lines) => n + lines.length, 0);
+  const bodyHeight = bodyLineCount * lineHeight + (wrappedParas.length - 1) * paraGap;
+  const footerGap = lineHeight * 2.5;
+  const totalBlockH = headerBlockH + titleBlockH + gapTitleToBody + bodyHeight + footerGap + 14;
+
+  const frameTop = 22, frameBottom = PH - 22;
+  const blockTop = Math.max(frameTop, frameTop + (frameBottom - frameTop - totalBlockH) / 2);
 
   // Letterhead: logo on the left with school name + address as one
-  // left-aligned block clearly separated from it (not just touching), both
-  // vertically centered against the logo so they read as one aligned unit.
-  const logoY = 16, logoSize = 24;
+  // left-aligned block next to it, vertically centered against the logo.
+  const logoY = blockTop;
   if (logoB64) {
     try { doc.addImage(logoB64, "JPEG", marginX, logoY, logoSize, logoSize); } catch {}
   }
   const textX = marginX + logoSize + 14;
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
-  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", textX, logoY + 9);
+  doc.setFontSize(16);
+  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", textX, logoY + 10);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.text(`${ADDR1}, ${ADDR2}`, textX, logoY + 15.5);
-  doc.text(`Phone: ${PHONE}`, textX, logoY + 20.5);
+  doc.setFontSize(9.5);
+  doc.text(`${ADDR1}, ${ADDR2}`, textX, logoY + 17);
+  doc.text(`Phone: ${PHONE}`, textX, logoY + 22.5);
 
-  const headerRuleY = logoY + logoSize + 5;
-  doc.setLineWidth(0.4);
+  const headerRuleY = logoY + headerBlockH;
+  doc.setDrawColor(gr, gg, gb);
+  doc.setLineWidth(0.6);
   doc.line(marginX, headerRuleY, PW - marginX, headerRuleY);
 
+  doc.setTextColor(nr, ng, nb);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(26);
-  doc.text("BONAFIDE CERTIFICATE", PW / 2, headerRuleY + 14, { align: "center" });
-  doc.setLineWidth(0.55);
-  doc.line(marginX, headerRuleY + 19, PW - marginX, headerRuleY + 19);
+  doc.setFontSize(30);
+  doc.text("BONAFIDE CERTIFICATE", PW / 2, headerRuleY + 16, { align: "center" });
+  doc.setDrawColor(gr, gg, gb);
+  doc.setLineWidth(0.6);
+  doc.line(marginX, headerRuleY + titleBlockH, PW - marginX, headerRuleY + titleBlockH);
 
+  doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(12);
-  const lineHeight = 7.5;
-  const paraGap = 5;
-  const left = marginX + 5;
-  const bodyWidth = PW - marginX * 2 - 10;
-  let y = headerRuleY + 33;
-  for (const para of bonafideParagraphs(s)) {
-    y = drawWrappedParagraph(doc, para, left, y, bodyWidth, lineHeight);
-    y += paraGap;
-  }
+  doc.setFontSize(bodyFontSize);
+  let y = headerRuleY + titleBlockH + gapTitleToBody;
+  wrappedParas.forEach((lines, i) => {
+    y = drawWrappedLines(doc, lines, left, y, lineHeight);
+    if (i < wrappedParas.length - 1) y += paraGap;
+  });
 
-  // Footer sits ~2-3 lines after the body ends, not pinned to the bottom of
-  // the page - any leftover space stays blank at the bottom, which is fine.
-  const footerY = y + lineHeight * 2;
-  doc.setFontSize(11);
+  // y is now where the NEXT body line would start, i.e. one lineHeight past
+  // the last line actually drawn - so +1.5 lineHeights here puts the footer
+  // ~2-3 lines below the real last line of content.
+  const footerY = y + lineHeight * 1.5;
+  doc.setFontSize(12);
   doc.text(`DATE : ${fmtIssueDateDMY()}`, marginX + 5, footerY);
   doc.setFont("helvetica", "bold");
   doc.text("PRINCIPAL", PW - marginX - 5, footerY, { align: "right" });
@@ -500,45 +556,50 @@ function BonafidePreview({ student, logoUrl }) {
       : undefined;
 
   return (
-    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, position: "relative", padding: "16px 20px" }}>
-      <div style={{ position: "absolute", inset: 8, border: "1.5px solid black" }} />
+    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, position: "relative", display: "flex", alignItems: "center" }}>
+      <div style={{ position: "absolute", inset: 7, border: "1.4px solid #1a2b6b" }} />
+      <div style={{ position: "absolute", inset: 9, border: "0.5px solid #1a2b6b" }} />
 
-      {/* Letterhead: logo + name/address form one aligned block, left-aligned
-          rather than page-centered text that ignores the logo, with a clear
-          gap between the logo and the text so they never crowd together. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <div style={{ width: 30, height: 30, flexShrink: 0 }}>
-          {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
+      {/* Whole block is vertically centered on the page (flex align-items:
+          center on the outer container) instead of anchored to the top with
+          the footer wherever the body happened to end - matches
+          drawBonafidePage() centering the block on the PDF page. */}
+      <div style={{ padding: "0 22px", width: "100%" }}>
+        {/* Letterhead: logo + name/address form one aligned block, left-
+            aligned rather than page-centered text that ignores the logo. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ width: 32, height: 32, flexShrink: 0 }}>
+            {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
+          </div>
+          <div style={{ textAlign: "left" }}>
+            <div style={{ fontWeight: 800, fontSize: 11.5 }}>SATYAM STARS INTERNATIONAL SCHOOL</div>
+            <div style={{ fontSize: 6.5, marginTop: 1 }}>{ADDR1}, {ADDR2}</div>
+            <div style={{ fontSize: 6.5 }}>Phone: {PHONE}</div>
+          </div>
         </div>
-        <div style={{ textAlign: "left" }}>
-          <div style={{ fontWeight: 800, fontSize: 11 }}>SATYAM STARS INTERNATIONAL SCHOOL</div>
-          <div style={{ fontSize: 6.5, marginTop: 1 }}>{ADDR1}, {ADDR2}</div>
-          <div style={{ fontSize: 6.5 }}>Phone: {PHONE}</div>
+        <div style={{ borderTop: "1px solid #f59e0b", margin: "7px 0" }} />
+
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontWeight: 900, fontSize: 19, color: "#1a2b6b" }}>BONAFIDE CERTIFICATE</div>
         </div>
-      </div>
-      <div style={{ borderTop: "1px solid black", margin: "6px 0" }} />
+        <div style={{ borderTop: "1px solid #f59e0b", margin: "6px 0 12px" }} />
 
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontWeight: 900, fontSize: 18 }}>BONAFIDE CERTIFICATE</div>
-      </div>
-      <div style={{ borderTop: "1.5px solid black", margin: "5px 0 10px" }} />
+        {/* Each paragraph flows and wraps naturally (the browser does the
+            same job wrapParagraph/drawWrappedLines do for the PDF) instead
+            of fixed line breaks that left gaps on some lines and ran tight
+            on others. */}
+        <div style={{ fontSize: 8, lineHeight: 1.85, color: "#111" }}>
+          {paragraphs.map((para, i) => (
+            <p key={i} style={{ margin: "0 0 7px" }}>
+              {para.map((seg, j) => <span key={j} style={segStyle(seg.mode)}>{seg.text} </span>)}
+            </p>
+          ))}
+        </div>
 
-      {/* Each paragraph flows and wraps naturally (the browser does the same
-          job drawWrappedParagraph does for the PDF) instead of fixed line
-          breaks that left gaps on some lines and ran tight on others.
-          Content isn't stretched to the bottom of the page - the footer
-          follows right after it, leaving blank space below (fine). */}
-      <div style={{ fontSize: 7.5, lineHeight: 1.8 }}>
-        {paragraphs.map((para, i) => (
-          <p key={i} style={{ margin: "0 0 6px" }}>
-            {para.map((seg, j) => <span key={j} style={segStyle(seg.mode)}>{seg.text} </span>)}
-          </p>
-        ))}
-      </div>
-
-      <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", fontSize: 8 }}>
-        <span>DATE : {fmtIssueDateDMY()}</span>
-        <span style={{ fontWeight: 800 }}>PRINCIPAL</span>
+        <div style={{ marginTop: 14, display: "flex", justifyContent: "space-between", fontSize: 8.5 }}>
+          <span>DATE : {fmtIssueDateDMY()}</span>
+          <span style={{ fontWeight: 800 }}>PRINCIPAL</span>
+        </div>
       </div>
     </div>
   );
