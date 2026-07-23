@@ -387,55 +387,58 @@ function drawRun(doc, segments, x, y) {
   }
 }
 
-function drawBonafideBox(doc, s, logoB64, bx, by, bw, bh) {
+// Full A4 portrait page, with the school address added to the header. Each
+// student gets TWO identical pages (not two boxes squeezed onto one page) -
+// print with the browser/OS print dialog's "Pages per sheet: 2" option to
+// get both copies on one physical sheet, same as the original two-copies-
+// per-print intent, without fighting a cramped hand-built layout for it.
+function drawBonafidePage(doc, s, logoB64) {
+  const PW = 210, PH = 297; // A4 mm
+  const marginX = 18;
+
   doc.setDrawColor(0, 0, 0);
-  doc.setLineWidth(0.5);
-  doc.rect(bx, by, bw, bh, "S");
+  doc.setLineWidth(0.6);
+  doc.rect(12, 12, PW - 24, PH - 24, "S");
 
   if (logoB64) {
-    try { doc.addImage(logoB64, "JPEG", bx + 5, by + 5, 13, 13); } catch {}
+    try { doc.addImage(logoB64, "JPEG", marginX, 18, 26, 26); } catch {}
   }
 
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(10.5);
-  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", bx + bw / 2, by + 11, { align: "center" });
-  doc.setLineWidth(0.35);
-  doc.line(bx + bw * 0.15, by + 14, bx + bw * 0.85, by + 14);
-
-  doc.setFontSize(16.5);
-  doc.text("BONAFIDE CERTIFICATE", bx + bw / 2, by + 22.5, { align: "center" });
-  doc.setLineWidth(0.4);
-  doc.line(bx + 3, by + 27, bx + bw - 3, by + 27);
+  doc.setFontSize(19);
+  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", PW / 2, 28, { align: "center" });
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(8);
-  const lineHeight = 4.7;
-  const paraGap = 1.9;
-  let y = by + 34;
-  const left = bx + 6;
+  doc.setFontSize(10);
+  doc.text(`${ADDR1}, ${ADDR2}`, PW / 2, 35, { align: "center" });
+  doc.text(`Phone: ${PHONE}`, PW / 2, 40.5, { align: "center" });
+
+  doc.setLineWidth(0.4);
+  doc.line(marginX, 46, PW - marginX, 46);
+
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(30);
+  doc.text("BONAFIDE CERTIFICATE", PW / 2, 64, { align: "center" });
+  doc.setLineWidth(0.6);
+  doc.line(marginX, 70, PW - marginX, 70);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(13);
+  const lineHeight = 9.5;
+  const paraGap = 6;
+  let y = 88;
+  const left = marginX + 5;
   for (const line of bonafideLines(s)) {
     if (line.length === 0) { y += paraGap; continue; }
     drawRun(doc, line, left, y);
     y += lineHeight;
   }
 
-  doc.setFontSize(7.5);
-  doc.text(`DATE : ${fmtIssueDateDMY()}`, bx + 6, by + bh - 6);
+  doc.setFontSize(12);
+  doc.text(`DATE : ${fmtIssueDateDMY()}`, marginX + 5, PH - 28);
   doc.setFont("helvetica", "bold");
-  doc.text("PRINCIPAL", bx + bw - 7, by + bh - 6, { align: "right" });
-}
-
-function drawBonafideCert(doc, s, logoB64) {
-  const PW = 210, PH = 297; // A4 mm
-  // Small landscape rectangles (wider than tall), centered on the portrait
-  // page with generous margins on every side, rather than filling most of
-  // the page width - two of them still fit on one A4 portrait sheet.
-  const bw = 140, bh = 95;
-  const sideMargin = (PW - bw) / 2;
-  const gap = (PH - bh * 2) / 3;
-  drawBonafideBox(doc, s, logoB64, sideMargin, gap, bw, bh);
-  drawBonafideBox(doc, s, logoB64, sideMargin, gap * 2 + bh, bw, bh);
+  doc.text("PRINCIPAL", PW - marginX - 5, PH - 28, { align: "right" });
 }
 
 async function generateBonafidePDF(students, onProgress) {
@@ -444,16 +447,21 @@ async function generateBonafidePDF(students, onProgress) {
   const logoUrl = window.location.origin + "/school-logo.jpg";
   const logoB64 = await fetchBase64(logoUrl);
 
+  let firstPage = true;
   for (let i = 0; i < students.length; i++) {
     onProgress && onProgress(i + 1, students.length);
-    if (i > 0) doc.addPage();
-    drawBonafideCert(doc, students[i], logoB64);
+    for (let copy = 0; copy < 2; copy++) {
+      if (!firstPage) doc.addPage();
+      firstPage = false;
+      drawBonafidePage(doc, students[i], logoB64);
+    }
   }
   doc.save("Bonafide_Certificates_Satyam_Stars.pdf");
 }
 
 // ── Bonafide Certificate: live preview (React, matches jsPDF output) ──────────
-function BonafideBoxPreview({ student, logoUrl }) {
+// Shows one full page - the second printed page is identical.
+function BonafidePreview({ student, logoUrl }) {
   const s = student || {};
   const lines = bonafideLines(s);
   const segStyle = (mode) => mode === "strike"
@@ -463,42 +471,40 @@ function BonafideBoxPreview({ student, logoUrl }) {
       : undefined;
 
   return (
-    <div style={{ width: 187, border: "1.5px solid black", padding: "6px 8px", position: "relative" }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 5 }}>
-        <div style={{ width: 22, height: 22, flexShrink: 0 }}>
+    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, position: "relative", padding: "16px 20px" }}>
+      <div style={{ position: "absolute", inset: 8, border: "1.5px solid black" }} />
+
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+        <div style={{ width: 34, height: 34, flexShrink: 0 }}>
           {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
         </div>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ fontWeight: 800, fontSize: 7.5 }}>SATYAM STARS INTERNATIONAL SCHOOL</div>
-          <div style={{ borderTop: "1px solid black", margin: "2px 6px 0" }} />
-          <div style={{ fontWeight: 900, fontSize: 12, marginTop: 3 }}>BONAFIDE CERTIFICATE</div>
+          <div style={{ fontWeight: 800, fontSize: 12.5 }}>SATYAM STARS INTERNATIONAL SCHOOL</div>
+          <div style={{ fontSize: 7, marginTop: 2 }}>{ADDR1}, {ADDR2}</div>
+          <div style={{ fontSize: 7 }}>Phone: {PHONE}</div>
         </div>
-        <div style={{ width: 22, flexShrink: 0 }} />
+        <div style={{ width: 34, flexShrink: 0 }} />
       </div>
-      <div style={{ borderTop: "1.5px solid black", margin: "4px 0 6px" }} />
+      <div style={{ borderTop: "1px solid black", margin: "6px 0" }} />
 
-      <div style={{ fontSize: 6, lineHeight: 1.75 }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontWeight: 900, fontSize: 20 }}>BONAFIDE CERTIFICATE</div>
+      </div>
+      <div style={{ borderTop: "1.5px solid black", margin: "6px 0 14px" }} />
+
+      <div style={{ fontSize: 8.5, lineHeight: 2 }}>
         {lines.map((line, i) => line.length === 0
-          ? <div key={i} style={{ height: 3 }} />
+          ? <div key={i} style={{ height: 6 }} />
           : <div key={i}>
               {line.map((seg, j) => <span key={j} style={segStyle(seg.mode)}>{seg.text}</span>)}
             </div>
         )}
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 6 }}>
+      <div style={{ position: "absolute", bottom: 26, left: 28, right: 28, display: "flex", justifyContent: "space-between", fontSize: 9 }}>
         <span>DATE : {fmtIssueDateDMY()}</span>
         <span style={{ fontWeight: 800 }}>PRINCIPAL</span>
       </div>
-    </div>
-  );
-}
-
-function BonafidePreview({ student, logoUrl }) {
-  return (
-    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 48 }}>
-      <BonafideBoxPreview student={student} logoUrl={logoUrl} />
-      <BonafideBoxPreview student={student} logoUrl={logoUrl} />
     </div>
   );
 }
@@ -1020,13 +1026,13 @@ export default function DocumentsPage() {
               <button onClick={handleDownloadBonafide} disabled={selected.size===0}
                 className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-school-navy text-white text-sm font-medium hover:bg-school-navy/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
                 <Download className="w-4 h-4"/>
-                Download PDF ({selected.size} certificate{selected.size!==1?"s":""})
+                Download PDF ({selected.size * 2} pages, {selected.size} student{selected.size!==1?"s":""})
               </button>
             )}
           </div>
 
           <p className="text-xs text-gray-400 text-center -mt-2">
-            PDF downloads directly — one certificate per A4 page. Select students above then click Download PDF.
+            Each student gets 2 identical A4 pages — print with &quot;Pages per sheet: 2&quot; in your print dialog to get both copies on one physical sheet.
           </p>
         </div>
       )}
