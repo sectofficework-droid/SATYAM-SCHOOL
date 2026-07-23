@@ -34,6 +34,16 @@ List<String> teacherClasses(Map profile) {
   return list;
 }
 
+// Every subject offered school-wide - matches the admin panel's timetable
+// subject list (SUBJECTS_TT in settings/page.js). Used as the Question Bank's
+// Subject dropdown since most teachers have no subject_mappings configured.
+const List<String> schoolSubjects = [
+  "Mathematics", "Science", "English", "Hindi", "Social Studies", "Computer",
+  "Accountancy", "Economics", "Business Studies", "P.E.", "Drawing",
+  "Sanskrit", "Gujarati", "EVS", "Odia", "Rhymes & Activity", "Dance / Yoga",
+  "Activity & Play", "Free Period",
+];
+
 // Subjects a teacher has mapped to a specific class, from subject_mappings.
 List<String> teacherSubjectsForClass(Map profile, String className) {
   final subjects = <String>{};

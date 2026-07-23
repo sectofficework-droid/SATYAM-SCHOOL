@@ -53,6 +53,7 @@ export async function saveQuestionPaper(paper, questionIds) {
       subject: paper.subject,
       duration_minutes: paper.durationMinutes || null,
       full_marks: paper.fullMarks,
+      exam_date: paper.examDate || null,
     })
     .select()
     .single();

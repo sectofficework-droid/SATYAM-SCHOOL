@@ -10,10 +10,19 @@ class TeacherQuestionBankPage extends StatefulWidget {
   State<TeacherQuestionBankPage> createState() => _TeacherQuestionBankPageState();
 }
 
+const List<String> _defaultChapters = [
+  'Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4', 'Chapter 5',
+  'Chapter 6', 'Chapter 7', 'Chapter 8', 'Chapter 9', 'Chapter 10',
+  'Chapter 11', 'Chapter 12',
+];
+const String _addChapterValue = '__add_chapter__';
+
 class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
   late String _selectedClass;
-  final _subjectCtrl = TextEditingController();
-  final _chapterCtrl = TextEditingController();
+  String? _selectedSubject;
+  String? _selectedChapter;
+  bool _addingCustomChapter = false;
+  final _customChapterCtrl = TextEditingController();
   List<String> _chapterSuggestions = [];
 
   List<Map<String, dynamic>> _questions = [];
@@ -26,21 +35,50 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
     _selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
         ? profile['class_name'] as String
         : allSchoolClasses.first;
-    _load();
   }
 
   @override
   void dispose() {
-    _subjectCtrl.dispose();
-    _chapterCtrl.dispose();
+    _customChapterCtrl.dispose();
     super.dispose();
   }
 
   String? get _employeeId => (AuthService.to.profile.value ?? {})['id'] as String?;
 
+  List<String> get _chapterOptions {
+    final set = <String>{..._defaultChapters, ..._chapterSuggestions};
+    final list = set.toList();
+    list.sort((a, b) {
+      final an = int.tryParse(a.replaceFirst('Chapter ', ''));
+      final bn = int.tryParse(b.replaceFirst('Chapter ', ''));
+      if (an != null && bn != null) return an.compareTo(bn);
+      if (an != null) return -1;
+      if (bn != null) return 1;
+      return a.compareTo(b);
+    });
+    return list;
+  }
+
+  Future<void> _onSubjectChanged(String? v) async {
+    setState(() { _selectedSubject = v; _selectedChapter = null; _questions = []; _chapterSuggestions = []; });
+    final employeeId = _employeeId;
+    if (employeeId == null || v == null) return;
+    final chapters = await SupabaseService.fetchQuestionChapters(
+      teacherId: employeeId, className: _selectedClass, subject: v,
+    );
+    if (mounted) setState(() => _chapterSuggestions = chapters);
+  }
+
+  void _confirmCustomChapter() {
+    final v = _customChapterCtrl.text.trim();
+    if (v.isEmpty) return;
+    setState(() { _selectedChapter = v; _addingCustomChapter = false; _customChapterCtrl.clear(); });
+    _load();
+  }
+
   Future<void> _load() async {
     final employeeId = _employeeId;
-    if (employeeId == null || _subjectCtrl.text.trim().isEmpty) {
+    if (employeeId == null || _selectedSubject == null || _selectedChapter == null) {
       setState(() => _questions = []);
       return;
     }
@@ -48,11 +86,11 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
     final questions = await SupabaseService.fetchQuestions(
       teacherId: employeeId,
       className: _selectedClass,
-      subject: _subjectCtrl.text.trim(),
-      chapter: _chapterCtrl.text.trim().isEmpty ? null : _chapterCtrl.text.trim(),
+      subject: _selectedSubject!,
+      chapter: _selectedChapter,
     );
     final chapters = await SupabaseService.fetchQuestionChapters(
-      teacherId: employeeId, className: _selectedClass, subject: _subjectCtrl.text.trim(),
+      teacherId: employeeId, className: _selectedClass, subject: _selectedSubject!,
     );
     if (mounted) setState(() { _questions = questions; _chapterSuggestions = chapters; _loading = false; });
   }
@@ -86,52 +124,66 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
                   decoration: const InputDecoration(labelText: 'Class', isDense: true,
                     prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
                   items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                  onChanged: (v) { setState(() => _selectedClass = v!); _load(); },
+                  onChanged: (v) { setState(() => _selectedClass = v!); _onSubjectChanged(_selectedSubject); },
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: TextField(
-                  controller: _subjectCtrl,
+                child: DropdownButtonFormField<String>(
+                  value: _selectedSubject,
+                  isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Subject', isDense: true,
                     prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
-                  onSubmitted: (_) => _load(),
-                  onEditingComplete: _load,
+                  hint: const Text('Select', style: TextStyle(fontSize: 13)),
+                  items: schoolSubjects.map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
+                  onChanged: _onSubjectChanged,
                 ),
               ),
             ]),
             const SizedBox(height: 10),
-            Row(children: [
-              Expanded(
-                child: Autocomplete<String>(
-                  optionsBuilder: (v) => v.text.isEmpty
-                      ? _chapterSuggestions
-                      : _chapterSuggestions.where((c) => c.toLowerCase().contains(v.text.toLowerCase())),
-                  onSelected: (v) { _chapterCtrl.text = v; _load(); },
-                  fieldViewBuilder: (ctx, controller, focusNode, onSubmit) {
-                    controller.text = _chapterCtrl.text;
-                    return TextField(
-                      controller: controller,
-                      focusNode: focusNode,
-                      decoration: const InputDecoration(labelText: 'Chapter', isDense: true,
-                        prefixIcon: Icon(Icons.bookmark_border_rounded, color: AppColors.navy, size: 20)),
-                      onChanged: (v) => _chapterCtrl.text = v,
-                      onSubmitted: (_) { onSubmit(); _load(); },
-                      onEditingComplete: () { _chapterCtrl.text = controller.text; _load(); onSubmit(); },
-                    );
-                  },
+            DropdownButtonFormField<String>(
+              value: _addingCustomChapter ? null : _selectedChapter,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Chapter', isDense: true,
+                prefixIcon: Icon(Icons.bookmark_border_rounded, color: AppColors.navy, size: 20)),
+              hint: Text(_selectedSubject == null ? 'Select a subject first' : 'Select', style: const TextStyle(fontSize: 13)),
+              items: _selectedSubject == null ? [] : [
+                ..._chapterOptions.map((c) => DropdownMenuItem(value: c, child: Text(c))),
+                const DropdownMenuItem(value: _addChapterValue, child: Text('+ Add New Chapter',
+                  style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.navy))),
+              ],
+              onChanged: _selectedSubject == null ? null : (v) {
+                if (v == _addChapterValue) {
+                  setState(() => _addingCustomChapter = true);
+                } else if (v != null) {
+                  setState(() { _selectedChapter = v; _addingCustomChapter = false; });
+                  _load();
+                }
+              },
+            ),
+            if (_addingCustomChapter) ...[
+              const SizedBox(height: 10),
+              Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: _customChapterCtrl,
+                    autofocus: true,
+                    decoration: const InputDecoration(labelText: 'New Chapter Name', isDense: true,
+                      prefixIcon: Icon(Icons.edit_outlined, color: AppColors.navy, size: 20)),
+                    onSubmitted: (_) => _confirmCustomChapter(),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              ElevatedButton(
-                onPressed: _load,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.navy, minimumSize: const Size(0, 48),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                const SizedBox(width: 10),
+                ElevatedButton(
+                  onPressed: _confirmCustomChapter,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.navy, minimumSize: const Size(0, 48),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: const Icon(Icons.check_rounded, color: Colors.white),
                 ),
-                child: const Icon(Icons.search_rounded, color: Colors.white),
-              ),
-            ]),
+              ]),
+            ],
           ]),
         ),
         const Divider(height: 1, color: AppColors.border),
@@ -139,8 +191,8 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
-              : _subjectCtrl.text.trim().isEmpty
-                  ? _emptyState('Enter a subject to view or add questions.', Icons.menu_book_rounded)
+              : (_selectedSubject == null || _selectedChapter == null)
+                  ? _emptyState('Select a subject and chapter to view or add questions.', Icons.menu_book_rounded)
                   : _questions.isEmpty
                       ? _emptyState('No questions yet for this class/subject/chapter.\nTap + to add one.', Icons.quiz_outlined)
                       : ListView(
@@ -150,8 +202,8 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
         ),
       ]),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _subjectCtrl.text.trim().isEmpty ? null : () => _showAddSheet(),
-        backgroundColor: _subjectCtrl.text.trim().isEmpty ? AppColors.textHint : AppColors.navy,
+        onPressed: (_selectedSubject == null || _selectedChapter == null) ? null : () => _showAddSheet(),
+        backgroundColor: (_selectedSubject == null || _selectedChapter == null) ? AppColors.textHint : AppColors.navy,
         icon: const Icon(Icons.add, color: Colors.white),
         label: const Text('Add Question', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
       ),
@@ -334,8 +386,8 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
                       final data = {
                         'teacher_id': employeeId,
                         'class': _selectedClass,
-                        'subject': _subjectCtrl.text.trim(),
-                        'chapter': _chapterCtrl.text.trim(),
+                        'subject': _selectedSubject,
+                        'chapter': _selectedChapter,
                         'question_format': format,
                         'marks': marks,
                         'question_text': textCtrl.text.trim(),
