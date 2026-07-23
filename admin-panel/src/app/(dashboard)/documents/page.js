@@ -43,19 +43,44 @@ function fmtAddr(s) {
   return [s.roomPlotNo, s.address].filter(Boolean).join(", ") || "";
 }
 
-// Bonafide Certificate uses the same navy/gold brand colors as the "Satyam
-// Classic" ID card design, so the two document types read as one family
-// rather than each looking like a different app.
-const BONAFIDE_COLOR = { hdr: "#1a2b6b", acc: "#f97316", gld: "#f59e0b" };
-
-function pronouns(gender) {
-  const g = (gender || "").trim().toLowerCase();
-  if (g.startsWith("f")) return { title: "Ms.", parentTitle: "Mrs.", child: "Daughter", poss: "Her", subj: "She" };
-  return { title: "Mr.", parentTitle: "Mr.", child: "Son", poss: "His", subj: "He" };
+// Matches the school's actual physical Bonafide Certificate exactly (a
+// pre-printed form: both gender options are shown with the wrong one struck
+// through, and filled-in blanks are underlined) - see BONAFIED.pdf.
+function isFemale(gender) {
+  return (gender || "").trim().toLowerCase().startsWith("f");
 }
 
-function fmtIssueDate(d = new Date()) {
-  return d.toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" });
+const NUM_WORDS_ONES = ["", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN",
+  "ELEVEN", "TWELVE", "THIRTEEN", "FOURTEEN", "FIFTEEN", "SIXTEEN", "SEVENTEEN", "EIGHTEEN", "NINETEEN"];
+const NUM_WORDS_TENS = ["", "", "TWENTY", "THIRTY", "FORTY", "FIFTY", "SIXTY", "SEVENTY", "EIGHTY", "NINETY"];
+
+// Plain compound-cardinal reading (e.g. 2021 -> "TWO THOUSAND TWENTY ONE"),
+// matching how the school's certificate spells out the birth year - not the
+// "twenty twenty-one" style some people read years aloud with.
+function numberToWords(n) {
+  if (n === 0) return "ZERO";
+  if (n < 20) return NUM_WORDS_ONES[n];
+  if (n < 100) return NUM_WORDS_TENS[Math.floor(n / 10)] + (n % 10 ? " " + NUM_WORDS_ONES[n % 10] : "");
+  if (n < 1000) return NUM_WORDS_ONES[Math.floor(n / 100)] + " HUNDRED" + (n % 100 ? " " + numberToWords(n % 100) : "");
+  const thousands = Math.floor(n / 1000);
+  const rest = n % 1000;
+  return numberToWords(thousands) + " THOUSAND" + (rest ? " " + numberToWords(rest) : "");
+}
+
+const MONTH_NAMES = ["JANUARY", "FEBRUARY", "MARCH", "APRIL", "MAY", "JUNE", "JULY", "AUGUST", "SEPTEMBER", "OCTOBER", "NOVEMBER", "DECEMBER"];
+
+function dobParts(dobIso) {
+  const m = String(dobIso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return { words: "", dmy: "" };
+  const [, y, mo, d] = m;
+  const words = `${numberToWords(parseInt(d, 10))} ${MONTH_NAMES[parseInt(mo, 10) - 1]} ${numberToWords(parseInt(y, 10))}`;
+  return { words, dmy: `${d}/${mo}/${y}` };
+}
+
+function fmtIssueDateDMY(d = new Date()) {
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${d.getFullYear()}`;
 }
 
 // ── Fetch image as base64 via blob (avoids CORS canvas issues) ────────────────
@@ -318,107 +343,93 @@ async function generatePDF(students, design, onProgress) {
   doc.save("ID_Cards_Satyam_Stars.pdf");
 }
 
-// ── Bonafide Certificate: jsPDF drawing (one full A4 page per student) ────────
-function drawBonafideCert(doc, s, logoB64) {
-  const PW = 210, PH = 297; // A4 mm
-  const [hr, hg, hb] = rgb(BONAFIDE_COLOR.hdr);
-  const [ar, ag, ab] = rgb(BONAFIDE_COLOR.acc);
-  const [gr, gg, gb] = rgb(BONAFIDE_COLOR.gld);
-  const p = pronouns(s.gender);
+// ── Bonafide Certificate: matches the school's real pre-printed form exactly
+// (BONAFIED.pdf) - plain black-on-white, both gender options shown with the
+// wrong one struck through, filled-in blanks underlined. Two identical
+// copies stacked on one A4 page, same as the physical original (cut apart:
+// one copy for the requester, one for the school's file).
+function bonafideLines(s) {
+  const female = isFemale(s.gender);
+  const { words: dobWords, dmy: dobDmy } = dobParts(s.dob);
+  const cls = s.std || "—";
+  const session = s.session || "2026-27";
+  const opt = (text, chosen) => ({ text, mode: chosen ? "plain" : "strike" });
+  const fill = (text) => ({ text: text || "—", mode: "underline" });
+  const plain = (text) => ({ text, mode: "plain" });
 
-  // Outer decorative border
-  doc.setDrawColor(hr, hg, hb);
-  doc.setLineWidth(1.2);
-  doc.rect(8, 8, PW - 16, PH - 16, "S");
-  doc.setDrawColor(gr, gg, gb);
-  doc.setLineWidth(0.4);
-  doc.rect(11, 11, PW - 22, PH - 22, "S");
+  return [
+    [plain("This is to certify that "), opt("Mr.", !female), plain(" / "), opt("Ms:", female), plain("  "), fill((s.name || "").toUpperCase()), plain(" is a")],
+    [plain("bonafide student of this school. Studying in Std. "), fill(cls)],
+    [plain("(Year "), fill(session), plain(")")],
+    [],
+    [opt("His", !female), plain(" / "), opt("Her", female), plain(" birthdate as recorded in the General Register of")],
+    [plain("School is "), fill(dobWords)],
+    [plain("(" + (dobDmy || "—") + ")")],
+    [],
+    [plain("To the best of my knowledge "), opt("he", !female), plain(" / "), opt("she", female), plain(" bears a good moral")],
+    [plain("character.")],
+  ];
+}
 
-  // Header band
-  doc.setFillColor(hr, hg, hb);
-  doc.rect(11, 11, PW - 22, 34, "F");
-  if (logoB64) {
-    doc.setFillColor(255, 255, 255);
-    doc.circle(30, 28, 12, "F");
-    try { doc.addImage(logoB64, "JPEG", 20, 18, 20, 20); } catch {}
+function drawRun(doc, segments, x, y) {
+  let cx = x;
+  for (const seg of segments) {
+    doc.text(seg.text, cx, y);
+    const w = doc.getTextWidth(seg.text);
+    if (seg.mode === "strike") {
+      doc.setLineWidth(0.25);
+      doc.line(cx, y - 1.4, cx + w, y - 1.4);
+    } else if (seg.mode === "underline") {
+      doc.setLineWidth(0.2);
+      doc.line(cx, y + 0.8, cx + w, y + 0.8);
+    }
+    cx += w;
   }
-  doc.setFontSize(6.5);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(220, 220, 220);
-  doc.text(TRUST, 48, 21);
-  doc.setFontSize(19);
+}
+
+function drawBonafideBox(doc, s, logoB64, bx, by, bw, bh) {
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(0.5);
+  doc.rect(bx, by, bw, bh, "S");
+
+  if (logoB64) {
+    try { doc.addImage(logoB64, "JPEG", bx + 6, by + 6, 20, 20); } catch {}
+  }
+
+  doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(255, 255, 255);
-  doc.text("SATYAM STARS", 48, 30);
-  doc.setFontSize(12);
-  doc.setTextColor(gr, gg, gb);
-  doc.text("INTERNATIONAL SCHOOL", 48, 37);
-  doc.setFontSize(7);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(255, 255, 255);
-  doc.text(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, PW - 15, 40, { align: "right" });
+  doc.setFontSize(15);
+  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", bx + bw / 2, by + 15, { align: "center" });
+  doc.setLineWidth(0.4);
+  doc.line(bx + bw * 0.15, by + 19, bx + bw * 0.85, by + 19);
 
-  // Title
-  doc.setFontSize(20);
+  doc.setFontSize(24);
+  doc.text("BONAFIDE CERTIFICATE", bx + bw / 2, by + 32, { align: "center" });
+  doc.setLineWidth(0.5);
+  doc.line(bx + 4, by + 38, bx + bw - 4, by + 38);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  const lineHeight = 6.5;
+  const paraGap = 3;
+  let y = by + 49;
+  const left = bx + 8;
+  for (const line of bonafideLines(s)) {
+    if (line.length === 0) { y += paraGap; continue; }
+    drawRun(doc, line, left, y);
+    y += lineHeight;
+  }
+
+  doc.setFontSize(10.5);
+  doc.text(`DATE : ${fmtIssueDateDMY()}`, bx + 8, by + bh - 8);
   doc.setFont("helvetica", "bold");
-  doc.setTextColor(hr, hg, hb);
-  doc.text("BONAFIDE CERTIFICATE", PW / 2, 62, { align: "center" });
-  doc.setDrawColor(gr, gg, gb);
-  doc.setLineWidth(0.6);
-  doc.line(PW / 2 - 38, 66, PW / 2 + 38, 66);
+  doc.text("PRINCIPAL", bx + bw - 10, by + bh - 8, { align: "right" });
+}
 
-  // Date of issue
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(71, 85, 105);
-  doc.text(`Date: ${fmtIssueDate()}`, PW - 20, 78, { align: "right" });
-
-  // Body paragraph
-  const cls = (s.std || "—") + (s.section ? " - " + s.section : "");
-  const session = s.session || "2025-26";
-  const body =
-    `This is to certify that ${p.title} ${(s.name || "").toUpperCase()}, ${p.child} of ` +
-    `${p.parentTitle} ${(s.fatherName || "—").toUpperCase()}, bearing Enrollment No. ${s.enrollment || "—"}, ` +
-    `is a bonafide student of SATYAM STARS INTERNATIONAL SCHOOL, studying in Class ${cls} ` +
-    `during the academic session ${session}.\n\n` +
-    `As per our school records, ${p.poss.toLowerCase()} Date of Birth is ${fmtDMY(s.dob) || "—"}.\n\n` +
-    `This certificate is issued upon request, for whatever purpose it may serve.`;
-
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(30, 41, 59);
-  const lines = doc.splitTextToSize(body, PW - 50);
-  doc.text(lines, 25, 95, { lineHeightFactor: 1.9 });
-
-  // Signature block
-  const sigY = PH - 55;
-  doc.setDrawColor(ar, ag, ab);
-  doc.setFillColor(ar, ag, ab);
-  doc.circle(PW - 40, sigY - 4, 12, "F");
-  doc.setFontSize(7);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(255, 255, 255);
-  doc.text("SCHOOL\nSEAL", PW - 40, sigY - 6, { align: "center", lineHeightFactor: 1.2 });
-  doc.setDrawColor(148, 163, 184);
-  doc.setLineWidth(0.3);
-  doc.line(PW - 65, sigY + 14, PW - 20, sigY + 14);
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(hr, hg, hb);
-  doc.text("PRINCIPAL", PW - 42.5, sigY + 20, { align: "center" });
-  doc.setFontSize(8);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(100, 116, 139);
-  doc.text("Satyam Stars International School", PW - 42.5, sigY + 25, { align: "center" });
-
-  // Footer band
-  doc.setFillColor(hr, hg, hb);
-  doc.rect(11, PH - 24, PW - 22, 13, "F");
-  doc.setFontSize(7.5);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(255, 255, 255);
-  doc.text(`${ADDR1}, ${ADDR2}`, PW / 2, PH - 18.5, { align: "center" });
-  doc.text(`Phone: ${PHONE}`, PW / 2, PH - 14, { align: "center" });
+function drawBonafideCert(doc, s, logoB64) {
+  const PW = 210; // A4 mm
+  drawBonafideBox(doc, s, logoB64, 10, 10, PW - 20, 135);
+  drawBonafideBox(doc, s, logoB64, 10, 152, PW - 20, 135);
 }
 
 async function generateBonafidePDF(students, onProgress) {
@@ -436,61 +447,52 @@ async function generateBonafidePDF(students, onProgress) {
 }
 
 // ── Bonafide Certificate: live preview (React, matches jsPDF output) ──────────
-function BonafidePreview({ student, logoUrl }) {
+function BonafideBoxPreview({ student, logoUrl }) {
   const s = student || {};
-  const p = pronouns(s.gender);
-  const cls = (s.std || "—") + (s.section ? " - " + s.section : "");
-  const session = s.session || "2025-26";
-  const { hdr, acc, gld } = BONAFIDE_COLOR;
+  const lines = bonafideLines(s);
+  const segStyle = (mode) => mode === "strike"
+    ? { textDecoration: "line-through" }
+    : mode === "underline"
+      ? { textDecoration: "underline" }
+      : undefined;
 
   return (
-    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", position: "relative", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", border: `2px solid ${hdr}`, flexShrink: 0 }}>
-      <div style={{ position: "absolute", inset: 6, border: `1px solid ${gld}` }} />
-
-      {/* Header */}
-      <div style={{ position: "absolute", top: 10, left: 10, right: 10, height: 46, background: hdr, display: "flex", alignItems: "center", padding: "0 10px", gap: 8 }}>
-        <div style={{ width: 34, height: 34, borderRadius: "50%", background: "white", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} onError={e => e.target.style.display = "none"} /> : <span style={{ color: hdr, fontWeight: 900 }}>S</span>}
+    <div style={{ border: "1.5px solid black", padding: "8px 10px", position: "relative", minHeight: 195 }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+        <div style={{ width: 34, height: 34, flexShrink: 0 }}>
+          {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 5.5 }}>{TRUST}</div>
-          <div style={{ color: "white", fontSize: 13, fontWeight: 900, lineHeight: 1.1 }}>SATYAM STARS</div>
-          <div style={{ color: gld, fontSize: 8, fontWeight: 800 }}>INTERNATIONAL SCHOOL</div>
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <div style={{ fontWeight: 800, fontSize: 11 }}>SATYAM STARS INTERNATIONAL SCHOOL</div>
+          <div style={{ borderTop: "1px solid black", margin: "2px 10px 0" }} />
+          <div style={{ fontWeight: 900, fontSize: 17, marginTop: 4 }}>BONAFIDE CERTIFICATE</div>
         </div>
+        <div style={{ width: 34, flexShrink: 0 }} />
+      </div>
+      <div style={{ borderTop: "1.5px solid black", margin: "6px 0 8px" }} />
+
+      <div style={{ fontSize: 8.5, lineHeight: 1.9 }}>
+        {lines.map((line, i) => line.length === 0
+          ? <div key={i} style={{ height: 5 }} />
+          : <div key={i}>
+              {line.map((seg, j) => <span key={j} style={segStyle(seg.mode)}>{seg.text}</span>)}
+            </div>
+        )}
       </div>
 
-      {/* Title */}
-      <div style={{ position: "absolute", top: 66, left: 0, right: 0, textAlign: "center" }}>
-        <div style={{ color: hdr, fontSize: 14, fontWeight: 900, letterSpacing: 1 }}>BONAFIDE CERTIFICATE</div>
-        <div style={{ margin: "4px auto 0", width: 70, height: 2, background: gld }} />
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 8.5 }}>
+        <span>DATE : {fmtIssueDateDMY()}</span>
+        <span style={{ fontWeight: 800 }}>PRINCIPAL</span>
       </div>
+    </div>
+  );
+}
 
-      <div style={{ position: "absolute", top: 84, right: 18, fontSize: 7, color: "#475569" }}>Date: {fmtIssueDate()}</div>
-
-      {/* Body */}
-      <div style={{ position: "absolute", top: 96, left: 20, right: 20, fontSize: 7.5, lineHeight: 1.9, color: "#1e293b", textAlign: "justify" }}>
-        This is to certify that <b>{p.title} {(s.name || "—").toUpperCase()}</b>, {p.child} of{" "}
-        <b>{p.parentTitle} {(s.fatherName || "—").toUpperCase()}</b>, bearing Enrollment No.{" "}
-        <b>{s.enrollment || "—"}</b>, is a bonafide student of <b>SATYAM STARS INTERNATIONAL SCHOOL</b>,
-        {" "}studying in Class <b>{cls}</b> during the academic session <b>{session}</b>.
-        <br /><br />
-        As per our school records, {p.poss.toLowerCase()} Date of Birth is <b>{fmtDMY(s.dob) || "—"}</b>.
-        <br /><br />
-        This certificate is issued upon request, for whatever purpose it may serve.
-      </div>
-
-      {/* Signature */}
-      <div style={{ position: "absolute", bottom: 46, right: 22, textAlign: "center" }}>
-        <div style={{ width: 30, height: 30, borderRadius: "50%", background: acc, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 6px", color: "white", fontSize: 5.5, fontWeight: 700, lineHeight: 1.1, textAlign: "center" }}>SCHOOL<br />SEAL</div>
-        <div style={{ width: 60, borderTop: "1px solid #94a3b8", marginBottom: 3 }} />
-        <div style={{ fontSize: 8, fontWeight: 800, color: hdr }}>PRINCIPAL</div>
-      </div>
-
-      {/* Footer */}
-      <div style={{ position: "absolute", bottom: 10, left: 10, right: 10, height: 14, background: hdr, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 1 }}>
-        <div style={{ color: "white", fontSize: 5.5 }}>{ADDR1}, {ADDR2}</div>
-        <div style={{ color: "white", fontSize: 5.5 }}>Phone: {PHONE}</div>
-      </div>
+function BonafidePreview({ student, logoUrl }) {
+  return (
+    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "10px 10px" }}>
+      <BonafideBoxPreview student={student} logoUrl={logoUrl} />
+      <BonafideBoxPreview student={student} logoUrl={logoUrl} />
     </div>
   );
 }
