@@ -144,7 +144,7 @@ export default function AttendancePage() {
           {classOptions.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
 
-        <DateInputDMY value={selectedDate} onChange={setSelectedDate} max={todayStr}
+        <DateInputDMY value={selectedDate} onChange={e => setSelectedDate(e.target.value)} max={todayStr}
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-school-navy" />
 
         <div className="relative flex-1 sm:max-w-xs">
