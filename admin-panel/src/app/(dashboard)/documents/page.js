@@ -393,50 +393,49 @@ function drawBonafideBox(doc, s, logoB64, bx, by, bw, bh) {
   doc.rect(bx, by, bw, bh, "S");
 
   if (logoB64) {
-    try { doc.addImage(logoB64, "JPEG", bx + 6, by + 6, 18, 18); } catch {}
+    try { doc.addImage(logoB64, "JPEG", bx + 5, by + 5, 13, 13); } catch {}
   }
 
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", bx + bw / 2, by + 14, { align: "center" });
-  doc.setLineWidth(0.4);
-  doc.line(bx + bw * 0.15, by + 18, bx + bw * 0.85, by + 18);
+  doc.setFontSize(10.5);
+  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", bx + bw / 2, by + 11, { align: "center" });
+  doc.setLineWidth(0.35);
+  doc.line(bx + bw * 0.15, by + 14, bx + bw * 0.85, by + 14);
 
-  doc.setFontSize(22);
-  doc.text("BONAFIDE CERTIFICATE", bx + bw / 2, by + 30, { align: "center" });
-  doc.setLineWidth(0.5);
-  doc.line(bx + 4, by + 35, bx + bw - 4, by + 35);
+  doc.setFontSize(16.5);
+  doc.text("BONAFIDE CERTIFICATE", bx + bw / 2, by + 22.5, { align: "center" });
+  doc.setLineWidth(0.4);
+  doc.line(bx + 3, by + 27, bx + bw - 3, by + 27);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10.5);
-  const lineHeight = 6.2;
-  const paraGap = 2.8;
-  let y = by + 45;
-  const left = bx + 8;
+  doc.setFontSize(8);
+  const lineHeight = 4.7;
+  const paraGap = 1.9;
+  let y = by + 34;
+  const left = bx + 6;
   for (const line of bonafideLines(s)) {
     if (line.length === 0) { y += paraGap; continue; }
     drawRun(doc, line, left, y);
     y += lineHeight;
   }
 
-  doc.setFontSize(10);
-  doc.text(`DATE : ${fmtIssueDateDMY()}`, bx + 8, by + bh - 8);
+  doc.setFontSize(7.5);
+  doc.text(`DATE : ${fmtIssueDateDMY()}`, bx + 6, by + bh - 6);
   doc.setFont("helvetica", "bold");
-  doc.text("PRINCIPAL", bx + bw - 10, by + bh - 8, { align: "right" });
+  doc.text("PRINCIPAL", bx + bw - 7, by + bh - 6, { align: "right" });
 }
 
 function drawBonafideCert(doc, s, logoB64) {
   const PW = 210, PH = 297; // A4 mm
-  // Each copy is a landscape rectangle (wider than tall, ~same ratio as an
-  // A4 landscape sheet) rather than a narrow portrait-ish box, so two of
-  // them stacked read as "two landscape certificates" that happen to fit
-  // one on top of the other on a portrait A4 page.
-  const SIDE_MARGIN = 12, GAP = 15;
-  const bw = PW - SIDE_MARGIN * 2;
-  const bh = (PH - GAP * 3) / 2;
-  drawBonafideBox(doc, s, logoB64, SIDE_MARGIN, GAP, bw, bh);
-  drawBonafideBox(doc, s, logoB64, SIDE_MARGIN, GAP * 2 + bh, bw, bh);
+  // Small landscape rectangles (wider than tall), centered on the portrait
+  // page with generous margins on every side, rather than filling most of
+  // the page width - two of them still fit on one A4 portrait sheet.
+  const bw = 140, bh = 95;
+  const sideMargin = (PW - bw) / 2;
+  const gap = (PH - bh * 2) / 3;
+  drawBonafideBox(doc, s, logoB64, sideMargin, gap, bw, bh);
+  drawBonafideBox(doc, s, logoB64, sideMargin, gap * 2 + bh, bw, bh);
 }
 
 async function generateBonafidePDF(students, onProgress) {
@@ -464,30 +463,30 @@ function BonafideBoxPreview({ student, logoUrl }) {
       : undefined;
 
   return (
-    <div style={{ border: "1.5px solid black", padding: "8px 10px", position: "relative", minHeight: 168 }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-        <div style={{ width: 34, height: 34, flexShrink: 0 }}>
+    <div style={{ width: 187, border: "1.5px solid black", padding: "6px 8px", position: "relative" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 5 }}>
+        <div style={{ width: 22, height: 22, flexShrink: 0 }}>
           {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
         </div>
         <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ fontWeight: 800, fontSize: 11 }}>SATYAM STARS INTERNATIONAL SCHOOL</div>
-          <div style={{ borderTop: "1px solid black", margin: "2px 10px 0" }} />
-          <div style={{ fontWeight: 900, fontSize: 17, marginTop: 4 }}>BONAFIDE CERTIFICATE</div>
+          <div style={{ fontWeight: 800, fontSize: 7.5 }}>SATYAM STARS INTERNATIONAL SCHOOL</div>
+          <div style={{ borderTop: "1px solid black", margin: "2px 6px 0" }} />
+          <div style={{ fontWeight: 900, fontSize: 12, marginTop: 3 }}>BONAFIDE CERTIFICATE</div>
         </div>
-        <div style={{ width: 34, flexShrink: 0 }} />
+        <div style={{ width: 22, flexShrink: 0 }} />
       </div>
-      <div style={{ borderTop: "1.5px solid black", margin: "6px 0 8px" }} />
+      <div style={{ borderTop: "1.5px solid black", margin: "4px 0 6px" }} />
 
-      <div style={{ fontSize: 8.5, lineHeight: 1.9 }}>
+      <div style={{ fontSize: 6, lineHeight: 1.75 }}>
         {lines.map((line, i) => line.length === 0
-          ? <div key={i} style={{ height: 5 }} />
+          ? <div key={i} style={{ height: 3 }} />
           : <div key={i}>
               {line.map((seg, j) => <span key={j} style={segStyle(seg.mode)}>{seg.text}</span>)}
             </div>
         )}
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10, fontSize: 8.5 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6, fontSize: 6 }}>
         <span>DATE : {fmtIssueDateDMY()}</span>
         <span style={{ fontWeight: 800 }}>PRINCIPAL</span>
       </div>
@@ -497,7 +496,7 @@ function BonafideBoxPreview({ student, logoUrl }) {
 
 function BonafidePreview({ student, logoUrl }) {
   return (
-    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: 20, padding: "20px 16px" }}>
+    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 48 }}>
       <BonafideBoxPreview student={student} logoUrl={logoUrl} />
       <BonafideBoxPreview student={student} logoUrl={logoUrl} />
     </div>
