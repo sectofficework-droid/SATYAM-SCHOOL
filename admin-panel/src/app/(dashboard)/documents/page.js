@@ -473,15 +473,18 @@ function drawBonafidePage(doc, s, logoB64) {
   doc.setLineWidth(0.3);
   doc.rect(13, 13, PW - 26, PH - 26, "S");
 
-  // Letterhead: logo on the left; "SATYAM STARS" / "INTERNATIONAL SCHOOL"
-  // as two large serif lines to its right, a rule under them, then the
-  // address left-aligned at the same X as the name - matches the school's
-  // own reference letterhead (Header.png) exactly, not a generic design.
+  // Letterhead: logo top-left, text block starting at the SAME top Y to
+  // its right, flowing straight down (name -> rule -> address) - not
+  // trying to vertically center the text against the logo's midpoint,
+  // which repeatedly ended up misaligned in practice. Top-anchoring both
+  // to a shared Y is simpler and far more predictable: the logo is a
+  // little taller than the text block and extends a bit past the rule,
+  // same as the school's own reference letterhead.
   //
   // The logo file itself is 1080x1200px (not square) - forcing it into a
   // square box was squashing it. Fixed height, width derived from the
   // real aspect ratio so it isn't distorted either way.
-  const logoY = 18, logoH = 42, logoW = logoH * (1080 / 1200);
+  const logoY = 20, logoH = 34, logoW = logoH * (1080 / 1200);
   if (logoB64) {
     try { doc.addImage(logoB64, "JPEG", marginX, logoY, logoW, logoH); } catch {}
   }
@@ -500,19 +503,11 @@ function drawBonafidePage(doc, s, logoB64) {
     return size;
   }
 
-  // Vertically center the two name lines against the logo: the midpoint
-  // BETWEEN the two text baselines is placed at the logo's own vertical
-  // center. (A previous attempt tried to correct for cap-height/descender
-  // to center the visual text box precisely, but that still didn't look
-  // centered - this simpler, cruder method is much less likely to be wrong
-  // in some non-obvious way.)
-  const lineGap = 12;
   doc.setFont("times", "bold");
-  const size1 = fitFontSize("SATYAM STARS", 30, 16);
-  const size2 = fitFontSize("INTERNATIONAL SCHOOL", 18, 12);
-  const logoMidY = logoY + logoH / 2;
-  const baseline1 = logoMidY - lineGap / 2;
-  const baseline2 = logoMidY + lineGap / 2;
+  const size1 = fitFontSize("SATYAM STARS", 27, 16);
+  const size2 = fitFontSize("INTERNATIONAL SCHOOL", 17, 11);
+  const baseline1 = logoY + 9;
+  const baseline2 = logoY + 18;
 
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(size1);
@@ -520,23 +515,20 @@ function drawBonafidePage(doc, s, logoB64) {
   doc.setFontSize(size2);
   doc.text("INTERNATIONAL SCHOOL", textX, baseline2);
 
-  // Rule sits close under the text - it doesn't need to also clear the
-  // logo's own bottom edge (the logo is taller than the text block and is
-  // meant to extend past this rule, same as the school's reference image).
-  const ruleY = baseline2 + 4;
+  const ruleY = logoY + 23;
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.6);
   doc.line(textX, ruleY, PW - marginX, ruleY);
 
   doc.setFont("helvetica", "normal");
   fitFontSize(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, 10, 7);
-  doc.text(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, textX, ruleY + 6);
+  doc.text(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, textX, logoY + 29);
 
   // Gold divider before the title, plus the existing one after it - equal
   // whitespace gap on both sides of the text itself (not equal baseline
   // distances, which would leave uneven-looking gaps since the gap above
   // has to clear the text's cap-height while the gap below doesn't).
-  const preTitleRuleY = ruleY + 11;
+  const preTitleRuleY = logoY + 38;
   doc.setDrawColor(gr, gg, gb);
   doc.setLineWidth(0.6);
   doc.line(marginX, preTitleRuleY, PW - marginX, preTitleRuleY);
@@ -622,14 +614,18 @@ function BonafidePreview({ student, logoUrl }) {
             logo, then "SATYAM STARS" / "INTERNATIONAL SCHOOL" as two big
             serif lines, a black rule under them, then the address
             left-aligned at the same X as the name (not centered). */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div style={{ width: 48, height: 48, flexShrink: 0 }}>
+        {/* Top-anchored, not centered: logo and text block both start at
+            the same top Y and flow straight down. Simpler and far more
+            predictable than trying to vertically center the text against
+            the logo's midpoint, which kept coming out misaligned. */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+          <div style={{ width: 42, height: 42, flexShrink: 0 }}>
             {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 21, lineHeight: 1.05, whiteSpace: "nowrap" }}>SATYAM STARS</div>
-            <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 13, lineHeight: 1.1, marginTop: 1, whiteSpace: "nowrap" }}>INTERNATIONAL SCHOOL</div>
-            <div style={{ borderTop: "1px solid black", margin: "3px 0 3px" }} />
+            <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 19, lineHeight: 1.05, whiteSpace: "nowrap" }}>SATYAM STARS</div>
+            <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 12, lineHeight: 1.1, marginTop: 1, whiteSpace: "nowrap" }}>INTERNATIONAL SCHOOL</div>
+            <div style={{ borderTop: "1px solid black", margin: "4px 0 3px" }} />
             <div style={{ fontSize: 6.5 }}>{ADDR1}, {ADDR2} &nbsp;|&nbsp; Ph: {PHONE}</div>
           </div>
         </div>
