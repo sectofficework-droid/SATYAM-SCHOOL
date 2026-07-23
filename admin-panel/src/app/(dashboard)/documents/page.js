@@ -343,48 +343,70 @@ async function generatePDF(students, design, onProgress) {
   doc.save("ID_Cards_Satyam_Stars.pdf");
 }
 
-// ── Bonafide Certificate: matches the school's real pre-printed form exactly
+// ── Bonafide Certificate: matches the school's real pre-printed form
 // (BONAFIED.pdf) - plain black-on-white, both gender options shown with the
 // wrong one struck through, filled-in blanks underlined. Two identical
 // copies stacked on one A4 page, same as the physical original (cut apart:
 // one copy for the requester, one for the school's file).
-function bonafideLines(s) {
+//
+// Body content is 3 paragraphs of individual word/phrase tokens (not
+// pre-broken lines) so it can be reflowed to actually fill the available
+// width at whatever font size is in use - fixed hand-picked line breaks
+// left random gaps on some lines and ran tight on others once the page
+// layout/font size changed from the original small reference form.
+function bonafideParagraphs(s) {
   const female = isFemale(s.gender);
   const { words: dobWords, dmy: dobDmy } = dobParts(s.dob);
   const cls = s.std || "—";
   const session = s.session || "2026-27";
   const opt = (text, chosen) => ({ text, mode: chosen ? "plain" : "strike" });
   const fill = (text) => ({ text: text || "—", mode: "underline" });
-  const plain = (text) => ({ text, mode: "plain" });
+  const words = (text) => text.split(" ").map(t => ({ text: t, mode: "plain" }));
+  const w = (text) => ({ text, mode: "plain" });
 
   return [
-    [plain("This is to certify that "), opt("Mr.", !female), plain(" / "), opt("Ms:", female), plain("  "), fill((s.name || "").toUpperCase()), plain(" is a")],
-    [plain("bonafide student of this school. Studying in Std. "), fill(cls)],
-    [plain("(Year "), fill(session), plain(")")],
-    [],
-    [opt("His", !female), plain(" / "), opt("Her", female), plain(" birthdate as recorded in the General Register of")],
-    [plain("School is "), fill(dobWords)],
-    [plain("(" + (dobDmy || "—") + ")")],
-    [],
-    [plain("To the best of my knowledge "), opt("he", !female), plain(" / "), opt("she", female), plain(" bears a good moral")],
-    [plain("character.")],
+    [
+      ...words("This is to certify that"),
+      opt("Mr.", !female), w("/"), opt("Ms:", female),
+      fill((s.name || "").toUpperCase()),
+      ...words("is a bonafide student of this school. Studying in Std."),
+      fill(cls),
+      w("(Year"), fill(session + ")"),
+    ],
+    [
+      opt("His", !female), w("/"), opt("Her", female),
+      ...words("birthdate as recorded in the General Register of School is"),
+      fill(dobWords),
+      w(`(${dobDmy || "—"})`),
+    ],
+    [
+      ...words("To the best of my knowledge"),
+      opt("he", !female), w("/"), opt("she", female),
+      ...words("bears a good moral character."),
+    ],
   ];
 }
 
-function drawRun(doc, segments, x, y) {
-  let cx = x;
-  for (const seg of segments) {
-    doc.text(seg.text, cx, y);
-    const w = doc.getTextWidth(seg.text);
-    if (seg.mode === "strike") {
+// Greedily wraps space-separated tokens (each styled plain/strike/underline)
+// to fill maxWidth, the same way a normal paragraph reflows - returns the y
+// of the last line drawn.
+function drawWrappedParagraph(doc, tokens, x, startY, maxWidth, lineHeight) {
+  const spaceWidth = doc.getTextWidth(" ");
+  let cx = x, y = startY;
+  for (const tok of tokens) {
+    const tw = doc.getTextWidth(tok.text);
+    if (cx > x && cx + tw > x + maxWidth) { cx = x; y += lineHeight; }
+    doc.text(tok.text, cx, y);
+    if (tok.mode === "strike") {
       doc.setLineWidth(0.25);
-      doc.line(cx, y - 1.4, cx + w, y - 1.4);
-    } else if (seg.mode === "underline") {
+      doc.line(cx, y - 1.4, cx + tw, y - 1.4);
+    } else if (tok.mode === "underline") {
       doc.setLineWidth(0.2);
-      doc.line(cx, y + 0.8, cx + w, y + 0.8);
+      doc.line(cx, y + 0.8, cx + tw, y + 0.8);
     }
-    cx += w;
+    cx += tw + spaceWidth;
   }
+  return y;
 }
 
 // Full A4 portrait page, with the school address added to the header. Each
@@ -401,24 +423,23 @@ function drawBonafidePage(doc, s, logoB64) {
   doc.rect(12, 12, PW - 24, PH - 24, "S");
 
   // Letterhead: logo on the left with school name + address as one
-  // left-aligned block right next to it, vertically centered against the
-  // logo - reads as a single aligned unit instead of a page-centered text
-  // block that ignores where the logo sits.
-  const logoY = 18, logoSize = 22;
+  // left-aligned block clearly separated from it (not just touching), both
+  // vertically centered against the logo so they read as one aligned unit.
+  const logoY = 16, logoSize = 24;
   if (logoB64) {
     try { doc.addImage(logoB64, "JPEG", marginX, logoY, logoSize, logoSize); } catch {}
   }
-  const textX = marginX + logoSize + 8;
+  const textX = marginX + logoSize + 14;
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
-  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", textX, logoY + 8);
+  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", textX, logoY + 9);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  doc.text(`${ADDR1}, ${ADDR2}`, textX, logoY + 14.5);
-  doc.text(`Phone: ${PHONE}`, textX, logoY + 19.5);
+  doc.text(`${ADDR1}, ${ADDR2}`, textX, logoY + 15.5);
+  doc.text(`Phone: ${PHONE}`, textX, logoY + 20.5);
 
-  const headerRuleY = logoY + logoSize + 4;
+  const headerRuleY = logoY + logoSize + 5;
   doc.setLineWidth(0.4);
   doc.line(marginX, headerRuleY, PW - marginX, headerRuleY);
 
@@ -431,18 +452,18 @@ function drawBonafidePage(doc, s, logoB64) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(12);
   const lineHeight = 7.5;
-  const paraGap = 4;
-  let y = headerRuleY + 33;
+  const paraGap = 5;
   const left = marginX + 5;
-  for (const line of bonafideLines(s)) {
-    if (line.length === 0) { y += paraGap; continue; }
-    drawRun(doc, line, left, y);
-    y += lineHeight;
+  const bodyWidth = PW - marginX * 2 - 10;
+  let y = headerRuleY + 33;
+  for (const para of bonafideParagraphs(s)) {
+    y = drawWrappedParagraph(doc, para, left, y, bodyWidth, lineHeight);
+    y += paraGap;
   }
 
-  // Footer sits just under the body, not pinned to the bottom of the page -
-  // any leftover space stays blank at the bottom, which is fine.
-  const footerY = y + 14;
+  // Footer sits ~2-3 lines after the body ends, not pinned to the bottom of
+  // the page - any leftover space stays blank at the bottom, which is fine.
+  const footerY = y + lineHeight * 2;
   doc.setFontSize(11);
   doc.text(`DATE : ${fmtIssueDateDMY()}`, marginX + 5, footerY);
   doc.setFont("helvetica", "bold");
@@ -471,7 +492,7 @@ async function generateBonafidePDF(students, onProgress) {
 // Shows one full page - the second printed page is identical.
 function BonafidePreview({ student, logoUrl }) {
   const s = student || {};
-  const lines = bonafideLines(s);
+  const paragraphs = bonafideParagraphs(s);
   const segStyle = (mode) => mode === "strike"
     ? { textDecoration: "line-through" }
     : mode === "underline"
@@ -483,8 +504,9 @@ function BonafidePreview({ student, logoUrl }) {
       <div style={{ position: "absolute", inset: 8, border: "1.5px solid black" }} />
 
       {/* Letterhead: logo + name/address form one aligned block, left-aligned
-          rather than page-centered text that ignores the logo. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          rather than page-centered text that ignores the logo, with a clear
+          gap between the logo and the text so they never crowd together. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
         <div style={{ width: 30, height: 30, flexShrink: 0 }}>
           {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
         </div>
@@ -501,16 +523,17 @@ function BonafidePreview({ student, logoUrl }) {
       </div>
       <div style={{ borderTop: "1.5px solid black", margin: "5px 0 10px" }} />
 
-      {/* Content isn't stretched to the bottom of the page - the footer
-          follows right after it, leaving blank space below (fine, matches
-          the printed page). */}
+      {/* Each paragraph flows and wraps naturally (the browser does the same
+          job drawWrappedParagraph does for the PDF) instead of fixed line
+          breaks that left gaps on some lines and ran tight on others.
+          Content isn't stretched to the bottom of the page - the footer
+          follows right after it, leaving blank space below (fine). */}
       <div style={{ fontSize: 7.5, lineHeight: 1.8 }}>
-        {lines.map((line, i) => line.length === 0
-          ? <div key={i} style={{ height: 4 }} />
-          : <div key={i}>
-              {line.map((seg, j) => <span key={j} style={segStyle(seg.mode)}>{seg.text}</span>)}
-            </div>
-        )}
+        {paragraphs.map((para, i) => (
+          <p key={i} style={{ margin: "0 0 6px" }}>
+            {para.map((seg, j) => <span key={j} style={segStyle(seg.mode)}>{seg.text} </span>)}
+          </p>
+        ))}
       </div>
 
       <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", fontSize: 8 }}>
