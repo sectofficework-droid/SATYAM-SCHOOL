@@ -524,21 +524,27 @@ function drawBonafidePage(doc, s, logoB64) {
   fitFontSize(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, 10, 7);
   doc.text(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, textX, ruleY + 7);
 
-  // Gold divider before the title, plus the existing one after it.
+  // Gold divider before the title, plus the existing one after it - equal
+  // whitespace gap on both sides of the text itself (not equal baseline
+  // distances, which would leave uneven-looking gaps since the gap above
+  // has to clear the text's cap-height while the gap below doesn't).
   const preTitleRuleY = ruleY + 17;
   doc.setDrawColor(gr, gg, gb);
   doc.setLineWidth(0.6);
   doc.line(marginX, preTitleRuleY, PW - marginX, preTitleRuleY);
 
-  const titleY = preTitleRuleY + 11;
+  const titleFontSize = 30;
+  const titleCapHeight = titleFontSize * 0.72 * 0.3528;
+  const titleGap = 6;
+  const titleY = preTitleRuleY + titleGap + titleCapHeight;
   doc.setTextColor(nr, ng, nb);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(30);
+  doc.setFontSize(titleFontSize);
   doc.text("BONAFIDE CERTIFICATE", PW / 2, titleY, { align: "center" });
   doc.setDrawColor(gr, gg, gb);
   doc.setLineWidth(0.6);
-  doc.line(marginX, titleY + 6, PW - marginX, titleY + 6);
-  const headerRuleY = titleY + 6;
+  doc.line(marginX, titleY + titleGap, PW - marginX, titleY + titleGap);
+  const headerRuleY = titleY + titleGap;
 
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "normal");
@@ -626,10 +632,10 @@ function BonafidePreview({ student, logoUrl }) {
             marginX..PW-marginX), unlike the black rule above which is
             indented to start under the name, not the logo. */}
         <div style={{ borderTop: "1px solid #f59e0b", margin: "12px 0 0" }} />
-        <div style={{ textAlign: "center", marginTop: 10 }}>
+        <div style={{ textAlign: "center", margin: "10px 0" }}>
           <div style={{ fontWeight: 900, fontSize: 19, color: "#1a2b6b" }}>BONAFIDE CERTIFICATE</div>
         </div>
-        <div style={{ borderTop: "1px solid #f59e0b", margin: "7px 0 12px" }} />
+        <div style={{ borderTop: "1px solid #f59e0b", margin: "0 0 12px" }} />
 
         {/* Justified (both edges flush) except each paragraph's last line,
             matching drawWrappedLines() on the PDF side - the browser's own
