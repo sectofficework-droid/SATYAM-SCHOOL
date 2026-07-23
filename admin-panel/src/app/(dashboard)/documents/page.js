@@ -496,10 +496,10 @@ function drawBonafidePage(doc, s, logoB64) {
   // sizes are deliberately large/generous (this is meant to be a dominant
   // letterhead title, not small body text) - the loop only ever shrinks,
   // so there's no risk of it overflowing into the margin.
-  function fitFontSize(text, startSize, minSize) {
+  function fitFontSize(text, startSize, minSize, maxWidth = nameMaxWidth) {
     let size = startSize;
     doc.setFontSize(size);
-    while (size > minSize && doc.getTextWidth(text) > nameMaxWidth) {
+    while (size > minSize && doc.getTextWidth(text) > maxWidth) {
       size -= 0.5;
       doc.setFontSize(size);
     }
@@ -530,15 +530,17 @@ function drawBonafidePage(doc, s, logoB64) {
   doc.line(textX, ruleY, textX + nameWidth, ruleY);
 
   // Address and phone as two separate lines, not one combined line -
-  // fills the gap under the rule instead of leaving it mostly blank.
+  // fills the gap under the rule instead of leaving it mostly blank. Both
+  // are fit to nameWidth specifically (the rule's own span), not the wider
+  // nameMaxWidth, so neither one ever runs past the rule/name.
   doc.setFont("helvetica", "normal");
-  const addrLine = `${ADDR1}, ${ADDR2}`;
+  const addrLine = `${ADDR1}, Pandesara, Surat - 394210`;
   const phoneLine = `Ph: ${PHONE}`;
-  fitFontSize(addrLine, 10, 7);
+  fitFontSize(addrLine, 10, 7, nameWidth);
   doc.text(addrLine, textX, ruleY + 6);
   // Phone is centered under the rule's own span (textX..textX+nameWidth),
   // not left-aligned like the address.
-  fitFontSize(phoneLine, 10, 7);
+  fitFontSize(phoneLine, 10, 7, nameWidth);
   doc.text(phoneLine, textX + nameWidth / 2, ruleY + 12, { align: "center" });
 
   // Gold divider before the title, plus the existing one after it - equal
@@ -649,7 +651,7 @@ function BonafidePreview({ student, logoUrl }) {
             <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 23, lineHeight: 1.05, whiteSpace: "nowrap" }}>SATYAM STARS</div>
             <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 14, lineHeight: 1.1, marginTop: 2, whiteSpace: "nowrap" }}>INTERNATIONAL SCHOOL</div>
             <div style={{ borderTop: "1px solid black", margin: "5px 0 4px" }} />
-            <div style={{ fontSize: 6.5, whiteSpace: "nowrap" }}>{ADDR1}, {ADDR2}</div>
+            <div style={{ fontSize: 6.5, whiteSpace: "nowrap" }}>{ADDR1}, Pandesara, Surat - 394210</div>
             <div style={{ fontSize: 6.5, whiteSpace: "nowrap", textAlign: "center" }}>Ph: {PHONE}</div>
           </div>
         </div>
