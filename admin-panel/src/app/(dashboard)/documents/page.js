@@ -509,7 +509,7 @@ function drawBonafidePage(doc, s, logoB64) {
   const lineGap = 12;
   doc.setFont("times", "bold");
   const size1 = fitFontSize("SATYAM STARS", 30, 16);
-  const size2 = fitFontSize("INTERNATIONAL SCHOOL", 23, 13);
+  const size2 = fitFontSize("INTERNATIONAL SCHOOL", 18, 12);
   const logoMidY = logoY + logoH / 2;
   const baseline1 = logoMidY - lineGap / 2;
   const baseline2 = logoMidY + lineGap / 2;
@@ -520,20 +520,23 @@ function drawBonafidePage(doc, s, logoB64) {
   doc.setFontSize(size2);
   doc.text("INTERNATIONAL SCHOOL", textX, baseline2);
 
-  const ruleY = Math.max(baseline2 + 5, logoY + logoH - 2);
+  // Rule sits close under the text - it doesn't need to also clear the
+  // logo's own bottom edge (the logo is taller than the text block and is
+  // meant to extend past this rule, same as the school's reference image).
+  const ruleY = baseline2 + 4;
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.6);
   doc.line(textX, ruleY, PW - marginX, ruleY);
 
   doc.setFont("helvetica", "normal");
   fitFontSize(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, 10, 7);
-  doc.text(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, textX, ruleY + 7);
+  doc.text(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, textX, ruleY + 6);
 
   // Gold divider before the title, plus the existing one after it - equal
   // whitespace gap on both sides of the text itself (not equal baseline
   // distances, which would leave uneven-looking gaps since the gap above
   // has to clear the text's cap-height while the gap below doesn't).
-  const preTitleRuleY = ruleY + 17;
+  const preTitleRuleY = ruleY + 11;
   doc.setDrawColor(gr, gg, gb);
   doc.setLineWidth(0.6);
   doc.line(marginX, preTitleRuleY, PW - marginX, preTitleRuleY);
@@ -625,8 +628,8 @@ function BonafidePreview({ student, logoUrl }) {
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 21, lineHeight: 1.05, whiteSpace: "nowrap" }}>SATYAM STARS</div>
-            <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 16, lineHeight: 1.1, marginTop: 1, whiteSpace: "nowrap" }}>INTERNATIONAL SCHOOL</div>
-            <div style={{ borderTop: "1px solid black", margin: "5px 0 4px" }} />
+            <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 13, lineHeight: 1.1, marginTop: 1, whiteSpace: "nowrap" }}>INTERNATIONAL SCHOOL</div>
+            <div style={{ borderTop: "1px solid black", margin: "3px 0 3px" }} />
             <div style={{ fontSize: 6.5 }}>{ADDR1}, {ADDR2} &nbsp;|&nbsp; Ph: {PHONE}</div>
           </div>
         </div>
@@ -636,7 +639,7 @@ function BonafidePreview({ student, logoUrl }) {
             the PDF side. This one spans the full width (like the PDF's
             marginX..PW-marginX), unlike the black rule above which is
             indented to start under the name, not the logo. */}
-        <div style={{ borderTop: "1px solid #f59e0b", margin: "12px 0 0" }} />
+        <div style={{ borderTop: "1px solid #f59e0b", margin: "8px 0 0" }} />
         <div style={{ textAlign: "center", margin: "10px 0" }}>
           <div style={{ fontWeight: 900, fontSize: 19, color: "#1a2b6b" }}>BONAFIDE CERTIFICATE</div>
         </div>
