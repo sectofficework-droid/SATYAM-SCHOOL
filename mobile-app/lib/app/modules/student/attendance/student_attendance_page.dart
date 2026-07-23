@@ -18,7 +18,6 @@ class _StudentAttendancePageState extends State<StudentAttendancePage> {
   int get _total    => _records.length;
   int get _present  => _records.where((r) => r['status'] == 'P').length;
   int get _absent   => _records.where((r) => r['status'] == 'A').length;
-  int get _leave    => _records.where((r) => r['status'] == 'L').length;
   double get _pct   => _total == 0 ? 0 : _present / _total * 100;
 
   @override
@@ -66,7 +65,6 @@ class _StudentAttendancePageState extends State<StudentAttendancePage> {
                 Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
                   _statPill('Present', '$_present', AppColors.green),
                   _statPill('Absent', '$_absent', AppColors.red),
-                  _statPill('Leave', '$_leave', AppColors.amber),
                   _statPill('Total', '$_total', Colors.white70),
                 ]),
               ]),
@@ -106,7 +104,7 @@ class _StudentAttendancePageState extends State<StudentAttendancePage> {
                   final r    = _records[i];
                   final date = DateTime.tryParse(r['date'] ?? '');
                   final st   = r['status'] as String? ?? '';
-                  final color= st == 'P' ? AppColors.green : st == 'A' ? AppColors.red : AppColors.amber;
+                  final color= st == 'P' ? AppColors.green : AppColors.red;
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(children: [
@@ -120,7 +118,7 @@ class _StudentAttendancePageState extends State<StudentAttendancePage> {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          st == 'P' ? 'Present' : st == 'A' ? 'Absent' : 'On Leave',
+                          st == 'P' ? 'Present' : 'Absent',
                           style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12),
                         ),
                       ),

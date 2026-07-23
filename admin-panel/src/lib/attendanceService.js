@@ -1,6 +1,6 @@
 import supabase from "./supabase";
 
-// student_attendance: student_id, date, status ('P'/'A'/'L'), class, marked_by
+// student_attendance: student_id, date, status ('P'/'A'), class, marked_by
 // - populated from the teacher app's Mark Attendance screen. No FK/join is
 // set up between it and students/classes (it just stores the class name as
 // plain text), so this stays a simple standalone table read/write here too.

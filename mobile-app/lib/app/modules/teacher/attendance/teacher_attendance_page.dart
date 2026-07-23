@@ -69,7 +69,6 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
 
   int get _presentCount => _status.values.where((v) => v == 'P').length;
   int get _absentCount  => _status.values.where((v) => v == 'A').length;
-  int get _leaveCount   => _status.values.where((v) => v == 'L').length;
 
   @override
   Widget build(BuildContext context) {
@@ -162,8 +161,6 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
                 _summaryChip('Present', _presentCount, AppColors.green, AppColors.greenLight),
                 const SizedBox(width: 8),
                 _summaryChip('Absent',  _absentCount,  AppColors.red,   AppColors.redLight),
-                const SizedBox(width: 8),
-                _summaryChip('Leave',   _leaveCount,   AppColors.amber, AppColors.amberLight),
               ]),
             ),
             const Divider(height: 1, color: AppColors.border),
@@ -191,7 +188,6 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
                   boxShadow: AppShadows.card,
                   border: Border.all(
                     color: status == 'A' ? AppColors.red.withOpacity(.2)
-                         : status == 'L' ? AppColors.amber.withOpacity(.2)
                          : AppColors.green.withOpacity(.15),
                     width: 1,
                   ),
@@ -216,9 +212,9 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
                     Text('GR: ${s['grno'] ?? ''}  ·  Roll: ${s['roll_no'] ?? ''}',
                       style: const TextStyle(color: AppColors.textLight, fontSize: 11)),
                   ])),
-                  Row(children: ['P', 'A', 'L'].map((v) {
+                  Row(children: ['P', 'A'].map((v) {
                     final active = status == v;
-                    final color  = v == 'P' ? AppColors.green : v == 'A' ? AppColors.red : AppColors.amber;
+                    final color  = v == 'P' ? AppColors.green : AppColors.red;
                     return Padding(
                       padding: const EdgeInsets.only(left: 6),
                       child: GestureDetector(

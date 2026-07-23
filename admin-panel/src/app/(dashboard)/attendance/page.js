@@ -22,7 +22,6 @@ const CLASS_ORDER = [
 const STATUS_STYLE = {
   P: { label: "Present", color: "green",  bg: "bg-green-50",  text: "text-green-700",  border: "border-green-200",  dot: "bg-green-500"  },
   A: { label: "Absent",  color: "red",    bg: "bg-red-50",    text: "text-red-700",    border: "border-red-200",    dot: "bg-red-500"    },
-  L: { label: "Leave",   color: "amber",  bg: "bg-amber-50",  text: "text-amber-700",  border: "border-amber-200",  dot: "bg-amber-500"  },
 };
 
 const todayStr = new Date().toISOString().split("T")[0];
@@ -37,7 +36,7 @@ export default function AttendancePage() {
   const [loading,     setLoading]   = useState(true);
   const [selectedClass, setSelectedClass] = useState("");
   const [selectedDate,  setSelectedDate]  = useState(todayStr);
-  const [statusMap,   setStatusMap]  = useState({});   // student_id -> 'P'|'A'|'L'
+  const [statusMap,   setStatusMap]  = useState({});   // student_id -> 'P'|'A'
   const [wasMarked,   setWasMarked]  = useState(false); // any record already existed for this class+date
   const [attLoading,  setAttLoading] = useState(false);
   const [saving,      setSaving]     = useState(false);
@@ -98,7 +97,6 @@ export default function AttendancePage() {
 
   const presentCount = classStudents.filter(s => statusMap[s._studentId] === "P").length;
   const absentCount  = classStudents.filter(s => statusMap[s._studentId] === "A").length;
-  const leaveCount   = classStudents.filter(s => statusMap[s._studentId] === "L").length;
   const percent      = classStudents.length ? Math.round((presentCount / classStudents.length) * 100) : 0;
 
   function setStatus(studentId, status) {
@@ -163,10 +161,9 @@ export default function AttendancePage() {
 
       {/* Summary */}
       {classStudents.length > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <SummaryCard label="Present" count={presentCount} color="green" />
           <SummaryCard label="Absent"  count={absentCount}  color="red" />
-          <SummaryCard label="Leave"   count={leaveCount}   color="amber" />
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col justify-center">
             <span className="text-xs text-gray-400 font-medium">% Present</span>
             <span className={`text-2xl font-bold ${percent >= 75 ? "text-green-600" : percent >= 50 ? "text-amber-600" : "text-red-600"}`}>{percent}%</span>
@@ -223,7 +220,7 @@ export default function AttendancePage() {
                     <td className="px-3 py-2.5 text-gray-500 hidden md:table-cell">{s.grno || "—"}</td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1.5">
-                        {["P", "A", "L"].map(v => {
+                        {["P", "A"].map(v => {
                           const st = STATUS_STYLE[v];
                           const active = status === v;
                           return (
@@ -312,7 +309,6 @@ function HistoryModal({ student, onClose }) {
 
   const present = (rows || []).filter(r => r.status === "P").length;
   const absent  = (rows || []).filter(r => r.status === "A").length;
-  const leave   = (rows || []).filter(r => r.status === "L").length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
@@ -345,10 +341,9 @@ function HistoryModal({ student, onClose }) {
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-3 gap-2 px-5 py-3 border-b border-gray-100">
+            <div className="grid grid-cols-2 gap-2 px-5 py-3 border-b border-gray-100">
               <div className="text-center"><div className="text-lg font-bold text-green-600">{present}</div><div className="text-[11px] text-gray-400">Present</div></div>
               <div className="text-center"><div className="text-lg font-bold text-red-600">{absent}</div><div className="text-[11px] text-gray-400">Absent</div></div>
-              <div className="text-center"><div className="text-lg font-bold text-amber-600">{leave}</div><div className="text-[11px] text-gray-400">Leave</div></div>
             </div>
             <div className="overflow-y-auto flex-1 divide-y divide-gray-50">
               {rows.map(r => {

@@ -53,11 +53,10 @@ export async function getStudentAttendanceSummary(date) {
   const grouped = {};
   for (const row of data) {
     const cls = row.class || "Unknown";
-    if (!grouped[cls]) grouped[cls] = { Present: 0, Absent: 0, Leave: 0, count: 0 };
+    if (!grouped[cls]) grouped[cls] = { Present: 0, Absent: 0, count: 0 };
     grouped[cls].count += 1;
     if (row.status === "P") grouped[cls].Present += 1;
     else if (row.status === "A") grouped[cls].Absent += 1;
-    else if (row.status === "L") grouped[cls].Leave += 1;
   }
   return { grouped, total: data.length };
 }
