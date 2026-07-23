@@ -531,7 +531,10 @@ function drawBonafidePage(doc, s, logoB64) {
   // whitespace gap on both sides of the text itself (not equal baseline
   // distances, which would leave uneven-looking gaps since the gap above
   // has to clear the text's cap-height while the gap below doesn't).
-  const preTitleRuleY = ruleY + 15;
+  // Also never sit above the logo's own bottom edge (with a small
+  // clearance) - the logo is taller than the text block, so a rule
+  // positioned purely from the text side can end up under the logo.
+  const preTitleRuleY = Math.max(ruleY + 15, logoY + logoH + 4);
   doc.setDrawColor(gr, gg, gb);
   doc.setLineWidth(0.6);
   doc.line(marginX, preTitleRuleY, PW - marginX, preTitleRuleY);
