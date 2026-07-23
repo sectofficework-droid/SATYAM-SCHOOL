@@ -477,11 +477,15 @@ function drawBonafidePage(doc, s, logoB64) {
   // as two large serif lines to its right, a rule under them, then the
   // address left-aligned at the same X as the name - matches the school's
   // own reference letterhead (Header.png) exactly, not a generic design.
-  const logoY = 20, logoSize = 32;
+  //
+  // The logo file itself is 1080x1200px (not square) - forcing it into a
+  // square box was squashing it. Fixed height, width derived from the
+  // real aspect ratio so it isn't distorted either way.
+  const logoY = 20, logoH = 32, logoW = logoH * (1080 / 1200);
   if (logoB64) {
-    try { doc.addImage(logoB64, "JPEG", marginX, logoY, logoSize, logoSize); } catch {}
+    try { doc.addImage(logoB64, "JPEG", marginX, logoY, logoW, logoH); } catch {}
   }
-  const textX = marginX + logoSize + 12;
+  const textX = marginX + logoW + 12;
   const nameMaxWidth = PW - marginX - textX;
 
   // Each line's font size is measured and shrunk to fit textX..PW-marginX
@@ -496,18 +500,19 @@ function drawBonafidePage(doc, s, logoB64) {
     return size;
   }
 
-  // Vertically center the two name lines against the logo's own height,
-  // computed from actual (post-fit) font sizes rather than guessed fixed
-  // offsets - cap-height ~0.72x font size for a bold serif font, and since
-  // the text is all caps there's effectively no descender to account for.
+  // Vertically center the two name lines against the logo: the midpoint
+  // BETWEEN the two text baselines is placed at the logo's own vertical
+  // center. (A previous attempt tried to correct for cap-height/descender
+  // to center the visual text box precisely, but that still didn't look
+  // centered - this simpler, cruder method is much less likely to be wrong
+  // in some non-obvious way.)
   const lineGap = 12;
   doc.setFont("times", "bold");
   const size1 = fitFontSize("SATYAM STARS", 30, 16);
   const size2 = fitFontSize("INTERNATIONAL SCHOOL", 23, 13);
-  const cap1 = size1 * 0.72 * 0.3528;
-  const blockOffset = logoSize / 2 - (lineGap - cap1) / 2;
-  const baseline1 = logoY + blockOffset;
-  const baseline2 = baseline1 + lineGap;
+  const logoMidY = logoY + logoH / 2;
+  const baseline1 = logoMidY - lineGap / 2;
+  const baseline2 = logoMidY + lineGap / 2;
 
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(size1);
@@ -515,7 +520,7 @@ function drawBonafidePage(doc, s, logoB64) {
   doc.setFontSize(size2);
   doc.text("INTERNATIONAL SCHOOL", textX, baseline2);
 
-  const ruleY = Math.max(baseline2 + 5, logoY + logoSize - 2);
+  const ruleY = Math.max(baseline2 + 5, logoY + logoH - 2);
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.6);
   doc.line(textX, ruleY, PW - marginX, ruleY);
