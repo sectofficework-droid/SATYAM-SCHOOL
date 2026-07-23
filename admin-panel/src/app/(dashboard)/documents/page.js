@@ -400,34 +400,39 @@ function drawBonafidePage(doc, s, logoB64) {
   doc.setLineWidth(0.6);
   doc.rect(12, 12, PW - 24, PH - 24, "S");
 
+  // Letterhead: logo on the left with school name + address as one
+  // left-aligned block right next to it, vertically centered against the
+  // logo - reads as a single aligned unit instead of a page-centered text
+  // block that ignores where the logo sits.
+  const logoY = 18, logoSize = 22;
   if (logoB64) {
-    try { doc.addImage(logoB64, "JPEG", marginX, 18, 26, 26); } catch {}
+    try { doc.addImage(logoB64, "JPEG", marginX, logoY, logoSize, logoSize); } catch {}
   }
-
+  const textX = marginX + logoSize + 8;
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(19);
-  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", PW / 2, 28, { align: "center" });
-
+  doc.setFontSize(15);
+  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", textX, logoY + 8);
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.text(`${ADDR1}, ${ADDR2}`, PW / 2, 35, { align: "center" });
-  doc.text(`Phone: ${PHONE}`, PW / 2, 40.5, { align: "center" });
+  doc.setFontSize(9);
+  doc.text(`${ADDR1}, ${ADDR2}`, textX, logoY + 14.5);
+  doc.text(`Phone: ${PHONE}`, textX, logoY + 19.5);
 
+  const headerRuleY = logoY + logoSize + 4;
   doc.setLineWidth(0.4);
-  doc.line(marginX, 46, PW - marginX, 46);
+  doc.line(marginX, headerRuleY, PW - marginX, headerRuleY);
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(30);
-  doc.text("BONAFIDE CERTIFICATE", PW / 2, 64, { align: "center" });
-  doc.setLineWidth(0.6);
-  doc.line(marginX, 70, PW - marginX, 70);
+  doc.setFontSize(26);
+  doc.text("BONAFIDE CERTIFICATE", PW / 2, headerRuleY + 14, { align: "center" });
+  doc.setLineWidth(0.55);
+  doc.line(marginX, headerRuleY + 19, PW - marginX, headerRuleY + 19);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(13);
-  const lineHeight = 9.5;
-  const paraGap = 6;
-  let y = 88;
+  doc.setFontSize(12);
+  const lineHeight = 7.5;
+  const paraGap = 4;
+  let y = headerRuleY + 33;
   const left = marginX + 5;
   for (const line of bonafideLines(s)) {
     if (line.length === 0) { y += paraGap; continue; }
@@ -435,10 +440,13 @@ function drawBonafidePage(doc, s, logoB64) {
     y += lineHeight;
   }
 
-  doc.setFontSize(12);
-  doc.text(`DATE : ${fmtIssueDateDMY()}`, marginX + 5, PH - 28);
+  // Footer sits just under the body, not pinned to the bottom of the page -
+  // any leftover space stays blank at the bottom, which is fine.
+  const footerY = y + 14;
+  doc.setFontSize(11);
+  doc.text(`DATE : ${fmtIssueDateDMY()}`, marginX + 5, footerY);
   doc.setFont("helvetica", "bold");
-  doc.text("PRINCIPAL", PW - marginX - 5, PH - 28, { align: "right" });
+  doc.text("PRINCIPAL", PW - marginX - 5, footerY, { align: "right" });
 }
 
 async function generateBonafidePDF(students, onProgress) {
@@ -474,34 +482,38 @@ function BonafidePreview({ student, logoUrl }) {
     <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, position: "relative", padding: "16px 20px" }}>
       <div style={{ position: "absolute", inset: 8, border: "1.5px solid black" }} />
 
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-        <div style={{ width: 34, height: 34, flexShrink: 0 }}>
+      {/* Letterhead: logo + name/address form one aligned block, left-aligned
+          rather than page-centered text that ignores the logo. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ width: 30, height: 30, flexShrink: 0 }}>
           {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
         </div>
-        <div style={{ flex: 1, textAlign: "center" }}>
-          <div style={{ fontWeight: 800, fontSize: 12.5 }}>SATYAM STARS INTERNATIONAL SCHOOL</div>
-          <div style={{ fontSize: 7, marginTop: 2 }}>{ADDR1}, {ADDR2}</div>
-          <div style={{ fontSize: 7 }}>Phone: {PHONE}</div>
+        <div style={{ textAlign: "left" }}>
+          <div style={{ fontWeight: 800, fontSize: 11 }}>SATYAM STARS INTERNATIONAL SCHOOL</div>
+          <div style={{ fontSize: 6.5, marginTop: 1 }}>{ADDR1}, {ADDR2}</div>
+          <div style={{ fontSize: 6.5 }}>Phone: {PHONE}</div>
         </div>
-        <div style={{ width: 34, flexShrink: 0 }} />
       </div>
       <div style={{ borderTop: "1px solid black", margin: "6px 0" }} />
 
       <div style={{ textAlign: "center" }}>
-        <div style={{ fontWeight: 900, fontSize: 20 }}>BONAFIDE CERTIFICATE</div>
+        <div style={{ fontWeight: 900, fontSize: 18 }}>BONAFIDE CERTIFICATE</div>
       </div>
-      <div style={{ borderTop: "1.5px solid black", margin: "6px 0 14px" }} />
+      <div style={{ borderTop: "1.5px solid black", margin: "5px 0 10px" }} />
 
-      <div style={{ fontSize: 8.5, lineHeight: 2 }}>
+      {/* Content isn't stretched to the bottom of the page - the footer
+          follows right after it, leaving blank space below (fine, matches
+          the printed page). */}
+      <div style={{ fontSize: 7.5, lineHeight: 1.8 }}>
         {lines.map((line, i) => line.length === 0
-          ? <div key={i} style={{ height: 6 }} />
+          ? <div key={i} style={{ height: 4 }} />
           : <div key={i}>
               {line.map((seg, j) => <span key={j} style={segStyle(seg.mode)}>{seg.text}</span>)}
             </div>
         )}
       </div>
 
-      <div style={{ position: "absolute", bottom: 26, left: 28, right: 28, display: "flex", justifyContent: "space-between", fontSize: 9 }}>
+      <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", fontSize: 8 }}>
         <span>DATE : {fmtIssueDateDMY()}</span>
         <span style={{ fontWeight: 800 }}>PRINCIPAL</span>
       </div>
