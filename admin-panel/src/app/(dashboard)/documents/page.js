@@ -484,7 +484,7 @@ function drawBonafidePage(doc, s, logoB64) {
   // The logo file itself is 1080x1200px (not square) - forcing it into a
   // square box was squashing it. Fixed height, width derived from the
   // real aspect ratio so it isn't distorted either way.
-  const logoY = 20, logoH = 34, logoW = logoH * (1080 / 1200);
+  const logoY = 20, logoH = 46, logoW = logoH * (1080 / 1200);
   if (logoB64) {
     try { doc.addImage(logoB64, "JPEG", marginX, logoY, logoW, logoH); } catch {}
   }
@@ -492,7 +492,10 @@ function drawBonafidePage(doc, s, logoB64) {
   const nameMaxWidth = PW - marginX - textX;
 
   // Each line's font size is measured and shrunk to fit textX..PW-marginX
-  // (same idea as before - never assume a fixed size will fit).
+  // (same idea as before - never assume a fixed size will fit). Starting
+  // sizes are deliberately large/generous (this is meant to be a dominant
+  // letterhead title, not small body text) - the loop only ever shrinks,
+  // so there's no risk of it overflowing into the margin.
   function fitFontSize(text, startSize, minSize) {
     let size = startSize;
     doc.setFontSize(size);
@@ -504,10 +507,10 @@ function drawBonafidePage(doc, s, logoB64) {
   }
 
   doc.setFont("times", "bold");
-  const size1 = fitFontSize("SATYAM STARS", 27, 16);
-  const size2 = fitFontSize("INTERNATIONAL SCHOOL", 17, 11);
-  const baseline1 = logoY + 9;
-  const baseline2 = logoY + 18;
+  const size1 = fitFontSize("SATYAM STARS", 40, 22);
+  const size2 = fitFontSize("INTERNATIONAL SCHOOL", 24, 14);
+  const baseline1 = logoY + 13;
+  const baseline2 = baseline1 + 11;
 
   doc.setTextColor(0, 0, 0);
   doc.setFontSize(size1);
@@ -515,20 +518,20 @@ function drawBonafidePage(doc, s, logoB64) {
   doc.setFontSize(size2);
   doc.text("INTERNATIONAL SCHOOL", textX, baseline2);
 
-  const ruleY = logoY + 23;
+  const ruleY = baseline2 + 5;
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.6);
   doc.line(textX, ruleY, PW - marginX, ruleY);
 
   doc.setFont("helvetica", "normal");
   fitFontSize(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, 10, 7);
-  doc.text(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, textX, logoY + 29);
+  doc.text(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, textX, ruleY + 6);
 
   // Gold divider before the title, plus the existing one after it - equal
   // whitespace gap on both sides of the text itself (not equal baseline
   // distances, which would leave uneven-looking gaps since the gap above
   // has to clear the text's cap-height while the gap below doesn't).
-  const preTitleRuleY = logoY + 38;
+  const preTitleRuleY = ruleY + 15;
   doc.setDrawColor(gr, gg, gb);
   doc.setLineWidth(0.6);
   doc.line(marginX, preTitleRuleY, PW - marginX, preTitleRuleY);
@@ -619,13 +622,13 @@ function BonafidePreview({ student, logoUrl }) {
             predictable than trying to vertically center the text against
             the logo's midpoint, which kept coming out misaligned. */}
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-          <div style={{ width: 42, height: 42, flexShrink: 0 }}>
+          <div style={{ width: 56, height: 56, flexShrink: 0 }}>
             {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 19, lineHeight: 1.05, whiteSpace: "nowrap" }}>SATYAM STARS</div>
-            <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 12, lineHeight: 1.1, marginTop: 1, whiteSpace: "nowrap" }}>INTERNATIONAL SCHOOL</div>
-            <div style={{ borderTop: "1px solid black", margin: "4px 0 3px" }} />
+            <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 23, lineHeight: 1.05, whiteSpace: "nowrap" }}>SATYAM STARS</div>
+            <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 14, lineHeight: 1.1, marginTop: 2, whiteSpace: "nowrap" }}>INTERNATIONAL SCHOOL</div>
+            <div style={{ borderTop: "1px solid black", margin: "5px 0 4px" }} />
             <div style={{ fontSize: 6.5 }}>{ADDR1}, {ADDR2} &nbsp;|&nbsp; Ph: {PHONE}</div>
           </div>
         </div>
