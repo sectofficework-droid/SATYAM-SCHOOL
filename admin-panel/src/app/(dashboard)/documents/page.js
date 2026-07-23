@@ -496,14 +496,26 @@ function drawBonafidePage(doc, s, logoB64) {
     return size;
   }
 
-  doc.setTextColor(0, 0, 0);
+  // Vertically center the two name lines against the logo's own height,
+  // computed from actual (post-fit) font sizes rather than guessed fixed
+  // offsets - cap-height ~0.72x font size for a bold serif font, and since
+  // the text is all caps there's effectively no descender to account for.
+  const lineGap = 12;
   doc.setFont("times", "bold");
-  fitFontSize("SATYAM STARS", 30, 16);
-  doc.text("SATYAM STARS", textX, logoY + 13);
-  fitFontSize("INTERNATIONAL SCHOOL", 23, 13);
-  doc.text("INTERNATIONAL SCHOOL", textX, logoY + 25);
+  const size1 = fitFontSize("SATYAM STARS", 30, 16);
+  const size2 = fitFontSize("INTERNATIONAL SCHOOL", 23, 13);
+  const cap1 = size1 * 0.72 * 0.3528;
+  const blockOffset = logoSize / 2 - (lineGap - cap1) / 2;
+  const baseline1 = logoY + blockOffset;
+  const baseline2 = baseline1 + lineGap;
 
-  const ruleY = logoY + 30;
+  doc.setTextColor(0, 0, 0);
+  doc.setFontSize(size1);
+  doc.text("SATYAM STARS", textX, baseline1);
+  doc.setFontSize(size2);
+  doc.text("INTERNATIONAL SCHOOL", textX, baseline2);
+
+  const ruleY = Math.max(baseline2 + 5, logoY + logoSize - 2);
   doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.6);
   doc.line(textX, ruleY, PW - marginX, ruleY);
@@ -512,7 +524,13 @@ function drawBonafidePage(doc, s, logoB64) {
   fitFontSize(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, 10, 7);
   doc.text(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, textX, ruleY + 7);
 
-  const titleY = ruleY + 24;
+  // Gold divider before the title, plus the existing one after it.
+  const preTitleRuleY = ruleY + 17;
+  doc.setDrawColor(gr, gg, gb);
+  doc.setLineWidth(0.6);
+  doc.line(marginX, preTitleRuleY, PW - marginX, preTitleRuleY);
+
+  const titleY = preTitleRuleY + 11;
   doc.setTextColor(nr, ng, nb);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(30);
@@ -590,8 +608,8 @@ function BonafidePreview({ student, logoUrl }) {
             logo, then "SATYAM STARS" / "INTERNATIONAL SCHOOL" as two big
             serif lines, a black rule under them, then the address
             left-aligned at the same X as the name (not centered). */}
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-          <div style={{ width: 40, height: 40, flexShrink: 0, marginTop: 2 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 40, height: 40, flexShrink: 0 }}>
             {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -602,7 +620,13 @@ function BonafidePreview({ student, logoUrl }) {
           </div>
         </div>
 
-        <div style={{ textAlign: "center", marginTop: 14 }}>
+        {/* Gold divider before the title, plus the existing one after it -
+            matches the two gold rules framing "BONAFIDE CERTIFICATE" on
+            the PDF side. This one spans the full width (like the PDF's
+            marginX..PW-marginX), unlike the black rule above which is
+            indented to start under the name, not the logo. */}
+        <div style={{ borderTop: "1px solid #f59e0b", margin: "12px 0 0" }} />
+        <div style={{ textAlign: "center", marginTop: 10 }}>
           <div style={{ fontWeight: 900, fontSize: 19, color: "#1a2b6b" }}>BONAFIDE CERTIFICATE</div>
         </div>
         <div style={{ borderTop: "1px solid #f59e0b", margin: "7px 0 12px" }} />
