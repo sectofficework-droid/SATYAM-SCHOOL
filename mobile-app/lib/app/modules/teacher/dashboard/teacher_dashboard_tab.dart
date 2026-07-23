@@ -204,7 +204,7 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                   _AnimEntry(delay: 500, child: StatCard(
                     label: 'My Attendance', value: 'This Month',
                     icon: Icons.event_available_rounded,
-                    color: AppColors.teal, bgColor: AppColors.tealLight,
+                    color: AppColors.indigo, bgColor: AppColors.indigoLight,
                     onTap: () => Get.toNamed(Routes.teacherMyAttend),
                   )),
                 ],
