@@ -473,51 +473,54 @@ function drawBonafidePage(doc, s, logoB64) {
   doc.setLineWidth(0.3);
   doc.rect(13, 13, PW - 26, PH - 26, "S");
 
-  // Letterhead: logo on the left with school name + address as one
-  // left-aligned block next to it, vertically centered against the logo.
-  const logoY = 22, logoSize = 26;
+  // Letterhead: logo on the left; "SATYAM STARS" / "INTERNATIONAL SCHOOL"
+  // as two large serif lines to its right, a rule under them, then the
+  // address left-aligned at the same X as the name - matches the school's
+  // own reference letterhead (Header.png) exactly, not a generic design.
+  const logoY = 20, logoSize = 32;
   if (logoB64) {
     try { doc.addImage(logoB64, "JPEG", marginX, logoY, logoSize, logoSize); } catch {}
   }
-  const textX = marginX + logoSize + 14;
-  const nameText = "SATYAM STARS INTERNATIONAL SCHOOL";
+  const textX = marginX + logoSize + 12;
   const nameMaxWidth = PW - marginX - textX;
 
-  // Shrink the school name's font size until it actually fits the
-  // available width instead of a fixed size that could run into the
-  // border - same idea as the ID card / other places in this app that
-  // measure text before committing to a font size.
-  doc.setFont("helvetica", "bold");
-  let nameFontSize = 19;
-  doc.setFontSize(nameFontSize);
-  while (nameFontSize > 12 && doc.getTextWidth(nameText) > nameMaxWidth) {
-    nameFontSize -= 0.5;
-    doc.setFontSize(nameFontSize);
+  // Each line's font size is measured and shrunk to fit textX..PW-marginX
+  // (same idea as before - never assume a fixed size will fit).
+  function fitFontSize(text, startSize, minSize) {
+    let size = startSize;
+    doc.setFontSize(size);
+    while (size > minSize && doc.getTextWidth(text) > nameMaxWidth) {
+      size -= 0.5;
+      doc.setFontSize(size);
+    }
+    return size;
   }
+
   doc.setTextColor(0, 0, 0);
-  doc.text(nameText, textX, logoY + 11);
+  doc.setFont("times", "bold");
+  fitFontSize("SATYAM STARS", 30, 16);
+  doc.text("SATYAM STARS", textX, logoY + 13);
+  fitFontSize("INTERNATIONAL SCHOOL", 23, 13);
+  doc.text("INTERNATIONAL SCHOOL", textX, logoY + 25);
 
-  // Address/phone are centered under the school name's own width, not the
-  // full remaining header width, so they align with the name specifically.
-  const nameWidth = doc.getTextWidth(nameText);
-  const nameCenterX = textX + nameWidth / 2;
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.text(`${ADDR1}, ${ADDR2}`, nameCenterX, logoY + 18.5, { align: "center" });
-  doc.text(`Phone: ${PHONE}`, nameCenterX, logoY + 24.5, { align: "center" });
-
-  const headerRuleY = logoY + logoSize + 8;
-  doc.setDrawColor(gr, gg, gb);
+  const ruleY = logoY + 30;
+  doc.setDrawColor(0, 0, 0);
   doc.setLineWidth(0.6);
-  doc.line(marginX, headerRuleY, PW - marginX, headerRuleY);
+  doc.line(textX, ruleY, PW - marginX, ruleY);
 
+  doc.setFont("helvetica", "normal");
+  fitFontSize(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, 10, 7);
+  doc.text(`${ADDR1}, ${ADDR2}  |  Ph: ${PHONE}`, textX, ruleY + 7);
+
+  const titleY = ruleY + 24;
   doc.setTextColor(nr, ng, nb);
   doc.setFont("helvetica", "bold");
   doc.setFontSize(30);
-  doc.text("BONAFIDE CERTIFICATE", PW / 2, headerRuleY + 16, { align: "center" });
+  doc.text("BONAFIDE CERTIFICATE", PW / 2, titleY, { align: "center" });
   doc.setDrawColor(gr, gg, gb);
   doc.setLineWidth(0.6);
-  doc.line(marginX, headerRuleY + 22, PW - marginX, headerRuleY + 22);
+  doc.line(marginX, titleY + 6, PW - marginX, titleY + 6);
+  const headerRuleY = titleY + 6;
 
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "normal");
@@ -529,7 +532,7 @@ function drawBonafidePage(doc, s, logoB64) {
   const bodyWidth = PW - marginX * 2 - 10;
   const wrappedParas = bonafideParagraphs(s).map(p => wrapParagraph(doc, p, bodyWidth));
 
-  let y = headerRuleY + 22 + 16;
+  let y = headerRuleY + 16;
   wrappedParas.forEach((lines, i) => {
     y = drawWrappedLines(doc, lines, left, y, lineHeight, bodyWidth);
     if (i < wrappedParas.length - 1) y += paraGap;
@@ -582,26 +585,24 @@ function BonafidePreview({ student, logoUrl }) {
       {/* Content starts a fixed distance from the top and flows down - it
           isn't centered/stretched to fill the page; leftover space at the
           bottom is fine, matching drawBonafidePage(). */}
-      <div style={{ padding: "26px 22px 0" }}>
-        {/* Letterhead: logo + name/address form one aligned block, left-
-            aligned rather than page-centered text that ignores the logo. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 34, height: 34, flexShrink: 0 }}>
+      <div style={{ padding: "22px 22px 0" }}>
+        {/* Letterhead matches the school's own reference (Header.png):
+            logo, then "SATYAM STARS" / "INTERNATIONAL SCHOOL" as two big
+            serif lines, a black rule under them, then the address
+            left-aligned at the same X as the name (not centered). */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+          <div style={{ width: 40, height: 40, flexShrink: 0, marginTop: 2 }}>
             {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
           </div>
-          {/* width: fit-content so the address/phone below can be centered
-              against the school name's own width, not the full remaining
-              header width. minWidth: 0 lets it still shrink/wrap instead of
-              overflowing the border on a narrow preview. */}
-          <div style={{ textAlign: "center", width: "fit-content", minWidth: 0, maxWidth: "100%" }}>
-            <div style={{ fontWeight: 800, fontSize: 12.5, textAlign: "left" }}>SATYAM STARS INTERNATIONAL SCHOOL</div>
-            <div style={{ fontSize: 7, marginTop: 2 }}>{ADDR1}, {ADDR2}</div>
-            <div style={{ fontSize: 7 }}>Phone: {PHONE}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 21, lineHeight: 1.05, whiteSpace: "nowrap" }}>SATYAM STARS</div>
+            <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 16, lineHeight: 1.1, marginTop: 1, whiteSpace: "nowrap" }}>INTERNATIONAL SCHOOL</div>
+            <div style={{ borderTop: "1px solid black", margin: "5px 0 4px" }} />
+            <div style={{ fontSize: 6.5 }}>{ADDR1}, {ADDR2} &nbsp;|&nbsp; Ph: {PHONE}</div>
           </div>
         </div>
-        <div style={{ borderTop: "1px solid #f59e0b", margin: "8px 0" }} />
 
-        <div style={{ textAlign: "center" }}>
+        <div style={{ textAlign: "center", marginTop: 14 }}>
           <div style={{ fontWeight: 900, fontSize: 19, color: "#1a2b6b" }}>BONAFIDE CERTIFICATE</div>
         </div>
         <div style={{ borderTop: "1px solid #f59e0b", margin: "7px 0 12px" }} />
