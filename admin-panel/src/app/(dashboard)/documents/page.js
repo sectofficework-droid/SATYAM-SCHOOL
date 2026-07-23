@@ -405,35 +405,49 @@ function wrapParagraph(doc, tokens, maxWidth) {
   return lines;
 }
 
-// Draws pre-wrapped lines. Each line's words are drawn as ONE continuous
-// string in a single text call (`line.map(t => t.text).join(" ")`) - real,
-// natively-spaced text, not several separate text draws positioned edge to
-// edge by hand (which is what caused words to render glued together with no
-// visible gap between them, e.g. "PANIGRAHIis"). Strike/underline
-// decorations are then overlaid in a second pass, positioned by measuring
-// how wide the text before each token is - this doesn't touch the text
-// itself, so it can't affect its spacing.
-function drawWrappedLines(doc, lines, x, startY, lineHeight) {
+// Draws pre-wrapped lines, justified (both left and right edges flush,
+// except a paragraph's last line which stays ragged like normal printed
+// text). Each line is still drawn as ONE continuous string in a single text
+// call - real, natively-spaced text, not several separate text draws
+// positioned edge to edge by hand (which is what caused words to render
+// glued together with no visible gap between them, e.g. "PANIGRAHIis").
+// Justification is done by inserting extra literal space characters into
+// that same string (spread across the gaps between words) rather than by
+// drawing each word separately with custom gaps, which would reintroduce
+// the same glued-word risk. Strike/underline decorations are overlaid in a
+// second pass using the exact same gap widths, so they line up with
+// whatever the text actually rendered at.
+function drawWrappedLines(doc, lines, x, startY, lineHeight, maxWidth) {
+  const spaceWidth = doc.getTextWidth(" ");
   let y = startY;
-  for (const line of lines) {
-    doc.text(line.map(t => t.text).join(" "), x, y);
+  lines.forEach((line, lineIdx) => {
+    const isLastLine = lineIdx === lines.length - 1;
+    const numGaps = line.length - 1;
+    const naturalWidth = line.reduce((sum, t) => sum + t.width, 0) + spaceWidth * numGaps;
+    const slack = maxWidth - naturalWidth;
 
-    for (let i = 0; i < line.length; i++) {
-      const tok = line[i];
-      if (tok.mode !== "strike" && tok.mode !== "underline") continue;
-      const prefix = line.slice(0, i).map(t => t.text).join(" ");
-      const tokenStart = x + (prefix ? doc.getTextWidth(prefix + " ") : 0);
-      doc.setDrawColor(0, 0, 0);
-      if (tok.mode === "strike") {
-        doc.setLineWidth(0.3);
-        doc.line(tokenStart, y - 1.6, tokenStart + tok.width, y - 1.6);
-      } else {
-        doc.setLineWidth(0.25);
-        doc.line(tokenStart, y + 1, tokenStart + tok.width, y + 1);
-      }
+    const gapSpaces = new Array(Math.max(numGaps, 0)).fill(1);
+    if (!isLastLine && numGaps > 0 && slack > 0) {
+      const extra = Math.round(slack / spaceWidth);
+      for (let i = 0; i < extra; i++) gapSpaces[i % numGaps]++;
     }
+
+    let lineText = line[0]?.text ?? "";
+    for (let i = 1; i < line.length; i++) lineText += " ".repeat(gapSpaces[i - 1]) + line[i].text;
+    doc.text(lineText, x, y);
+
+    let cx = x;
+    line.forEach((tok, i) => {
+      if (tok.mode === "strike" || tok.mode === "underline") {
+        doc.setDrawColor(0, 0, 0);
+        doc.setLineWidth(tok.mode === "strike" ? 0.3 : 0.25);
+        const decoY = tok.mode === "strike" ? y - 1.6 : y + 1;
+        doc.line(cx, decoY, cx + tok.width, decoY);
+      }
+      cx += tok.width + (i < numGaps ? gapSpaces[i] * spaceWidth : 0);
+    });
     y += lineHeight;
-  }
+  });
   return y;
 }
 
@@ -466,14 +480,31 @@ function drawBonafidePage(doc, s, logoB64) {
     try { doc.addImage(logoB64, "JPEG", marginX, logoY, logoSize, logoSize); } catch {}
   }
   const textX = marginX + logoSize + 14;
-  doc.setTextColor(0, 0, 0);
+  const nameText = "SATYAM STARS INTERNATIONAL SCHOOL";
+  const nameMaxWidth = PW - marginX - textX;
+
+  // Shrink the school name's font size until it actually fits the
+  // available width instead of a fixed size that could run into the
+  // border - same idea as the ID card / other places in this app that
+  // measure text before committing to a font size.
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(19);
-  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", textX, logoY + 11);
+  let nameFontSize = 19;
+  doc.setFontSize(nameFontSize);
+  while (nameFontSize > 12 && doc.getTextWidth(nameText) > nameMaxWidth) {
+    nameFontSize -= 0.5;
+    doc.setFontSize(nameFontSize);
+  }
+  doc.setTextColor(0, 0, 0);
+  doc.text(nameText, textX, logoY + 11);
+
+  // Address/phone are centered under the school name's own width, not the
+  // full remaining header width, so they align with the name specifically.
+  const nameWidth = doc.getTextWidth(nameText);
+  const nameCenterX = textX + nameWidth / 2;
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
-  doc.text(`${ADDR1}, ${ADDR2}`, textX, logoY + 18.5);
-  doc.text(`Phone: ${PHONE}`, textX, logoY + 24.5);
+  doc.text(`${ADDR1}, ${ADDR2}`, nameCenterX, logoY + 18.5, { align: "center" });
+  doc.text(`Phone: ${PHONE}`, nameCenterX, logoY + 24.5, { align: "center" });
 
   const headerRuleY = logoY + logoSize + 8;
   doc.setDrawColor(gr, gg, gb);
@@ -500,7 +531,7 @@ function drawBonafidePage(doc, s, logoB64) {
 
   let y = headerRuleY + 22 + 16;
   wrappedParas.forEach((lines, i) => {
-    y = drawWrappedLines(doc, lines, left, y, lineHeight);
+    y = drawWrappedLines(doc, lines, left, y, lineHeight, bodyWidth);
     if (i < wrappedParas.length - 1) y += paraGap;
   });
 
@@ -558,8 +589,12 @@ function BonafidePreview({ student, logoUrl }) {
           <div style={{ width: 34, height: 34, flexShrink: 0 }}>
             {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
           </div>
-          <div style={{ textAlign: "left" }}>
-            <div style={{ fontWeight: 800, fontSize: 13.5 }}>SATYAM STARS INTERNATIONAL SCHOOL</div>
+          {/* width: fit-content so the address/phone below can be centered
+              against the school name's own width, not the full remaining
+              header width. minWidth: 0 lets it still shrink/wrap instead of
+              overflowing the border on a narrow preview. */}
+          <div style={{ textAlign: "center", width: "fit-content", minWidth: 0, maxWidth: "100%" }}>
+            <div style={{ fontWeight: 800, fontSize: 12.5, textAlign: "left" }}>SATYAM STARS INTERNATIONAL SCHOOL</div>
             <div style={{ fontSize: 7, marginTop: 2 }}>{ADDR1}, {ADDR2}</div>
             <div style={{ fontSize: 7 }}>Phone: {PHONE}</div>
           </div>
@@ -571,11 +606,10 @@ function BonafidePreview({ student, logoUrl }) {
         </div>
         <div style={{ borderTop: "1px solid #f59e0b", margin: "7px 0 12px" }} />
 
-        {/* Each paragraph flows and wraps naturally (the browser does the
-            same job wrapParagraph/drawWrappedLines do for the PDF) instead
-            of fixed line breaks that left gaps on some lines and ran tight
-            on others. */}
-        <div style={{ fontSize: 8, lineHeight: 1.85, color: "#111" }}>
+        {/* Justified (both edges flush) except each paragraph's last line,
+            matching drawWrappedLines() on the PDF side - the browser's own
+            justify engine does the same job that function does manually. */}
+        <div style={{ fontSize: 8, lineHeight: 1.85, color: "#111", textAlign: "justify" }}>
           {paragraphs.map((para, i) => (
             <p key={i} style={{ margin: "0 0 7px" }}>
               {para.map((seg, j) => <span key={j} style={segStyle(seg.mode)}>{seg.text} </span>)}
