@@ -19,6 +19,7 @@ import {
   Bell,
   FolderOpen,
   CalendarCheck,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import useStore from "@/lib/store";
@@ -34,6 +35,7 @@ const navItems = [
   { href: "/notice",    label: "Notice Board",         icon: Bell },
   { href: "/report", label: "Report", icon: BarChart3 },
   { href: "/documents", label: "Documents", icon: FolderOpen },
+  { href: "/question-papers", label: "Question Papers", icon: FileText },
   { href: "/tasks", label: "Task Management", icon: ClipboardList },
   { href: "/super-admin", label: "Super Admin", icon: ShieldCheck },
   { href: "/settings", label: "Setting", icon: Settings },

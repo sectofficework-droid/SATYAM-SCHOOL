@@ -211,4 +211,48 @@ class SupabaseService {
     });
     return res == true;
   }
+
+  // Question Bank ─────────────────────────────────────────────────────────────
+  // Private per teacher (query always filters by teacher_id) - see
+  // SUPABASE_QUESTION_BANK.sql for why this isn't enforced via RLS.
+
+  static Future<List<Map<String, dynamic>>> fetchQuestions({
+    required String teacherId, required String className, required String subject, String? chapter,
+  }) async {
+    var query = client.from('question_bank').select()
+        .eq('teacher_id', teacherId)
+        .eq('class', className)
+        .eq('subject', subject);
+    if (chapter != null && chapter.isNotEmpty) query = query.eq('chapter', chapter);
+    final res = await query.order('created_at');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  // Distinct chapter names this teacher has already used for a class+subject,
+  // so the chapter picker can suggest existing ones instead of always
+  // retyping (and risking inconsistent spelling that would split one chapter
+  // into two).
+  static Future<List<String>> fetchQuestionChapters({
+    required String teacherId, required String className, required String subject,
+  }) async {
+    final res = await client.from('question_bank').select('chapter')
+        .eq('teacher_id', teacherId)
+        .eq('class', className)
+        .eq('subject', subject);
+    final chapters = List<Map<String, dynamic>>.from(res).map((r) => r['chapter'] as String).toSet().toList();
+    chapters.sort();
+    return chapters;
+  }
+
+  static Future<void> createQuestion(Map<String, dynamic> data) async {
+    await client.from('question_bank').insert(data);
+  }
+
+  static Future<void> updateQuestion(String id, Map<String, dynamic> data) async {
+    await client.from('question_bank').update(data).eq('id', id);
+  }
+
+  static Future<void> deleteQuestion(String id) async {
+    await client.from('question_bank').delete().eq('id', id);
+  }
 }

@@ -207,6 +207,12 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                     color: AppColors.indigo, bgColor: AppColors.indigoLight,
                     onTap: () => Get.toNamed(Routes.teacherMyAttend),
                   )),
+                  _AnimEntry(delay: 580, child: StatCard(
+                    label: 'Question Bank', value: 'Add / Browse',
+                    icon: Icons.quiz_rounded,
+                    color: AppColors.red, bgColor: AppColors.redLight,
+                    onTap: () => Get.toNamed(Routes.teacherQuestionBank),
+                  )),
                 ],
               ),
             ),
@@ -290,7 +296,7 @@ class _ShimmerGrid extends StatelessWidget {
     physics: const NeverScrollableScrollPhysics(),
     crossAxisSpacing: 12, mainAxisSpacing: 12,
     childAspectRatio: 0.92,
-    children: List.generate(6, (_) => Shimmer.fromColors(
+    children: List.generate(7, (_) => Shimmer.fromColors(
       baseColor: const Color(0xFFE2E8F0),
       highlightColor: const Color(0xFFF8FAFC),
       child: Container(
