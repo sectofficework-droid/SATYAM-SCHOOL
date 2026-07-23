@@ -536,8 +536,10 @@ function drawBonafidePage(doc, s, logoB64) {
   const phoneLine = `Ph: ${PHONE}`;
   fitFontSize(addrLine, 10, 7);
   doc.text(addrLine, textX, ruleY + 6);
+  // Phone is centered under the rule's own span (textX..textX+nameWidth),
+  // not left-aligned like the address.
   fitFontSize(phoneLine, 10, 7);
-  doc.text(phoneLine, textX, ruleY + 12);
+  doc.text(phoneLine, textX + nameWidth / 2, ruleY + 12, { align: "center" });
 
   // Gold divider before the title, plus the existing one after it - equal
   // whitespace gap on both sides of the text itself (not equal baseline
@@ -648,7 +650,7 @@ function BonafidePreview({ student, logoUrl }) {
             <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 14, lineHeight: 1.1, marginTop: 2, whiteSpace: "nowrap" }}>INTERNATIONAL SCHOOL</div>
             <div style={{ borderTop: "1px solid black", margin: "5px 0 4px" }} />
             <div style={{ fontSize: 6.5, whiteSpace: "nowrap" }}>{ADDR1}, {ADDR2}</div>
-            <div style={{ fontSize: 6.5, whiteSpace: "nowrap" }}>Ph: {PHONE}</div>
+            <div style={{ fontSize: 6.5, whiteSpace: "nowrap", textAlign: "center" }}>Ph: {PHONE}</div>
           </div>
         </div>
 
