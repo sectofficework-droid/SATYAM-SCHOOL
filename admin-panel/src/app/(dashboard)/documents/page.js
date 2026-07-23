@@ -393,42 +393,46 @@ function drawBonafideBox(doc, s, logoB64, bx, by, bw, bh) {
   doc.rect(bx, by, bw, bh, "S");
 
   if (logoB64) {
-    try { doc.addImage(logoB64, "JPEG", bx + 5, by + 5, 16, 16); } catch {}
+    try { doc.addImage(logoB64, "JPEG", bx + 6, by + 6, 18, 18); } catch {}
   }
 
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(13);
-  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", bx + bw / 2, by + 13, { align: "center" });
+  doc.setFontSize(14);
+  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", bx + bw / 2, by + 14, { align: "center" });
   doc.setLineWidth(0.4);
-  doc.line(bx + bw * 0.15, by + 16.5, bx + bw * 0.85, by + 16.5);
+  doc.line(bx + bw * 0.15, by + 18, bx + bw * 0.85, by + 18);
 
-  doc.setFontSize(20);
-  doc.text("BONAFIDE CERTIFICATE", bx + bw / 2, by + 27, { align: "center" });
+  doc.setFontSize(22);
+  doc.text("BONAFIDE CERTIFICATE", bx + bw / 2, by + 30, { align: "center" });
   doc.setLineWidth(0.5);
-  doc.line(bx + 4, by + 32, bx + bw - 4, by + 32);
+  doc.line(bx + 4, by + 35, bx + bw - 4, by + 35);
 
   doc.setFont("helvetica", "normal");
-  doc.setFontSize(9.5);
-  const lineHeight = 5.6;
-  const paraGap = 2.4;
-  let y = by + 41;
-  const left = bx + 7;
+  doc.setFontSize(10.5);
+  const lineHeight = 6.2;
+  const paraGap = 2.8;
+  let y = by + 45;
+  const left = bx + 8;
   for (const line of bonafideLines(s)) {
     if (line.length === 0) { y += paraGap; continue; }
     drawRun(doc, line, left, y);
     y += lineHeight;
   }
 
-  doc.setFontSize(9);
-  doc.text(`DATE : ${fmtIssueDateDMY()}`, bx + 7, by + bh - 7);
+  doc.setFontSize(10);
+  doc.text(`DATE : ${fmtIssueDateDMY()}`, bx + 8, by + bh - 8);
   doc.setFont("helvetica", "bold");
-  doc.text("PRINCIPAL", bx + bw - 9, by + bh - 7, { align: "right" });
+  doc.text("PRINCIPAL", bx + bw - 10, by + bh - 8, { align: "right" });
 }
 
 function drawBonafideCert(doc, s, logoB64) {
   const PW = 210, PH = 297; // A4 mm
-  const SIDE_MARGIN = 25, GAP = 22;
+  // Each copy is a landscape rectangle (wider than tall, ~same ratio as an
+  // A4 landscape sheet) rather than a narrow portrait-ish box, so two of
+  // them stacked read as "two landscape certificates" that happen to fit
+  // one on top of the other on a portrait A4 page.
+  const SIDE_MARGIN = 12, GAP = 15;
   const bw = PW - SIDE_MARGIN * 2;
   const bh = (PH - GAP * 3) / 2;
   drawBonafideBox(doc, s, logoB64, SIDE_MARGIN, GAP, bw, bh);
@@ -460,7 +464,7 @@ function BonafideBoxPreview({ student, logoUrl }) {
       : undefined;
 
   return (
-    <div style={{ border: "1.5px solid black", padding: "8px 10px", position: "relative", minHeight: 195 }}>
+    <div style={{ border: "1.5px solid black", padding: "8px 10px", position: "relative", minHeight: 168 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
         <div style={{ width: 34, height: 34, flexShrink: 0 }}>
           {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
@@ -493,7 +497,7 @@ function BonafideBoxPreview({ student, logoUrl }) {
 
 function BonafidePreview({ student, logoUrl }) {
   return (
-    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: 22, padding: "28px 22px" }}>
+    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, display: "flex", flexDirection: "column", justifyContent: "center", gap: 20, padding: "20px 16px" }}>
       <BonafideBoxPreview student={student} logoUrl={logoUrl} />
       <BonafideBoxPreview student={student} logoUrl={logoUrl} />
     </div>
