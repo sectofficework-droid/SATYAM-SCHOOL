@@ -129,9 +129,10 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
               Expanded(
                 child: DropdownButtonFormField<String>(
                   value: _selectedClass,
+                  isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Class', isDense: true,
                     prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
-                  items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                  items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(),
                   onChanged: (v) { setState(() => _selectedClass = v!); _onSubjectChanged(_selectedSubject); },
                 ),
               ),

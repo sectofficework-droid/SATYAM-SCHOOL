@@ -209,7 +209,7 @@ class _TeacherCreatePaperPageState extends State<TeacherCreatePaperPage> {
                   value: _selectedClass,
                   isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Class', isDense: true),
-                  items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                  items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(),
                   onChanged: (v) { setState(() => _selectedClass = v!); _loadChapters(); },
                 ),
               ),
@@ -329,6 +329,7 @@ class _TeacherCreatePaperPageState extends State<TeacherCreatePaperPage> {
                   Expanded(
                     child: DropdownButtonFormField<int>(
                       value: _durationHours,
+                      isExpanded: true,
                       decoration: const InputDecoration(isDense: true),
                       items: List.generate(7, (h) => h).map((h) => DropdownMenuItem(value: h, child: Text('$h hour${h == 1 ? '' : 's'}'))).toList(),
                       onChanged: (v) => setState(() => _durationHours = v!),
@@ -338,6 +339,7 @@ class _TeacherCreatePaperPageState extends State<TeacherCreatePaperPage> {
                   Expanded(
                     child: DropdownButtonFormField<int>(
                       value: _durationMinutes,
+                      isExpanded: true,
                       decoration: const InputDecoration(isDense: true),
                       items: [0, 10, 15, 20, 30, 40, 45, 50].map((m) => DropdownMenuItem(value: m, child: Text('$m minutes'))).toList(),
                       onChanged: (v) => setState(() => _durationMinutes = v!),
