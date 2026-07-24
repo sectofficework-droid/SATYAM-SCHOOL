@@ -10,6 +10,7 @@ import '../modules/teacher/marks/teacher_marks_page.dart';
 import '../modules/teacher/homework/teacher_homework_page.dart';
 import '../modules/teacher/tasks/teacher_tasks_page.dart';
 import '../modules/teacher/question_bank/teacher_question_bank_page.dart';
+import '../modules/teacher/question_bank/teacher_create_paper_page.dart';
 import '../modules/teacher/notices/teacher_notices_page.dart';
 import '../modules/teacher/profile/teacher_profile_page.dart';
 import '../modules/student/dashboard/student_home.dart';
@@ -39,6 +40,7 @@ class AppPages {
     GetPage(name: Routes.teacherHomework, page: () => const TeacherHomeworkPage()),
     GetPage(name: Routes.teacherTasks,    page: () => const TeacherTasksPage()),
     GetPage(name: Routes.teacherQuestionBank, page: () => const TeacherQuestionBankPage()),
+    GetPage(name: Routes.teacherCreatePaper, page: () => const TeacherCreatePaperPage()),
     GetPage(name: Routes.teacherNotices,  page: () => const TeacherNoticesPage()),
     GetPage(name: Routes.teacherProfile,  page: () => const TeacherProfilePage()),
 

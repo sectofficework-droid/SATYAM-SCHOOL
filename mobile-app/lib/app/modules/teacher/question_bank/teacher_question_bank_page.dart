@@ -3,6 +3,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/utils/teacher_classes.dart';
+import 'teacher_create_paper_page.dart';
 
 class TeacherQuestionBankPage extends StatefulWidget {
   const TeacherQuestionBankPage({super.key});
@@ -111,6 +112,13 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
       appBar: AppBar(
         flexibleSpace: Container(decoration: const BoxDecoration(gradient: AppColors.navyGradient)),
         title: const Text('Question Bank'),
+        actions: [
+          TextButton.icon(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TeacherCreatePaperPage())),
+            icon: const Icon(Icons.note_add_outlined, color: Colors.white, size: 18),
+            label: const Text('Create Paper', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
+          ),
+        ],
       ),
       body: Column(children: [
         Container(

@@ -255,4 +255,33 @@ class SupabaseService {
   static Future<void> deleteQuestion(String id) async {
     await client.from('question_bank').delete().eq('id', id);
   }
+
+  // Multi-chapter question fetch, used when picking questions for a paper
+  // (a paper can pull from more than one chapter at once).
+  static Future<List<Map<String, dynamic>>> fetchQuestionsForChapters({
+    required String teacherId, required String className, required String subject, required List<String> chapters,
+  }) async {
+    if (chapters.isEmpty) return [];
+    final res = await client.from('question_bank').select()
+        .eq('teacher_id', teacherId)
+        .eq('class', className)
+        .eq('subject', subject)
+        .inFilter('chapter', chapters)
+        .order('created_at');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  // Question Papers (Exam / Assignment) ─────────────────────────────────────
+  static Future<Map<String, dynamic>> createQuestionPaper(Map<String, dynamic> data) async {
+    final res = await client.from('question_papers').insert(data).select().single();
+    return Map<String, dynamic>.from(res);
+  }
+
+  static Future<void> saveQuestionPaperItems(String paperId, List<String> questionIds) async {
+    if (questionIds.isEmpty) return;
+    final items = List.generate(questionIds.length, (i) => {
+      'paper_id': paperId, 'question_id': questionIds[i], 'order_index': i,
+    });
+    await client.from('question_paper_items').insert(items);
+  }
 }
