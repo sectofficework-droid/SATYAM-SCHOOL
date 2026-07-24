@@ -7,11 +7,11 @@ import autoTable from "jspdf-autotable";
 import {
   Flag, PartyPopper, Sparkles, Users, FileText, Palmtree, Moon, Sun, Gift, Star,
   CalendarDays, CalendarHeart, BookOpenCheck, PenSquare, GraduationCap, School, Trophy,
-  Music, Camera, Cake, Heart, X, Trash2, Download, FileSpreadsheet, Save,
+  Music, Camera, Cake, Heart, X, Trash2, Download, FileSpreadsheet, Save, RotateCcw,
 } from "lucide-react";
 import { YEAR_PLAN_CATEGORIES, YEAR_PLAN_ICON_CHOICES, ACADEMIC_MONTHS, SEED_YEAR_PLAN_EVENTS } from "@/lib/yearPlanData";
 import { isValidLength } from "@/lib/validators";
-import { getCalendarEvents, addCalendarEvent, updateCalendarEvent, deleteCalendarEvent, bulkAddCalendarEvents } from "@/lib/calendarService";
+import { getCalendarEvents, addCalendarEvent, updateCalendarEvent, deleteCalendarEvent, bulkAddCalendarEvents, resetCalendarEvents } from "@/lib/calendarService";
 
 const ICONS = {
   Flag, PartyPopper, Sparkles, Users, FileText, Palmtree, Moon, Sun, Gift, Star,
@@ -37,6 +37,7 @@ export default function YearPlanningTab() {
   const [modal, setModal] = useState(null); // { mode:"add", date } | { mode:"edit", event }
   const [modalError, setModalError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -108,6 +109,22 @@ export default function YearPlanningTab() {
     }
     closeModal();
     load();
+  }
+
+  async function resetToOfficialCalendar() {
+    if (!confirm(
+      "This replaces EVERY date currently on the calendar with the school's official 2026-27 planning data. " +
+      "Any manual additions or edits you've made will be lost. Continue?"
+    )) return;
+    setResetting(true);
+    try {
+      await resetCalendarEvents(SEED_YEAR_PLAN_EVENTS);
+      await load();
+    } catch (e) {
+      alert("Failed to reset: " + e.message);
+    } finally {
+      setResetting(false);
+    }
   }
 
   function exportPDF() {
@@ -200,6 +217,10 @@ export default function YearPlanningTab() {
             <p className="text-xs text-gray-400 mt-0.5">Click any date cell to add an event. Click an existing event to edit or remove it.</p>
           </div>
           <div className="flex items-center gap-2">
+            <button onClick={resetToOfficialCalendar} disabled={resetting}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:border-red-300 hover:text-red-600 transition-colors disabled:opacity-50">
+              <RotateCcw className="w-4 h-4"/> {resetting ? "Resetting..." : "Reset to Official Calendar"}
+            </button>
             <button onClick={exportExcel}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:border-school-navy/40 hover:text-school-navy transition-colors">
               <FileSpreadsheet className="w-4 h-4"/> Excel

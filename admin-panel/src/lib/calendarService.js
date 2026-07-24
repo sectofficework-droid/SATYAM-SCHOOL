@@ -46,6 +46,17 @@ export async function bulkAddCalendarEvents(events) {
   if (error) throw error;
 }
 
+// Wipes every calendar entry and reloads the current SEED_YEAR_PLAN_EVENTS -
+// use when the seed data itself was corrected and whatever's already in
+// Supabase (auto-seeded from an earlier, wrong version, or otherwise) needs
+// to be replaced outright, not merged with.
+export async function resetCalendarEvents(events) {
+  const { error: delErr } = await supabase.from("school_calendar_events")
+    .delete().not("id", "is", null);
+  if (delErr) throw delErr;
+  await bulkAddCalendarEvents(events);
+}
+
 function mapRow(row) {
   return { id: row.id, date: row.event_date, category: row.category, label: row.title, icon: row.icon };
 }
