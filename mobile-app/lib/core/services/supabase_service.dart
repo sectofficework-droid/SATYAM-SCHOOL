@@ -284,4 +284,13 @@ class SupabaseService {
     });
     await client.from('question_paper_items').insert(items);
   }
+
+  // School Calendar ──────────────────────────────────────────────────────────
+  static Future<List<Map<String, dynamic>>> fetchCalendarEvents(DateTime rangeStart, DateTime rangeEnd) async {
+    final res = await client.from('school_calendar_events').select()
+        .gte('event_date', rangeStart.toIso8601String().split('T').first)
+        .lte('event_date', rangeEnd.toIso8601String().split('T').first)
+        .order('event_date');
+    return List<Map<String, dynamic>>.from(res);
+  }
 }

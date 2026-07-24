@@ -10,6 +10,7 @@ abstract class Routes {
   static const teacherTasks     = '/teacher/tasks';
   static const teacherQuestionBank = '/teacher/question-bank';
   static const teacherCreatePaper = '/teacher/create-paper';
+  static const teacherCalendar = '/teacher/calendar';
   static const teacherNotices   = '/teacher/notices';
   static const teacherProfile   = '/teacher/profile';
   static const studentHome      = '/student/home';

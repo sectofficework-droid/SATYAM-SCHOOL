@@ -213,6 +213,12 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                     color: AppColors.red, bgColor: AppColors.redLight,
                     onTap: () => Get.toNamed(Routes.teacherQuestionBank),
                   )),
+                  _AnimEntry(delay: 660, child: StatCard(
+                    label: 'Calendar', value: 'Holidays & Events',
+                    icon: Icons.calendar_month_rounded,
+                    color: AppColors.teal, bgColor: AppColors.tealLight,
+                    onTap: () => Get.toNamed(Routes.teacherCalendar),
+                  )),
                 ],
               ),
             ),
@@ -296,7 +302,7 @@ class _ShimmerGrid extends StatelessWidget {
     physics: const NeverScrollableScrollPhysics(),
     crossAxisSpacing: 12, mainAxisSpacing: 12,
     childAspectRatio: 0.92,
-    children: List.generate(7, (_) => Shimmer.fromColors(
+    children: List.generate(8, (_) => Shimmer.fromColors(
       baseColor: const Color(0xFFE2E8F0),
       highlightColor: const Color(0xFFF8FAFC),
       child: Container(
