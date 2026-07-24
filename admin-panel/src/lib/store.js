@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { SEED_YEAR_PLAN_EVENTS } from "./yearPlanData";
 
 const useStore = create(
   persist(
@@ -226,17 +225,6 @@ const useStore = create(
         set((state) => ({
           pendingTasks: state.pendingTasks.filter((t) => t.id !== id),
         })),
-
-      // ── Year Planning ────────────────────────────────────────
-      yearPlanEvents: SEED_YEAR_PLAN_EVENTS,
-      addYearPlanEvent: (event) =>
-        set((s) => ({ yearPlanEvents: [...s.yearPlanEvents, { id: `ev${Date.now()}`, ...event }] })),
-      updateYearPlanEvent: (id, patch) =>
-        set((s) => ({
-          yearPlanEvents: s.yearPlanEvents.map((e) => (e.id === id ? { ...e, ...patch } : e)),
-        })),
-      deleteYearPlanEvent: (id) =>
-        set((s) => ({ yearPlanEvents: s.yearPlanEvents.filter((e) => e.id !== id) })),
     }),
     { name: "satyam-school-store", version: 8 }
   )

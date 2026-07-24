@@ -1,7 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import useStore from "@/lib/store";
+import { useEffect, useMemo, useState } from "react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -10,8 +9,9 @@ import {
   CalendarDays, CalendarHeart, BookOpenCheck, PenSquare, GraduationCap, School, Trophy,
   Music, Camera, Cake, Heart, X, Trash2, Download, FileSpreadsheet, Save,
 } from "lucide-react";
-import { YEAR_PLAN_CATEGORIES, YEAR_PLAN_ICON_CHOICES, ACADEMIC_MONTHS } from "@/lib/yearPlanData";
+import { YEAR_PLAN_CATEGORIES, YEAR_PLAN_ICON_CHOICES, ACADEMIC_MONTHS, SEED_YEAR_PLAN_EVENTS } from "@/lib/yearPlanData";
 import { isValidLength } from "@/lib/validators";
+import { getCalendarEvents, addCalendarEvent, updateCalendarEvent, deleteCalendarEvent, bulkAddCalendarEvents } from "@/lib/calendarService";
 
 const ICONS = {
   Flag, PartyPopper, Sparkles, Users, FileText, Palmtree, Moon, Sun, Gift, Star,
@@ -32,13 +32,32 @@ function hexToRgb(hex) {
 }
 
 export default function YearPlanningTab() {
-  const events           = useStore(s => s.yearPlanEvents);
-  const addYearPlanEvent    = useStore(s => s.addYearPlanEvent);
-  const updateYearPlanEvent = useStore(s => s.updateYearPlanEvent);
-  const deleteYearPlanEvent = useStore(s => s.deleteYearPlanEvent);
-
+  const [events, setEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null); // { mode:"add", date } | { mode:"edit", event }
   const [modalError, setModalError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    setLoading(true);
+    try {
+      let data = await getCalendarEvents();
+      // First time this table is used: seed it with the verified 2026-27
+      // calendar instead of leaving the admin to re-enter ~80 events by
+      // hand (this used to live only in the browser's localStorage).
+      if (data.length === 0) {
+        await bulkAddCalendarEvents(SEED_YEAR_PLAN_EVENTS);
+        data = await getCalendarEvents();
+      }
+      setEvents(data);
+    } catch {
+      // leave events empty - the grid still renders, just without data
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const eventsByDate = useMemo(() => {
     const map = {};
@@ -50,7 +69,7 @@ export default function YearPlanningTab() {
   function openEdit(ev)    { setModal({ mode:"edit", id: ev.id, date: ev.date, category: ev.category, label: ev.label, icon: ev.icon || "" }); setModalError(""); }
   function closeModal()    { setModal(null); setModalError(""); }
 
-  function saveModal() {
+  async function saveModal() {
     if (!isValidLength(modal.label, 60, 1)) {
       setModalError("Event name must be 1-60 characters.");
       return;
@@ -65,14 +84,30 @@ export default function YearPlanningTab() {
       return;
     }
     const payload = { date: modal.date, category: modal.category, label, icon: modal.icon || null };
-    if (modal.mode === "add") addYearPlanEvent(payload);
-    else updateYearPlanEvent(modal.id, payload);
-    closeModal();
+    setSaving(true);
+    try {
+      if (modal.mode === "add") await addCalendarEvent(payload);
+      else await updateCalendarEvent(modal.id, payload);
+      closeModal();
+      await load();
+    } catch (e) {
+      setModalError("Failed to save: " + e.message);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function removeModal() {
-    if (modal.mode === "edit") deleteYearPlanEvent(modal.id);
+  async function removeModal() {
+    if (modal.mode === "edit") {
+      setSaving(true);
+      try {
+        await deleteCalendarEvent(modal.id);
+      } finally {
+        setSaving(false);
+      }
+    }
     closeModal();
+    load();
   }
 
   function exportPDF() {
@@ -190,6 +225,9 @@ export default function YearPlanningTab() {
         </div>
 
         {/* Grid */}
+        {loading ? (
+          <p className="text-sm text-gray-400 text-center py-10">Loading calendar...</p>
+        ) : (
         <div className="overflow-x-auto">
           <table className="border-collapse w-full" style={{ tableLayout:"fixed" }}>
             <thead>
@@ -239,6 +277,7 @@ export default function YearPlanningTab() {
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       {modal && (
@@ -298,14 +337,14 @@ export default function YearPlanningTab() {
 
             <div className="flex justify-between items-center pt-2">
               {modal.mode === "edit" ? (
-                <button onClick={removeModal} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-red-500 hover:bg-red-50 transition-colors">
+                <button onClick={removeModal} disabled={saving} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50">
                   <Trash2 className="w-4 h-4"/> Delete
                 </button>
               ) : <span/>}
               <div className="flex gap-2">
-                <button onClick={closeModal} className="px-4 py-2 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors">Cancel</button>
-                <button onClick={saveModal} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-school-navy text-white hover:bg-school-navy/90 transition-colors">
-                  <Save className="w-4 h-4"/> Save
+                <button onClick={closeModal} disabled={saving} className="px-4 py-2 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">Cancel</button>
+                <button onClick={saveModal} disabled={saving} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-school-navy text-white hover:bg-school-navy/90 transition-colors disabled:opacity-50">
+                  <Save className="w-4 h-4"/> {saving ? "Saving..." : "Save"}
                 </button>
               </div>
             </div>

@@ -1,21 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/supabase_service.dart';
-import '../../../../core/utils/national_holidays.dart';
+import '../../../../core/utils/year_plan_categories.dart';
 
 const List<String> _monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 const List<String> _weekdayShort = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-Color _eventColor(String? type) {
-  switch (type) {
-    case 'Holiday': return AppColors.red;
-    case 'Exam': return AppColors.purple;
-    default: return AppColors.blue;
-  }
-}
 
 class TeacherCalendarPage extends StatefulWidget {
   const TeacherCalendarPage({super.key});
@@ -49,18 +41,14 @@ class _TeacherCalendarPageState extends State<TeacherCalendarPage> {
     _loadMonth();
   }
 
-  List<Map<String, dynamic>> _schoolEventsOn(int day) => _events.where((e) {
+  List<Map<String, dynamic>> _eventsOn(int day) => _events.where((e) {
     final d = DateTime.tryParse(e['event_date'] ?? '');
     return d != null && d.day == day;
   }).toList();
 
-  List<NationalHoliday> _nationalHolidaysOn(int day) =>
-      nationalHolidaysInMonth(_visibleMonth.month).where((h) => h.day == day).toList();
-
   void _showDaySheet(int day) {
     final date = DateTime(_visibleMonth.year, _visibleMonth.month, day);
-    final national = _nationalHolidaysOn(day);
-    final school = _schoolEventsOn(day);
+    final dayEvents = _eventsOn(day);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -76,17 +64,13 @@ class _TeacherCalendarPageState extends State<TeacherCalendarPage> {
             Text('${date.day} ${_monthNames[date.month - 1]} ${date.year}',
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: AppColors.text)),
             const SizedBox(height: 16),
-            if (national.isEmpty && school.isEmpty)
+            if (dayEvents.isEmpty)
               const Text('Nothing marked on this day.', style: TextStyle(fontSize: 13, color: AppColors.textLight))
-            else ...[
-              ...national.map((h) => _sheetRow(Icons.flag_rounded, AppColors.amber, h.title, 'National Holiday')),
-              ...school.map((e) => _sheetRow(
-                e['event_type'] == 'Exam' ? Icons.edit_note_rounded : Icons.event_rounded,
-                _eventColor(e['event_type']),
-                e['title'] ?? '',
-                e['event_type'] ?? 'Event',
-              )),
-            ],
+            else
+              ...dayEvents.map((e) {
+                final cat = categoryFor(e['category'] as String?);
+                return _sheetRow(cat.icon, cat.color, e['title'] ?? '', cat.label);
+              }),
           ],
         ),
       ),
@@ -116,6 +100,8 @@ class _TeacherCalendarPageState extends State<TeacherCalendarPage> {
     final leadingOffset = firstDay.weekday % 7; // Sun=0 .. Sat=6
     final now = DateTime.now();
     final isCurrentMonth = now.year == _visibleMonth.year && now.month == _visibleMonth.month;
+
+    final categoriesThisMonth = <String>{ for (final e in _events) (e['category'] as String?) ?? 'holiday' };
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -153,12 +139,8 @@ class _TeacherCalendarPageState extends State<TeacherCalendarPage> {
                     ...List.generate(daysInMonth, (i) {
                       final day = i + 1;
                       final isToday = isCurrentMonth && now.day == day;
-                      final national = _nationalHolidaysOn(day);
-                      final school = _schoolEventsOn(day);
-                      final dotColors = <Color>[
-                        if (national.isNotEmpty) AppColors.amber,
-                        ...school.map((e) => _eventColor(e['event_type'])).toSet(),
-                      ];
+                      final dayEvents = _eventsOn(day);
+                      final dotColors = dayEvents.map((e) => categoryFor(e['category'] as String?).color).toSet().toList();
                       return GestureDetector(
                         onTap: () => _showDaySheet(day),
                         child: Container(
@@ -193,20 +175,19 @@ class _TeacherCalendarPageState extends State<TeacherCalendarPage> {
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(20), boxShadow: AppShadows.card),
             child: Wrap(spacing: 16, runSpacing: 10, children: [
-              _legendDot(AppColors.amber, 'National Holiday'),
-              _legendDot(AppColors.red, 'School Holiday'),
-              _legendDot(AppColors.blue, 'Event'),
-              _legendDot(AppColors.purple, 'Exam'),
+              for (final cat in yearPlanCategories)
+                if (categoriesThisMonth.contains(cat.key))
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    Container(width: 8, height: 8, decoration: BoxDecoration(color: cat.color, shape: BoxShape.circle)),
+                    const SizedBox(width: 6),
+                    Text(cat.label, style: const TextStyle(fontSize: 12, color: AppColors.textLight, fontWeight: FontWeight.w600)),
+                  ]),
+              if (categoriesThisMonth.isEmpty)
+                const Text('Nothing marked this month.', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
             ]),
           ),
         ],
       ),
     );
   }
-
-  Widget _legendDot(Color color, String label) => Row(mainAxisSize: MainAxisSize.min, children: [
-    Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-    const SizedBox(width: 6),
-    Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textLight, fontWeight: FontWeight.w600)),
-  ]);
 }
