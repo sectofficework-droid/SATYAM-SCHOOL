@@ -16,13 +16,11 @@ const List<String> _defaultChapters = [
   'Chapter 6', 'Chapter 7', 'Chapter 8', 'Chapter 9', 'Chapter 10',
   'Chapter 11', 'Chapter 12',
 ];
-const String _addChapterValue = '__add_chapter__';
 
 class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
   late String _selectedClass;
   String? _selectedSubject;
   String? _selectedChapter;
-  bool _addingCustomChapter = false;
   final _customChapterCtrl = TextEditingController();
   List<String> _chapterSuggestions = [];
 
@@ -48,6 +46,7 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
 
   List<String> get _chapterOptions {
     final set = <String>{..._defaultChapters, ..._chapterSuggestions};
+    if (_selectedChapter != null) set.add(_selectedChapter!);
     final list = set.toList();
     list.sort((a, b) {
       final an = int.tryParse(a.replaceFirst('Chapter ', ''));
@@ -61,7 +60,7 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
   }
 
   Future<void> _onSubjectChanged(String? v) async {
-    setState(() { _selectedSubject = v; _selectedChapter = null; _questions = []; _chapterSuggestions = []; });
+    setState(() { _selectedSubject = v; _selectedChapter = null; _questions = []; _chapterSuggestions = []; _customChapterCtrl.clear(); });
     final employeeId = _employeeId;
     if (employeeId == null || v == null) return;
     final chapters = await SupabaseService.fetchQuestionChapters(
@@ -72,8 +71,8 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
 
   void _confirmCustomChapter() {
     final v = _customChapterCtrl.text.trim();
-    if (v.isEmpty) return;
-    setState(() { _selectedChapter = v; _addingCustomChapter = false; _customChapterCtrl.clear(); });
+    if (v.isEmpty || v == _selectedChapter) return;
+    setState(() => _selectedChapter = v);
     _load();
   }
 
@@ -151,33 +150,25 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
             ]),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
-              value: _addingCustomChapter ? null : _selectedChapter,
+              value: _selectedChapter,
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Chapter', isDense: true,
                 prefixIcon: Icon(Icons.bookmark_border_rounded, color: AppColors.navy, size: 20)),
-              hint: Text(_selectedSubject == null ? 'Select a subject first' : 'Select', style: const TextStyle(fontSize: 13)),
-              items: _selectedSubject == null ? [] : [
-                ..._chapterOptions.map((c) => DropdownMenuItem(value: c, child: Text(c))),
-                const DropdownMenuItem(value: _addChapterValue, child: Text('+ Add New Chapter',
-                  style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.navy))),
-              ],
+              hint: Text(_selectedSubject == null ? 'Select a subject first' : 'Pick or type below', style: const TextStyle(fontSize: 13)),
+              items: _selectedSubject == null ? [] : _chapterOptions.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(),
               onChanged: _selectedSubject == null ? null : (v) {
-                if (v == _addChapterValue) {
-                  setState(() => _addingCustomChapter = true);
-                } else if (v != null) {
-                  setState(() { _selectedChapter = v; _addingCustomChapter = false; });
-                  _load();
-                }
+                if (v == null) return;
+                setState(() { _selectedChapter = v; _customChapterCtrl.text = v; });
+                _load();
               },
             ),
-            if (_addingCustomChapter) ...[
+            if (_selectedSubject != null) ...[
               const SizedBox(height: 10),
               Row(children: [
                 Expanded(
                   child: TextField(
                     controller: _customChapterCtrl,
-                    autofocus: true,
-                    decoration: const InputDecoration(labelText: 'New Chapter Name', isDense: true,
+                    decoration: const InputDecoration(labelText: 'Or type a new chapter name', isDense: true,
                       prefixIcon: Icon(Icons.edit_outlined, color: AppColors.navy, size: 20)),
                     onSubmitted: (_) => _confirmCustomChapter(),
                   ),
