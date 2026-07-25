@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 
+// Module-card style: a pastel card with a semicircle "dome" accent behind a
+// full-color emoji icon, and the module name below - no stat text on the
+// card face (tap through to the module to see its numbers). badgeCount is
+// for genuinely unread-style counts (kept optional, unused by most cards).
 class StatCard extends StatefulWidget {
   final String label;
-  final String value;
-  final IconData icon;
+  final String emoji;
   final Color color;
   final Color bgColor;
+  final int? badgeCount;
   final VoidCallback? onTap;
 
   const StatCard({
     super.key,
     required this.label,
-    required this.value,
-    required this.icon,
+    required this.emoji,
     this.color   = AppColors.navy,
     this.bgColor = AppColors.blueLight,
+    this.badgeCount,
     this.onTap,
   });
 
@@ -41,66 +45,74 @@ class _StatCardState extends State<StatCard> {
       scale: _pressed ? 0.95 : 1,
       duration: const Duration(milliseconds: 120),
       curve: Curves.easeOut,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        decoration: BoxDecoration(
-          color: widget.bgColor,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: widget.color, width: _pressed ? 2.2 : 1.6),
-          boxShadow: [
-            BoxShadow(color: widget.color.withOpacity(.18), blurRadius: 14, offset: const Offset(0, 6)),
-          ],
-        ),
-        // Every card gets an identical-size icon badge and a text block
-        // pinned to the same fixed width, so all cards share one natural
-        // layout size regardless of how long their label/value text is.
-        // The outer FittedBox then only ever scales down for genuinely
-        // cramped screens, and applies the SAME factor to every card in the
-        // grid (since they're all the same size to begin with) instead of a
-        // different factor per card - which is what made icons render at
-        // different sizes card-to-card before.
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 46, height: 46,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [widget.color, widget.color.withOpacity(.75)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+            decoration: BoxDecoration(
+              color: widget.bgColor,
+              borderRadius: BorderRadius.circular(22),
+              boxShadow: [
+                BoxShadow(color: widget.color.withOpacity(.14), blurRadius: 14, offset: const Offset(0, 6)),
+              ],
+            ),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 84, height: 58,
+                    child: Stack(
+                      alignment: Alignment.bottomCenter,
+                      children: [
+                        Container(
+                          width: 74, height: 37,
+                          decoration: BoxDecoration(
+                            color: widget.color.withOpacity(.28),
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(37),
+                              topRight: Radius.circular(37),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          bottom: 4,
+                          child: Text(widget.emoji, style: const TextStyle(fontSize: 32, height: 1)),
+                        ),
+                      ],
+                    ),
                   ),
-                  boxShadow: [
-                    BoxShadow(color: widget.color.withOpacity(.4), blurRadius: 8, offset: const Offset(0, 3)),
-                  ],
-                ),
-                child: Icon(widget.icon, color: Colors.white, size: 23),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: 92,
+                    child: Text(widget.label,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
+                  ),
+                ],
               ),
-              const SizedBox(height: 9),
-              SizedBox(
-                width: 92,
-                child: Text(widget.value,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.text)),
-              ),
-              const SizedBox(height: 2),
-              SizedBox(
-                width: 92,
-                child: Text(widget.label,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: widget.color.withOpacity(.75))),
-              ),
-            ],
+            ),
           ),
-        ),
+          if (widget.badgeCount != null && widget.badgeCount! > 0)
+            Positioned(
+              top: -6, right: -6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.red,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: [BoxShadow(color: AppColors.red.withOpacity(.4), blurRadius: 6, offset: const Offset(0, 2))],
+                ),
+                child: Text('${widget.badgeCount}',
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
+              ),
+            ),
+        ],
       ),
     ),
   );

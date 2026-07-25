@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:intl/intl.dart';
-import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
-import '../../../../core/services/supabase_service.dart';
 import '../../../../app/routes/app_routes.dart';
 import '../../../../common/widgets/stat_card.dart';
 
@@ -16,12 +13,6 @@ class TeacherDashboardTab extends StatefulWidget {
 
 class _TeacherDashboardTabState extends State<TeacherDashboardTab>
     with SingleTickerProviderStateMixin {
-  int _studentCount    = 0;
-  int _pendingHomework = 0;
-  int _pendingTasks    = 0;
-  String _attendanceStat = '—';
-  int _pendingExams       = 0;
-  bool _loading = true;
   late AnimationController _animCtrl;
   late Animation<double> _fadeAnim;
 
@@ -33,92 +24,13 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
       vsync: this,
     );
     _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
-    _load();
+    _animCtrl.forward();
   }
 
   @override
   void dispose() { _animCtrl.dispose(); super.dispose(); }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
-    final profile    = AuthService.to.profile.value ?? {};
-    final sectionId  = profile['class_teacher_of_section_id']?.toString();
-    final employeeId = profile['id'] as String?;
-
-    final tasks = employeeId != null
-        ? await SupabaseService.fetchTeacherTasks(employeeId)
-        : <Map<String, dynamic>>[];
-    final pendingTasks = tasks.where((t) => t['status'] != 'Completed').length;
-
-    // Homework given by this teacher, plus (for a class teacher) anything
-    // given to their own class by other teachers too - matches the Homework
-    // module's own visibility rule - that isn't past its due date yet.
-    final ownClass = profile['class_name'] as String?;
-    final hw = employeeId != null
-        ? await SupabaseService.fetchHomework(
-            classNames: (ownClass != null && ownClass.isNotEmpty) ? [ownClass] : null,
-            createdBy:  employeeId,
-          )
-        : <Map<String, dynamic>>[];
-    final now = DateTime.now();
-    final pendingHomework = hw.where((h) {
-      final due = DateTime.tryParse(h['due_date'] ?? '');
-      return due != null && !due.isBefore(now);
-    }).length;
-
-    // Attendance: today's % present for the class teacher's own class, or
-    // "Not marked" before anyone has taken attendance for today at all.
-    var attendanceStat = '—';
-    if (ownClass != null && ownClass.isNotEmpty) {
-      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      final att   = await SupabaseService.fetchAttendanceForClassDate(ownClass, today);
-      if (att.isEmpty) {
-        attendanceStat = 'Not marked';
-      } else {
-        final present = att.where((a) => a['status'] == 'P').length;
-        attendanceStat = '${((present / att.length) * 100).round()}% Present';
-      }
-    }
-
-    // Exam Marks: exams that have already been held (on or before today) but
-    // have zero marks entered yet, across every exam visible to this teacher.
-    final exams = employeeId != null
-        ? await SupabaseService.fetchExams(
-            classNames: (ownClass != null && ownClass.isNotEmpty) ? [ownClass] : null,
-            createdBy:  employeeId,
-          )
-        : <Map<String, dynamic>>[];
-    final today = DateTime.now();
-    final todayDay = DateTime(today.year, today.month, today.day);
-    final heldExams = exams.where((e) {
-      final d = DateTime.tryParse(e['date'] ?? '');
-      if (d == null) return false;
-      final examDay = DateTime(d.year, d.month, d.day);
-      return !examDay.isAfter(todayDay);
-    }).toList();
-    final heldIds = heldExams.map((e) => e['id'].toString()).toList();
-    final withMarks = await SupabaseService.fetchExamIdsWithMarks(heldIds);
-    final pendingExams = heldExams.where((e) => !withMarks.contains(e['id'].toString())).length;
-
-    if (sectionId != null && sectionId.isNotEmpty) {
-      final students = await SupabaseService.fetchClassStudents(sectionId);
-      if (mounted) setState(() {
-        _studentCount    = students.length;
-        _pendingHomework = pendingHomework;
-        _pendingTasks    = pendingTasks;
-        _attendanceStat  = attendanceStat;
-        _pendingExams    = pendingExams;
-        _loading         = false;
-      });
-    } else {
-      if (mounted) setState(() {
-        _pendingHomework = pendingHomework;
-        _pendingTasks    = pendingTasks;
-        _attendanceStat  = attendanceStat;
-        _pendingExams    = pendingExams;
-        _loading         = false;
-      });
-    }
+  Future<void> _refresh() async {
     _animCtrl.forward(from: 0);
   }
 
@@ -139,7 +51,7 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
 
     return RefreshIndicator(
       color: AppColors.navy,
-      onRefresh: _load,
+      onRefresh: _refresh,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 96),
@@ -155,14 +67,13 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
 
             const SizedBox(height: 20),
 
-            // Stats header
+            // Modules header
             _AnimEntry(delay: 80, child: const Text('Overview',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
             const SizedBox(height: 12),
 
-            // Stats grid
-            if (_loading) _ShimmerGrid()
-            else FadeTransition(
+            // Module grid - tap a card to see that module's own stats.
+            FadeTransition(
               opacity: _fadeAnim,
               child: GridView.count(
                 crossAxisCount: 3,
@@ -172,50 +83,42 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                 childAspectRatio: 0.85,
                 children: [
                   _AnimEntry(delay: 100, child: StatCard(
-                    label: 'My Students', value: '$_studentCount',
-                    icon: Icons.people_alt_rounded,
+                    label: 'My Students', emoji: '🧑‍🎓',
                     color: AppColors.blue, bgColor: AppColors.blueLight,
                     onTap: () => Get.toNamed(Routes.teacherStudents),
                   )),
                   _AnimEntry(delay: 180, child: StatCard(
-                    label: 'Pending HW', value: '$_pendingHomework',
-                    icon: Icons.assignment_late_rounded,
+                    label: 'Homework', emoji: '📝',
                     color: AppColors.amber, bgColor: AppColors.amberLight,
                     onTap: () => Get.toNamed(Routes.teacherHomework),
                   )),
                   _AnimEntry(delay: 260, child: StatCard(
-                    label: 'Attendance', value: _attendanceStat,
-                    icon: Icons.fact_check_rounded,
+                    label: 'Attendance', emoji: '✅',
                     color: AppColors.green, bgColor: AppColors.greenLight,
                     onTap: () => Get.toNamed(Routes.teacherAttend),
                   )),
                   _AnimEntry(delay: 340, child: StatCard(
-                    label: 'Exam Marks', value: '$_pendingExams Pending',
-                    icon: Icons.grading_rounded,
+                    label: 'Exam Marks', emoji: '📊',
                     color: AppColors.purple, bgColor: AppColors.purpleLight,
                     onTap: () => Get.toNamed(Routes.teacherMarks),
                   )),
                   _AnimEntry(delay: 420, child: StatCard(
-                    label: 'My Tasks', value: '$_pendingTasks',
-                    icon: Icons.task_alt_rounded,
+                    label: 'My Tasks', emoji: '🗂️',
                     color: AppColors.pink, bgColor: AppColors.pinkLight,
                     onTap: () => Get.toNamed(Routes.teacherTasks),
                   )),
                   _AnimEntry(delay: 500, child: StatCard(
-                    label: 'My Attendance', value: 'This Month',
-                    icon: Icons.event_available_rounded,
+                    label: 'My Attendance', emoji: '🕘',
                     color: AppColors.indigo, bgColor: AppColors.indigoLight,
                     onTap: () => Get.toNamed(Routes.teacherMyAttend),
                   )),
                   _AnimEntry(delay: 580, child: StatCard(
-                    label: 'Question Bank', value: 'Add / Browse',
-                    icon: Icons.quiz_rounded,
+                    label: 'Question Bank', emoji: '📚',
                     color: AppColors.red, bgColor: AppColors.redLight,
                     onTap: () => Get.toNamed(Routes.teacherQuestionBank),
                   )),
                   _AnimEntry(delay: 660, child: StatCard(
-                    label: 'Calendar', value: 'Holidays & Events',
-                    icon: Icons.calendar_month_rounded,
+                    label: 'Calendar', emoji: '📅',
                     color: AppColors.teal, bgColor: AppColors.tealLight,
                     onTap: () => Get.toNamed(Routes.teacherCalendar),
                   )),
@@ -291,27 +194,6 @@ class _GreetingBanner extends StatelessWidget {
         child: const Icon(Icons.school_rounded, color: Colors.white, size: 34),
       ),
     ]),
-  );
-}
-
-class _ShimmerGrid extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) => GridView.count(
-    crossAxisCount: 3,
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    crossAxisSpacing: 12, mainAxisSpacing: 12,
-    childAspectRatio: 0.92,
-    children: List.generate(8, (_) => Shimmer.fromColors(
-      baseColor: const Color(0xFFE2E8F0),
-      highlightColor: const Color(0xFFF8FAFC),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-        ),
-      ),
-    )),
   );
 }
 
