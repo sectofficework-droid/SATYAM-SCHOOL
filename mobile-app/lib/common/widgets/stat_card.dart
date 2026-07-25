@@ -54,6 +54,7 @@ class _StatCardState extends State<StatCard> {
             decoration: BoxDecoration(
               color: widget.bgColor,
               borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: widget.color.withOpacity(.55), width: _pressed ? 2.2 : 1.6),
               boxShadow: [
                 BoxShadow(color: widget.color.withOpacity(.14), blurRadius: 14, offset: const Offset(0, 6)),
               ],
@@ -64,35 +65,43 @@ class _StatCardState extends State<StatCard> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   SizedBox(
-                    width: 84, height: 58,
+                    width: 88, height: 62,
                     child: Stack(
                       alignment: Alignment.bottomCenter,
                       children: [
                         Container(
-                          width: 74, height: 37,
+                          width: 78, height: 39,
                           decoration: BoxDecoration(
                             color: widget.color.withOpacity(.28),
                             borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(37),
-                              topRight: Radius.circular(37),
+                              topLeft: Radius.circular(39),
+                              topRight: Radius.circular(39),
                             ),
                           ),
                         ),
                         Positioned(
-                          bottom: 4,
-                          child: Text(widget.emoji, style: const TextStyle(fontSize: 32, height: 1)),
+                          bottom: 3,
+                          child: Text(widget.emoji, style: const TextStyle(fontSize: 38, height: 1)),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 8),
+                  // Fixed width + forced single line (not just a max-width)
+                  // so every card's natural size is identical before the
+                  // outer FittedBox scales it - a card whose label wraps to
+                  // 2 lines is taller than its neighbors, and the FittedBox
+                  // then shrinks THAT card more than the others to fit the
+                  // same grid cell, making icons look inconsistently sized
+                  // across the grid.
                   SizedBox(
-                    width: 92,
+                    width: 108,
                     child: Text(widget.label,
                       textAlign: TextAlign.center,
-                      maxLines: 2,
+                      maxLines: 1,
+                      softWrap: false,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
+                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.text)),
                   ),
                 ],
               ),

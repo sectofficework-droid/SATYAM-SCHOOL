@@ -93,17 +93,17 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                     onTap: () => Get.toNamed(Routes.teacherHomework),
                   )),
                   _AnimEntry(delay: 260, child: StatCard(
-                    label: 'Attendance', emoji: '✅',
+                    label: 'Attendance', emoji: '🙋',
                     color: AppColors.green, bgColor: AppColors.greenLight,
                     onTap: () => Get.toNamed(Routes.teacherAttend),
                   )),
                   _AnimEntry(delay: 340, child: StatCard(
-                    label: 'Exam Marks', emoji: '📊',
+                    label: 'Exam Marks', emoji: '🏆',
                     color: AppColors.purple, bgColor: AppColors.purpleLight,
                     onTap: () => Get.toNamed(Routes.teacherMarks),
                   )),
                   _AnimEntry(delay: 420, child: StatCard(
-                    label: 'My Tasks', emoji: '🗂️',
+                    label: 'My Tasks', emoji: '📋',
                     color: AppColors.pink, bgColor: AppColors.pinkLight,
                     onTap: () => Get.toNamed(Routes.teacherTasks),
                   )),
