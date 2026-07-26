@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 
-// Module-card style: a pastel card with a semicircle "dome" accent behind a
-// full-color emoji icon, and the module name below - no stat text on the
-// card face (tap through to the module to see its numbers). badgeCount is
-// for genuinely unread-style counts (kept optional, unused by most cards).
+// Module-card style, matching the reference ("module icon in mobile view.png"):
+// a pastel card whose top is a wide, shallow color-wave (a big circle
+// positioned mostly above the card and clipped to the card's own rounded
+// corners, rather than a small hand-drawn dome), a full-color emoji icon
+// sitting on that wave, and the module name left-aligned below it - no stat
+// text on the card face (tap through to the module to see its numbers).
+// badgeCount is for genuinely unread-style counts (kept optional, unused by
+// most cards).
 class StatCard extends StatefulWidget {
   final String label;
   final String emoji;
@@ -48,60 +52,64 @@ class _StatCardState extends State<StatCard> {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
-            decoration: BoxDecoration(
-              color: widget.bgColor,
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: widget.color.withOpacity(.55), width: _pressed ? 2.2 : 1.6),
-              boxShadow: [
-                BoxShadow(color: widget.color.withOpacity(.14), blurRadius: 14, offset: const Offset(0, 6)),
-              ],
-            ),
-            child: FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+          ClipRRect(
+            borderRadius: BorderRadius.circular(22),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              decoration: BoxDecoration(
+                color: widget.bgColor,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: widget.color.withOpacity(.55), width: _pressed ? 2.2 : 1.6),
+                boxShadow: [
+                  BoxShadow(color: widget.color.withOpacity(.14), blurRadius: 14, offset: const Offset(0, 6)),
+                ],
+              ),
+              child: Stack(
                 children: [
-                  SizedBox(
-                    width: 88, height: 62,
-                    child: Stack(
-                      alignment: Alignment.bottomCenter,
-                      children: [
-                        Container(
-                          width: 78, height: 39,
-                          decoration: BoxDecoration(
-                            color: widget.color.withOpacity(.28),
-                            borderRadius: const BorderRadius.only(
-                              topLeft: Radius.circular(39),
-                              topRight: Radius.circular(39),
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          bottom: 3,
-                          child: Text(widget.emoji, style: const TextStyle(fontSize: 38, height: 1)),
-                        ),
-                      ],
+                  // The "wave": a circle much bigger than the card, mostly
+                  // positioned above it - only its lower arc shows once the
+                  // outer ClipRRect cuts it to the card's own rounded shape,
+                  // giving a wide, shallow curve instead of a tight dome.
+                  Positioned(
+                    top: -96, left: -28, right: -28,
+                    child: Container(
+                      height: 150,
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: widget.color.withOpacity(.30)),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  // Fixed width + forced single line (not just a max-width)
-                  // so every card's natural size is identical before the
-                  // outer FittedBox scales it - a card whose label wraps to
-                  // 2 lines is taller than its neighbors, and the FittedBox
-                  // then shrinks THAT card more than the others to fit the
-                  // same grid cell, making icons look inconsistently sized
-                  // across the grid.
-                  SizedBox(
-                    width: 108,
-                    child: Text(widget.label,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      softWrap: false,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.text)),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 16, 8, 14),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(
+                            height: 42,
+                            child: Text(widget.emoji, style: const TextStyle(fontSize: 36, height: 1)),
+                          ),
+                          const SizedBox(height: 10),
+                          // Fixed width + forced single line (not just a
+                          // max-width) so every card's natural size is
+                          // identical before the outer FittedBox scales it -
+                          // a card whose label wraps to 2 lines is taller
+                          // than its neighbors, and the FittedBox then
+                          // shrinks THAT card more than the others to fit
+                          // the same grid cell, making icons render smaller
+                          // than the rest of the row.
+                          SizedBox(
+                            width: 104,
+                            child: Text(widget.label,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.text)),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
