@@ -4,27 +4,32 @@ import '../../core/theme/app_theme.dart';
 // Module-card style, matching the reference ("module icon in mobile view.png"):
 // a pastel card whose top is a wide, shallow color-wave (a big circle
 // positioned mostly above the card and clipped to the card's own rounded
-// corners, rather than a small hand-drawn dome), a full-color emoji icon
-// sitting on that wave, and the module name left-aligned below it - no stat
-// text on the card face (tap through to the module to see its numbers).
+// corners, rather than a small hand-drawn dome), a Material icon in a white
+// badge sitting on that wave, and the module name left-aligned below it - no
+// stat text on the card face (tap through to the module to see its numbers).
 // badgeCount is for genuinely unread-style counts (kept optional, unused by
 // most cards).
 class StatCard extends StatefulWidget {
   final String label;
-  final String emoji;
+  final IconData icon;
   final Color color;
   final Color bgColor;
   final int? badgeCount;
   final VoidCallback? onTap;
+  // Teacher dashboard wants icon + label centered (and a bigger icon badge);
+  // the student dashboard keeps the original left-aligned layout that was
+  // matched to the mobile reference screenshot.
+  final bool centered;
 
   const StatCard({
     super.key,
     required this.label,
-    required this.emoji,
+    required this.icon,
     this.color   = AppColors.navy,
     this.bgColor = AppColors.blueLight,
     this.badgeCount,
     this.onTap,
+    this.centered = false,
   });
 
   @override
@@ -78,17 +83,32 @@ class _StatCardState extends State<StatCard> {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 16, 8, 14),
+                    padding: widget.centered
+                      ? const EdgeInsets.fromLTRB(10, 16, 10, 14)
+                      : const EdgeInsets.fromLTRB(14, 16, 8, 14),
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
+                      alignment: widget.centered ? Alignment.center : Alignment.centerLeft,
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: widget.centered ? CrossAxisAlignment.center : CrossAxisAlignment.start,
                         children: [
                           SizedBox(
-                            height: 42,
-                            child: Text(widget.emoji, style: const TextStyle(fontSize: 36, height: 1)),
+                            height: widget.centered ? 54 : 42,
+                            child: Center(
+                              child: Container(
+                                width: widget.centered ? 50 : 40,
+                                height: widget.centered ? 50 : 40,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  shape: BoxShape.circle,
+                                  boxShadow: [
+                                    BoxShadow(color: widget.color.withOpacity(.30), blurRadius: 8, offset: const Offset(0, 3)),
+                                  ],
+                                ),
+                                child: Icon(widget.icon, color: widget.color, size: widget.centered ? 30 : 22),
+                              ),
+                            ),
                           ),
                           const SizedBox(height: 10),
                           // Fixed width + forced single line (not just a
@@ -102,6 +122,7 @@ class _StatCardState extends State<StatCard> {
                           SizedBox(
                             width: 104,
                             child: Text(widget.label,
+                              textAlign: widget.centered ? TextAlign.center : TextAlign.left,
                               maxLines: 1,
                               softWrap: false,
                               overflow: TextOverflow.ellipsis,
