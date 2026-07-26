@@ -7,6 +7,7 @@ import '../../../../core/services/supabase_service.dart';
 import '../../../../core/utils/recent_notices.dart';
 import '../../../../common/widgets/notification_bell.dart';
 import '../../../../common/widgets/recent_notices_sheet.dart';
+import '../../../../common/widgets/stat_card.dart';
 import '../profile/student_profile_page.dart';
 import '../attendance/student_attendance_page.dart';
 import '../marks/student_marks_page.dart';
@@ -303,10 +304,18 @@ class _StudentDashboard extends StatelessWidget {
             crossAxisSpacing: 12, mainAxisSpacing: 12,
             childAspectRatio: 0.85,
             children: [
-              _Tile('Attendance',   Icons.event_note_rounded,            AppColors.green,  AppColors.greenLight,  () => Get.toNamed(Routes.studentAttend)),
-              _Tile('Exam Marks',   Icons.bar_chart_rounded,             AppColors.blue,   AppColors.blueLight,   () => Get.toNamed(Routes.studentMarks)),
-              _Tile('Fee Status',   Icons.account_balance_wallet_rounded, AppColors.amber, AppColors.amberLight,  () => Get.toNamed(Routes.studentFees)),
-              _Tile('Homework',     Icons.assignment_rounded,            AppColors.purple, AppColors.purpleLight,  () => Get.toNamed(Routes.studentHomework)),
+              StatCard(label: 'Attendance', emoji: '🙋',
+                color: AppColors.green, bgColor: AppColors.greenLight,
+                onTap: () => Get.toNamed(Routes.studentAttend)),
+              StatCard(label: 'Exam Marks', emoji: '🏆',
+                color: AppColors.blue, bgColor: AppColors.blueLight,
+                onTap: () => Get.toNamed(Routes.studentMarks)),
+              StatCard(label: 'Fee Status', emoji: '💰',
+                color: AppColors.amber, bgColor: AppColors.amberLight,
+                onTap: () => Get.toNamed(Routes.studentFees)),
+              StatCard(label: 'Homework', emoji: '📝',
+                color: AppColors.purple, bgColor: AppColors.purpleLight,
+                onTap: () => Get.toNamed(Routes.studentHomework)),
             ],
           ),
         ),
@@ -326,89 +335,5 @@ class _StudentDashboard extends StatelessWidget {
       const SizedBox(width: 4),
       Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'Poppins')),
     ]),
-  );
-}
-
-class _Tile extends StatefulWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final Color bg;
-  final VoidCallback onTap;
-  const _Tile(this.label, this.icon, this.color, this.bg, this.onTap);
-
-  @override
-  State<_Tile> createState() => _TileState();
-}
-
-class _TileState extends State<_Tile> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: widget.onTap,
-    onTapDown: (_) => setState(() => _pressed = true),
-    onTapUp:   (_) => setState(() => _pressed = false),
-    onTapCancel: () => setState(() => _pressed = false),
-    child: AnimatedScale(
-      scale: _pressed ? 0.95 : 1,
-      duration: const Duration(milliseconds: 120),
-      curve: Curves.easeOut,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-        decoration: BoxDecoration(
-          color: widget.bg,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: widget.color, width: _pressed ? 2.2 : 1.6),
-          boxShadow: [
-            BoxShadow(color: widget.color.withOpacity(.18), blurRadius: 14, offset: const Offset(0, 6)),
-          ],
-        ),
-        // Same fixed-size icon badge + fixed-width text approach as
-        // StatCard, so every tile's icon renders at an identical size no
-        // matter how long its label is (see stat_card.dart for why).
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 46, height: 46,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    colors: [widget.color, widget.color.withOpacity(.75)],
-                    begin: Alignment.topLeft, end: Alignment.bottomRight,
-                  ),
-                  boxShadow: [
-                    BoxShadow(color: widget.color.withOpacity(.4), blurRadius: 8, offset: const Offset(0, 3)),
-                  ],
-                ),
-                child: Icon(widget.icon, color: Colors.white, size: 23),
-              ),
-              const SizedBox(height: 9),
-              SizedBox(
-                width: 92,
-                child: Text(widget.label,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.text)),
-              ),
-              const SizedBox(height: 2),
-              SizedBox(
-                width: 92,
-                child: Text('Tap to view',
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 10, color: widget.color.withOpacity(.75))),
-              ),
-            ],
-          ),
-        ),
-      ),
-    ),
   );
 }
