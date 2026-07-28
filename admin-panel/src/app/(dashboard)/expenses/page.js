@@ -13,7 +13,7 @@ import autoTable from "jspdf-autotable";
 import { isPositiveAmount, isValidLength } from "@/lib/validators";
 
 // ── Constants ──────────────────────────────────────────────────
-const CATEGORIES = ["Salary", "Infrastructure", "Supplies", "Utilities", "Events", "Maintenance", "Transport", "Other"];
+const CATEGORIES = ["Salary", "Infrastructure", "Supplies", "Utilities", "Events", "Maintenance", "Transport", "Chai", "Coffee", "Nasta", "Other"];
 
 const CAT_COLOR = {
   Salary:         "bg-blue-100 text-blue-700",
@@ -23,6 +23,9 @@ const CAT_COLOR = {
   Events:         "bg-pink-100 text-pink-700",
   Maintenance:    "bg-orange-100 text-orange-700",
   Transport:      "bg-indigo-100 text-indigo-700",
+  Chai:           "bg-yellow-100 text-yellow-700",
+  Coffee:         "bg-stone-100 text-stone-700",
+  Nasta:          "bg-lime-100 text-lime-700",
   Other:          "bg-gray-100 text-gray-600",
 };
 
