@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import useStore from "@/lib/store";
 import supabase from "@/lib/supabase";
 import * as XLSX from "xlsx";
@@ -123,7 +123,7 @@ const SUBJECTS_TT = [
   "Mathematics","Science","English","Hindi","Social Studies","Computer",
   "Accountancy","Economics","Business Studies","P.E.","Drawing",
   "Sanskrit","Gujarati","EVS","Odia","Rhymes & Activity","Dance / Yoga",
-  "Activity & Play","Free Period",
+  "Activity & Play","Free Period","Odiya-Math","MIL",
 ];
 
 const TEACHERS_TT = [
@@ -1159,6 +1159,8 @@ function SubjectsTab() {
   const [editMode,   setEditMode]   = useState(false);
   const [backup,     setBackup]     = useState(null);
   const [expanded,   setExpanded]   = useState(null);
+  const [customOpen, setCustomOpen] = useState({}); // {[cls]: bool} — showing the "new subject" text input
+  const [customText, setCustomText] = useState({}); // {[cls]: draft text}
 
   useEffect(() => {
     Promise.all([getClassesWithSections(), getAllClassSubjects()])
@@ -1175,24 +1177,37 @@ function SubjectsTab() {
     setBackup(rows.map(r => ({ ...r, subjects: [...r.subjects] })));
     setEditMode(true);
   }
-  function cancel() { setRows(backup); setEditMode(false); }
+  function cancel() {
+    setRows(backup);
+    setEditMode(false);
+    setCustomOpen({});
+    setCustomText({});
+  }
 
   async function save() {
     try {
       await Promise.all(rows.map(r => saveClassSubjects(r.cls, r.subjects)));
       setSaved(true);
       setEditMode(false);
+      setCustomOpen({});
+      setCustomText({});
       setTimeout(() => setSaved(false), 2500);
     } catch (err) {
       alert("Failed to save subjects: " + (err?.message || "Unknown error"));
     }
   }
 
-  // Picked from a fixed dropdown (SUBJECTS_TT, the same master list the
-  // Timetable tab uses) rather than free-typed, so a class's subject list
-  // can't drift out of sync with a typo - and each subject already added to
-  // a class is excluded from that class's own dropdown, so it can't be
-  // added twice.
+  // SUBJECTS_TT (the Timetable tab's master list) plus any subject already
+  // in use on some class - e.g. a school-specific one like "MIL"/"Odiya -
+  // Math" that a teacher added via "+ Add New Subject" for one class is
+  // then a real dropdown option for every other class too, instead of
+  // needing to be retyped (and risking a typo) each time.
+  const allKnownSubjects = useMemo(() => {
+    const set = new Set(SUBJECTS_TT);
+    rows.forEach(r => r.subjects.forEach(s => set.add(s)));
+    return Array.from(set).sort();
+  }, [rows]);
+
   function addSubject(cls, subject) {
     if (!subject) return;
     setRows(prev => prev.map(r =>
@@ -1200,6 +1215,13 @@ function SubjectsTab() {
         ? { ...r, subjects: [...r.subjects, subject] }
         : r
     ));
+  }
+
+  function confirmCustomSubject(cls) {
+    const text = (customText[cls] || "").trim();
+    if (text) addSubject(cls, text);
+    setCustomOpen(prev => ({ ...prev, [cls]: false }));
+    setCustomText(prev => ({ ...prev, [cls]: "" }));
   }
 
   function removeSubject(cls, subject) {
@@ -1263,22 +1285,47 @@ function SubjectsTab() {
                         <span className="text-xs text-gray-300">No subjects added yet</span>
                       )}
                     </div>
-                    {editMode && (() => {
-                      const available = SUBJECTS_TT.filter(s => !row.subjects.includes(s));
-                      return (
-                        <select
-                          className={sel + " max-w-xs"}
-                          value=""
-                          disabled={available.length === 0}
-                          onChange={e => addSubject(row.cls, e.target.value)}
-                        >
-                          <option value="">
-                            {available.length === 0 ? "All subjects added" : "Select a subject to add…"}
-                          </option>
-                          {available.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      );
-                    })()}
+                    {editMode && (
+                      customOpen[row.cls] ? (
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            autoFocus
+                            className={inp + " max-w-xs"}
+                            placeholder="e.g. MIL, Odiya - Math…"
+                            value={customText[row.cls] || ""}
+                            onChange={e => setCustomText(prev => ({ ...prev, [row.cls]: e.target.value }))}
+                            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); confirmCustomSubject(row.cls); } }}
+                          />
+                          <button onClick={() => confirmCustomSubject(row.cls)}
+                            className="flex items-center gap-1.5 bg-school-navy text-white text-xs font-semibold px-3 py-2 rounded-lg hover:bg-school-navy/90 transition-colors">
+                            <Plus className="w-3 h-3"/> Add
+                          </button>
+                          <button onClick={() => { setCustomOpen(prev => ({ ...prev, [row.cls]: false })); setCustomText(prev => ({ ...prev, [row.cls]: "" })); }}
+                            className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+                            <X className="w-3.5 h-3.5"/>
+                          </button>
+                        </div>
+                      ) : (() => {
+                        const available = allKnownSubjects.filter(s => !row.subjects.includes(s));
+                        return (
+                          <select
+                            className={sel + " max-w-xs"}
+                            value=""
+                            onChange={e => {
+                              if (e.target.value === "__custom__") setCustomOpen(prev => ({ ...prev, [row.cls]: true }));
+                              else addSubject(row.cls, e.target.value);
+                            }}
+                          >
+                            <option value="">
+                              {available.length === 0 ? "All known subjects added" : "Select a subject to add…"}
+                            </option>
+                            {available.map(s => <option key={s} value={s}>{s}</option>)}
+                            <option value="__custom__">+ Add New Subject…</option>
+                          </select>
+                        );
+                      })()
+                    )}
                   </div>
                 )}
               </div>
