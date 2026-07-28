@@ -143,7 +143,7 @@ class _FormCard extends StatelessWidget {
             textCapitalization: TextCapitalization.characters,
             decoration: InputDecoration(
               labelText: controller.tab.value == LoginTab.teacher ? 'Employee Code' : 'Enrollment No.',
-              hintText: controller.tab.value == LoginTab.teacher ? 'e.g. EMP001' : 'e.g. 2024001',
+              hintText: controller.tab.value == LoginTab.teacher ? 'e.g. EMP001' : 'e.g. 0001',
               prefixIcon: const Icon(Icons.badge_outlined, color: AppColors.navy),
             ),
           )),
