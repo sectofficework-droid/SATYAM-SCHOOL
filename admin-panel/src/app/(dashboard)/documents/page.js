@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getStudents } from "@/lib/studentService";
 import { getS3ViewUrl } from "@/lib/s3Upload";
 import { fmtDMY } from "@/lib/utils";
+import { getMarksheetsForClass, EXAM_TYPES } from "@/lib/marksheetService";
 import S3Image from "@/components/S3Image";
 import {
   CreditCard, Award, FileText, Search, Download,
@@ -612,6 +613,255 @@ async function generateBonafidePDF(students, onProgress) {
   doc.save("Bonafide_Certificates_Satyam_Stars.pdf");
 }
 
+// ── Marksheet: full A4 page per student ────────────────────────────────────────
+// sheet comes from marksheetService.getMarksheetsForClass() - subjects/marks
+// pulled live from the mobile app's exams/exam_marks tables (see that file
+// for the matching rules and grading scale). sheet is null if the student's
+// class has no subjects configured yet in Settings → Subjects.
+function drawMarksheetPage(doc, s, sheet, logoB64, autoTable) {
+  const PW = 210, PH = 297; // A4 mm
+  const marginX = 15;
+
+  doc.setDrawColor(...rgb("#1a2b6b"));
+  doc.setLineWidth(1);
+  doc.rect(10, 10, PW - 20, PH - 20, "S");
+  doc.setLineWidth(0.3);
+  doc.rect(13, 13, PW - 26, PH - 26, "S");
+
+  // Letterhead
+  const logoY = 18, logoH = 24, logoW = logoH * (1080 / 1200);
+  if (logoB64) {
+    try { doc.addImage(logoB64, "JPEG", marginX, logoY, logoW, logoH); } catch {}
+  }
+  const textX = marginX + logoW + 8;
+  doc.setFont("times", "bold");
+  doc.setFontSize(18);
+  doc.setTextColor(...rgb("#1a2b6b"));
+  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", textX, logoY + 9);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.setTextColor(90, 90, 90);
+  doc.text(`${ADDR1}, Pandesara, Surat - 394210  ·  Ph: ${PHONE}`, textX, logoY + 16);
+
+  const titleY = logoY + logoH + 8;
+  doc.setDrawColor(...rgb("#f59e0b"));
+  doc.setLineWidth(0.6);
+  doc.line(marginX, titleY - 5, PW - marginX, titleY - 5);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(15);
+  doc.setTextColor(...rgb("#1a2b6b"));
+  doc.text("ANNUAL MARKSHEET", PW / 2, titleY + 2, { align: "center" });
+  doc.line(marginX, titleY + 5, PW - marginX, titleY + 5);
+
+  // Student info block
+  const infoY = titleY + 15;
+  doc.setFontSize(10.5);
+  doc.setTextColor(20, 20, 20);
+  const infoLeft = [
+    ["Name", s.name],
+    ["Class", `${s.std}${s.section ? " - " + s.section : ""}`],
+    ["Roll No.", s.rollNo || "—"],
+  ];
+  const infoRight = [
+    ["Session", s.session || "—"],
+    ["DOB", fmtDMY(s.dob) || "—"],
+  ];
+  infoLeft.forEach(([label, val], i) => {
+    doc.setFont("helvetica", "bold");
+    doc.text(`${label}:`, marginX, infoY + i * 7);
+    doc.setFont("helvetica", "normal");
+    doc.text(String(val || "—"), marginX + 28, infoY + i * 7);
+  });
+  infoRight.forEach(([label, val], i) => {
+    doc.setFont("helvetica", "bold");
+    doc.text(`${label}:`, PW / 2 + 5, infoY + i * 7);
+    doc.setFont("helvetica", "normal");
+    doc.text(String(val || "—"), PW / 2 + 30, infoY + i * 7);
+  });
+
+  let y = infoY + infoLeft.length * 7 + 8;
+
+  if (!sheet || sheet.subjectRows.length === 0) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(150, 150, 150);
+    doc.text("No subjects configured for this class yet — add them in Settings → Subjects.", marginX, y);
+    return;
+  }
+
+  // Subjects grid
+  autoTable(doc, {
+    startY: y,
+    head: [["Subject", ...EXAM_TYPES, "Total", "Obtained", "Grade"]],
+    body: sheet.subjectRows.map(row => [
+      row.subject,
+      `${row.marks[0].obtained}/${row.marks[0].max}`,
+      `${row.marks[1].obtained}/${row.marks[1].max}`,
+      `${row.marks[2].obtained}/${row.marks[2].max}`,
+      row.total,
+      row.obtained,
+      row.grade,
+    ]),
+    margin: { left: marginX, right: marginX },
+    headStyles: { fillColor: rgb("#1a2b6b"), textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8.5, halign: "center" },
+    bodyStyles: { fontSize: 8.5, halign: "center" },
+    columnStyles: { 0: { halign: "left", fontStyle: "bold" } },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+  });
+  y = doc.lastAutoTable.finalY + 5;
+
+  autoTable(doc, {
+    startY: y,
+    body: [["Total Marks", String(sheet.totalMax), String(sheet.totalObtained)]],
+    theme: "grid",
+    margin: { left: marginX, right: marginX },
+    styles: { fontSize: 9, fontStyle: "bold", halign: "center" },
+    columnStyles: { 0: { halign: "left" } },
+  });
+  y = doc.lastAutoTable.finalY + 8;
+
+  autoTable(doc, {
+    startY: y,
+    head: [["Result", "Percentage", "Rank", "Grade", "Present Days"]],
+    body: [[
+      sheet.result,
+      `${sheet.percentage.toFixed(2)}%`,
+      String(sheet.rank),
+      sheet.grade,
+      `${sheet.present} / ${sheet.totalDays}`,
+    ]],
+    margin: { left: marginX, right: marginX },
+    headStyles: { fillColor: [100, 100, 100], textColor: [255, 255, 255], fontSize: 8.5, halign: "center" },
+    bodyStyles: { fontSize: 9.5, fontStyle: "bold", halign: "center" },
+  });
+  y = doc.lastAutoTable.finalY + 22;
+
+  // Signatures
+  const sigY = Math.min(y, PH - 28);
+  doc.setDrawColor(150, 150, 150);
+  doc.setLineWidth(0.3);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.line(marginX, sigY, marginX + 50, sigY);
+  doc.text("Class Teacher's Sign.", marginX, sigY + 5);
+  doc.line(PW - marginX - 50, sigY, PW - marginX, sigY);
+  doc.text("Principal's Sign.", PW - marginX - 50, sigY + 5);
+}
+
+async function generateMarksheetPDF(targetStudents, allStudents, onProgress) {
+  const { jsPDF } = await import("jspdf");
+  const autoTable = (await import("jspdf-autotable")).default;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const logoUrl = window.location.origin + "/school-logo.jpg";
+  const logoB64 = await fetchBase64(logoUrl);
+
+  // Group by class so each class's full roster (needed for Rank) is only
+  // fetched/computed once, even when several selected students share a class.
+  const classGroups = {};
+  targetStudents.forEach(s => {
+    if (!classGroups[s.std]) classGroups[s.std] = [];
+    classGroups[s.std].push(s);
+  });
+  const sheetByStudentId = {};
+  for (const className of Object.keys(classGroups)) {
+    const classmates = allStudents.filter(s => s.std === className);
+    const sheets = await getMarksheetsForClass(classmates, className);
+    sheets.forEach(sh => { sheetByStudentId[sh.studentId] = sh; });
+  }
+
+  for (let i = 0; i < targetStudents.length; i++) {
+    const s = targetStudents[i];
+    onProgress && onProgress(i + 1, targetStudents.length);
+    if (i > 0) doc.addPage();
+    drawMarksheetPage(doc, s, sheetByStudentId[s._studentId], logoB64, autoTable);
+  }
+  doc.save("Marksheets_Satyam_Stars.pdf");
+}
+
+// ── Marksheet: live preview (React, matches jsPDF output) ──────────────────────
+function MarksheetPreview({ student, sheet, logoUrl, loading }) {
+  const s = student || {};
+
+  if (loading) {
+    return (
+      <div style={{ width: 280, aspectRatio: "210/297", display: "flex", alignItems: "center", justifyContent: "center", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0 }}>
+        <div className="w-8 h-8 border-2 border-school-navy/20 border-t-school-navy rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, position: "relative", overflow: "hidden" }}>
+      <div style={{ position: "absolute", inset: 7, border: "1.4px solid #1a2b6b" }} />
+      <div style={{ position: "absolute", inset: 9, border: "0.5px solid #1a2b6b" }} />
+
+      <div style={{ padding: "20px 18px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ width: 34, height: 34, flexShrink: 0 }}>
+            {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
+          </div>
+          <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 10.5, lineHeight: 1.15 }}>
+            SATYAM STARS INTERNATIONAL SCHOOL
+          </div>
+        </div>
+        <div style={{ borderTop: "1px solid #f59e0b", margin: "8px 0 6px" }} />
+        <div style={{ textAlign: "center", fontWeight: 900, fontSize: 13, color: "#1a2b6b", margin: "2px 0 6px" }}>ANNUAL MARKSHEET</div>
+        <div style={{ borderTop: "1px solid #f59e0b", margin: "0 0 8px" }} />
+
+        <div style={{ fontSize: 8, lineHeight: 1.7, marginBottom: 8 }}>
+          <div><b>Name:</b> {s.name}</div>
+          <div>
+            <b>Class:</b> {s.std}{s.section ? ` - ${s.section}` : ""} &nbsp;
+            <b>Roll:</b> {s.rollNo || "—"} &nbsp;
+            <b>Session:</b> {s.session || "—"}
+          </div>
+        </div>
+
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 6.5 }}>
+          <thead>
+            <tr style={{ background: "#1a2b6b", color: "white" }}>
+              <th style={{ padding: "3px 2px", textAlign: "left" }}>Subject</th>
+              <th style={{ padding: "3px 2px" }}>Unit</th>
+              <th style={{ padding: "3px 2px" }}>Half Yr</th>
+              <th style={{ padding: "3px 2px" }}>Annual</th>
+              <th style={{ padding: "3px 2px" }}>Total</th>
+              <th style={{ padding: "3px 2px" }}>Grade</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(sheet?.subjectRows || []).map((row, i) => (
+              <tr key={row.subject} style={{ background: i % 2 ? "#f8fafc" : "white" }}>
+                <td style={{ padding: "2.5px 2px", fontWeight: 700 }}>{row.subject}</td>
+                <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{row.marks[0].obtained}</td>
+                <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{row.marks[1].obtained}</td>
+                <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{row.marks[2].obtained}</td>
+                <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{row.obtained}/{row.total}</td>
+                <td style={{ padding: "2.5px 2px", textAlign: "center", fontWeight: 700 }}>{row.grade}</td>
+              </tr>
+            ))}
+            {(!sheet || sheet.subjectRows.length === 0) && (
+              <tr><td colSpan={6} style={{ padding: 8, textAlign: "center", color: "#94a3b8", fontSize: 6.5 }}>
+                No subjects configured for this class yet — add them in Settings → Subjects.
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+
+        {sheet && sheet.subjectRows.length > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 6.5, marginTop: 8, fontWeight: 700 }}>
+            <span>{sheet.result}</span>
+            <span>{sheet.percentage.toFixed(1)}%</span>
+            <span>Rank {sheet.rank}</span>
+            <span>{sheet.grade}</span>
+            <span>{sheet.present}/{sheet.totalDays} days</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Bonafide Certificate: live preview (React, matches jsPDF output) ──────────
 // Shows one full page - the second printed page is identical.
 function BonafidePreview({ student, logoUrl }) {
@@ -808,6 +1058,8 @@ export default function DocumentsPage() {
   const [progress, setProgress]       = useState({ done:0, total:0 });
   const [previewIdx, setPreviewIdx]   = useState(0);
   const [logoUrl, setLogoUrl]         = useState("");
+  const [marksheetSheet, setMarksheetSheet]     = useState(null);
+  const [marksheetLoading, setMarksheetLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -830,6 +1082,26 @@ export default function DocumentsPage() {
   const allSelected = filtered.length > 0 && filtered.every(s => selected.has(s.enrollment));
   const currentDesign = DESIGNS.find(d => d.id === designId) || DESIGNS[0];
   const previewStudent = selectedStudents[previewIdx] || filtered[0] || null;
+
+  // Marksheet data is pulled live from Supabase (exams/exam_marks), unlike
+  // the ID Card/Bonafide previews which are pure transforms of the already-
+  // loaded student list - Rank also needs the previewed student's whole
+  // class, not just the ones selected, so this always fetches from `students`
+  // (the full roster), not `selectedStudents`.
+  useEffect(() => {
+    if (activeTab !== "marksheet" || !previewStudent) { setMarksheetSheet(null); return; }
+    let cancelled = false;
+    setMarksheetLoading(true);
+    const classmates = students.filter(s => s.std === previewStudent.std);
+    getMarksheetsForClass(classmates, previewStudent.std)
+      .then(sheets => {
+        if (cancelled) return;
+        setMarksheetSheet(sheets.find(sh => sh.studentId === previewStudent._studentId) || null);
+      })
+      .catch(() => { if (!cancelled) setMarksheetSheet(null); })
+      .finally(() => { if (!cancelled) setMarksheetLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab, previewStudent, students]);
 
   const toggleAll = useCallback(() => {
     setSelected(prev => {
@@ -874,6 +1146,21 @@ export default function DocumentsPage() {
     }
   }, [selectedStudents]);
 
+  const handleDownloadMarksheet = useCallback(async () => {
+    const targets = selectedStudents;
+    if (!targets.length) { alert("Please select at least one student."); return; }
+    setGenerating(true);
+    setProgress({ done:0, total:targets.length });
+    try {
+      await generateMarksheetPDF(targets, students, (done, total) => setProgress({ done, total }));
+    } catch(e) {
+      alert("PDF generation failed: " + e.message);
+    } finally {
+      setGenerating(false);
+      setProgress({ done:0, total:0 });
+    }
+  }, [selectedStudents, students]);
+
   return (
     <div className="flex flex-col gap-5 max-w-7xl mx-auto">
       <div>
@@ -891,7 +1178,7 @@ export default function DocumentsPage() {
         ))}
       </div>
 
-      {(activeTab === "marksheet" || activeTab === "noc" || activeTab === "tc") && (
+      {(activeTab === "noc" || activeTab === "tc") && (
         <div className="flex flex-col items-center justify-center h-64 gap-4 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
           <FileText className="w-12 h-12 text-gray-300"/>
           <p className="text-gray-500 font-medium">Coming Soon</p>
@@ -1072,6 +1359,151 @@ export default function DocumentsPage() {
 
           <p className="text-xs text-gray-400 text-center -mt-2">
             PDF downloads directly — 4 cards per A4 page (90mm × 140mm). Select students above then click Download PDF.
+          </p>
+        </div>
+      )}
+
+      {activeTab === "marksheet" && (
+        <div className="flex flex-col gap-5">
+
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
+            Marks are pulled live from the mobile app — an exam only shows up here if it's named exactly
+            {" "}{EXAM_TYPES.map((t, i) => <b key={t}>{i > 0 ? " / " : " "}&quot;{t}&quot;</b>)}{" "}
+            (case-insensitive). Subjects come from Settings → Subjects — configure a class there first if it shows no subjects below.
+          </div>
+
+          {/* Main content: list + preview */}
+          <div className="flex flex-col lg:flex-row gap-5">
+
+            {/* Student list */}
+            <div className="flex-1 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="flex flex-col sm:flex-row gap-3 p-4 border-b border-gray-100">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400"/>
+                  <input type="text" placeholder="Search by name, enrollment, father..." value={search}
+                    onChange={e=>setSearch(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-school-navy"/>
+                  {search && <button onClick={()=>setSearch("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"><X className="w-3.5 h-3.5"/></button>}
+                </div>
+                <select value={classFilter} onChange={e=>{setClassFilter(e.target.value);setSelected(new Set());}}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-school-navy min-w-32">
+                  <option value="All">All Classes</option>
+                  {CLASSES_LIST.map(c=><option key={c} value={c}>{c}</option>)}
+                </select>
+                <span className="flex items-center gap-1.5 text-sm text-gray-500 whitespace-nowrap">
+                  <Users className="w-4 h-4"/>{filtered.length}
+                </span>
+              </div>
+
+              {filtered.length > 0 && (
+                <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-100">
+                  <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700">
+                    <input type="checkbox" checked={allSelected} onChange={toggleAll} className="w-4 h-4 accent-school-navy"/>
+                    Select all {filtered.length}
+                  </label>
+                  {selected.size > 0 && <span className="text-xs text-school-navy font-semibold bg-school-navy/10 px-2.5 py-1 rounded-full">{selected.size} selected</span>}
+                </div>
+              )}
+
+              <div className="max-h-80 overflow-y-auto">
+                {loading ? (
+                  <div className="flex items-center justify-center h-40 gap-3">
+                    <div className="w-8 h-8 border-2 border-school-navy/20 border-t-school-navy rounded-full animate-spin"/>
+                    <span className="text-sm text-gray-500">Loading...</span>
+                  </div>
+                ) : filtered.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-40 gap-2">
+                    <GraduationCap className="w-10 h-10 text-gray-200"/>
+                    <p className="text-sm text-gray-400">No students found</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <tbody className="divide-y divide-gray-50">
+                      {filtered.map(s => {
+                        const isSel = selected.has(s.enrollment);
+                        return (
+                          <tr key={s.enrollment} onClick={()=>{ toggleOne(s.enrollment); setPreviewIdx(0); }}
+                            className={`cursor-pointer transition-colors ${isSel?"bg-school-navy/5":"hover:bg-gray-50"}`}>
+                            <td className="px-4 py-2.5 w-10">
+                              <input type="checkbox" checked={isSel} onChange={()=>{}} className="w-4 h-4 accent-school-navy"/>
+                            </td>
+                            <td className="px-3 py-2.5">
+                              <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
+                                  {s.photo ? <S3Image s3Key={s.photo} alt={s.name} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center"><GraduationCap className="w-4 h-4 text-gray-400"/></div>}
+                                </div>
+                                <div>
+                                  <div className="font-medium text-gray-800 text-sm">{s.name}</div>
+                                  <div className="text-xs text-gray-400">{s.std}{s.section?" - "+s.section:""}</div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-3 py-2.5 text-gray-500 text-xs hidden md:table-cell">{s.fatherName||"—"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* Live preview panel */}
+            <div className="lg:w-80 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col items-center gap-4">
+              <div className="text-sm font-semibold text-gray-700 self-start">Live Preview</div>
+
+              {previewStudent ? (
+                <>
+                  <MarksheetPreview student={previewStudent} sheet={marksheetSheet} logoUrl={logoUrl} loading={marksheetLoading}/>
+                  {selectedStudents.length > 1 && (
+                    <div className="flex items-center gap-3 text-sm text-gray-500">
+                      <button onClick={()=>setPreviewIdx(i=>Math.max(0,i-1))} disabled={previewIdx===0} className="p-1 rounded hover:bg-gray-100 disabled:opacity-30">
+                        <ChevronLeft className="w-4 h-4"/>
+                      </button>
+                      <span>{previewIdx+1} / {selectedStudents.length}</span>
+                      <button onClick={()=>setPreviewIdx(i=>Math.min(selectedStudents.length-1,i+1))} disabled={previewIdx===selectedStudents.length-1} className="p-1 rounded hover:bg-gray-100 disabled:opacity-30">
+                        <ChevronRight className="w-4 h-4"/>
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-64 gap-3 text-gray-300">
+                  <Award className="w-16 h-16"/>
+                  <p className="text-sm text-gray-400">Select a student to preview</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Action bar */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+            <div className="flex items-center gap-3">
+              <CheckSquare className="w-4 h-4 text-school-navy"/>
+              <span className="text-sm text-gray-600">
+                <span className="font-bold text-school-navy">{selected.size}</span> student{selected.size!==1?"s":""} selected
+              </span>
+              {selected.size > 0 && <button onClick={()=>setSelected(new Set())} className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"><X className="w-3 h-3"/>Clear</button>}
+            </div>
+
+            {generating ? (
+              <div className="flex items-center gap-3 bg-school-navy/5 px-5 py-2.5 rounded-lg">
+                <div className="w-4 h-4 border-2 border-school-navy/30 border-t-school-navy rounded-full animate-spin"/>
+                <span className="text-sm text-school-navy font-medium">
+                  Generating {progress.done}/{progress.total} marksheets...
+                </span>
+              </div>
+            ) : (
+              <button onClick={handleDownloadMarksheet} disabled={selected.size===0}
+                className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-school-navy text-white text-sm font-medium hover:bg-school-navy/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
+                <Download className="w-4 h-4"/>
+                Download PDF ({selected.size} marksheet{selected.size!==1?"s":""})
+              </button>
+            )}
+          </div>
+
+          <p className="text-xs text-gray-400 text-center -mt-2">
+            One full A4 page per student. Rank is computed against the student&apos;s whole class, not just the students selected here.
           </p>
         </div>
       )}

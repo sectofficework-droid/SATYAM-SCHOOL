@@ -232,3 +232,50 @@ export async function deleteSectionFromDB(sectionId) {
     .eq("id", sectionId);
   if (error) throw error;
 }
+
+// ── Subjects per Class (used by the Marksheet report) ──────────
+// Keyed by class NAME (matching classes.name's "JR.KG" / "11th - Commerce"
+// format, not the Zustand-store "JR KG" format) — this is the same format
+// the mobile app's exams.class column stores, which is what the marksheet
+// report joins against.
+export async function getAllClassSubjects() {
+  const { data, error } = await supabase
+    .from("class_subjects")
+    .select("class_name, subject_name, sort_order")
+    .order("sort_order");
+  if (error) throw error;
+  const map = {};
+  (data || []).forEach(r => {
+    if (!map[r.class_name]) map[r.class_name] = [];
+    map[r.class_name].push(r.subject_name);
+  });
+  return map;
+}
+
+export async function saveClassSubjects(className, subjectNames) {
+  const trimmed = subjectNames.map(s => s.trim()).filter(Boolean);
+
+  const { data: existing, error: fetchErr } = await supabase
+    .from("class_subjects")
+    .select("id, subject_name")
+    .eq("class_name", className);
+  if (fetchErr) throw fetchErr;
+
+  const toDelete = (existing || [])
+    .filter(r => !trimmed.includes(r.subject_name))
+    .map(r => r.id);
+  if (toDelete.length) {
+    const { error } = await supabase.from("class_subjects").delete().in("id", toDelete);
+    if (error) throw error;
+  }
+
+  if (trimmed.length) {
+    const { error } = await supabase
+      .from("class_subjects")
+      .upsert(
+        trimmed.map((subject_name, i) => ({ class_name: className, subject_name, sort_order: i })),
+        { onConflict: "class_name,subject_name" }
+      );
+    if (error) throw error;
+  }
+}

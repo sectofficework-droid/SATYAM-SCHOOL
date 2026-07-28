@@ -12,7 +12,7 @@ import {
   Phone, Mail, MapPin, Hash, Shield, UserPlus,
   GraduationCap, Lock, ChevronDown, ChevronUp, Pencil,
   AlertCircle, LogOut, SlidersHorizontal, LayoutGrid,
-  Download, FileSpreadsheet, MessageSquare, CalendarRange,
+  Download, FileSpreadsheet, MessageSquare, CalendarRange, Layers,
 } from "lucide-react";
 import YearPlanningTab from "./YearPlanningTab";
 import DateInputDMY from "@/components/DateInputDMY";
@@ -25,7 +25,7 @@ import {
   getAcademicYears, addAcademicYear, deleteAcademicYear, saveCurrentYear,
   getFeeStructuresForYear, saveFeeStructuresForYear,
   getClassesWithSections, setClassActiveInDB, insertSection, deleteSectionFromDB, updateSectionTeacher,
-  getTeachingEmployees,
+  getTeachingEmployees, getAllClassSubjects, saveClassSubjects,
 } from "@/lib/settingsService";
 
 function FieldError({ msg }) {
@@ -1151,6 +1151,144 @@ function ClassSectionsTab() {
   );
 }
 
+// ── Tab: Subjects per Class (feeds the Documents → Marksheet report) ──────────
+function SubjectsTab() {
+  const [rows,       setRows]       = useState([]); // [{cls, subjects:[string,...]}]
+  const [loading,    setLoading]    = useState(true);
+  const [saved,      setSaved]      = useState(false);
+  const [editMode,   setEditMode]   = useState(false);
+  const [backup,     setBackup]     = useState(null);
+  const [expanded,   setExpanded]   = useState(null);
+  const [newSubject, setNewSubject] = useState({}); // {[cls]: draft text}
+
+  useEffect(() => {
+    Promise.all([getClassesWithSections(), getAllClassSubjects()])
+      .then(([classes, subjMap]) => {
+        const mapped = classes
+          .filter(c => c.is_active)
+          .map(c => ({ cls: c.name, subjects: subjMap[c.name] || [] }));
+        setRows(mapped);
+        setLoading(false);
+      }).catch(() => setLoading(false));
+  }, []);
+
+  function startEdit() {
+    setBackup(rows.map(r => ({ ...r, subjects: [...r.subjects] })));
+    setEditMode(true);
+  }
+  function cancel() { setRows(backup); setEditMode(false); setNewSubject({}); }
+
+  async function save() {
+    try {
+      await Promise.all(rows.map(r => saveClassSubjects(r.cls, r.subjects)));
+      setSaved(true);
+      setEditMode(false);
+      setNewSubject({});
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err) {
+      alert("Failed to save subjects: " + (err?.message || "Unknown error"));
+    }
+  }
+
+  function addSubject(cls) {
+    const text = (newSubject[cls] || "").trim();
+    if (!text) return;
+    setRows(prev => prev.map(r =>
+      r.cls === cls && !r.subjects.includes(text)
+        ? { ...r, subjects: [...r.subjects, text] }
+        : r
+    ));
+    setNewSubject(prev => ({ ...prev, [cls]: "" }));
+  }
+
+  function removeSubject(cls, subject) {
+    setRows(prev => prev.map(r =>
+      r.cls === cls ? { ...r, subjects: r.subjects.filter(s => s !== subject) } : r
+    ));
+  }
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16 text-gray-400 text-sm">Loading subjects…</div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-gray-700">Subjects per Class</h3>
+            <p className="text-xs text-gray-400 mt-0.5">
+              {editMode ? "Add or remove subjects for each class" : "Used by the Documents → Marksheet report to know which subjects to list for each class"}
+            </p>
+          </div>
+          <EditBar editMode={editMode} saved={saved} onEdit={startEdit} onSave={save} onCancel={cancel}/>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {rows.map(row => {
+            const isOpen = expanded === row.cls;
+            return (
+              <div key={row.cls}>
+                <button
+                  className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors text-left"
+                  onClick={() => setExpanded(isOpen ? null : row.cls)}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-school-navy/10 flex items-center justify-center">
+                      <Layers className="w-4 h-4 text-school-navy"/>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800">{row.cls}</p>
+                      <p className="text-xs text-gray-400">
+                        {row.subjects.length ? `${row.subjects.length} subject${row.subjects.length !== 1 ? "s" : ""}` : "No subjects added yet"}
+                      </p>
+                    </div>
+                  </div>
+                  {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400"/> : <ChevronDown className="w-4 h-4 text-gray-400"/>}
+                </button>
+
+                {isOpen && (
+                  <div className="px-5 pb-4 pt-3 bg-gray-50/60 border-t border-gray-100">
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {row.subjects.map(subj => (
+                        <span key={subj} className="flex items-center gap-1.5 bg-school-navy text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
+                          {subj}
+                          {editMode && (
+                            <button onClick={() => removeSubject(row.cls, subj)} className="hover:text-red-300 transition-colors">
+                              <X className="w-3 h-3"/>
+                            </button>
+                          )}
+                        </span>
+                      ))}
+                      {row.subjects.length === 0 && !editMode && (
+                        <span className="text-xs text-gray-300">No subjects added yet</span>
+                      )}
+                    </div>
+                    {editMode && (
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          className={inp + " max-w-xs"}
+                          placeholder="Add a subject…"
+                          value={newSubject[row.cls] || ""}
+                          onChange={e => setNewSubject(prev => ({ ...prev, [row.cls]: e.target.value }))}
+                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addSubject(row.cls); } }}
+                        />
+                        <button onClick={() => addSubject(row.cls)}
+                          className="flex items-center gap-1.5 border-2 border-dashed border-gray-300 text-gray-400 hover:border-school-navy hover:text-school-navy text-xs font-semibold px-3 py-2 rounded-lg transition-colors">
+                          <Plus className="w-3 h-3"/> Add
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Permission Constants ───────────────────────────────────────────────────────
 const PERM_ROLES = ["Admin","Teacher"];
 
@@ -2097,6 +2235,7 @@ const TABS = [
   { key:"year",       label:"Academic Year",      icon:Calendar     },
   { key:"fees",       label:"Fee Structure",      icon:IndianRupee  },
   { key:"classes",    label:"Classes & Sections", icon:BookOpen     },
+  { key:"subjects",   label:"Subjects",           icon:Layers       },
   { key:"timetable",  label:"Timetable",          icon:LayoutGrid   },
   { key:"planning",   label:"Year Planning",      icon:CalendarRange},
   { key:"reminders",  label:"Fee Reminders",      icon:MessageSquare},
@@ -2144,6 +2283,7 @@ export default function SettingsPage() {
       {tab === "year"       && <AcademicYearTab/>}
       {tab === "fees"       && <FeeStructureTab/>}
       {tab === "classes"    && <ClassSectionsTab/>}
+      {tab === "subjects"   && <SubjectsTab/>}
       {tab === "timetable"  && <TimetableTab/>}
       {tab === "planning"   && <YearPlanningTab/>}
       {tab === "reminders"  && <FeeReminderTab/>}
