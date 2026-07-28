@@ -1159,7 +1159,6 @@ function SubjectsTab() {
   const [editMode,   setEditMode]   = useState(false);
   const [backup,     setBackup]     = useState(null);
   const [expanded,   setExpanded]   = useState(null);
-  const [newSubject, setNewSubject] = useState({}); // {[cls]: draft text}
 
   useEffect(() => {
     Promise.all([getClassesWithSections(), getAllClassSubjects()])
@@ -1176,29 +1175,31 @@ function SubjectsTab() {
     setBackup(rows.map(r => ({ ...r, subjects: [...r.subjects] })));
     setEditMode(true);
   }
-  function cancel() { setRows(backup); setEditMode(false); setNewSubject({}); }
+  function cancel() { setRows(backup); setEditMode(false); }
 
   async function save() {
     try {
       await Promise.all(rows.map(r => saveClassSubjects(r.cls, r.subjects)));
       setSaved(true);
       setEditMode(false);
-      setNewSubject({});
       setTimeout(() => setSaved(false), 2500);
     } catch (err) {
       alert("Failed to save subjects: " + (err?.message || "Unknown error"));
     }
   }
 
-  function addSubject(cls) {
-    const text = (newSubject[cls] || "").trim();
-    if (!text) return;
+  // Picked from a fixed dropdown (SUBJECTS_TT, the same master list the
+  // Timetable tab uses) rather than free-typed, so a class's subject list
+  // can't drift out of sync with a typo - and each subject already added to
+  // a class is excluded from that class's own dropdown, so it can't be
+  // added twice.
+  function addSubject(cls, subject) {
+    if (!subject) return;
     setRows(prev => prev.map(r =>
-      r.cls === cls && !r.subjects.includes(text)
-        ? { ...r, subjects: [...r.subjects, text] }
+      r.cls === cls && !r.subjects.includes(subject)
+        ? { ...r, subjects: [...r.subjects, subject] }
         : r
     ));
-    setNewSubject(prev => ({ ...prev, [cls]: "" }));
   }
 
   function removeSubject(cls, subject) {
@@ -1262,22 +1263,22 @@ function SubjectsTab() {
                         <span className="text-xs text-gray-300">No subjects added yet</span>
                       )}
                     </div>
-                    {editMode && (
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          className={inp + " max-w-xs"}
-                          placeholder="Add a subject…"
-                          value={newSubject[row.cls] || ""}
-                          onChange={e => setNewSubject(prev => ({ ...prev, [row.cls]: e.target.value }))}
-                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); addSubject(row.cls); } }}
-                        />
-                        <button onClick={() => addSubject(row.cls)}
-                          className="flex items-center gap-1.5 border-2 border-dashed border-gray-300 text-gray-400 hover:border-school-navy hover:text-school-navy text-xs font-semibold px-3 py-2 rounded-lg transition-colors">
-                          <Plus className="w-3 h-3"/> Add
-                        </button>
-                      </div>
-                    )}
+                    {editMode && (() => {
+                      const available = SUBJECTS_TT.filter(s => !row.subjects.includes(s));
+                      return (
+                        <select
+                          className={sel + " max-w-xs"}
+                          value=""
+                          disabled={available.length === 0}
+                          onChange={e => addSubject(row.cls, e.target.value)}
+                        >
+                          <option value="">
+                            {available.length === 0 ? "All subjects added" : "Select a subject to add…"}
+                          </option>
+                          {available.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
