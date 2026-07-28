@@ -123,7 +123,7 @@ const SUBJECTS_TT = [
   "Mathematics","Science","English","Hindi","Social Studies","Computer",
   "Accountancy","Economics","Business Studies","P.E.","Drawing",
   "Sanskrit","Gujarati","EVS","Odia","Rhymes & Activity","Dance / Yoga",
-  "Activity & Play","Free Period","Odiya-Math","MIL",
+  "Activity & Play","Free Period","Odia - MIL","G.K.",
 ];
 
 const TEACHERS_TT = [
