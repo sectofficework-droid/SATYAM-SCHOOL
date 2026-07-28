@@ -122,7 +122,7 @@ const DEF_PERIOD_DEFS = {
 const SUBJECTS_TT = [
   "Mathematics","Science","English","Hindi","Social Studies","Computer",
   "Accountancy","Economics","Business Studies","P.E.","Drawing",
-  "Sanskrit","Gujarati","EVS","Odia","Rhymes & Activity","Dance / Yoga",
+  "Sanskrit","Gujarati","EVS","Rhymes & Activity","Dance / Yoga",
   "Activity & Play","Free Period","Odia - MIL","G.K.",
 ];
 
