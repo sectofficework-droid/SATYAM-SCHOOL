@@ -4,6 +4,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../app/routes/app_routes.dart';
 import '../../../../common/widgets/stat_card.dart';
+import '../../../../common/widgets/responsive_module_grid.dart';
 
 class TeacherDashboardTab extends StatefulWidget {
   const TeacherDashboardTab({super.key});
@@ -75,12 +76,7 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
             // Module grid - tap a card to see that module's own stats.
             FadeTransition(
               opacity: _fadeAnim,
-              child: GridView.count(
-                crossAxisCount: 3,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisSpacing: 12, mainAxisSpacing: 12,
-                childAspectRatio: 0.85,
+              child: ResponsiveModuleGrid(
                 children: [
                   _AnimEntry(delay: 100, child: StatCard(
                     label: 'My Students', icon: Icons.groups_rounded,

@@ -82,56 +82,97 @@ class _StatCardState extends State<StatCard> {
                       decoration: BoxDecoration(shape: BoxShape.circle, color: widget.color.withOpacity(.30)),
                     ),
                   ),
-                  Padding(
-                    padding: widget.centered
-                      ? const EdgeInsets.fromLTRB(10, 16, 10, 14)
-                      : const EdgeInsets.fromLTRB(14, 16, 8, 14),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: widget.centered ? Alignment.center : Alignment.centerLeft,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: widget.centered ? CrossAxisAlignment.center : CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(
-                            height: widget.centered ? 54 : 42,
-                            child: Center(
-                              child: Container(
-                                width: widget.centered ? 50 : 40,
-                                height: widget.centered ? 50 : 40,
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(color: widget.color.withOpacity(.30), blurRadius: 8, offset: const Offset(0, 3)),
-                                  ],
-                                ),
-                                child: Icon(widget.icon, color: widget.color, size: widget.centered ? 30 : 22),
+                  if (widget.centered)
+                    // Fills the full card instead of a fixed-width FittedBox
+                    // block - a fixed width left slack on either side of the
+                    // icon/label whenever a responsive column's card came
+                    // out wider than that block, which made the horizontal
+                    // gap between cards look much bigger than the vertical
+                    // gap between rows even though the Wrap spacing was the
+                    // same on both axes.
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 12, 8, 10),
+                      // Without an explicit width, this column (and the
+                      // colored card behind it) shrinks to fit each label's
+                      // own text width - a short label like "Homework" made
+                      // a narrower card than "Student Attendance", all
+                      // left-anchored in the same grid cell, which is what
+                      // produced the zig-zag row. Forcing full width here
+                      // keeps every card in a row the same visible size.
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 46, height: 46,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(color: widget.color.withOpacity(.30), blurRadius: 8, offset: const Offset(0, 3)),
+                                ],
                               ),
+                              child: Icon(widget.icon, color: widget.color, size: 27),
                             ),
-                          ),
-                          const SizedBox(height: 10),
-                          // Fixed width + forced single line (not just a
-                          // max-width) so every card's natural size is
-                          // identical before the outer FittedBox scales it -
-                          // a card whose label wraps to 2 lines is taller
-                          // than its neighbors, and the FittedBox then
-                          // shrinks THAT card more than the others to fit
-                          // the same grid cell, making icons render smaller
-                          // than the rest of the row.
-                          SizedBox(
-                            width: 104,
-                            child: Text(widget.label,
-                              textAlign: widget.centered ? TextAlign.center : TextAlign.left,
+                            const SizedBox(height: 8),
+                            Text(widget.label,
+                              textAlign: TextAlign.center,
                               maxLines: 1,
-                              softWrap: false,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.text)),
-                          ),
-                        ],
+                          ],
+                        ),
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 16, 8, 14),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(
+                              height: 42,
+                              child: Center(
+                                child: Container(
+                                  width: 40, height: 40,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(color: widget.color.withOpacity(.30), blurRadius: 8, offset: const Offset(0, 3)),
+                                    ],
+                                  ),
+                                  child: Icon(widget.icon, color: widget.color, size: 22),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+                            // Fixed width + forced single line (not just a
+                            // max-width) so every card's natural size is
+                            // identical before the outer FittedBox scales it -
+                            // a card whose label wraps to 2 lines is taller
+                            // than its neighbors, and the FittedBox then
+                            // shrinks THAT card more than the others to fit
+                            // the same grid cell, making icons render smaller
+                            // than the rest of the row.
+                            SizedBox(
+                              width: 104,
+                              child: Text(widget.label,
+                                maxLines: 1,
+                                softWrap: false,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.text)),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
                 ],
               ),
             ),

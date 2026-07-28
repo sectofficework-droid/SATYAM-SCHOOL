@@ -8,6 +8,7 @@ import '../../../../core/utils/recent_notices.dart';
 import '../../../../common/widgets/notification_bell.dart';
 import '../../../../common/widgets/recent_notices_sheet.dart';
 import '../../../../common/widgets/stat_card.dart';
+import '../../../../common/widgets/responsive_module_grid.dart';
 import '../profile/student_profile_page.dart';
 import '../attendance/student_attendance_page.dart';
 import '../marks/student_marks_page.dart';
@@ -297,24 +298,23 @@ class _StudentDashboard extends StatelessWidget {
           curve: Curves.easeOut,
           builder: (_, v, child) => Opacity(opacity: v,
             child: Transform.translate(offset: Offset(0, 20 * (1-v)), child: child)),
-          child: GridView.count(
-            crossAxisCount: 3,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisSpacing: 12, mainAxisSpacing: 12,
-            childAspectRatio: 0.85,
+          child: ResponsiveModuleGrid(
             children: [
               StatCard(label: 'Attendance', icon: Icons.how_to_reg_rounded,
                 color: AppColors.green, bgColor: AppColors.greenLight,
+                centered: true,
                 onTap: () => Get.toNamed(Routes.studentAttend)),
               StatCard(label: 'Exam Marks', icon: Icons.emoji_events_rounded,
                 color: AppColors.blue, bgColor: AppColors.blueLight,
+                centered: true,
                 onTap: () => Get.toNamed(Routes.studentMarks)),
               StatCard(label: 'Fee Status', icon: Icons.account_balance_wallet_rounded,
                 color: AppColors.amber, bgColor: AppColors.amberLight,
+                centered: true,
                 onTap: () => Get.toNamed(Routes.studentFees)),
               StatCard(label: 'Homework', icon: Icons.assignment_rounded,
                 color: AppColors.purple, bgColor: AppColors.purpleLight,
+                centered: true,
                 onTap: () => Get.toNamed(Routes.studentHomework)),
             ],
           ),
