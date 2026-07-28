@@ -30,8 +30,54 @@ Future<void> main() async {
   runApp(const SatyamSchoolApp());
 }
 
-class SatyamSchoolApp extends StatelessWidget {
+class SatyamSchoolApp extends StatefulWidget {
   const SatyamSchoolApp({super.key});
+
+  @override
+  State<SatyamSchoolApp> createState() => _SatyamSchoolAppState();
+}
+
+// Replays the splash intro whenever the app comes back to the foreground
+// after having been away for a while - e.g. closed today and reopened
+// tomorrow without logging out. On Android/iOS the OS often keeps the
+// Flutter engine alive when an app is "closed" (swiped from recents), so
+// main() never reruns and the app would otherwise just resume straight to
+// whatever screen was last open, skipping the intro entirely. A short
+// threshold avoids replaying it for brief interruptions like the camera/
+// gallery picker used by photo uploads.
+class _SatyamSchoolAppState extends State<SatyamSchoolApp> with WidgetsBindingObserver {
+  static const _replayThreshold = Duration(minutes: 5);
+  DateTime? _pausedAt;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _pausedAt = DateTime.now();
+      return;
+    }
+    if (state != AppLifecycleState.resumed || _pausedAt == null) return;
+
+    final awayFor = DateTime.now().difference(_pausedAt!);
+    _pausedAt = null;
+    if (awayFor < _replayThreshold) return;
+
+    final current = Get.currentRoute;
+    if (current != Routes.splash && current != Routes.login) {
+      Get.offAllNamed(Routes.splash);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
