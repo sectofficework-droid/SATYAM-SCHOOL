@@ -15,6 +15,13 @@ class _StudentHomeworkPageState extends State<StudentHomeworkPage> {
   List<Map<String, dynamic>> _list = [];
   bool _loading = true;
 
+  // Homework is just a reminder for the student to do at home - once its due
+  // date has passed there's nothing left to act on, so it drops out of the
+  // main list automatically instead of sitting there looking like it's
+  // still pending. It stays browsable in Archive.
+  // 0 = Active (not past due yet), 1 = Archive (past due)
+  int _tab = 0;
+
   @override
   void initState() { super.initState(); _load(); }
 
@@ -25,20 +32,43 @@ class _StudentHomeworkPageState extends State<StudentHomeworkPage> {
     setState(() { _list = hw; _loading = false; });
   }
 
+  DateTime? _dueDate(Map<String, dynamic> hw) => DateTime.tryParse(hw['due_date'] ?? '');
+
+  bool _isPastDue(Map<String, dynamic> hw) {
+    final due = _dueDate(hw);
+    if (due == null) return false;
+    final today = DateTime.now();
+    return due.isBefore(DateTime(today.year, today.month, today.day));
+  }
+
+  List<Map<String, dynamic>> get _activeList =>
+      _list.where((h) => !_isPastDue(h)).toList()
+        ..sort((a, b) => (a['due_date'] ?? '').compareTo(b['due_date'] ?? ''));
+
+  List<Map<String, dynamic>> get _archiveList {
+    final archived = _list.where(_isPastDue).toList()
+      ..sort((a, b) => (b['due_date'] ?? '').compareTo(a['due_date'] ?? ''));
+    return archived;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final body = _loading
+    final shownList = _tab == 0 ? _activeList : _archiveList;
+
+    final list = _loading
         ? const Center(child: CircularProgressIndicator())
-        : _list.isEmpty
-            ? const Center(child: Text('No homework assigned.', style: TextStyle(color: AppColors.textLight)))
+        : shownList.isEmpty
+            ? Center(child: Text(
+                _tab == 0 ? 'No homework assigned.' : 'No archived homework.',
+                style: const TextStyle(color: AppColors.textLight)))
             : RefreshIndicator(
                 onRefresh: _load,
                 child: ListView.separated(
                   padding: const EdgeInsets.all(16),
-                  itemCount: _list.length,
+                  itemCount: shownList.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 10),
                   itemBuilder: (_, i) {
-                    final hw      = _list[i];
+                    final hw      = shownList[i];
                     final due     = DateTime.tryParse(hw['due_date'] ?? '');
                     final overdue = due != null && due.isBefore(DateTime.now());
                     return Container(
@@ -89,6 +119,11 @@ class _StudentHomeworkPageState extends State<StudentHomeworkPage> {
                 ),
               );
 
+    final body = Column(children: [
+      _buildTabBar(),
+      Expanded(child: list),
+    ]);
+
     if (widget.embedded) return body;
     return Scaffold(
       appBar: AppBar(
@@ -96,6 +131,36 @@ class _StudentHomeworkPageState extends State<StudentHomeworkPage> {
         title: const Text('Homework'),
       ),
       body: body,
+    );
+  }
+
+  Widget _buildTabBar() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+    child: Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: AppColors.border.withOpacity(.4), borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [
+        Expanded(child: _tabButton('Active', 0, _activeList.length)),
+        Expanded(child: _tabButton('Archive', 1, _archiveList.length)),
+      ]),
+    ),
+  );
+
+  Widget _tabButton(String label, int index, int count) {
+    final active = _tab == index;
+    return GestureDetector(
+      onTap: () => setState(() => _tab = index),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        decoration: BoxDecoration(
+          color: active ? AppColors.card : Colors.transparent,
+          borderRadius: BorderRadius.circular(9),
+          boxShadow: active ? AppShadows.card : null,
+        ),
+        child: Center(child: Text('$label ($count)',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: active ? AppColors.navy : AppColors.textLight))),
+      ),
     );
   }
 }
