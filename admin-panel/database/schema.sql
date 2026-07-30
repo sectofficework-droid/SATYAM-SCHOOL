@@ -376,7 +376,7 @@ CREATE TABLE salary_payments (
 CREATE TABLE expenses (
   id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   title        TEXT NOT NULL,
-  category     TEXT CHECK (category IN ('Salary','Infrastructure','Supplies','Utilities','Events','Maintenance','Transport','Other')),
+  category     TEXT CHECK (category IN ('Salary','Infrastructure','Supplies','Utilities','Events','Maintenance','Transport','Chai','Coffee','Nasta','Other')),
   amount       NUMERIC(10,2) NOT NULL CHECK (amount > 0),
   expense_date DATE NOT NULL,
   paid_by      TEXT,
