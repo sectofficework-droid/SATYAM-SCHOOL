@@ -98,11 +98,13 @@ export async function getStudentsForReport() {
       hasBirthCert,
       remarks:            row.deactivate_reason || "",
       followUp:           "",
-      lastSchoolName:     s.student_previous_school?.[0]?.school_name || "",
-      lastSchoolGrNo:     s.student_previous_school?.[0]?.grno || "",
-      prevAttendanceDays: s.student_previous_school?.[0]?.attendance_days || "",
-      lastExamGiven:      s.student_previous_school?.[0]?.last_exam_given ? "Yes" : "No",
-      prevPercentage:     s.student_previous_school?.[0]?.percentage || "",
+      // student_id is student_previous_school's own primary key (one row per
+      // student, not many), so Supabase nests this as a single object.
+      lastSchoolName:     s.student_previous_school?.school_name || "",
+      lastSchoolGrNo:     s.student_previous_school?.grno || "",
+      prevAttendanceDays: s.student_previous_school?.attendance_days || "",
+      lastExamGiven:      s.student_previous_school?.last_exam_given ? "Yes" : "No",
+      prevPercentage:     s.student_previous_school?.percentage || "",
     };
   }).filter(Boolean);
 }

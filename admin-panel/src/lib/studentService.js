@@ -39,7 +39,12 @@ export function mapToStudent(enrollment) {
       .map(d => d.document_types?.name)
       .filter(Boolean)
   );
-  const hasPrevSchool = !!(s.student_previous_school?.[0]?.school_name);
+  // student_previous_school.student_id IS that table's primary key (one row
+  // per student, not many), so Supabase/PostgREST nests it as a single
+  // object here, not an array - reading it with ?.[0] silently always
+  // returned undefined, marking Leaving Certificate/Marksheet as required
+  // even for students who do have previous-school info on file.
+  const hasPrevSchool = !!(s.student_previous_school?.school_name);
   const notRequired   = hasPrevSchool ? [] : ["Leaving Certificate", "Marksheet"];
   const pendingDocs   = DEFAULT_DOCS.filter(name => !uploadedDocNames.has(name) && !notRequired.includes(name));
 
@@ -181,15 +186,17 @@ export function mapToStudent(enrollment) {
         }))
       : [],
 
-    // Previous school (if loaded) — Supabase returns this as an array
-    lastSchoolName:     s.student_previous_school?.[0]?.school_name || "",
-    lastSchoolGrNo:     s.student_previous_school?.[0]?.grno || "",
-    lastSchoolClass:    s.student_previous_school?.[0]?.class || "",
-    lastSchoolMedium:   s.student_previous_school?.[0]?.medium || "",
-    lastSchoolPlace:    s.student_previous_school?.[0]?.place || "",
-    prevAttendanceDays: s.student_previous_school?.[0]?.attendance_days || "",
-    lastExamGiven:      s.student_previous_school?.[0]?.last_exam_given ? "Yes" : "No",
-    prevPercentage:     s.student_previous_school?.[0]?.percentage || "",
+    // Previous school (if loaded) — student_id is that table's own primary
+    // key (one row per student, not many), so Supabase nests this as a
+    // single object, not an array.
+    lastSchoolName:     s.student_previous_school?.school_name || "",
+    lastSchoolGrNo:     s.student_previous_school?.grno || "",
+    lastSchoolClass:    s.student_previous_school?.class || "",
+    lastSchoolMedium:   s.student_previous_school?.medium || "",
+    lastSchoolPlace:    s.student_previous_school?.place || "",
+    prevAttendanceDays: s.student_previous_school?.attendance_days || "",
+    lastExamGiven:      s.student_previous_school?.last_exam_given ? "Yes" : "No",
+    prevPercentage:     s.student_previous_school?.percentage || "",
 
     // Siblings (if loaded)
     siblings: s.student_siblings
