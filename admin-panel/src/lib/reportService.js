@@ -40,7 +40,7 @@ export async function getStudentsForReport() {
       admission_class:classes!student_enrollments_admission_class_id_fkey(name)
     `)
     .in("academic_year_id", years.map(y => y.id))
-    .order("roll_no", { ascending: true });
+    .order("enrollment_no", { ascending: true });
 
   if (error) throw error;
 

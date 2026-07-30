@@ -328,7 +328,7 @@ export async function getStudents(yearId = null) {
       fee_payments(amount)
     `)
     .eq("academic_year_id", resolvedYearId)
-    .order("roll_no", { ascending: true });
+    .order("enrollment_no", { ascending: true });
 
   if (error) throw error;
   return (data || []).map(mapToStudent).filter(Boolean);
