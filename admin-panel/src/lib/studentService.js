@@ -45,7 +45,10 @@ export function mapToStudent(enrollment) {
   // returned undefined, marking Leaving Certificate/Marksheet as required
   // even for students who do have previous-school info on file.
   const hasPrevSchool = !!(s.student_previous_school?.school_name);
-  const notRequired   = hasPrevSchool ? [] : ["Leaving Certificate", "Marksheet"];
+  // With a previous school on file, only the Leaving Certificate (TC) is
+  // compulsory - Marksheet is optional and shouldn't nag as pending even if
+  // never uploaded. With no previous school, neither applies at all.
+  const notRequired   = hasPrevSchool ? ["Marksheet"] : ["Leaving Certificate", "Marksheet"];
   const pendingDocs   = DEFAULT_DOCS.filter(name => !uploadedDocNames.has(name) && !notRequired.includes(name));
 
   const std = normClass(enrollment.class?.name);

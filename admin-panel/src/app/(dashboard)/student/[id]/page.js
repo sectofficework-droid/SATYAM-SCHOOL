@@ -959,10 +959,11 @@ export default function StudentDetailPage() {
 
             // Exclude from general pending list:
             //  - TC/Marksheet when no prev school (not required)
+            //  - Marksheet even with a prev school (optional, TC is the only compulsory one)
             //  - Birth Certificate when shown as its own warning (avoid double alert)
-            const notRequired = !hasPrevSchool
-              ? ["Leaving Certificate", "Marksheet"]
-              : [];
+            const notRequired = hasPrevSchool
+              ? ["Marksheet"]
+              : ["Leaving Certificate", "Marksheet"];
             const pendingDocs = docs.filter((d) =>
               !d.uploaded &&
               !notRequired.includes(d.name) &&
