@@ -145,7 +145,11 @@ function normalizeDate(val) {
   if (!s) return null;
   // Already ISO
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  // DD/MM/YYYY, DD-MM-YYYY or DD.MM.YYYY (India standard, day first)
+  // DD/MM/YYYY, DD-MM-YYYY or DD.MM.YYYY (India standard, day first) - date
+  // columns are kept as plain Text in the import template (see the
+  // sheet-formatting comment below) specifically so this is the only thing
+  // that ever decides what the date means, instead of Excel's own
+  // locale-dependent guess.
   const dmyMatch = s.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})$/);
   if (dmyMatch) {
     const [, d, m, y] = dmyMatch;
@@ -2444,8 +2448,14 @@ function ImportStudentsPanel({ onImportDone }) {
         if (rows.length < 3) { alert("File has no data rows. Please use the downloaded template."); return; }
         const headerRow = rows[0];
         const colMap = {};
+        // Strip a trailing "(...)" hint like "(MM-DD-YYYY)" before comparing -
+        // an exact match on the full label broke every date column for a file
+        // downloaded before that hint text was last changed, silently
+        // rejecting every row over a missing "Date of Birth" match instead of
+        // just ignoring a cosmetic wording difference.
+        const stripHint = (label) => String(label).replace(/\s*\([^)]*\)\s*$/, "").trim();
         IMPORT_FIELDS.forEach(f => {
-          const idx = headerRow.findIndex(h => String(h).trim() === f.label);
+          const idx = headerRow.findIndex(h => stripHint(h) === stripHint(f.label));
           if (idx >= 0) colMap[f.key] = idx;
         });
         const dataRows = rows.slice(2);
