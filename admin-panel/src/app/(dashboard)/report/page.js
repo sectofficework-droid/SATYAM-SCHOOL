@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   GraduationCap, IndianRupee, Users, Package, Search,
   RefreshCw, Download, FileText, ShieldCheck, BookOpen, Landmark, IdCard,
+  CheckSquare, X,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
@@ -663,6 +664,12 @@ export default function ReportPage() {
   const [dateTo,   setDateTo]   = useState("");
   const [search,   setSearch]   = useState("");
 
+  // Manual cross-class student selection ("tick 15-20 students from any
+  // class") - additive to the normal filter-based report; doesn't touch the
+  // existing bulk Export Excel/PDF buttons or their behavior at all.
+  const [manualSelect, setManualSelect] = useState(false);
+  const [selectedEnrollments, setSelectedEnrollments] = useState(new Set());
+
   // fixed-entry (GR/UDISE/PEN) — optional one-off extra field(s) inserted into the fixed order
   const [extraFields,    setExtraFields]    = useState([]); // [{key, label, position, isDate}]
   const [showAddExtra,   setShowAddExtra]   = useState(false);
@@ -752,6 +759,35 @@ export default function ReportPage() {
   const actCols = ecfg.isFixedEntry
     ? buildFixedCols(ecfg.fixedColumns, extraFields).filter(c => !hiddenFixedCols.includes(c.key))
     : selCols.map(key => ecfg.columns.find(c => c.key === key)).filter(Boolean);
+
+  // Manual selection only applies to student-sourced report types (student,
+  // eligibility, grRegister, udiseEntry, penEntry all pull from dbStudents).
+  // selectedRows is looked up against the UNFILTERED base rows (not `data`,
+  // which reflects whatever class/search filter happens to be active right
+  // now) so a student ticked under one class filter is still included after
+  // switching to a different class or search term.
+  const isStudentSourced = sourceData === dbStudents;
+  const unfilteredStudentRows = isStudentSourced
+    ? ecfg.getData(sourceData, {}, "", "", "")
+    : [];
+  const selectedRows = unfilteredStudentRows.filter(row => selectedEnrollments.has(row.enrollNo));
+
+  function toggleSelectRow(enrollNo) {
+    setSelectedEnrollments(prev => {
+      const next = new Set(prev);
+      next.has(enrollNo) ? next.delete(enrollNo) : next.add(enrollNo);
+      return next;
+    });
+  }
+  function toggleSelectAllVisible() {
+    const visibleEnrollNos = data.map(row => row.enrollNo);
+    const allVisibleSelected = visibleEnrollNos.every(e => selectedEnrollments.has(e));
+    setSelectedEnrollments(prev => {
+      const next = new Set(prev);
+      visibleEnrollNos.forEach(e => allVisibleSelected ? next.delete(e) : next.add(e));
+      return next;
+    });
+  }
   const summary = ecfg.getSummary(data);
 
   function eligStatusText(eligible, done) {
@@ -760,19 +796,20 @@ export default function ReportPage() {
     return "Eligible-Pending";
   }
 
-  function doExportExcel() {
+  function doExportExcel(exportData = data, labelSuffix = "") {
     const isoToday     = new Date().toISOString().slice(0,10);
     const todayDisplay = fmtDate(isoToday);
+    const exportSummary = ecfg.getSummary(exportData);
     let rows;
     if (ecfg.isEligibility) {
       rows = [
         ["Satyam Stars International School"],
         ["Surat, Gujarat  |  GSEB Board  |  English Medium"],
         ["ID Eligibility Report"],
-        [`Generated: ${todayDisplay}`, "", `Total Records: ${data.length}`],
+        [`Generated: ${todayDisplay}`, "", `Total Records: ${exportData.length}`],
         [],
         ["#","Enroll No","Student Name","Class","Birth Cert","Aadhar","Name Match","UDISE","PEN","APAAR","Remarks","Follow Up"],
-        ...data.map((st, i) => {
+        ...exportData.map((st, i) => {
           const e = st.elig || computeElig(st);
           return [
             i+1, st.enrollNo, st.name, st.cls,
@@ -787,7 +824,7 @@ export default function ReportPage() {
           ];
         }),
         [],
-        ["SUMMARY:", ...summary.map(s=>`${s.label}: ${s.value}`)],
+        ["SUMMARY:", ...exportSummary.map(s=>`${s.label}: ${s.value}`)],
       ];
     } else {
       const filterStr = Object.entries(filters).filter(([,v])=>v&&v!=="All").map(([k,v])=>`${k}: ${v}`).join(" | ");
@@ -795,14 +832,14 @@ export default function ReportPage() {
         ["Satyam Stars International School"],
         ["Surat, Gujarat  |  GSEB Board  |  English Medium"],
         [ecfg.label],
-        [`Generated: ${todayDisplay}`, "", `Total Records: ${data.length}`],
+        [`Generated: ${todayDisplay}`, "", `Total Records: ${exportData.length}`],
         filterStr ? [`Filters Applied: ${filterStr}`] : null,
         (dateFrom||dateTo) ? [`Date Range: ${dateFrom?fmtDate(dateFrom):"-"} to ${dateTo?fmtDate(dateTo):"-"}`] : null,
         [],
         actCols.map(c => c.label),
-        ...data.map(row => actCols.map(c => { const v=formatCellValue(c, row[c.key]); return v===""? "-" : v; })),
+        ...exportData.map(row => actCols.map(c => { const v=formatCellValue(c, row[c.key]); return v===""? "-" : v; })),
         [],
-        ["SUMMARY:", ...summary.map(s=>`${s.label}: ${s.value}`)],
+        ["SUMMARY:", ...exportSummary.map(s=>`${s.label}: ${s.value}`)],
       ].filter(r => r !== null);
     }
 
@@ -811,12 +848,13 @@ export default function ReportPage() {
     ws["!cols"] = Array.from({length:colCount}, () => ({ wch: 18 }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, ecfg.label.slice(0,31));
-    XLSX.writeFile(wb, `${ecfg.label.replace(/[\s/]+/g,"_")}_${isoToday}.xlsx`);
+    XLSX.writeFile(wb, `${ecfg.label.replace(/[\s/]+/g,"_")}${labelSuffix}_${isoToday}.xlsx`);
   }
 
-  function doExportPDF() {
+  function doExportPDF(exportData = data, labelSuffix = "") {
     const isoToday     = new Date().toISOString().slice(0,10);
     const todayDisplay = fmtDate(isoToday);
+    const exportSummary = ecfg.getSummary(exportData);
     const isElig = ecfg.isEligibility;
     const doc = new jsPDF({ orientation: isElig || actCols.length > 6 ? "landscape" : "portrait" });
     const w   = doc.internal.pageSize.getWidth();
@@ -837,20 +875,20 @@ export default function ReportPage() {
     doc.setTextColor(60,60,60); doc.setFontSize(8); doc.setFont("helvetica","normal");
     let y = 36;
     doc.text(`Generated: ${todayDisplay}`, 14, y); y += 5;
-    doc.text(`Total Records: ${data.length}`, 14, y); y += 5;
+    doc.text(`Total Records: ${exportData.length}`, 14, y); y += 5;
     if (!isElig) {
       const activeFilters = Object.entries(filters).filter(([,v])=>v&&v!=="All").map(([k,v])=>`${k}: ${v}`).join("  |  ");
       if (activeFilters) { doc.text(`Filters: ${activeFilters}`, 14, y); y += 5; }
       if (dateFrom||dateTo) { doc.text(`Date Range: ${dateFrom?fmtDate(dateFrom):"-"}  to  ${dateTo?fmtDate(dateTo):"-"}`, 14, y); y += 5; }
     }
     doc.setFont("helvetica","bold"); doc.setTextColor(30,58,95);
-    doc.text(summary.map(s=>`${s.label}: ${s.value}`).join("   |   "), 14, y); y += 4;
+    doc.text(exportSummary.map(s=>`${s.label}: ${s.value}`).join("   |   "), 14, y); y += 4;
 
     const head = isElig
       ? [["#","Enroll No","Student Name","Class","Birth Cert","Aadhar","Name Match","UDISE","PEN","APAAR","Remarks"]]
       : [actCols.map(c => c.label)];
     const body = isElig
-      ? data.map((st, i) => {
+      ? exportData.map((st, i) => {
           const e = st.elig || computeElig(st);
           return [
             i+1, st.enrollNo, st.name, st.cls,
@@ -863,7 +901,7 @@ export default function ReportPage() {
             st.remarks || "",
           ];
         })
-      : data.map(row => actCols.map(c => { const v=formatCellValue(c, row[c.key]); return v===""? "-" : String(v); }));
+      : exportData.map(row => actCols.map(c => { const v=formatCellValue(c, row[c.key]); return v===""? "-" : String(v); }));
 
     autoTable(doc, {
       startY: y + 2,
@@ -884,7 +922,7 @@ export default function ReportPage() {
       },
     });
 
-    doc.save(`${ecfg.label.replace(/[\s/]+/g,"_")}_${isoToday}.pdf`);
+    doc.save(`${ecfg.label.replace(/[\s/]+/g,"_")}${labelSuffix}_${isoToday}.pdf`);
   }
 
   if (dbLoading) return (
@@ -996,7 +1034,22 @@ export default function ReportPage() {
             className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-red-300 hover:text-red-500 transition-colors self-end">
             <RefreshCw className="w-3 h-3"/>Reset
           </button>
+          {isStudentSourced && (
+            <button onClick={()=>setManualSelect(v=>!v)}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors self-end border ${
+                manualSelect ? "bg-school-navy text-white border-school-navy" : "border-gray-200 bg-white text-gray-500 hover:border-school-navy hover:text-school-navy"
+              }`}>
+              <CheckSquare className="w-3.5 h-3.5"/>
+              {manualSelect ? "Manual Selection: On" : "Select Students Manually"}
+            </button>
+          )}
         </div>
+        {isStudentSourced && manualSelect && (
+          <p className="text-[11px] text-gray-500 -mt-2">
+            Tick students below to build a custom list — your ticks are kept even if you change the class/search filters,
+            so you can pick students from different classes one at a time. Use the <b>Export Selected</b> buttons to report on just your picks.
+          </p>
+        )}
 
         {/* Column selector — hidden for eligibility and fixed-entry registers */}
         {!ecfg.isEligibility && !ecfg.isFixedEntry && (
@@ -1197,16 +1250,45 @@ export default function ReportPage() {
           {!ecfg.isEligibility && (<>&nbsp;&nbsp;·&nbsp;&nbsp;<span className="font-semibold text-school-navy">{actCols.length}</span> columns selected</>)}
         </p>
         <div className="flex gap-2">
-          <button onClick={doExportExcel}
+          <button onClick={() => doExportExcel()}
             className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
             <Download className="w-4 h-4"/>Export Excel
           </button>
-          <button onClick={doExportPDF}
+          <button onClick={() => doExportPDF()}
             className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
             <FileText className="w-4 h-4"/>Export PDF
           </button>
         </div>
       </div>
+
+      {/* Manual selection bar — only for student-sourced report types with
+          manual selection turned on. Exports here use selectedRows (the
+          picked cross-class set), completely independent from the normal
+          Export Excel/PDF buttons above, which keep exporting `data`
+          (whatever the class/search filters currently show). */}
+      {isStudentSourced && manualSelect && (
+        <div className="flex items-center justify-between flex-wrap gap-3 bg-school-navy/5 border border-school-navy/20 rounded-xl px-4 py-3">
+          <p className="text-sm text-gray-600">
+            <span className="font-semibold text-school-navy">{selectedRows.length}</span> student{selectedRows.length !== 1 ? "s" : ""} selected
+            {selectedRows.length > 0 && (
+              <button onClick={() => setSelectedEnrollments(new Set())}
+                className="ml-3 text-xs text-gray-400 hover:text-red-500 inline-flex items-center gap-1">
+                <X className="w-3 h-3"/>Clear
+              </button>
+            )}
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => doExportExcel(selectedRows, "_Selected")} disabled={selectedRows.length === 0}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
+              <Download className="w-4 h-4"/>Export Selected (Excel)
+            </button>
+            <button onClick={() => doExportPDF(selectedRows, "_Selected")} disabled={selectedRows.length === 0}
+              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
+              <FileText className="w-4 h-4"/>Export Selected (PDF)
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Standard table */}
       {!ecfg.isEligibility && (
@@ -1214,6 +1296,14 @@ export default function ReportPage() {
           <table className="text-xs w-full">
             <thead>
               <tr className="bg-school-navy text-white">
+                {isStudentSourced && manualSelect && (
+                  <th className="px-3 py-2.5 w-8">
+                    <input type="checkbox"
+                      checked={data.length > 0 && data.every(row => selectedEnrollments.has(row.enrollNo))}
+                      onChange={toggleSelectAllVisible}
+                      className="w-3.5 h-3.5 accent-school-navy"/>
+                  </th>
+                )}
                 <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap w-8">#</th>
                 {actCols.map(c=>(
                   <th key={c.key} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">{c.label}</th>
@@ -1223,6 +1313,14 @@ export default function ReportPage() {
             <tbody>
               {data.map((row,idx)=>(
                 <tr key={idx} className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${idx%2===0?"bg-white":"bg-gray-50/40"}`}>
+                  {isStudentSourced && manualSelect && (
+                    <td className="px-3 py-2">
+                      <input type="checkbox"
+                        checked={selectedEnrollments.has(row.enrollNo)}
+                        onChange={() => toggleSelectRow(row.enrollNo)}
+                        className="w-3.5 h-3.5 accent-school-navy"/>
+                    </td>
+                  )}
                   <td className="px-3 py-2 text-gray-400 font-medium">{idx+1}</td>
                   {actCols.map(c=>(
                     <td key={c.key} className="px-3 py-2 text-gray-700 whitespace-nowrap">
@@ -1236,7 +1334,7 @@ export default function ReportPage() {
                 </tr>
               ))}
               {data.length===0 && (
-                <tr><td colSpan={actCols.length+1} className="px-4 py-10 text-center text-gray-400 text-sm">No records match the selected filters</td></tr>
+                <tr><td colSpan={actCols.length + 1 + (isStudentSourced && manualSelect ? 1 : 0)} className="px-4 py-10 text-center text-gray-400 text-sm">No records match the selected filters</td></tr>
               )}
             </tbody>
           </table>
@@ -1249,6 +1347,14 @@ export default function ReportPage() {
           <table className="text-xs w-full">
             <thead>
               <tr className="bg-school-navy text-white">
+                {isStudentSourced && manualSelect && (
+                  <th className="px-3 py-2.5 w-8">
+                    <input type="checkbox"
+                      checked={data.length > 0 && data.every(row => selectedEnrollments.has(row.enrollNo))}
+                      onChange={toggleSelectAllVisible}
+                      className="w-3.5 h-3.5 accent-white"/>
+                  </th>
+                )}
                 <th className="px-3 py-2.5 text-left font-semibold w-8">#</th>
                 <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">Enroll No</th>
                 <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">Student Name</th>
@@ -1268,6 +1374,14 @@ export default function ReportPage() {
                 const e = st.elig || computeElig(st);
                 return (
                   <tr key={idx} className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${idx%2===0?"bg-white":"bg-gray-50/40"}`}>
+                    {isStudentSourced && manualSelect && (
+                      <td className="px-3 py-2.5">
+                        <input type="checkbox"
+                          checked={selectedEnrollments.has(st.enrollNo)}
+                          onChange={() => toggleSelectRow(st.enrollNo)}
+                          className="w-3.5 h-3.5 accent-school-navy"/>
+                      </td>
+                    )}
                     <td className="px-3 py-2.5 text-gray-400 font-medium">{idx+1}</td>
                     <td className="px-3 py-2.5 text-gray-500 font-mono">{st.enrollNo}</td>
                     <td className="px-3 py-2.5 font-semibold text-gray-800 whitespace-nowrap">{st.name}</td>
@@ -1288,7 +1402,7 @@ export default function ReportPage() {
                 );
               })}
               {data.length===0 && (
-                <tr><td colSpan={12} className="px-4 py-10 text-center text-gray-400 text-sm">No records match the selected filters</td></tr>
+                <tr><td colSpan={12 + (isStudentSourced && manualSelect ? 1 : 0)} className="px-4 py-10 text-center text-gray-400 text-sm">No records match the selected filters</td></tr>
               )}
             </tbody>
           </table>
