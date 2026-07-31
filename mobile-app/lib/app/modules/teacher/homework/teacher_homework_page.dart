@@ -14,59 +14,62 @@ class TeacherHomeworkPage extends StatefulWidget {
 }
 
 class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
-  List<Map<String, dynamic>> _list = [];
+  // Mine = homework this teacher personally gave. Class Overview = every
+  // homework given to their own class, by any teacher - only meaningful (and
+  // only shown) for an actual class teacher, never a subject teacher who
+  // merely teaches a class without class-teaching it.
+  List<Map<String, dynamic>> _mineList = [];
+  List<Map<String, dynamic>> _classList = [];
   bool _loading = true;
+  bool _isClassTeacher = false;
 
-  // 0 = Active (not past due yet), 1 = Archive (past due) - homework a
-  // teacher gave automatically drops out of the main list once its due date
-  // has passed, but stays browsable in the archive, optionally narrowed to a
-  // specific date the teacher picks.
-  int _tab = 0;
-  DateTime? _archiveDate;
+  // 0 = Mine, 1 = Class Overview
+  int _scope = 0;
+
+  // No date picked = show everything in the current scope. A date narrows
+  // the list to homework due exactly on that day - replaces the old
+  // Active/Archive split entirely.
+  DateTime? _filterDate;
+
+  List<Map<String, dynamic>> get _currentList => _scope == 0 ? _mineList : _classList;
 
   @override
   void initState() { super.initState(); _load(); }
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    // A class teacher sees homework given to their own class by ANY teacher,
-    // plus anything they personally assigned elsewhere; a subject teacher
-    // with no class of their own just sees what they personally gave.
     final profile    = AuthService.to.profile.value ?? {};
     final employeeId = profile['id'] as String?;
     final ownClass    = profile['class_name'] as String?;
-    final hw = employeeId != null
-        ? await SupabaseService.fetchHomework(
-            classNames: (ownClass != null && ownClass.isNotEmpty) ? [ownClass] : null,
-            createdBy:  employeeId,
-          )
+    _isClassTeacher = ownClass != null && ownClass.isNotEmpty;
+
+    final mine = employeeId != null
+        ? await SupabaseService.fetchHomework(createdBy: employeeId)
         : <Map<String, dynamic>>[];
-    if (mounted) setState(() { _list = hw; _loading = false; });
+    final classWide = _isClassTeacher
+        ? await SupabaseService.fetchHomework(classNames: [ownClass!])
+        : <Map<String, dynamic>>[];
+
+    if (mounted) setState(() {
+      _mineList  = mine;
+      _classList = classWide;
+      if (!_isClassTeacher) _scope = 0;
+      _loading = false;
+    });
   }
 
   DateTime? _dueDate(Map<String, dynamic> hw) => DateTime.tryParse(hw['due_date'] ?? '');
 
-  bool _isPastDue(Map<String, dynamic> hw) {
-    final due = _dueDate(hw);
-    if (due == null) return false;
-    final today = DateTime.now();
-    return due.isBefore(DateTime(today.year, today.month, today.day));
-  }
-
-  List<Map<String, dynamic>> get _activeList =>
-      _list.where((h) => !_isPastDue(h)).toList()
-        ..sort((a, b) => (a['due_date'] ?? '').compareTo(b['due_date'] ?? ''));
-
-  List<Map<String, dynamic>> get _archiveList {
-    var archived = _list.where(_isPastDue);
-    if (_archiveDate != null) {
-      archived = archived.where((h) {
+  List<Map<String, dynamic>> get _shownList {
+    var list = _currentList;
+    if (_filterDate != null) {
+      list = list.where((h) {
         final due = _dueDate(h);
-        return due != null && due.year == _archiveDate!.year && due.month == _archiveDate!.month && due.day == _archiveDate!.day;
-      });
+        return due != null && due.year == _filterDate!.year && due.month == _filterDate!.month && due.day == _filterDate!.day;
+      }).toList();
     }
-    final result = archived.toList();
-    result.sort((a, b) => (b['due_date'] ?? '').compareTo(a['due_date'] ?? ''));
+    final result = List<Map<String, dynamic>>.from(list);
+    result.sort((a, b) => (a['due_date'] ?? '').compareTo(b['due_date'] ?? ''));
     return result;
   }
 
@@ -210,7 +213,7 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
 
   @override
   Widget build(BuildContext context) {
-    final shownList = _tab == 0 ? _activeList : _archiveList;
+    final shownList = _shownList;
 
     Widget listArea;
     if (_loading) {
@@ -318,8 +321,8 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
     }
 
     final body = Column(children: [
-      _buildTabBar(),
-      if (_tab == 1) _buildArchiveDateFilter(),
+      if (_isClassTeacher) _buildScopeTabBar(),
+      _buildDateFilter(),
       Expanded(child: listArea),
     ]);
 
@@ -358,72 +361,77 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
     );
   }
 
-  Widget _buildTabBar() => Padding(
+  // Mine vs Class Overview - only a real class teacher has anything to show
+  // in Class Overview, so this whole row is hidden for a subject teacher
+  // rather than shown disabled/empty.
+  Widget _buildScopeTabBar() => Padding(
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
     child: Container(
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(color: AppColors.border.withOpacity(.4), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: AppColors.navy.withOpacity(.08), borderRadius: BorderRadius.circular(12)),
       child: Row(children: [
-        Expanded(child: _tabButton('Active', 0, _activeList.length)),
-        Expanded(child: _tabButton('Archive', 1, _archiveList.length)),
+        Expanded(child: _scopeTabButton('Mine', 0)),
+        Expanded(child: _scopeTabButton('Class Overview', 1)),
       ]),
     ),
   );
 
-  Widget _tabButton(String label, int index, int count) {
-    final active = _tab == index;
+  Widget _scopeTabButton(String label, int index) {
+    final active = _scope == index;
     return GestureDetector(
-      onTap: () => setState(() => _tab = index),
+      onTap: () => setState(() { _scope = index; _filterDate = null; }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(vertical: 9),
         decoration: BoxDecoration(
-          color: active ? AppColors.card : Colors.transparent,
+          color: active ? AppColors.navy : Colors.transparent,
           borderRadius: BorderRadius.circular(9),
           boxShadow: active ? AppShadows.card : null,
         ),
-        child: Center(child: Text('$label ($count)',
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: active ? AppColors.navy : AppColors.textLight))),
+        child: Center(child: Text(label,
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: active ? Colors.white : AppColors.textLight))),
       ),
     );
   }
 
-  Widget _buildArchiveDateFilter() => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+  // No date picked = every homework in the current scope. Picking one narrows
+  // to just that day - replaces the old separate Active/Archive tabs.
+  Widget _buildDateFilter() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
     child: Row(children: [
       Expanded(
         child: GestureDetector(
           onTap: () async {
             final picked = await showDatePicker(
               context: context,
-              initialDate: _archiveDate ?? DateTime.now(),
+              initialDate: _filterDate ?? DateTime.now(),
               firstDate: DateTime.now().subtract(const Duration(days: 365)),
-              lastDate: DateTime.now(),
+              lastDate: DateTime.now().add(const Duration(days: 365)),
             );
-            if (picked != null) setState(() => _archiveDate = picked);
+            if (picked != null) setState(() => _filterDate = picked);
           },
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              border: Border.all(color: AppColors.border),
+              border: Border.all(color: _filterDate != null ? AppColors.navy : AppColors.border, width: _filterDate != null ? 2 : 1),
               borderRadius: BorderRadius.circular(10),
               color: AppColors.card,
             ),
             child: Row(children: [
-              const Icon(Icons.event_rounded, size: 16, color: AppColors.textLight),
+              Icon(Icons.event_rounded, size: 16, color: _filterDate != null ? AppColors.navy : AppColors.textLight),
               const SizedBox(width: 8),
               Text(
-                _archiveDate == null ? 'Filter by due date' : DateFormat('d MMM yyyy').format(_archiveDate!),
-                style: const TextStyle(fontSize: 12.5, color: AppColors.text, fontWeight: FontWeight.w600),
+                _filterDate == null ? 'Filter by due date' : DateFormat('d MMM yyyy').format(_filterDate!),
+                style: TextStyle(fontSize: 12.5, color: AppColors.text, fontWeight: _filterDate != null ? FontWeight.w700 : FontWeight.w600),
               ),
             ]),
           ),
         ),
       ),
-      if (_archiveDate != null) ...[
+      if (_filterDate != null) ...[
         const SizedBox(width: 8),
         GestureDetector(
-          onTap: () => setState(() => _archiveDate = null),
+          onTap: () => setState(() => _filterDate = null),
           child: Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(color: AppColors.redLight, borderRadius: BorderRadius.circular(10)),
@@ -446,24 +454,22 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
   );
 
   Widget _emptyState() {
-    final isArchive = _tab == 1;
+    final filtered = _filterDate != null;
     return Center(child: Padding(
       padding: const EdgeInsets.all(32),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(
           width: 80, height: 80,
           decoration: const BoxDecoration(color: AppColors.amberLight, shape: BoxShape.circle),
-          child: Icon(isArchive ? Icons.archive_outlined : Icons.assignment_outlined, color: AppColors.amber, size: 38),
+          child: Icon(filtered ? Icons.event_busy_rounded : Icons.assignment_outlined, color: AppColors.amber, size: 38),
         ),
         const SizedBox(height: 16),
-        Text(isArchive ? 'No Archived Homework' : 'No Active Homework',
+        Text(filtered ? 'Nothing Due On This Date' : 'No Homework Found',
           style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text)),
         const SizedBox(height: 8),
         Text(
-          isArchive
-            ? (_archiveDate == null
-                ? 'Homework moves here automatically once its due date has passed.'
-                : 'Nothing was due on this date.')
+          filtered
+            ? 'Try a different date, or clear the filter to see everything.'
             : 'Tap the + button to assign homework to a class.',
           textAlign: TextAlign.center,
           style: const TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.5),

@@ -102,6 +102,7 @@ class SupabaseService {
     }
     var query = client.from('exams').select();
     if (className != null) query = query.eq('class', className);
+    if (createdBy != null) query = query.eq('created_by', createdBy);
     final res = await query.order('date', ascending: false);
     return List<Map<String, dynamic>>.from(res);
   }
@@ -137,6 +138,48 @@ class SupabaseService {
     final res = await client.rpc('get_class_students_by_name', params: {'p_class_name': className});
     if (res == null) return [];
     return List<Map<String, dynamic>>.from(res as List);
+  }
+
+  // Syllabus ──────────────────────────────────────────────────────────────────
+
+  // Same classNames-UNION-createdBy shape as fetchHomework/fetchExams above -
+  // a class teacher sees every chapter added for their own class (by any
+  // teacher) plus anything they personally added for other classes, while a
+  // subject teacher with no class of their own just sees what they added.
+  static Future<List<Map<String, dynamic>>> fetchSyllabus({String? className, List<String>? classNames, String? teacherId}) async {
+    if (classNames != null && classNames.isNotEmpty) {
+      final byClass = await client.from('syllabus').select().inFilter('class', classNames);
+      final merged  = List<Map<String, dynamic>>.from(byClass);
+      if (teacherId != null) {
+        final byTeacher = await client.from('syllabus').select().eq('teacher_id', teacherId);
+        final seenIds    = merged.map((s) => s['id']).toSet();
+        for (final s in List<Map<String, dynamic>>.from(byTeacher)) {
+          if (!seenIds.contains(s['id'])) merged.add(s);
+        }
+      }
+      merged.sort((a, b) => (a['sort_order'] ?? 0).compareTo(b['sort_order'] ?? 0));
+      return merged;
+    }
+    var query = client.from('syllabus').select();
+    if (className != null) query = query.eq('class', className);
+    if (teacherId != null) query = query.eq('teacher_id', teacherId);
+    final res = await query.order('sort_order');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<void> createSyllabusChapter(Map<String, dynamic> data) async {
+    await client.from('syllabus').insert(data);
+  }
+
+  static Future<void> updateSyllabusStatus(String id, String status) async {
+    await client.from('syllabus').update({
+      'status': status,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', id);
+  }
+
+  static Future<void> deleteSyllabusChapter(String id) async {
+    await client.from('syllabus').delete().eq('id', id);
   }
 
   // Tasks ─────────────────────────────────────────────────────────────────────

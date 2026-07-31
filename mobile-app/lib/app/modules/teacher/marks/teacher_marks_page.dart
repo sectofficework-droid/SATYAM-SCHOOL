@@ -14,24 +14,63 @@ class TeacherMarksPage extends StatefulWidget {
 }
 
 class _TeacherMarksPageState extends State<TeacherMarksPage> {
-  List<Map<String, dynamic>> _exams    = [];
-  List<Map<String, dynamic>> _students = [];
+  // Mine = exams this teacher personally conducted. Class Overview = every
+  // exam given to their own class, by any teacher - only meaningful (and
+  // only shown) for an actual class teacher. Previously this page showed
+  // every exam in the school to every teacher, unscoped - tightened so a
+  // subject teacher only sees what they personally created.
+  List<Map<String, dynamic>> _mineExams  = [];
+  List<Map<String, dynamic>> _classExams = [];
+  List<Map<String, dynamic>> _students   = [];
   Map<String, dynamic>?      _selExam;
   final Map<String, TextEditingController> _markCtrl = {};
   bool _loading       = true;
   bool _loadingRoster = false;
   bool _saving        = false;
+  bool _isClassTeacher = false;
+
+  // 0 = Mine, 1 = Class Overview
+  int _scope = 0;
+
+  // No month picked = every exam in the current scope. Exams are filtered
+  // by MONTH, not an exact date - unlike homework, which has one due date
+  // per item, exams in a given month are what a teacher actually plans
+  // around (unit tests, half-yearly, etc.), not a single day.
+  DateTime? _filterMonth;
+
+  List<Map<String, dynamic>> get _currentExams => _scope == 0 ? _mineExams : _classExams;
+
+  List<Map<String, dynamic>> get _filteredExams {
+    if (_filterMonth == null) return _currentExams;
+    return _currentExams.where((e) {
+      final d = DateTime.tryParse(e['date'] ?? '');
+      return d != null && d.year == _filterMonth!.year && d.month == _filterMonth!.month;
+    }).toList();
+  }
 
   @override
   void initState() { super.initState(); _load(); }
 
   Future<void> _load() async {
     setState(() { _loading = true; _selExam = null; _students = []; });
-    // Any teacher can conduct an exam for any class, so show exams across
-    // every class here too - not just whatever this teacher happens to be
-    // mapped to (most teachers never get a subject/class mapping set up).
-    final exams = await SupabaseService.fetchExams();
-    if (mounted) setState(() { _exams = exams; _loading = false; });
+    final profile    = AuthService.to.profile.value ?? {};
+    final employeeId = profile['id'] as String?;
+    final ownClass    = profile['class_name'] as String?;
+    _isClassTeacher = ownClass != null && ownClass.isNotEmpty;
+
+    final mine = employeeId != null
+        ? await SupabaseService.fetchExams(createdBy: employeeId)
+        : <Map<String, dynamic>>[];
+    final classWide = _isClassTeacher
+        ? await SupabaseService.fetchExams(classNames: [ownClass!])
+        : <Map<String, dynamic>>[];
+
+    if (mounted) setState(() {
+      _mineExams  = mine;
+      _classExams = classWide;
+      if (!_isClassTeacher) _scope = 0;
+      _loading = false;
+    });
   }
 
   // Marks can only be entered on or after the exam date - not before, even
@@ -329,19 +368,104 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
     ),
   );
 
-  Widget _buildExamList() {
-    if (_exams.isEmpty) return _emptyState(
-      icon: Icons.grading_rounded,
-      title: 'No Exams Found',
-      subtitle: 'Tap "Create Exam" below to set up a test for one of your classes.',
-    );
+  // Mine vs Class Overview - only a real class teacher has anything to show
+  // in Class Overview, so this whole row is hidden for a subject teacher
+  // rather than shown disabled/empty.
+  Widget _buildScopeTabBar() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+    child: Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: AppColors.navy.withOpacity(.08), borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [
+        Expanded(child: _scopeTabButton('Mine', 0)),
+        Expanded(child: _scopeTabButton('Class Overview', 1)),
+      ]),
+    ),
+  );
 
-    return ListView.separated(
+  Widget _scopeTabButton(String label, int index) {
+    final active = _scope == index;
+    return GestureDetector(
+      onTap: () => setState(() { _scope = index; _filterMonth = null; }),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        decoration: BoxDecoration(
+          color: active ? AppColors.navy : Colors.transparent,
+          borderRadius: BorderRadius.circular(9),
+          boxShadow: active ? AppShadows.card : null,
+        ),
+        child: Center(child: Text(label,
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: active ? Colors.white : AppColors.textLight))),
+      ),
+    );
+  }
+
+  // Steps to the previous/next month (starting from now if nothing's picked
+  // yet) rather than opening a full date picker - exams are filtered by
+  // month, not a specific day.
+  Widget _buildMonthFilter() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      decoration: BoxDecoration(
+        border: Border.all(color: _filterMonth != null ? AppColors.navy : AppColors.border, width: _filterMonth != null ? 2 : 1),
+        borderRadius: BorderRadius.circular(10),
+        color: AppColors.card,
+      ),
+      child: Row(children: [
+        IconButton(
+          icon: const Icon(Icons.chevron_left_rounded, color: AppColors.textLight),
+          onPressed: () => setState(() {
+            final base = _filterMonth ?? DateTime.now();
+            _filterMonth = DateTime(base.year, base.month - 1);
+          }),
+        ),
+        Expanded(
+          child: Center(
+            child: Text(
+              _filterMonth == null ? 'All Months' : DateFormat('MMMM yyyy').format(_filterMonth!),
+              style: const TextStyle(fontSize: 12.5, color: AppColors.text, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.chevron_right_rounded, color: AppColors.textLight),
+          onPressed: () => setState(() {
+            final base = _filterMonth ?? DateTime.now();
+            _filterMonth = DateTime(base.year, base.month + 1);
+          }),
+        ),
+        if (_filterMonth != null)
+          GestureDetector(
+            onTap: () => setState(() => _filterMonth = null),
+            child: const Padding(
+              padding: EdgeInsets.only(right: 8),
+              child: Icon(Icons.close_rounded, size: 18, color: AppColors.red),
+            ),
+          ),
+      ]),
+    ),
+  );
+
+  Widget _buildExamList() {
+    final exams = _filteredExams;
+    final list = exams.isEmpty
+      ? _emptyState(
+          icon: Icons.grading_rounded,
+          title: 'No Exams Found',
+          subtitle: _filterMonth != null
+            ? 'No exams in this month - try another month or clear the filter.'
+            : _scope == 0
+              ? 'Tap "Create Exam" below to set up a test for one of your classes.'
+              : 'No exams have been given to your class yet.',
+        )
+      : ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: _exams.length,
+      itemCount: exams.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (_, i) {
-        final e = _exams[i];
+        final e = exams[i];
         final date    = e['date'] != null ? DateTime.tryParse(e['date']) : null;
         final upcoming = _isUpcoming(e);
         return TweenAnimationBuilder<double>(
@@ -406,6 +530,12 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
         );
       },
     );
+
+    return Column(children: [
+      if (_isClassTeacher) _buildScopeTabBar(),
+      _buildMonthFilter(),
+      Expanded(child: list),
+    ]);
   }
 
   Widget _buildMarkEntry() {
