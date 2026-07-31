@@ -7,8 +7,7 @@ import {
   CheckSquare, X,
 } from "lucide-react";
 import * as XLSX from "xlsx";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import {
   getStudentsForReport, getFeesForReport,
   getEmployeesForReport, getInventoryForReport,
@@ -655,6 +654,104 @@ function EligBadge({ eligible, done }) {
   return             <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700">Eligible</span>;
 }
 
+// ── PDF table rendering (pdf-lib has no built-in table/autofit, so it's
+// built by hand here) ───────────────────────────────────────────────────────
+const MM = 2.8346; // pdf-lib works in points; layout constants below are
+                   // authored in the same mm figures the old jsPDF version used.
+
+// Greedy word-wrap. A single "word" wider than maxWidth (eg. a long name with
+// no spaces) is hard-split by character as a last resort - this only ever
+// affects free-text columns, never the fixed-width ID/number columns below.
+function wrapPdfText(text, font, fontSize, maxWidth) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [""];
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) { line = candidate; continue; }
+    if (line) { lines.push(line); line = ""; }
+    if (font.widthOfTextAtSize(word, fontSize) <= maxWidth) { line = word; continue; }
+    let chunk = "";
+    for (const ch of word) {
+      const test = chunk + ch;
+      if (chunk && font.widthOfTextAtSize(test, fontSize) > maxWidth) { lines.push(chunk); chunk = ch; }
+      else chunk = test;
+    }
+    line = chunk;
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : [""];
+}
+
+// Columns flagged `nowrap` (enrollment/roll/mobile/Aadhar/UDISE/PEN/APAAR/
+// pincode - long unbroken digit strings) get a fixed width sized to fit their
+// longest value on one line, so they never need to wrap in the first place.
+// Remaining width is split among free-text columns, weighted by how long
+// their content typically runs, so names/addresses get more room than short
+// fields like "Class".
+function computeColumnWidths({ columns, rows, availableWidth, headerFont, bodyFont, headerSize, bodySize, cellPad }) {
+  const n = columns.length;
+  const fixed  = new Array(n).fill(null);
+  const weight = new Array(n).fill(1);
+
+  columns.forEach((col, i) => {
+    if (col.nowrap) {
+      let maxW = headerFont.widthOfTextAtSize(String(col.label), headerSize);
+      for (const row of rows) {
+        const w = bodyFont.widthOfTextAtSize(String(row[i] ?? ""), bodySize);
+        if (w > maxW) maxW = w;
+      }
+      fixed[i] = maxW + cellPad * 2;
+    } else {
+      let maxLen = String(col.label).length;
+      for (const row of rows) maxLen = Math.max(maxLen, String(row[i] ?? "").length);
+      weight[i] = Math.max(4, maxLen);
+    }
+  });
+
+  const wrapIdxs   = columns.map((c, i) => i).filter(i => fixed[i] == null);
+  const fixedTotal = fixed.reduce((s, w) => s + (w || 0), 0);
+  const remaining  = Math.max(availableWidth - fixedTotal, wrapIdxs.length * 20);
+  const weightTotal = wrapIdxs.reduce((s, i) => s + weight[i], 0) || 1;
+
+  const widths = new Array(n);
+  wrapIdxs.forEach(i => { widths[i] = Math.max(20, (weight[i] / weightTotal) * remaining); });
+  fixed.forEach((w, i) => { if (w != null) widths[i] = w; });
+
+  let total = widths.reduce((s, w) => s + w, 0);
+  if (total > availableWidth) {
+    // Too many columns for the page width - shrink the wrappable columns
+    // first, since compressing them just means more line-wraps, whereas
+    // shrinking a nowrap column risks the exact single-line problem this
+    // exists to avoid.
+    const wrapTotal = wrapIdxs.reduce((s, i) => s + widths[i], 0);
+    const fixedNow  = total - wrapTotal;
+    const neededFromWrap = Math.max(availableWidth - fixedNow, wrapIdxs.length * 16);
+    if (wrapTotal > 0) {
+      const scale = neededFromWrap / wrapTotal;
+      wrapIdxs.forEach(i => { widths[i] = Math.max(16, widths[i] * scale); });
+    }
+    total = widths.reduce((s, w) => s + w, 0);
+    if (total > availableWidth) {
+      const scale2 = availableWidth / total;
+      for (let i = 0; i < n; i++) widths[i] *= scale2;
+    }
+  }
+  return widths;
+}
+
+function triggerPdfDownload(bytes, filename) {
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function ReportPage() {
   const [rType,    setRType]    = useState("student");
@@ -851,47 +948,41 @@ export default function ReportPage() {
     XLSX.writeFile(wb, `${ecfg.label.replace(/[\s/]+/g,"_")}${labelSuffix}_${isoToday}.xlsx`);
   }
 
-  function doExportPDF(exportData = data, labelSuffix = "") {
-    const isoToday     = new Date().toISOString().slice(0,10);
-    const todayDisplay = fmtDate(isoToday);
-    const exportSummary = ecfg.getSummary(exportData);
-    const isElig = ecfg.isEligibility;
-    const doc = new jsPDF({ orientation: isElig || actCols.length > 6 ? "landscape" : "portrait" });
-    const w   = doc.internal.pageSize.getWidth();
+  async function doExportPDF(exportData = data, labelSuffix = "") {
+    const isoToday      = new Date().toISOString().slice(0,10);
+    const todayDisplay   = fmtDate(isoToday);
+    const exportSummary  = ecfg.getSummary(exportData);
+    const isElig         = ecfg.isEligibility;
+    const landscape      = isElig || actCols.length > 6;
 
-    doc.setFillColor(30,58,95);
-    doc.rect(0, 0, w, 28, "F");
-    doc.setTextColor(255,255,255);
-    doc.setFontSize(14); doc.setFont("helvetica","bold");
-    doc.text("Satyam Stars International School", w/2, 10, {align:"center"});
-    doc.setFontSize(8); doc.setFont("helvetica","normal");
-    doc.text("Surat, Gujarat  |  GSEB Board  |  English Medium", w/2, 17, {align:"center"});
-    doc.setFillColor(245,158,11);
-    doc.rect(0, 22, w, 7, "F");
-    doc.setTextColor(255,255,255);
-    doc.setFontSize(9); doc.setFont("helvetica","bold");
-    doc.text(ecfg.label.toUpperCase(), w/2, 27, {align:"center"});
+    const PAGE_W = landscape ? 842 : 595;
+    const PAGE_H = landscape ? 595 : 842;
+    const MARGIN = 14 * MM;
 
-    doc.setTextColor(60,60,60); doc.setFontSize(8); doc.setFont("helvetica","normal");
-    let y = 36;
-    doc.text(`Generated: ${todayDisplay}`, 14, y); y += 5;
-    doc.text(`Total Records: ${exportData.length}`, 14, y); y += 5;
-    if (!isElig) {
-      const activeFilters = Object.entries(filters).filter(([,v])=>v&&v!=="All").map(([k,v])=>`${k}: ${v}`).join("  |  ");
-      if (activeFilters) { doc.text(`Filters: ${activeFilters}`, 14, y); y += 5; }
-      if (dateFrom||dateTo) { doc.text(`Date Range: ${dateFrom?fmtDate(dateFrom):"-"}  to  ${dateTo?fmtDate(dateTo):"-"}`, 14, y); y += 5; }
-    }
-    doc.setFont("helvetica","bold"); doc.setTextColor(30,58,95);
-    doc.text(exportSummary.map(s=>`${s.label}: ${s.value}`).join("   |   "), 14, y); y += 4;
+    const NAVY   = rgb(30/255, 58/255, 95/255);
+    const AMBER  = rgb(245/255, 158/255, 11/255);
+    const WHITE  = rgb(1, 1, 1);
+    const GREY_T = rgb(60/255, 60/255, 60/255);
+    const GREY_L = rgb(210/255, 210/255, 210/255);
+    const ALT_BG = rgb(248/255, 250/255, 252/255);
+    const FOOT_T = rgb(140/255, 140/255, 140/255);
 
-    const head = isElig
-      ? [["#","Enroll No","Student Name","Class","Birth Cert","Aadhar","Name Match","UDISE","PEN","APAAR","Remarks"]]
-      : [actCols.map(c => c.label)];
-    const body = isElig
+    const pdfDoc = await PDFDocument.create();
+    const fontR  = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontB  = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    // Column definitions: nowrap = fixed width sized to content, never wraps.
+    const NOWRAP_KEYS = new Set(["enrollNo","roll","mobile1","mobile2","aadharNo","fatherAadhar","motherAadhar","udise","pen","apaar","pinCode"]);
+    const columns = isElig
+      ? ["#","Enroll No","Student Name","Class","Birth Cert","Aadhar","Name Match","UDISE","PEN","APAAR","Remarks"]
+          .map((label, i) => ({ label, nowrap: i <= 1 }))
+      : actCols.map(c => ({ label: c.label, nowrap: NOWRAP_KEYS.has(c.key) }));
+
+    const bodyRows = isElig
       ? exportData.map((st, i) => {
           const e = st.elig || computeElig(st);
           return [
-            i+1, st.enrollNo, st.name, st.cls,
+            String(i+1), String(st.enrollNo ?? ""), st.name, st.cls,
             e.hasBirthCert ? "Yes" : "No",
             e.hasAadhar ? "Yes" : "No",
             !e.hasAadhar ? "N/A" : e.nameMatch ? "Yes" : "No",
@@ -903,39 +994,108 @@ export default function ReportPage() {
         })
       : exportData.map(row => actCols.map(c => { const v=formatCellValue(c, row[c.key]); return v===""? "-" : String(v); }));
 
-    // Long unbroken digit strings (Aadhar, UDISE, PEN, APAAR, mobile, roll,
-    // enrollment, pincode) have no space to wrap at, so "linebreak" splits
-    // them mid-number instead of onto a new line - these columns stay on
-    // one line even if that means the text prints slightly past the
-    // column's own width, since a number split in half is far worse.
-    const NOWRAP_KEYS = new Set(["enrollNo","roll","mobile1","mobile2","aadharNo","fatherAadhar","motherAadhar","udise","pen","apaar","pinCode"]);
-    const columnStyles = {};
-    if (!isElig) {
-      actCols.forEach((c, i) => { if (NOWRAP_KEYS.has(c.key)) columnStyles[i] = { overflow: "visible" }; });
+    const HEAD_SIZE = 7, BODY_SIZE = 6, CELL_PAD = 3 * MM * 0.5;
+    const availableWidth = PAGE_W - MARGIN * 2;
+    const colWidths = computeColumnWidths({
+      columns, rows: bodyRows, availableWidth,
+      headerFont: fontB, bodyFont: fontR, headerSize: HEAD_SIZE, bodySize: BODY_SIZE, cellPad: CELL_PAD,
+    });
+    const colX = [MARGIN];
+    for (let i = 1; i < colWidths.length; i++) colX.push(colX[i-1] + colWidths[i-1]);
+
+    const HEAD_LINE_H = HEAD_SIZE * 1.35;
+    const BODY_LINE_H = BODY_SIZE * 1.35;
+    const HEAD_ROW_H  = HEAD_LINE_H + CELL_PAD * 2;
+    const FOOTER_ZONE = 34 * MM;
+
+    let page, cursorY, pageNum = 0;
+
+    function drawTableHeaderRow() {
+      page.drawRectangle({ x: MARGIN, y: PAGE_H - cursorY - HEAD_ROW_H, width: availableWidth, height: HEAD_ROW_H, color: NAVY });
+      columns.forEach((col, i) => {
+        page.drawText(String(col.label), {
+          x: colX[i] + CELL_PAD, y: PAGE_H - cursorY - CELL_PAD - HEAD_SIZE,
+          size: HEAD_SIZE, font: fontB, color: WHITE,
+        });
+      });
+      cursorY += HEAD_ROW_H;
     }
 
-    autoTable(doc, {
-      startY: y + 2,
-      head, body,
-      theme: "grid",
-      columnStyles,
-      headStyles: { fillColor:[30,58,95], textColor:[255,255,255], fontStyle:"bold", fontSize:6.5, cellPadding:2, lineWidth:0.1, lineColor:[210,210,210], valign:"middle" },
-      bodyStyles: { fontSize:5.5, cellPadding:1.5, lineWidth:0.1, lineColor:[210,210,210], valign:"middle" },
-      alternateRowStyles: { fillColor:[248,250,252] },
-      styles: { overflow:"linebreak", lineWidth:0.1, lineColor:[210,210,210] },
-      didDrawPage: () => {
-        const ph = doc.internal.pageSize.getHeight();
-        const pw = doc.internal.pageSize.getWidth();
-        const pn = doc.internal.getCurrentPageInfo().pageNumber;
-        doc.setDrawColor(210,210,210);
-        doc.line(14, ph-12, pw-14, ph-12);
-        doc.setFontSize(7); doc.setTextColor(140,140,140); doc.setFont("helvetica","normal");
-        doc.text("Satyam Stars International School  |  Surat, Gujarat  |  Confidential", 14, ph-7);
-        doc.text(`Page ${pn}  |  Generated: ${todayDisplay}`, pw-14, ph-7, {align:"right"});
-      },
+    function drawFooter() {
+      page.drawLine({ start: { x: MARGIN, y: 12 * MM }, end: { x: PAGE_W - MARGIN, y: 12 * MM }, thickness: 0.7, color: GREY_L });
+      page.drawText("Satyam Stars International School  |  Surat, Gujarat  |  Confidential", {
+        x: MARGIN, y: 7 * MM, size: 7, font: fontR, color: FOOT_T,
+      });
+      const pageLabel = `Page ${pageNum}  |  Generated: ${todayDisplay}`;
+      const plw = fontR.widthOfTextAtSize(pageLabel, 7);
+      page.drawText(pageLabel, { x: PAGE_W - MARGIN - plw, y: 7 * MM, size: 7, font: fontR, color: FOOT_T });
+    }
+
+    function newPage(withBanner) {
+      if (page) drawFooter();
+      page = pdfDoc.addPage([PAGE_W, PAGE_H]);
+      pageNum += 1;
+      cursorY = MARGIN;
+      if (withBanner) {
+        page.drawRectangle({ x: 0, y: PAGE_H - 28 * MM, width: PAGE_W, height: 28 * MM, color: NAVY });
+        const title = "Satyam Stars International School";
+        page.drawText(title, { x: (PAGE_W - fontB.widthOfTextAtSize(title, 14)) / 2, y: PAGE_H - 10 * MM, size: 14, font: fontB, color: WHITE });
+        const subtitle = "Surat, Gujarat  |  GSEB Board  |  English Medium";
+        page.drawText(subtitle, { x: (PAGE_W - fontR.widthOfTextAtSize(subtitle, 8)) / 2, y: PAGE_H - 17 * MM, size: 8, font: fontR, color: WHITE });
+        page.drawRectangle({ x: 0, y: PAGE_H - 29 * MM, width: PAGE_W, height: 7 * MM, color: AMBER });
+        const bandLabel = ecfg.label.toUpperCase();
+        page.drawText(bandLabel, { x: (PAGE_W - fontB.widthOfTextAtSize(bandLabel, 9)) / 2, y: PAGE_H - 27 * MM, size: 9, font: fontB, color: WHITE });
+
+        cursorY = 36 * MM;
+        page.drawText(`Generated: ${todayDisplay}`, { x: MARGIN, y: PAGE_H - cursorY, size: 8, font: fontR, color: GREY_T }); cursorY += 5 * MM;
+        page.drawText(`Total Records: ${exportData.length}`, { x: MARGIN, y: PAGE_H - cursorY, size: 8, font: fontR, color: GREY_T }); cursorY += 5 * MM;
+        if (!isElig) {
+          const activeFilters = Object.entries(filters).filter(([,v])=>v&&v!=="All").map(([k,v])=>`${k}: ${v}`).join("  |  ");
+          if (activeFilters) { page.drawText(`Filters: ${activeFilters}`, { x: MARGIN, y: PAGE_H - cursorY, size: 8, font: fontR, color: GREY_T }); cursorY += 5 * MM; }
+          if (dateFrom||dateTo) { page.drawText(`Date Range: ${dateFrom?fmtDate(dateFrom):"-"}  to  ${dateTo?fmtDate(dateTo):"-"}`, { x: MARGIN, y: PAGE_H - cursorY, size: 8, font: fontR, color: GREY_T }); cursorY += 5 * MM; }
+        }
+        const summaryLine = exportSummary.map(s=>`${s.label}: ${s.value}`).join("   |   ");
+        page.drawText(summaryLine, { x: MARGIN, y: PAGE_H - cursorY, size: 8, font: fontB, color: NAVY }); cursorY += 6 * MM;
+      }
+      drawTableHeaderRow();
+    }
+
+    newPage(true);
+
+    bodyRows.forEach((row, rIdx) => {
+      const cellLines = row.map((val, i) => {
+        if (columns[i].nowrap) return [String(val)];
+        return wrapPdfText(val, fontR, BODY_SIZE, colWidths[i] - CELL_PAD * 2);
+      });
+      const nLines = Math.max(1, ...cellLines.map(l => l.length));
+      const rowH = nLines * BODY_LINE_H + CELL_PAD * 2;
+
+      if (cursorY + rowH > PAGE_H - FOOTER_ZONE) newPage(false);
+
+      if (rIdx % 2 === 1) {
+        page.drawRectangle({ x: MARGIN, y: PAGE_H - cursorY - rowH, width: availableWidth, height: rowH, color: ALT_BG });
+      }
+      cellLines.forEach((lines, i) => {
+        lines.forEach((line, li) => {
+          page.drawText(line, {
+            x: colX[i] + CELL_PAD,
+            y: PAGE_H - cursorY - CELL_PAD - BODY_SIZE - li * BODY_LINE_H,
+            size: BODY_SIZE, font: fontR, color: GREY_T,
+          });
+        });
+      });
+      // cell + row borders
+      page.drawRectangle({ x: MARGIN, y: PAGE_H - cursorY - rowH, width: availableWidth, height: rowH, borderColor: GREY_L, borderWidth: 0.5 });
+      for (let i = 1; i < colX.length; i++) {
+        page.drawLine({ start: { x: colX[i], y: PAGE_H - cursorY }, end: { x: colX[i], y: PAGE_H - cursorY - rowH }, thickness: 0.5, color: GREY_L });
+      }
+      cursorY += rowH;
     });
 
-    doc.save(`${ecfg.label.replace(/[\s/]+/g,"_")}${labelSuffix}_${isoToday}.pdf`);
+    drawFooter();
+
+    const bytes = await pdfDoc.save();
+    triggerPdfDownload(bytes, `${ecfg.label.replace(/[\s/]+/g,"_")}${labelSuffix}_${isoToday}.pdf`);
   }
 
   if (dbLoading) return (
