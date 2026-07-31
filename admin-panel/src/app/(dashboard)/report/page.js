@@ -903,10 +903,22 @@ export default function ReportPage() {
         })
       : exportData.map(row => actCols.map(c => { const v=formatCellValue(c, row[c.key]); return v===""? "-" : String(v); }));
 
+    // Long unbroken digit strings (Aadhar, UDISE, PEN, APAAR, mobile, roll,
+    // enrollment, pincode) have no space to wrap at, so "linebreak" splits
+    // them mid-number instead of onto a new line - these columns stay on
+    // one line even if that means the text prints slightly past the
+    // column's own width, since a number split in half is far worse.
+    const NOWRAP_KEYS = new Set(["enrollNo","roll","mobile1","mobile2","aadharNo","fatherAadhar","motherAadhar","udise","pen","apaar","pinCode"]);
+    const columnStyles = {};
+    if (!isElig) {
+      actCols.forEach((c, i) => { if (NOWRAP_KEYS.has(c.key)) columnStyles[i] = { overflow: "visible" }; });
+    }
+
     autoTable(doc, {
       startY: y + 2,
       head, body,
       theme: "grid",
+      columnStyles,
       headStyles: { fillColor:[30,58,95], textColor:[255,255,255], fontStyle:"bold", fontSize:6.5, cellPadding:2, lineWidth:0.1, lineColor:[210,210,210], valign:"middle" },
       bodyStyles: { fontSize:5.5, cellPadding:1.5, lineWidth:0.1, lineColor:[210,210,210], valign:"middle" },
       alternateRowStyles: { fillColor:[248,250,252] },
