@@ -906,10 +906,11 @@ export default function ReportPage() {
     autoTable(doc, {
       startY: y + 2,
       head, body,
-      headStyles: { fillColor:[30,58,95], textColor:[255,255,255], fontStyle:"bold", fontSize:7, cellPadding:2 },
-      bodyStyles: { fontSize:6.5, cellPadding:2 },
+      theme: "grid",
+      headStyles: { fillColor:[30,58,95], textColor:[255,255,255], fontStyle:"bold", fontSize:7, cellPadding:2, lineWidth:0.1, lineColor:[210,210,210], overflow:"linebreak", valign:"middle" },
+      bodyStyles: { fontSize:6.5, cellPadding:2, lineWidth:0.1, lineColor:[210,210,210], overflow:"ellipsize", valign:"middle" },
       alternateRowStyles: { fillColor:[248,250,252] },
-      styles: { overflow:"linebreak" },
+      styles: { lineWidth:0.1, lineColor:[210,210,210], minCellHeight:6 },
       didDrawPage: () => {
         const ph = doc.internal.pageSize.getHeight();
         const pw = doc.internal.pageSize.getWidth();
