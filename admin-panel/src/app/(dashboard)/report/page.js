@@ -907,10 +907,10 @@ export default function ReportPage() {
       startY: y + 2,
       head, body,
       theme: "grid",
-      headStyles: { fillColor:[30,58,95], textColor:[255,255,255], fontStyle:"bold", fontSize:7, cellPadding:2, lineWidth:0.1, lineColor:[210,210,210], overflow:"linebreak", valign:"middle" },
-      bodyStyles: { fontSize:6.5, cellPadding:2, lineWidth:0.1, lineColor:[210,210,210], overflow:"ellipsize", valign:"middle" },
+      headStyles: { fillColor:[30,58,95], textColor:[255,255,255], fontStyle:"bold", fontSize:6.5, cellPadding:2, lineWidth:0.1, lineColor:[210,210,210], valign:"middle" },
+      bodyStyles: { fontSize:5.5, cellPadding:1.5, lineWidth:0.1, lineColor:[210,210,210], valign:"middle" },
       alternateRowStyles: { fillColor:[248,250,252] },
-      styles: { lineWidth:0.1, lineColor:[210,210,210], minCellHeight:6 },
+      styles: { overflow:"linebreak", lineWidth:0.1, lineColor:[210,210,210] },
       didDrawPage: () => {
         const ph = doc.internal.pageSize.getHeight();
         const pw = doc.internal.pageSize.getWidth();
