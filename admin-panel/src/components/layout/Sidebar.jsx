@@ -20,6 +20,7 @@ import {
   FolderOpen,
   CalendarCheck,
   FileText,
+  MessageSquareText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import useStore from "@/lib/store";
@@ -33,6 +34,7 @@ const navItems = [
   { href: "/inventory", label: "Inventory Management", icon: Package },
   { href: "/expenses",  label: "Expenses",             icon: TrendingDown },
   { href: "/notice",    label: "Notice Board",         icon: Bell },
+  { href: "/queries",   label: "Queries & Suggestions",icon: MessageSquareText },
   { href: "/report", label: "Report", icon: BarChart3 },
   { href: "/documents", label: "Documents", icon: FolderOpen },
   { href: "/question-papers", label: "Question Papers", icon: FileText },

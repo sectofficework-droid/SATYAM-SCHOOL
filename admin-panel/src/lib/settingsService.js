@@ -279,3 +279,21 @@ export async function saveClassSubjects(className, subjectNames) {
     if (error) throw error;
   }
 }
+
+// ── Rules & Regulations (single row, id=1, shown read-only in the mobile app) ──
+export async function getSchoolRules() {
+  const { data, error } = await supabase
+    .from("school_rules")
+    .select("content, updated_at")
+    .eq("id", 1)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.content || "";
+}
+
+export async function saveSchoolRules(content) {
+  const { error } = await supabase
+    .from("school_rules")
+    .upsert({ id: 1, content, updated_at: new Date().toISOString() });
+  if (error) throw error;
+}
