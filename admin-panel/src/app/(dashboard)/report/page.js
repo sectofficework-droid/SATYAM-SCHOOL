@@ -659,86 +659,47 @@ function EligBadge({ eligible, done }) {
 const MM = 2.8346; // pdf-lib works in points; layout constants below are
                    // authored in the same mm figures the old jsPDF version used.
 
-// Greedy word-wrap. A single "word" wider than maxWidth (eg. a long name with
-// no spaces) is hard-split by character as a last resort - this only ever
-// affects free-text columns, never the fixed-width ID/number columns below.
-function wrapPdfText(text, font, fontSize, maxWidth) {
-  const words = String(text).split(/\s+/).filter(Boolean);
-  if (words.length === 0) return [""];
-  const lines = [];
-  let line = "";
-  for (const word of words) {
-    const candidate = line ? `${line} ${word}` : word;
-    if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidth) { line = candidate; continue; }
-    if (line) { lines.push(line); line = ""; }
-    if (font.widthOfTextAtSize(word, fontSize) <= maxWidth) { line = word; continue; }
-    let chunk = "";
-    for (const ch of word) {
-      const test = chunk + ch;
-      if (chunk && font.widthOfTextAtSize(test, fontSize) > maxWidth) { lines.push(chunk); chunk = ch; }
-      else chunk = test;
-    }
-    line = chunk;
-  }
-  if (line) lines.push(line);
-  return lines.length ? lines : [""];
-}
-
-// Columns flagged `nowrap` (enrollment/roll/mobile/Aadhar/UDISE/PEN/APAAR/
-// pincode - long unbroken digit strings) get a fixed width sized to fit their
-// longest value on one line, so they never need to wrap in the first place.
-// Remaining width is split among free-text columns, weighted by how long
-// their content typically runs, so names/addresses get more room than short
-// fields like "Class".
-function computeColumnWidths({ columns, rows, availableWidth, headerFont, bodyFont, headerSize, bodySize, cellPad }) {
+// No column is ever allowed to wrap onto a second line - every cell (numbers
+// AND free text like names/addresses) renders as exactly one line. Width is
+// allocated per column based on how much content it actually needs, and if
+// that still doesn't fit the page, the column's own font size shrinks
+// (down to a legible floor) until its longest value fits at that width.
+function computeColumnLayout({ columns, rows, availableWidth, headerFont, bodyFont, baseHeadSize, baseBodySize, cellPad, minSize }) {
   const n = columns.length;
-  const fixed  = new Array(n).fill(null);
-  const weight = new Array(n).fill(1);
 
-  columns.forEach((col, i) => {
-    if (col.nowrap) {
-      let maxW = headerFont.widthOfTextAtSize(String(col.label), headerSize);
-      for (const row of rows) {
-        const w = bodyFont.widthOfTextAtSize(String(row[i] ?? ""), bodySize);
-        if (w > maxW) maxW = w;
-      }
-      fixed[i] = maxW + cellPad * 2;
-    } else {
-      let maxLen = String(col.label).length;
-      for (const row of rows) maxLen = Math.max(maxLen, String(row[i] ?? "").length);
-      weight[i] = Math.max(4, maxLen);
+  const maxBodyWidth = columns.map((col, i) => {
+    let maxW = 0;
+    for (const row of rows) {
+      const w = bodyFont.widthOfTextAtSize(String(row[i] ?? ""), baseBodySize);
+      if (w > maxW) maxW = w;
     }
+    return maxW;
+  });
+  const naturalWidths = columns.map((col, i) => {
+    const labelW = headerFont.widthOfTextAtSize(String(col.label), baseHeadSize);
+    return Math.max(labelW, maxBodyWidth[i]) + cellPad * 2;
+  });
+  const naturalTotal = naturalWidths.reduce((a, b) => a + b, 0) || 1;
+
+  // Give every column its natural single-line width, scaled to fill (or
+  // fit within) the page - columns with longer content still end up wider
+  // than short ones, proportionally.
+  const widths = naturalWidths.map(w => (w / naturalTotal) * availableWidth);
+
+  const bodySizes = columns.map((col, i) => {
+    if (maxBodyWidth[i] === 0) return baseBodySize;
+    const innerWidth = widths[i] - cellPad * 2;
+    const scale = innerWidth / maxBodyWidth[i];
+    return Math.max(minSize, Math.min(baseBodySize, baseBodySize * scale));
+  });
+  const headSizes = columns.map((col, i) => {
+    const labelW = headerFont.widthOfTextAtSize(String(col.label), baseHeadSize);
+    const innerWidth = widths[i] - cellPad * 2;
+    if (labelW <= innerWidth) return baseHeadSize;
+    return Math.max(minSize, baseHeadSize * (innerWidth / labelW));
   });
 
-  const wrapIdxs   = columns.map((c, i) => i).filter(i => fixed[i] == null);
-  const fixedTotal = fixed.reduce((s, w) => s + (w || 0), 0);
-  const remaining  = Math.max(availableWidth - fixedTotal, wrapIdxs.length * 20);
-  const weightTotal = wrapIdxs.reduce((s, i) => s + weight[i], 0) || 1;
-
-  const widths = new Array(n);
-  wrapIdxs.forEach(i => { widths[i] = Math.max(20, (weight[i] / weightTotal) * remaining); });
-  fixed.forEach((w, i) => { if (w != null) widths[i] = w; });
-
-  let total = widths.reduce((s, w) => s + w, 0);
-  if (total > availableWidth) {
-    // Too many columns for the page width - shrink the wrappable columns
-    // first, since compressing them just means more line-wraps, whereas
-    // shrinking a nowrap column risks the exact single-line problem this
-    // exists to avoid.
-    const wrapTotal = wrapIdxs.reduce((s, i) => s + widths[i], 0);
-    const fixedNow  = total - wrapTotal;
-    const neededFromWrap = Math.max(availableWidth - fixedNow, wrapIdxs.length * 16);
-    if (wrapTotal > 0) {
-      const scale = neededFromWrap / wrapTotal;
-      wrapIdxs.forEach(i => { widths[i] = Math.max(16, widths[i] * scale); });
-    }
-    total = widths.reduce((s, w) => s + w, 0);
-    if (total > availableWidth) {
-      const scale2 = availableWidth / total;
-      for (let i = 0; i < n; i++) widths[i] *= scale2;
-    }
-  }
-  return widths;
+  return { widths, bodySizes, headSizes };
 }
 
 function triggerPdfDownload(bytes, filename) {
@@ -971,12 +932,9 @@ export default function ReportPage() {
     const fontR  = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontB  = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
-    // Column definitions: nowrap = fixed width sized to content, never wraps.
-    const NOWRAP_KEYS = new Set(["enrollNo","roll","mobile1","mobile2","aadharNo","fatherAadhar","motherAadhar","udise","pen","apaar","pinCode"]);
     const columns = isElig
-      ? ["#","Enroll No","Student Name","Class","Birth Cert","Aadhar","Name Match","UDISE","PEN","APAAR","Remarks"]
-          .map((label, i) => ({ label, nowrap: i <= 1 }))
-      : actCols.map(c => ({ label: c.label, nowrap: NOWRAP_KEYS.has(c.key) }));
+      ? ["#","Enroll No","Student Name","Class","Birth Cert","Aadhar","Name Match","UDISE","PEN","APAAR","Remarks"].map(label => ({ label }))
+      : actCols.map(c => ({ label: c.label }));
 
     const bodyRows = isElig
       ? exportData.map((st, i) => {
@@ -994,18 +952,17 @@ export default function ReportPage() {
         })
       : exportData.map(row => actCols.map(c => { const v=formatCellValue(c, row[c.key]); return v===""? "-" : String(v); }));
 
-    const HEAD_SIZE = 7, BODY_SIZE = 6, CELL_PAD = 3 * MM * 0.5;
+    const HEAD_SIZE = 7, BODY_SIZE = 6, MIN_SIZE = 3.8, CELL_PAD = 3 * MM * 0.5;
     const availableWidth = PAGE_W - MARGIN * 2;
-    const colWidths = computeColumnWidths({
+    const { widths: colWidths, bodySizes: colBodySizes, headSizes: colHeadSizes } = computeColumnLayout({
       columns, rows: bodyRows, availableWidth,
-      headerFont: fontB, bodyFont: fontR, headerSize: HEAD_SIZE, bodySize: BODY_SIZE, cellPad: CELL_PAD,
+      headerFont: fontB, bodyFont: fontR, baseHeadSize: HEAD_SIZE, baseBodySize: BODY_SIZE, cellPad: CELL_PAD, minSize: MIN_SIZE,
     });
     const colX = [MARGIN];
     for (let i = 1; i < colWidths.length; i++) colX.push(colX[i-1] + colWidths[i-1]);
 
-    const HEAD_LINE_H = HEAD_SIZE * 1.35;
-    const BODY_LINE_H = BODY_SIZE * 1.35;
-    const HEAD_ROW_H  = HEAD_LINE_H + CELL_PAD * 2;
+    const HEAD_ROW_H  = HEAD_SIZE * 1.35 + CELL_PAD * 2;
+    const BODY_ROW_H  = BODY_SIZE * 1.35 + CELL_PAD * 2;
     const FOOTER_ZONE = 34 * MM;
 
     let page, cursorY, pageNum = 0;
@@ -1013,9 +970,10 @@ export default function ReportPage() {
     function drawTableHeaderRow() {
       page.drawRectangle({ x: MARGIN, y: PAGE_H - cursorY - HEAD_ROW_H, width: availableWidth, height: HEAD_ROW_H, color: NAVY });
       columns.forEach((col, i) => {
+        const size = colHeadSizes[i];
         page.drawText(String(col.label), {
-          x: colX[i] + CELL_PAD, y: PAGE_H - cursorY - CELL_PAD - HEAD_SIZE,
-          size: HEAD_SIZE, font: fontB, color: WHITE,
+          x: colX[i] + CELL_PAD, y: PAGE_H - cursorY - CELL_PAD - size,
+          size, font: fontB, color: WHITE,
         });
       });
       cursorY += HEAD_ROW_H;
@@ -1063,25 +1021,19 @@ export default function ReportPage() {
     newPage(true);
 
     bodyRows.forEach((row, rIdx) => {
-      const cellLines = row.map((val, i) => {
-        if (columns[i].nowrap) return [String(val)];
-        return wrapPdfText(val, fontR, BODY_SIZE, colWidths[i] - CELL_PAD * 2);
-      });
-      const nLines = Math.max(1, ...cellLines.map(l => l.length));
-      const rowH = nLines * BODY_LINE_H + CELL_PAD * 2;
+      const rowH = BODY_ROW_H;
 
       if (cursorY + rowH > PAGE_H - FOOTER_ZONE) newPage(false);
 
       if (rIdx % 2 === 1) {
         page.drawRectangle({ x: MARGIN, y: PAGE_H - cursorY - rowH, width: availableWidth, height: rowH, color: ALT_BG });
       }
-      cellLines.forEach((lines, i) => {
-        lines.forEach((line, li) => {
-          page.drawText(line, {
-            x: colX[i] + CELL_PAD,
-            y: PAGE_H - cursorY - CELL_PAD - BODY_SIZE - li * BODY_LINE_H,
-            size: BODY_SIZE, font: fontR, color: GREY_T,
-          });
+      row.forEach((val, i) => {
+        const size = colBodySizes[i];
+        page.drawText(String(val), {
+          x: colX[i] + CELL_PAD,
+          y: PAGE_H - cursorY - CELL_PAD - size,
+          size, font: fontR, color: GREY_T,
         });
       });
       // cell + row borders
