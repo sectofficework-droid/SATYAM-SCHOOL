@@ -26,10 +26,10 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
   // 0 = Mine, 1 = Class Overview
   int _scope = 0;
 
-  // No date picked = show everything in the current scope. A date narrows
-  // the list to homework due exactly on that day - replaces the old
-  // Active/Archive split entirely.
-  DateTime? _filterDate;
+  // Defaults to today so the list opens already narrowed to what's due
+  // today - clearing it (the X button) falls back to showing everything in
+  // the current scope. Replaces the old Active/Archive split entirely.
+  DateTime? _filterDate = DateTime.now();
 
   List<Map<String, dynamic>> get _currentList => _scope == 0 ? _mineList : _classList;
 
@@ -379,7 +379,7 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
   Widget _scopeTabButton(String label, int index) {
     final active = _scope == index;
     return GestureDetector(
-      onTap: () => setState(() { _scope = index; _filterDate = null; }),
+      onTap: () => setState(() { _scope = index; _filterDate = DateTime.now(); }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(vertical: 9),

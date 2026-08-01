@@ -32,11 +32,13 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
   // 0 = Mine, 1 = Class Overview
   int _scope = 0;
 
-  // No month picked = every exam in the current scope. Exams are filtered
-  // by MONTH, not an exact date - unlike homework, which has one due date
-  // per item, exams in a given month are what a teacher actually plans
-  // around (unit tests, half-yearly, etc.), not a single day.
-  DateTime? _filterMonth;
+  // Defaults to the current month so the list opens already narrowed to
+  // this month's exams - clearing it falls back to every exam in the
+  // current scope. Exams are filtered by MONTH, not an exact date - unlike
+  // homework, which has one due date per item, exams in a given month are
+  // what a teacher actually plans around (unit tests, half-yearly, etc.),
+  // not a single day.
+  DateTime? _filterMonth = DateTime.now();
 
   List<Map<String, dynamic>> get _currentExams => _scope == 0 ? _mineExams : _classExams;
 
@@ -386,7 +388,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
   Widget _scopeTabButton(String label, int index) {
     final active = _scope == index;
     return GestureDetector(
-      onTap: () => setState(() { _scope = index; _filterMonth = null; }),
+      onTap: () => setState(() { _scope = index; _filterMonth = DateTime.now(); }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(vertical: 9),
