@@ -198,10 +198,11 @@ class SupabaseService {
   }
 
   // School Rules & Regulations ───────────────────────────────────────────────
-  // Single row (id=1), edited from the admin panel - the app just reads it.
+  // One row per audience ('teacher' or 'student'), edited from the admin
+  // panel - the app just reads its own row.
 
-  static Future<String> fetchSchoolRules() async {
-    final res = await client.from('school_rules').select('content').eq('id', 1).maybeSingle();
+  static Future<String> fetchSchoolRules(String audience) async {
+    final res = await client.from('school_rules').select('content').eq('audience', audience).maybeSingle();
     return (res?['content'] as String?) ?? '';
   }
 

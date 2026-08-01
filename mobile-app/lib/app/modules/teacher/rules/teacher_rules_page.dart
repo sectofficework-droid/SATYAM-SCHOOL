@@ -19,7 +19,7 @@ class _TeacherRulesPageState extends State<TeacherRulesPage> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final content = await SupabaseService.fetchSchoolRules();
+    final content = await SupabaseService.fetchSchoolRules('teacher');
     if (mounted) setState(() { _content = content; _loading = false; });
   }
 
