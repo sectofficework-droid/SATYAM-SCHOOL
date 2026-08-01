@@ -4,14 +4,14 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   GraduationCap, IndianRupee, Users, Package, Search,
   RefreshCw, Download, FileText, ShieldCheck, BookOpen, Landmark, IdCard,
-  CheckSquare, X,
+  CheckSquare, X, LogOut,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import {
   getStudentsForReport, getFeesForReport,
   getEmployeesForReport, getInventoryForReport,
-  getPaymentsForReport, getAcademicYearLabels,
+  getPaymentsForReport, getAcademicYearLabels, getTcIssuedForReport,
 } from "@/lib/reportService";
 import DateInputDMY from "@/components/DateInputDMY";
 
@@ -397,6 +397,57 @@ const REPORT_CONFIGS = {
       {label:"Inactive",       value:d.filter(x=>x.status==="Inactive").length,color:"red"   },
     ];},
   },
+  tcIssued: {
+    label:"TC Issued Details", icon:LogOut,
+    quickFilters:[
+      {key:"cls",         label:"Class",         options:["All",...CLASSES]        },
+      {key:"session",     label:"Academic Year", options:["All",...SESSIONS_FALLBACK]},
+      {key:"conduct",     label:"Conduct",       options:["All","Excellent","Good","Satisfactory","Needs Improvement"]},
+      {key:"duesCleared", label:"Dues Cleared",  options:["All","Yes","No"]         },
+    ],
+    dateField:"leavingDate", dateLabel:"Date of Leaving",
+    columns:[
+      {key:"tcNumber",    label:"TC Number",         dflt:true  },
+      {key:"studentName", label:"Student Name",      dflt:true  },
+      {key:"fatherName",  label:"Father Name",       dflt:true  },
+      {key:"motherName",  label:"Mother Name",       dflt:false },
+      {key:"enrollNo",    label:"Enroll No",         dflt:true  },
+      {key:"grNo",        label:"GR No",             dflt:false },
+      {key:"cls",         label:"Class at Leaving",  dflt:true  },
+      {key:"roll",        label:"Roll No",           dflt:false },
+      {key:"session",     label:"Academic Year",     dflt:true  },
+      {key:"issueDate",   label:"TC Issue Date",     dflt:true,  isDate:true },
+      {key:"leavingDate", label:"Date of Leaving",   dflt:true,  isDate:true },
+      {key:"reason",      label:"Reason for Leaving",dflt:true  },
+      {key:"conduct",     label:"Conduct",           dflt:false },
+      {key:"duesCleared", label:"Dues Cleared",      dflt:false },
+      {key:"remarks",     label:"Remarks",           dflt:false },
+    ],
+    getData(sourceData, f, df, dt, s) {
+      let d = sourceData || [];
+      if (f.cls         && f.cls         !== "All") d = d.filter(x => x.cls         === f.cls);
+      if (f.session      && f.session     !== "All") d = d.filter(x => x.session     === f.session);
+      if (f.conduct      && f.conduct     !== "All") d = d.filter(x => x.conduct     === f.conduct);
+      if (f.duesCleared  && f.duesCleared !== "All") d = d.filter(x => x.duesCleared === f.duesCleared);
+      if (df) d = d.filter(x => x.leavingDate >= df);
+      if (dt) d = d.filter(x => x.leavingDate <= dt);
+      if (s) {
+        const q = s.toLowerCase();
+        d = d.filter(x =>
+          x.studentName.toLowerCase().includes(q) ||
+          x.enrollNo.toLowerCase().includes(q) ||
+          x.tcNumber.toLowerCase().includes(q) ||
+          x.reason.toLowerCase().includes(q)
+        );
+      }
+      return d;
+    },
+    getSummary(d) { return [
+      {label:"Total TC Issued", value:d.length,                                     color:"blue" },
+      {label:"Dues Cleared",    value:d.filter(x=>x.duesCleared==="Yes").length,     color:"green"},
+      {label:"Dues Pending",    value:d.filter(x=>x.duesCleared==="No").length,      color:"red"  },
+    ];},
+  },
   fees: {
     label:"Fees", icon:IndianRupee,
     isFeesModule:true,
@@ -735,25 +786,28 @@ export default function ReportPage() {
   const [dbPayments,  setDbPayments]  = useState([]);
   const [dbEmployees, setDbEmployees] = useState([]);
   const [dbInventory, setDbInventory] = useState([]);
+  const [dbTcIssued,  setDbTcIssued]  = useState([]);
   const [dbLoading,   setDbLoading]   = useState(true);
   const [dbSessions,  setDbSessions]  = useState(SESSIONS_FALLBACK);
 
   const loadAll = useCallback(async () => {
     setDbLoading(true);
     try {
-      const [students, fees, payments, employees, inventory, sessions] = await Promise.all([
+      const [students, fees, payments, employees, inventory, sessions, tcIssued] = await Promise.all([
         getStudentsForReport(),
         getFeesForReport(),
         getPaymentsForReport(),
         getEmployeesForReport(),
         getInventoryForReport(),
         getAcademicYearLabels(),
+        getTcIssuedForReport(),
       ]);
       setDbStudents(students);
       setDbFees(fees);
       setDbPayments(payments);
       setDbEmployees(employees);
       setDbInventory(inventory);
+      setDbTcIssued(tcIssued);
       if (sessions.length) setDbSessions(sessions);
     } catch (e) {
       console.error("Report loadAll error:", e);
@@ -798,6 +852,7 @@ export default function ReportPage() {
     rType === "fees"                              ? dbFees      :
     rType === "employee"                          ? dbEmployees :
     rType === "inventory"                         ? dbInventory :
+    rType === "tcIssued"                          ? dbTcIssued  :
     /* student, eligibility, grRegister, udiseEntry, penEntry */ dbStudents;
 
   let data = ecfg.getData(sourceData, filters, dateFrom, dateTo, search);

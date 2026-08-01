@@ -109,6 +109,52 @@ export async function getStudentsForReport() {
   }).filter(Boolean);
 }
 
+// ── Transfer Certificates Issued ──────────────────────────────────────────────
+export async function getTcIssuedForReport() {
+  const { data, error } = await supabase
+    .from("transfer_certificates")
+    .select(`
+      id, tc_number, issue_date, leaving_date, reason, conduct, dues_cleared, remarks,
+      student:students(
+        id, first_name, last_name, father_name, mother_name, grno,
+        student_enrollments(
+          enrollment_no, roll_no, deactivate_date,
+          class:classes!student_enrollments_class_id_fkey(name),
+          academic_year:academic_years(label)
+        )
+      )
+    `)
+    .order("leaving_date", { ascending: false });
+
+  if (error) throw error;
+
+  return (data || []).map(row => {
+    const s = row.student;
+    if (!s) return null;
+    // A student can have one enrollment row per academic year (promotions);
+    // the one this TC deactivated is the one with a deactivate_date set.
+    const enrollments = s.student_enrollments || [];
+    const leftEnrollment = enrollments.find(e => e.deactivate_date) || enrollments[enrollments.length - 1] || {};
+    return {
+      tcNumber:    row.tc_number,
+      studentName: `${s.first_name} ${s.last_name}`.trim(),
+      fatherName:  s.father_name || "",
+      motherName:  s.mother_name || "",
+      grNo:        s.grno || "",
+      enrollNo:    leftEnrollment.enrollment_no || "",
+      roll:        String(leftEnrollment.roll_no || ""),
+      cls:         normClass(leftEnrollment.class?.name),
+      session:     leftEnrollment.academic_year?.label || "",
+      issueDate:   row.issue_date || "",
+      leavingDate: row.leaving_date || "",
+      reason:      row.reason || "",
+      conduct:     row.conduct || "",
+      duesCleared: row.dues_cleared ? "Yes" : "No",
+      remarks:     row.remarks || "",
+    };
+  }).filter(Boolean);
+}
+
 // ── Fee Payments (all time — for collection report) ───────────────────────────
 export async function getPaymentsForReport() {
   const { data, error } = await supabase
