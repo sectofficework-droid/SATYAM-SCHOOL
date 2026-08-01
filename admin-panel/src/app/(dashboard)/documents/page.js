@@ -6,8 +6,9 @@ import { getS3ViewUrl } from "@/lib/s3Upload";
 import { fmtDMY } from "@/lib/utils";
 import { getMarksheetsForClass, EXAM_TYPES } from "@/lib/marksheetService";
 import S3Image from "@/components/S3Image";
+import * as XLSX from "xlsx";
 import {
-  CreditCard, Award, FileText, Search, Download,
+  CreditCard, Award, FileText, Search, Download, FileSpreadsheet,
   Users, GraduationCap, X, CheckSquare, ChevronLeft, ChevronRight
 } from "lucide-react";
 
@@ -338,6 +339,38 @@ async function generatePDF(students, designId, onProgress) {
   }
 
   doc.save("ID_Cards_Satyam_Stars.pdf");
+}
+
+// ── Export for Canva Bulk Create ────────────────────────────────────────────
+// Canva's own "Bulk Create" (data merge) feature can autofill a Canva
+// template - including an image placeholder, if a column holds an image URL
+// - from a spreadsheet, one card per row. This exports exactly that
+// spreadsheet so the school can regenerate cards directly inside Canva
+// instead of (or alongside) the in-app PDF generator. The photo links are S3
+// presigned URLs valid for 1 hour (see /api/s3/view-url), so this should be
+// uploaded to Canva's Bulk Create soon after exporting.
+async function exportForCanva(students) {
+  const rows = await Promise.all(students.map(async (s) => {
+    let photoUrl = "";
+    if (s.photo) { try { photoUrl = (await getS3ViewUrl(s.photo)) || ""; } catch {} }
+    return {
+      "Photo":          photoUrl,
+      "Name":           s.name || "",
+      "Father's Name":  s.fatherName || "",
+      "Mother's Name":  s.motherName || "",
+      "DOB":            fmtDMY(s.dob) || "",
+      "Mobile No":      s.mobile || s.mobile1 || "",
+      "Address":        fmtAddr(s) || "",
+      "Class":          (s.std || "") + (s.section ? ` - ${s.section}` : ""),
+      "Enrollment No":  s.enrollment || "",
+    };
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws["!cols"] = Object.keys(rows[0] || {}).map(k => ({ wch: k === "Photo" ? 60 : 20 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "ID Card Data");
+  XLSX.writeFile(wb, `ID_Card_Data_For_Canva_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
 // ── Bonafide Certificate: matches the school's real pre-printed form
@@ -1028,6 +1061,7 @@ export default function DocumentsPage() {
   const [selected, setSelected]       = useState(new Set());
   const [designId, setDesignId]       = useState(1);
   const [generating, setGenerating]   = useState(false);
+  const [exportingCanva, setExportingCanva] = useState(false);
   const [progress, setProgress]       = useState({ done:0, total:0 });
   const [previewIdx, setPreviewIdx]   = useState(0);
   const [logoUrl, setLogoUrl]         = useState("");
@@ -1102,6 +1136,19 @@ export default function DocumentsPage() {
       setProgress({ done:0, total:0 });
     }
   }, [selectedStudents, designId]);
+
+  const handleExportCanva = useCallback(async () => {
+    const targets = selectedStudents;
+    if (!targets.length) { alert("Please select at least one student."); return; }
+    setExportingCanva(true);
+    try {
+      await exportForCanva(targets);
+    } catch(e) {
+      alert("Export failed: " + e.message);
+    } finally {
+      setExportingCanva(false);
+    }
+  }, [selectedStudents]);
 
   const handleDownloadBonafide = useCallback(async () => {
     const targets = selectedStudents;
@@ -1310,16 +1357,27 @@ export default function DocumentsPage() {
                 </span>
               </div>
             ) : (
-              <button onClick={handleDownload} disabled={selected.size===0}
-                className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-school-navy text-white text-sm font-medium hover:bg-school-navy/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
-                <Download className="w-4 h-4"/>
-                Download PDF ({selected.size} cards)
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={handleExportCanva} disabled={selected.size===0 || exportingCanva}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-school-navy text-school-navy text-sm font-medium hover:bg-school-navy/5 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+                  <FileSpreadsheet className="w-4 h-4"/>
+                  {exportingCanva ? "Exporting…" : "Export for Canva"}
+                </button>
+                <button onClick={handleDownload} disabled={selected.size===0}
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-school-navy text-white text-sm font-medium hover:bg-school-navy/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
+                  <Download className="w-4 h-4"/>
+                  Download PDF ({selected.size} cards)
+                </button>
+              </div>
             )}
           </div>
 
           <p className="text-xs text-gray-400 text-center -mt-2">
-            PDF downloads directly — 4 cards per A4 page (90mm × 140mm). Select students above then click Download PDF.
+            {designId === 2
+              ? "PDF downloads directly — 8 cards per A4 page (landscape, 90mm × 56.9mm)."
+              : "PDF downloads directly — 4 cards per A4 page (79.5mm × 135.1mm)."}
+            {" "}Select students above, then Download PDF for the in-app card, or Export for Canva to regenerate
+            in Canva's own Bulk Create (the photo links in that export expire after 1 hour, so upload it soon after exporting).
           </p>
         </div>
       )}
