@@ -166,6 +166,7 @@ CREATE TABLE students (
   dob            DATE NOT NULL,
   gender         TEXT CHECK (gender IN ('Male','Female','Other')),
   place_of_birth TEXT,
+  birth_village  TEXT,
   photo_url      TEXT,
   father_name    TEXT NOT NULL,
   mother_name    TEXT NOT NULL,

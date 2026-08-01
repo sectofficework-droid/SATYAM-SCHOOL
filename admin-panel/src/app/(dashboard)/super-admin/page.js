@@ -74,6 +74,7 @@ const IMPORT_FIELDS = [
   { key:"birthCertRegDate",  label:"Birth Cert Reg Date (DD-MM-YYYY)", required:false },
   { key:"gender",            label:"Gender (Male/Female/Other)",     required:true  },
   { key:"birthCity",         label:"Birth City",                     required:true  },
+  { key:"birthVillage",      label:"Birth Village",                  required:false },
   { key:"birthDistrict",     label:"Birth District",                 required:false },
   { key:"birthState",        label:"Birth State",                    required:false },
   { key:"motherTongue",      label:"Mother Tongue",                  required:true  },
@@ -174,7 +175,7 @@ const EXAMPLE_ROW = [
   // Personal Info
   "Arjun","Patel","Rajesh Patel","Meena Patel","15-06-2015",
   "BC2015/001","01-01-2016",
-  "Male","Surat","Surat","Gujarat","Gujarati","Hindu","General","Patel","120","25",
+  "Male","Surat","Pandesara","Surat","Gujarat","Gujarati","Hindu","General","Patel","120","25",
   // Contact
   "9876543210","","12","Gandhi Nagar","Near Park","Adajan","395009","12 Gandhi Nagar, Adajan, Surat",
   // IDs
@@ -223,6 +224,7 @@ const FIELD_GROUPS = [
     // Place of Birth is not directly editable — it's derived from City/District/State
     // by mapFormForUpdate() on save, so only the 3 source fields are shown here.
     { key:"birthCity",       label:"Birth City",            icon:MapPin,     type:"text" },
+    { key:"birthVillage",    label:"Birth Village",         icon:MapPin,     type:"text" },
     { key:"birthDistrict",   label:"Birth District",        icon:MapPin,     type:"text" },
     { key:"birthState",      label:"Birth State",           icon:MapPin,     type:"text" },
     { key:"birthCertRegNo",  label:"Birth Cert Reg No",     icon:Hash,       type:"text" },
@@ -358,6 +360,7 @@ function mapFormForUpdate(form) {
     birthState:       form.birthState,
     birthDistrict:    form.birthDistrict,
     birthCity:        form.birthCity,
+    birthVillage:     form.birthVillage,
     mobile:           form.mobile1,
     mobile2:          form.mobile2,
     roomPlotNo:       form.roomPlotNo,
@@ -2524,6 +2527,7 @@ function ImportStudentsPanel({ onImportDone }) {
       ["religion", "religion"], ["society", "society"], ["landmark", "landmark"],
       ["area", "area"], ["pinCode", "pincode"], ["dob", "dob"], ["gender", "gender"],
       ["birthState", "birth_state"], ["birthDistrict", "birth_district"], ["birthCity", "birth_city"],
+      ["birthVillage", "birth_village"],
     ];
     for (const s of valid) {
       try {
@@ -2542,6 +2546,7 @@ function ImportStudentsPanel({ onImportDone }) {
           birthState:        s.birthState || "",
           birthDistrict:     s.birthDistrict || "",
           birthCity:         s.birthCity || "",
+          birthVillage:      s.birthVillage || "",
           motherTongue:      s.motherTongue || "",
           religion:          s.religion || "",
           caste:             s.caste || "General",

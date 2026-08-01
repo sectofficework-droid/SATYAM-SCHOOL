@@ -82,6 +82,7 @@ function mapToEditForm(student) {
     birthState:    student.birthState || "",
     birthDistrict: student.birthDistrict || "",
     birthCity:     student.birthCity || "",
+    birthVillage:  student.birthVillage || "",
     lastSchoolName:   student.lastSchoolName || "",
     lastSchoolGrNo:   student.lastSchoolGrNo || "",
     lastSchoolClass:  student.lastSchoolClass || "",
@@ -292,6 +293,7 @@ function EditForm({ existing, id, router }) {
     birthState:       existing.birthState || "",
     birthDistrict:    existing.birthDistrict || "",
     birthCity:        existing.birthCity || "",
+    birthVillage:     existing.birthVillage || "",
     lastSchoolName:   existing.lastSchoolName,
     lastSchoolClass:  existing.lastSchoolClass,
     lastSchoolMedium: existing.lastSchoolMedium,
@@ -459,6 +461,7 @@ function EditForm({ existing, id, router }) {
         birthState:    form.birthState,
         birthDistrict: form.birthDistrict,
         birthCity:     form.birthCity,
+        birthVillage:  form.birthVillage,
         photo:        photoKey || existing.photo || null,
         fatherName:   form.fatherName,
         motherName:   form.motherName,
@@ -954,6 +957,9 @@ function EditForm({ existing, id, router }) {
           </div>
           <div>
             <ReadOnlyField label="Birth City" value={form.birthCity} />
+          </div>
+          <div>
+            <ReadOnlyField label="Birth Village" value={form.birthVillage} />
           </div>
           <div />
           <div>

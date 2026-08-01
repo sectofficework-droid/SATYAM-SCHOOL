@@ -240,6 +240,7 @@ export default function AddStudentPage() {
     birthState: "",
     birthDistrict: "",
     birthCity: "",
+    birthVillage: "",
     lastSchoolName: "",
     lastSchoolClass: "",
     lastSchoolMedium: "",
@@ -488,6 +489,7 @@ export default function AddStudentPage() {
       birthState:     form.birthState,
       birthDistrict:  form.birthDistrict,
       birthCity:      form.birthCity,
+      birthVillage:   form.birthVillage,
       // Photo
       photo:          photoKey,
       // Academic
@@ -1056,6 +1058,10 @@ export default function AddStudentPage() {
             <div>
               <FieldLabel required>Birth City</FieldLabel>
               <Input placeholder="e.g. Surat" value={form.birthCity} onChange={set("birthCity")} required />
+            </div>
+            <div>
+              <FieldLabel>Birth Village</FieldLabel>
+              <Input placeholder="e.g. Pandesara" value={form.birthVillage} onChange={set("birthVillage")} />
             </div>
             <div>
               <FieldLabel>Birth District</FieldLabel>
