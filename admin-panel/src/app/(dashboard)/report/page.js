@@ -667,7 +667,7 @@ const MM = 2.8346; // pdf-lib works in points; layout constants below are
 // content-fit) widths don't all fit the page at the base size, the ONE size
 // used everywhere is scaled down uniformly until they do - columns shrink
 // together, not independently, so nothing ends up a different size.
-function computeColumnLayout({ columns, rows, availableWidth, headerFont, bodyFont, baseSize, cellPad, minSize }) {
+function computeColumnLayout({ columns, rows, availableWidth, headerFont, bodyFont, baseSize, cellPad }) {
   const n = columns.length;
   const contentWidths = columns.map((col, i) => {
     const labelW = headerFont.widthOfTextAtSize(String(col.label), baseSize);
@@ -684,11 +684,13 @@ function computeColumnLayout({ columns, rows, availableWidth, headerFont, bodyFo
   // Padding stays fixed - only the text itself (which scales exactly
   // linearly with font size) is shrunk to make everything fit, so the
   // final column widths are an exact fit with no rounding slack that
-  // could let one column's text bleed into the next.
-  let size = baseSize;
-  if (contentTotal * (size / baseSize) + paddingTotal > availableWidth) {
-    size = Math.max(minSize, baseSize * Math.max(0, availableWidth - paddingTotal) / contentTotal);
-  }
+  // could let one column's text bleed into the next. No floor on how
+  // small the shared size can go: a report with enough columns (eg. the
+  // 28-column UDISE Entry sheet) that a legibility floor would push the
+  // table wider than the page - shoving trailing columns off the visible
+  // page entirely - always resolves to the exact-fit size instead, however
+  // small that ends up being.
+  const size = Math.min(baseSize, Math.max(0.5, baseSize * Math.max(0, availableWidth - paddingTotal) / contentTotal));
   const scale = size / baseSize;
   const widths = contentWidths.map(w => w * scale + cellPad * 2);
   return { widths, size };
@@ -944,11 +946,11 @@ export default function ReportPage() {
         })
       : exportData.map(row => actCols.map(c => { const v=formatCellValue(c, row[c.key]); return v===""? "-" : String(v); }));
 
-    const BASE_SIZE = 7, MIN_SIZE = 3.8, CELL_PAD = 3 * MM * 0.5;
+    const BASE_SIZE = 7, CELL_PAD = 3 * MM * 0.5;
     const availableWidth = PAGE_W - MARGIN * 2;
     const { widths: colWidths, size: cellSize } = computeColumnLayout({
       columns, rows: bodyRows, availableWidth,
-      headerFont: fontB, bodyFont: fontR, baseSize: BASE_SIZE, cellPad: CELL_PAD, minSize: MIN_SIZE,
+      headerFont: fontB, bodyFont: fontR, baseSize: BASE_SIZE, cellPad: CELL_PAD,
     });
     const colX = [MARGIN];
     for (let i = 1; i < colWidths.length; i++) colX.push(colX[i-1] + colWidths[i-1]);
