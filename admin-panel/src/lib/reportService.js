@@ -116,7 +116,7 @@ export async function getTcIssuedForReport() {
     .select(`
       id, tc_number, issue_date, leaving_date, reason, conduct, dues_cleared, remarks,
       student:students(
-        id, first_name, last_name, father_name, mother_name, grno,
+        id, first_name, last_name, father_name, mother_name, grno, udise, pen, apaar,
         student_enrollments(
           enrollment_no, roll_no, deactivate_date,
           class:classes!student_enrollments_class_id_fkey(name),
@@ -141,6 +141,9 @@ export async function getTcIssuedForReport() {
       fatherName:  s.father_name || "",
       motherName:  s.mother_name || "",
       grNo:        s.grno || "",
+      udise:       s.udise || "",
+      pen:         s.pen || "",
+      apaar:       s.apaar || "",
       enrollNo:    leftEnrollment.enrollment_no || "",
       roll:        String(leftEnrollment.roll_no || ""),
       cls:         normClass(leftEnrollment.class?.name),
