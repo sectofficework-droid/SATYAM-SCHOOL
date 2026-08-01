@@ -659,47 +659,39 @@ function EligBadge({ eligible, done }) {
 const MM = 2.8346; // pdf-lib works in points; layout constants below are
                    // authored in the same mm figures the old jsPDF version used.
 
-// No column is ever allowed to wrap onto a second line - every cell (numbers
-// AND free text like names/addresses) renders as exactly one line. Width is
-// allocated per column based on how much content it actually needs, and if
-// that still doesn't fit the page, the column's own font size shrinks
-// (down to a legible floor) until its longest value fits at that width.
-function computeColumnLayout({ columns, rows, availableWidth, headerFont, bodyFont, baseHeadSize, baseBodySize, cellPad, minSize }) {
+// No column is ever allowed to wrap onto a second line, every column is
+// exactly as wide as its own longest value needs (not stretched, not
+// squeezed to fit its neighbours), and every cell - header or body, any
+// column - renders at the same single font size. Text width scales exactly
+// linearly with font size for a given string, so if the natural (per-column,
+// content-fit) widths don't all fit the page at the base size, the ONE size
+// used everywhere is scaled down uniformly until they do - columns shrink
+// together, not independently, so nothing ends up a different size.
+function computeColumnLayout({ columns, rows, availableWidth, headerFont, bodyFont, baseSize, cellPad, minSize }) {
   const n = columns.length;
-
-  const maxBodyWidth = columns.map((col, i) => {
-    let maxW = 0;
+  const contentWidths = columns.map((col, i) => {
+    const labelW = headerFont.widthOfTextAtSize(String(col.label), baseSize);
+    let maxBodyW = 0;
     for (const row of rows) {
-      const w = bodyFont.widthOfTextAtSize(String(row[i] ?? ""), baseBodySize);
-      if (w > maxW) maxW = w;
+      const w = bodyFont.widthOfTextAtSize(String(row[i] ?? ""), baseSize);
+      if (w > maxBodyW) maxBodyW = w;
     }
-    return maxW;
+    return Math.max(labelW, maxBodyW);
   });
-  const naturalWidths = columns.map((col, i) => {
-    const labelW = headerFont.widthOfTextAtSize(String(col.label), baseHeadSize);
-    return Math.max(labelW, maxBodyWidth[i]) + cellPad * 2;
-  });
-  const naturalTotal = naturalWidths.reduce((a, b) => a + b, 0) || 1;
+  const contentTotal = contentWidths.reduce((a, b) => a + b, 0) || 1;
+  const paddingTotal = n * cellPad * 2;
 
-  // Give every column its natural single-line width, scaled to fill (or
-  // fit within) the page - columns with longer content still end up wider
-  // than short ones, proportionally.
-  const widths = naturalWidths.map(w => (w / naturalTotal) * availableWidth);
-
-  const bodySizes = columns.map((col, i) => {
-    if (maxBodyWidth[i] === 0) return baseBodySize;
-    const innerWidth = widths[i] - cellPad * 2;
-    const scale = innerWidth / maxBodyWidth[i];
-    return Math.max(minSize, Math.min(baseBodySize, baseBodySize * scale));
-  });
-  const headSizes = columns.map((col, i) => {
-    const labelW = headerFont.widthOfTextAtSize(String(col.label), baseHeadSize);
-    const innerWidth = widths[i] - cellPad * 2;
-    if (labelW <= innerWidth) return baseHeadSize;
-    return Math.max(minSize, baseHeadSize * (innerWidth / labelW));
-  });
-
-  return { widths, bodySizes, headSizes };
+  // Padding stays fixed - only the text itself (which scales exactly
+  // linearly with font size) is shrunk to make everything fit, so the
+  // final column widths are an exact fit with no rounding slack that
+  // could let one column's text bleed into the next.
+  let size = baseSize;
+  if (contentTotal * (size / baseSize) + paddingTotal > availableWidth) {
+    size = Math.max(minSize, baseSize * Math.max(0, availableWidth - paddingTotal) / contentTotal);
+  }
+  const scale = size / baseSize;
+  const widths = contentWidths.map(w => w * scale + cellPad * 2);
+  return { widths, size };
 }
 
 function triggerPdfDownload(bytes, filename) {
@@ -952,31 +944,29 @@ export default function ReportPage() {
         })
       : exportData.map(row => actCols.map(c => { const v=formatCellValue(c, row[c.key]); return v===""? "-" : String(v); }));
 
-    const HEAD_SIZE = 7, BODY_SIZE = 6, MIN_SIZE = 3.8, CELL_PAD = 3 * MM * 0.5;
+    const BASE_SIZE = 7, MIN_SIZE = 3.8, CELL_PAD = 3 * MM * 0.5;
     const availableWidth = PAGE_W - MARGIN * 2;
-    const { widths: colWidths, bodySizes: colBodySizes, headSizes: colHeadSizes } = computeColumnLayout({
+    const { widths: colWidths, size: cellSize } = computeColumnLayout({
       columns, rows: bodyRows, availableWidth,
-      headerFont: fontB, bodyFont: fontR, baseHeadSize: HEAD_SIZE, baseBodySize: BODY_SIZE, cellPad: CELL_PAD, minSize: MIN_SIZE,
+      headerFont: fontB, bodyFont: fontR, baseSize: BASE_SIZE, cellPad: CELL_PAD, minSize: MIN_SIZE,
     });
     const colX = [MARGIN];
     for (let i = 1; i < colWidths.length; i++) colX.push(colX[i-1] + colWidths[i-1]);
 
-    const HEAD_ROW_H  = HEAD_SIZE * 1.35 + CELL_PAD * 2;
-    const BODY_ROW_H  = BODY_SIZE * 1.35 + CELL_PAD * 2;
+    const ROW_H = cellSize * 1.35 + CELL_PAD * 2;
     const FOOTER_ZONE = 34 * MM;
 
     let page, cursorY, pageNum = 0;
 
     function drawTableHeaderRow() {
-      page.drawRectangle({ x: MARGIN, y: PAGE_H - cursorY - HEAD_ROW_H, width: availableWidth, height: HEAD_ROW_H, color: NAVY });
+      page.drawRectangle({ x: MARGIN, y: PAGE_H - cursorY - ROW_H, width: availableWidth, height: ROW_H, color: NAVY });
       columns.forEach((col, i) => {
-        const size = colHeadSizes[i];
         page.drawText(String(col.label), {
-          x: colX[i] + CELL_PAD, y: PAGE_H - cursorY - CELL_PAD - size,
-          size, font: fontB, color: WHITE,
+          x: colX[i] + CELL_PAD, y: PAGE_H - cursorY - CELL_PAD - cellSize,
+          size: cellSize, font: fontB, color: WHITE,
         });
       });
-      cursorY += HEAD_ROW_H;
+      cursorY += ROW_H;
     }
 
     function drawFooter() {
@@ -1021,7 +1011,7 @@ export default function ReportPage() {
     newPage(true);
 
     bodyRows.forEach((row, rIdx) => {
-      const rowH = BODY_ROW_H;
+      const rowH = ROW_H;
 
       if (cursorY + rowH > PAGE_H - FOOTER_ZONE) newPage(false);
 
@@ -1029,11 +1019,10 @@ export default function ReportPage() {
         page.drawRectangle({ x: MARGIN, y: PAGE_H - cursorY - rowH, width: availableWidth, height: rowH, color: ALT_BG });
       }
       row.forEach((val, i) => {
-        const size = colBodySizes[i];
         page.drawText(String(val), {
           x: colX[i] + CELL_PAD,
-          y: PAGE_H - cursorY - CELL_PAD - size,
-          size, font: fontR, color: GREY_T,
+          y: PAGE_H - cursorY - CELL_PAD - cellSize,
+          size: cellSize, font: fontR, color: GREY_T,
         });
       });
       // cell + row borders
