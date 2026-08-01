@@ -182,6 +182,29 @@ class SupabaseService {
     await client.from('syllabus').delete().eq('id', id);
   }
 
+  // Queries & Suggestions ────────────────────────────────────────────────────
+
+  static Future<void> submitQuery(Map<String, dynamic> data) async {
+    await client.from('queries_suggestions').insert(data);
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchMyQueries(String userId) async {
+    final res = await client
+        .from('queries_suggestions')
+        .select()
+        .eq('user_id', userId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  // School Rules & Regulations ───────────────────────────────────────────────
+  // Single row (id=1), edited from the admin panel - the app just reads it.
+
+  static Future<String> fetchSchoolRules() async {
+    final res = await client.from('school_rules').select('content').eq('id', 1).maybeSingle();
+    return (res?['content'] as String?) ?? '';
+  }
+
   // Tasks ─────────────────────────────────────────────────────────────────────
 
   // task_assignees has a composite primary key (task_id, employee_id) - no

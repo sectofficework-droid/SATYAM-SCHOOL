@@ -15,6 +15,8 @@ import '../modules/teacher/calendar/teacher_calendar_page.dart';
 import '../modules/teacher/notices/teacher_notices_page.dart';
 import '../modules/teacher/profile/teacher_profile_page.dart';
 import '../modules/teacher/syllabus/teacher_syllabus_page.dart';
+import '../modules/teacher/query/teacher_query_page.dart';
+import '../modules/teacher/rules/teacher_rules_page.dart';
 import '../modules/student/dashboard/student_home.dart';
 import '../modules/student/attendance/student_attendance_page.dart';
 import '../modules/student/marks/student_marks_page.dart';
@@ -23,6 +25,8 @@ import '../modules/student/homework/student_homework_page.dart';
 import '../modules/student/notices/student_notices_page.dart';
 import '../modules/student/profile/student_profile_page.dart';
 import '../modules/student/syllabus/student_syllabus_page.dart';
+import '../modules/student/query/student_query_page.dart';
+import '../modules/student/rules/student_rules_page.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -48,6 +52,8 @@ class AppPages {
     GetPage(name: Routes.teacherNotices,  page: () => const TeacherNoticesPage()),
     GetPage(name: Routes.teacherProfile,  page: () => const TeacherProfilePage()),
     GetPage(name: Routes.teacherSyllabus, page: () => const TeacherSyllabusPage()),
+    GetPage(name: Routes.teacherQuery,    page: () => const TeacherQueryPage()),
+    GetPage(name: Routes.teacherRules,    page: () => const TeacherRulesPage()),
 
     // ── Student ──────────────────────────────────────────────────────────────
     GetPage(name: Routes.studentHome,     page: () => const StudentHome()),
@@ -58,5 +64,7 @@ class AppPages {
     GetPage(name: Routes.studentNotices,  page: () => const StudentNoticesPage()),
     GetPage(name: Routes.studentProfile,  page: () => const StudentProfilePage()),
     GetPage(name: Routes.studentSyllabus, page: () => const StudentSyllabusPage()),
+    GetPage(name: Routes.studentQuery,    page: () => const StudentQueryPage()),
+    GetPage(name: Routes.studentRules,    page: () => const StudentRulesPage()),
   ];
 }

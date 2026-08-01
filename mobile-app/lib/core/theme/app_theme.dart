@@ -23,6 +23,10 @@ class AppColors {
   static const indigoLight = Color(0xFFE0E7FF);
   static const orange    = Color(0xFFF97316);
   static const orangeLight = Color(0xFFFFEDD5);
+  static const cyan      = Color(0xFF06B6D4);
+  static const cyanLight = Color(0xFFCFFAFE);
+  static const stone     = Color(0xFF78716C);
+  static const stoneLight = Color(0xFFF5F5F4);
   static const bg        = Color(0xFFF0F4FF);
   static const card      = Color(0xFFFFFFFF);
   static const border    = Color(0xFFE2E8F0);

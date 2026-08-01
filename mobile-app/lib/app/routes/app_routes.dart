@@ -14,6 +14,8 @@ abstract class Routes {
   static const teacherNotices   = '/teacher/notices';
   static const teacherProfile   = '/teacher/profile';
   static const teacherSyllabus  = '/teacher/syllabus';
+  static const teacherQuery     = '/teacher/query';
+  static const teacherRules     = '/teacher/rules';
   static const studentHome      = '/student/home';
   static const studentAttend    = '/student/attendance';
   static const studentMarks     = '/student/marks';
@@ -22,4 +24,6 @@ abstract class Routes {
   static const studentNotices   = '/student/notices';
   static const studentProfile   = '/student/profile';
   static const studentSyllabus  = '/student/syllabus';
+  static const studentQuery     = '/student/query';
+  static const studentRules     = '/student/rules';
 }
