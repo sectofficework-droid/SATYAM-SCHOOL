@@ -413,7 +413,7 @@ const REPORT_CONFIGS = {
       {key:"motherName",  label:"Mother Name",       dflt:false },
       {key:"enrollNo",    label:"Enroll No",         dflt:true  },
       {key:"grNo",        label:"GR No",             dflt:true  },
-      {key:"udise",       label:"UDISE No",          dflt:false },
+      {key:"udise",       label:"UDISE No",          dflt:true  },
       {key:"pen",         label:"PEN No",            dflt:true  },
       {key:"apaar",       label:"APAAR No",          dflt:true  },
       {key:"cls",         label:"Class at Leaving",  dflt:true  },
