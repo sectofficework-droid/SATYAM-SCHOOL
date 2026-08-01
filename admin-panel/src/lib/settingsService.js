@@ -280,20 +280,20 @@ export async function saveClassSubjects(className, subjectNames) {
   }
 }
 
-// ── Rules & Regulations (single row, id=1, shown read-only in the mobile app) ──
+// ── Rules & Regulations (one row per audience, shown read-only in the app) ──
 export async function getSchoolRules() {
   const { data, error } = await supabase
     .from("school_rules")
-    .select("content, updated_at")
-    .eq("id", 1)
-    .maybeSingle();
+    .select("audience, content, updated_at");
   if (error) throw error;
-  return data?.content || "";
+  const byAudience = { teacher: "", student: "" };
+  (data || []).forEach(r => { byAudience[r.audience] = r.content || ""; });
+  return byAudience;
 }
 
-export async function saveSchoolRules(content) {
+export async function saveSchoolRules(audience, content) {
   const { error } = await supabase
     .from("school_rules")
-    .upsert({ id: 1, content, updated_at: new Date().toISOString() });
+    .upsert({ audience, content, updated_at: new Date().toISOString() });
   if (error) throw error;
 }

@@ -1,28 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ScrollText, Save, CheckCircle2 } from "lucide-react";
+import { Save, CheckCircle2, GraduationCap, User } from "lucide-react";
 import { getSchoolRules, saveSchoolRules } from "@/lib/settingsService";
 
-export default function RulesRegulationsTab() {
-  const [content, setContent] = useState("");
-  const [loading, setLoading] = useState(true);
+function RulesEditorCard({ audience, label, icon: Icon, initialContent }) {
+  const [content, setContent] = useState(initialContent);
   const [saving, setSaving]   = useState(false);
   const [saved, setSaved]     = useState(false);
   const [error, setError]     = useState("");
-
-  useEffect(() => {
-    getSchoolRules()
-      .then(setContent)
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
-  }, []);
 
   async function handleSave() {
     setSaving(true);
     setError("");
     try {
-      await saveSchoolRules(content);
+      await saveSchoolRules(audience, content);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (err) {
@@ -32,20 +24,16 @@ export default function RulesRegulationsTab() {
     }
   }
 
-  if (loading) return (
-    <div className="flex items-center justify-center py-24 text-sm text-gray-400">Loading…</div>
-  );
-
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 max-w-3xl">
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
       <div className="flex items-center gap-3 mb-2">
         <div className="w-9 h-9 rounded-xl bg-school-navy/10 flex items-center justify-center">
-          <ScrollText className="w-4.5 h-4.5 text-school-navy" />
+          <Icon className="w-4.5 h-4.5 text-school-navy" />
         </div>
         <div>
-          <h3 className="font-semibold text-gray-800">Rules & Regulations</h3>
+          <h3 className="font-semibold text-gray-800">{label} Rules & Regulations</h3>
           <p className="text-xs text-gray-500">
-            Shown read-only to teachers and students in the mobile app, under Rules & Regulations.
+            Shown read-only to {label.toLowerCase()}s in the mobile app, under Rules & Regulations.
           </p>
         </div>
       </div>
@@ -53,8 +41,8 @@ export default function RulesRegulationsTab() {
       <textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
-        rows={16}
-        placeholder="Type the school's rules and regulations here — this is exactly what teachers and students will see in the app."
+        rows={14}
+        placeholder={`Type the ${label.toLowerCase()} rules and regulations here — this is exactly what ${label.toLowerCase()}s will see in the app.`}
         className="w-full mt-4 px-4 py-3 border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy resize-y leading-relaxed"
       />
 
@@ -75,6 +63,34 @@ export default function RulesRegulationsTab() {
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+export default function RulesRegulationsTab() {
+  const [rules, setRules]     = useState(null); // { teacher, student }
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState("");
+
+  useEffect(() => {
+    getSchoolRules()
+      .then(setRules)
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-24 text-sm text-gray-400">Loading…</div>
+  );
+
+  if (error) return (
+    <div className="flex items-center justify-center py-24 text-sm text-red-500">{error}</div>
+  );
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 max-w-6xl">
+      <RulesEditorCard audience="student" label="Student" icon={GraduationCap} initialContent={rules.student} />
+      <RulesEditorCard audience="teacher" label="Teacher" icon={User} initialContent={rules.teacher} />
     </div>
   );
 }
