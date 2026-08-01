@@ -30,12 +30,13 @@ const SUB_TABS = [
   { key:"tc",        label:"TC",        icon:FileText   },
 ];
 
-// Two fixed ID card designs matching the school's real printed cards
-// (see "SCHOOL ID CARD 1.jpg" and "SCHOOL ID CARD 2.jpg").
-const CARD_NAVY  = "#1a2b6b";
-const CARD_GOLD  = "#eab308";
-const CARD_RED   = "#dc2626";
-const CARD2_BLUE = "#dbe9f0"; // pale blue photo backdrop in design 2
+// Two fixed ID card designs, each the school's actual Canva-exported card
+// (see "SCHOOL ID CARD 1.jpg" and "SCHOOL ID CARD 2.jpg") used directly as a
+// background image so the design itself is pixel-identical to the original -
+// these two colors are only needed for the small bits redrawn on top
+// (the red nameplate in design 1, the navy name/class boxes in design 2).
+const CARD_NAVY = "#1a2b6b";
+const CARD_RED  = "#dc2626";
 
 const CARD_DESIGNS = [
   { id:1, name:"Classic Portrait",  desc:"Gold-ring photo, red nameplate" },
@@ -165,228 +166,134 @@ function rgb(hex) {
   return [(n>>16)&255, (n>>8)&255, n&255];
 }
 
-async function drawCardDesign1(doc, s, logoB64, photoB64, cx, cy) {
-  const W = 90, H = 140;
-  const [nr, ng, nb] = rgb(CARD_NAVY);
-  const [gr, gg, gb] = rgb(CARD_GOLD);
+// Design 1 is the actual "SCHOOL ID CARD 1.jpg" Canva export used as a
+// full-bleed background (591x1004px, so the card is drawn at that exact
+// aspect ratio) - the decorative dot pattern, blob shapes, gold-ring photo
+// frame, red nameplate outline, wave, and footer are all pixel-identical to
+// the Canva design because they ARE that image. Only the parts that change
+// per student (photo, name, and each info row's value) are drawn on top,
+// each preceded by an opaquely-filled cover shape so the sample data baked
+// into the template ("Jharana Patra", "123-456-7890", etc.) never shows
+// through from underneath.
+const CARD1_W = 79.5, CARD1_H = 135.1; // 591:1004 aspect ratio
+
+async function drawCardDesign1(doc, s, bgB64, photoB64, cx, cy) {
+  const W = CARD1_W, H = CARD1_H;
   const [rr, rg, rb] = rgb(CARD_RED);
 
-  // ── Card background + border ─────────────────────────────────
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(210, 210, 210);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(cx, cy, W, H, 2, 2, "FD");
-
-  // ── Header: logo + school name (white bg, black text) ────────
-  if (logoB64) {
-    try { doc.addImage(logoB64, "JPEG", cx+4, cy+3, 16, 16); } catch {}
+  if (bgB64) {
+    try { doc.addImage(bgB64, "JPEG", cx, cy, W, H); } catch {}
   }
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(9.5);
-  doc.setTextColor(17, 24, 39);
-  doc.text("SATYAM STARS", cx+23, cy+9);
-  doc.text("INTERNATIONAL SCHOOL", cx+23, cy+15.5);
 
-  // ── Photo circle (gold ring) ──────────────────────────────────
-  const px = cx + W/2, py = cy + 42;
-  doc.setFillColor(gr, gg, gb);
-  doc.circle(px, py, 21, "F");
-  doc.setFillColor(255, 255, 255);
-  doc.circle(px, py, 19, "F");
+  // ── Photo (inside the template's gold ring) ───────────────────
+  const px = cx + 39.8, py = cy + 36.3;
   if (photoB64) {
-    try { doc.addImage(photoB64, "PNG", px-18, py-18, 36, 36); } catch {}
-  } else {
-    doc.setFillColor(209, 213, 219);
-    doc.circle(px, py, 18, "F");
+    doc.setFillColor(255, 255, 255);
+    doc.circle(px, py, 14.6, "F");
+    try { doc.addImage(photoB64, "PNG", px-14.5, py-14.5, 29, 29); } catch {}
   }
 
-  // ── Name pill (red) ────────────────────────────────────────────
-  const nameY = cy + 66;
+  // ── Name (redraw the red pill, same shape/color as the template) ─
   doc.setFillColor(rr, rg, rb);
-  doc.roundedRect(cx+5, nameY, W-10, 10, 5, 5, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(11);
-  doc.setTextColor(255, 255, 255);
-  const nameStr = (s.name || "Student Name").toUpperCase();
-  const nameFit = doc.splitTextToSize(nameStr, W-18)[0];
-  doc.text(nameFit, cx+W/2, nameY+6.8, { align:"center" });
-
-  // ── Info rows ───────────────────────────────────────────────────
-  const infoRows = [
-    { label:"FATHER'S NAME", val: s.fatherName || "" },
-    { label:"MOTHER'S NAME", val: s.motherName || "" },
-    { label:"DOB",           val: fmtDMY(s.dob) || "" },
-    { label:"MOBILE NO",     val: s.mobile || s.mobile1 || "" },
-  ];
-  let rowY = cy + 82;
-  doc.setFontSize(6.5);
-  infoRows.forEach(row => {
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(17, 24, 39);
-    doc.text(row.label, cx+6, rowY);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(75, 85, 99);
-    const valLine = doc.splitTextToSize(": " + (row.val || "—"), 46)[0];
-    doc.text(valLine, cx+35, rowY);
-    rowY += 6;
-  });
-
-  // Address (may wrap onto a second/third line)
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(17, 24, 39);
-  doc.text("ADDRESS", cx+6, rowY);
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(75, 85, 99);
-  const addrLines = doc.splitTextToSize(": " + (fmtAddr(s) || "—"), 46).slice(0, 3);
-  addrLines.forEach((line, i) => doc.text(line, cx+35, rowY + i*4));
-  rowY += addrLines.length * 4 + 4;
-
-  // ── Signature ───────────────────────────────────────────────────
-  const sigY = Math.min(rowY + 4, cy + 122);
-  doc.setDrawColor(140, 140, 140);
-  doc.setLineWidth(0.2);
-  doc.line(cx+W/2-16, sigY, cx+W/2+16, sigY);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(6);
-  doc.setTextColor(17, 24, 39);
-  doc.text("PRINCIPAL SIGN", cx+W/2, sigY+4, { align:"center" });
-
-  // ── Footer (navy, gold top edge) ─────────────────────────────────
-  const footY = cy + 128;
-  doc.setFillColor(gr, gg, gb);
-  doc.rect(cx, footY-1.2, W, 1.2, "F");
-  doc.setFillColor(nr, ng, nb);
-  doc.rect(cx, footY, W, H-128, "F");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(7);
-  doc.setTextColor(255, 255, 255);
-  doc.text(`Help line : ${PHONE.slice(0,5)}-${PHONE.slice(5)}`, cx+W/2, footY+5, { align:"center" });
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(5);
-  const footAddr = doc.splitTextToSize(`${ADDR1}, ${ADDR2}`.toUpperCase(), W-6).slice(0, 2);
-  footAddr.forEach((line, i) => doc.text(line, cx+W/2, footY+8.5+i*3, { align:"center" }));
-
-  // Border on top of all fills
-  doc.setDrawColor(210, 210, 210);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(cx, cy, W, H, 2, 2, "S");
-}
-
-// Landscape CR80-style card matching "SCHOOL ID CARD 2.jpg" - navy header
-// with the trust name + school title, a square (not circular) photo with a
-// pale-blue backdrop, navy name/class boxes, and a navy footer.
-async function drawCardDesign2(doc, s, logoB64, photoB64, cx, cy) {
-  const W = 90, H = 56;
-  const HEADER_H = 16, FOOTER_H = 9;
-  const [nr, ng, nb] = rgb(CARD_NAVY);
-  const [br, bg, bb] = rgb(CARD2_BLUE);
-
-  // Card background + border
-  doc.setFillColor(240, 242, 245);
-  doc.setDrawColor(210, 210, 210);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(cx, cy, W, H, 1.5, 1.5, "FD");
-
-  // ── Header (navy) ────────────────────────────────────────────
-  doc.setFillColor(nr, ng, nb);
-  doc.rect(cx, cy, W, HEADER_H, "F");
-
-  // Decorative stripes (right side)
-  doc.setFillColor(255, 255, 255);
-  if (doc.setGState) doc.setGState(new doc.GState({ opacity: 0.35 }));
-  doc.rect(cx+80, cy, 2, HEADER_H, "F");
-  doc.rect(cx+84, cy, 2, HEADER_H, "F");
-  if (doc.setGState) doc.setGState(new doc.GState({ opacity: 1 }));
-
-  if (logoB64) {
-    try { doc.addImage(logoB64, "JPEG", cx+3, cy+2, 12, 12); } catch {}
-  }
-
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(4.3);
-  doc.setTextColor(255, 255, 255);
-  doc.text("SATYAM EDUCATION & CHARITABLE TRUST (E/8941)", cx+19, cy+5);
-  doc.setFontSize(10.5);
-  doc.text("SATYAM STARS", cx+19, cy+10.3);
-  doc.setFontSize(9);
-  doc.text("INTERNATIONAL SCHOOL", cx+19, cy+14.2);
-
-  // ── Photo (square, pale-blue backdrop) ──────────────────────────
-  const bx = cx+4, by = cy+19, bw = 20, bh = 23;
-  doc.setFillColor(br, bg, bb);
-  doc.roundedRect(bx-1, by-1, bw+2, bh+2, 1.5, 1.5, "F");
-  if (photoB64) {
-    try { doc.addImage(photoB64, "PNG", bx, by, bw, bh); } catch {}
-  } else {
-    doc.setFillColor(209, 213, 219);
-    doc.roundedRect(bx, by, bw, bh, 1, 1, "F");
-  }
-
-  // ── Name + Class boxes (navy) ────────────────────────────────────
-  const nameY = cy+19, boxH = 7;
-  const nameX = cx+27, nameW = 37;
-  const stdX = nameX+nameW+1.5, stdW = 12;
-  doc.setFillColor(nr, ng, nb);
-  doc.rect(nameX, nameY, nameW, boxH, "F");
-  doc.rect(stdX, nameY, stdW, boxH, "F");
+  doc.roundedRect(cx+8.7, cy+57.4, 61.6, 5.8, 2.9, 2.9, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8.5);
   doc.setTextColor(255, 255, 255);
-  const nameFit = doc.splitTextToSize((s.name || "Student Name").toUpperCase(), nameW-4)[0];
-  doc.text(nameFit, nameX+nameW/2, nameY+boxH/2+1.2, { align:"center" });
-  doc.setFontSize(7.5);
-  doc.text((s.std || "—").toUpperCase(), stdX+stdW/2, nameY+boxH/2+1.2, { align:"center" });
+  const nameStr = (s.name || "Student Name").toUpperCase();
+  const nameFit = doc.splitTextToSize(nameStr, 57)[0];
+  doc.text(nameFit, cx+39.5, cy+61, { align:"center" });
 
-  // ── Info rows ─────────────────────────────────────────────────
+  // ── Info row values (labels are already printed on the template) ─
+  const VALUE_X = cx+40.9, VALUE_W = 35.8;
   const infoRows = [
-    { label:"Father's Name", val: s.fatherName || "" },
-    { label:"Mother's Name", val: s.motherName || "" },
-    { label:"D.O.B",         val: fmtDMY(s.dob) || "" },
-    { label:"Mobile No.",    val: s.mobile || s.mobile1 || "" },
+    { y:69.8, val: s.fatherName || "" },
+    { y:74.8, val: s.motherName || "" },
+    { y:79.8, val: fmtDMY(s.dob) || "" },
+    { y:84.9, val: s.mobile || s.mobile1 || "" },
   ];
-  let rowY = nameY + boxH + 5;
-  doc.setFontSize(5.5);
+  doc.setFontSize(6.3);
   infoRows.forEach(row => {
-    doc.setFont("helvetica", "bold");
-    doc.setTextColor(17, 24, 39);
-    doc.text(row.label, nameX-1, rowY);
+    doc.setFillColor(255, 255, 255);
+    doc.rect(VALUE_X, cy+row.y-3.9, VALUE_W, 4.6, "F");
     doc.setFont("helvetica", "normal");
-    const valLine = doc.splitTextToSize(": " + (row.val || "—"), 30)[0];
-    doc.text(valLine, nameX+21, rowY);
-    rowY += 3;
+    doc.setTextColor(31, 41, 55);
+    const valLine = doc.splitTextToSize(": " + (row.val || "—"), VALUE_W)[0];
+    doc.text(valLine, VALUE_X, cy+row.y);
   });
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(17, 24, 39);
-  doc.text("Address", nameX-1, rowY);
-  doc.setFont("helvetica", "normal");
-  const addrLines = doc.splitTextToSize(": " + (fmtAddr(s) || "—"), 30).slice(0, 2);
-  addrLines.forEach((line, i) => doc.text(line, nameX+21, rowY + i*2.8));
 
-  // ── Footer (navy, wraps to fit rather than truncate) ─────────────
-  const footY = cy + H - FOOTER_H;
-  doc.setFillColor(nr, ng, nb);
-  doc.rect(cx, footY, W, FOOTER_H, "F");
+  // Address (may wrap onto a second/third line)
   doc.setFillColor(255, 255, 255);
-  if (doc.setGState) doc.setGState(new doc.GState({ opacity: 0.35 }));
-  doc.rect(cx+4, footY, 2, FOOTER_H, "F");
-  doc.rect(cx+8, footY, 2, FOOTER_H, "F");
-  if (doc.setGState) doc.setGState(new doc.GState({ opacity: 1 }));
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(5);
-  doc.setTextColor(255, 255, 255);
-  const footText = `${ADDR1}, ${ADDR2}  /  Helpline no. : ${PHONE}`;
-  const footLines = doc.splitTextToSize(footText, W-16).slice(0, 2);
-  footLines.forEach((line, i) => doc.text(line, cx+14, footY+3.6+i*3));
-
-  // Border on top of all fills
-  doc.setDrawColor(200, 200, 200);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(cx, cy, W, H, 1.5, 1.5, "S");
+  doc.rect(VALUE_X, cy+85.9, VALUE_W, 18.6, "F");
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(31, 41, 55);
+  const addrLines = doc.splitTextToSize(": " + (fmtAddr(s) || "—"), VALUE_W).slice(0, 3);
+  addrLines.forEach((line, i) => doc.text(line, VALUE_X, cy+89.9+i*5));
 }
 
-async function drawCard(doc, s, designId, logoB64, photoB64, cx, cy) {
-  if (designId === 2) return drawCardDesign2(doc, s, logoB64, photoB64, cx, cy);
-  return drawCardDesign1(doc, s, logoB64, photoB64, cx, cy);
+// Design 2 is the actual "SCHOOL ID CARD 2.jpg" Canva export (1011x639px)
+// used as a full-bleed background the same way design 1 is - the navy
+// header/footer, trust name, school title, stripe accents and box outlines
+// are all pixel-identical to the Canva design. Only the photo, name, class,
+// and each info row's value are drawn on top, each preceded by an opaque
+// cover shape.
+const CARD2_W = 90, CARD2_H = 56.9; // 1011:639 aspect ratio
+
+async function drawCardDesign2(doc, s, bgB64, photoB64, cx, cy) {
+  const [nr, ng, nb] = rgb(CARD_NAVY);
+
+  if (bgB64) {
+    try { doc.addImage(bgB64, "JPEG", cx, cy, CARD2_W, CARD2_H); } catch {}
+  }
+
+  // ── Photo (inside the template's pale-blue box) ─────────────────
+  const bx = cx+3.6, by = cy+17.7, bw = 18.7, bh = 23.2;
+  if (photoB64) {
+    try { doc.addImage(photoB64, "PNG", bx, by, bw, bh); } catch {}
+  }
+
+  // ── Name + Class boxes (redraw navy, same as the template) ───────
+  const boxY = cy+17.8, boxH = 6.9;
+  const nameX = cx+22.3, nameW = 41.2;
+  const stdX = nameX+nameW+0.3, stdW = 12.5;
+  doc.setFillColor(nr, ng, nb);
+  doc.rect(nameX, boxY, nameW, boxH, "F");
+  doc.rect(stdX, boxY, stdW, boxH, "F");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(8);
+  doc.setTextColor(255, 255, 255);
+  const nameFit = doc.splitTextToSize((s.name || "Student Name").toUpperCase(), nameW-4)[0];
+  doc.text(nameFit, nameX+nameW/2, boxY+boxH/2+1.2, { align:"center" });
+  doc.setFontSize(7);
+  doc.text((s.std || "—").toUpperCase(), stdX+stdW/2, boxY+boxH/2+1.2, { align:"center" });
+
+  // ── Info row values (labels are already printed on the template) ─
+  const VALUE_X = cx+39.2, VALUE_W = 47.7;
+  const infoRows = [
+    { y:27.6, val: s.fatherName || "" },
+    { y:30.8, val: s.motherName || "" },
+    { y:34.0, val: fmtDMY(s.dob) || "" },
+    { y:37.2, val: s.mobile || s.mobile1 || "" },
+  ];
+  doc.setFontSize(5.3);
+  infoRows.forEach(row => {
+    doc.setFillColor(245, 245, 245);
+    doc.rect(VALUE_X, cy+row.y-2.6, VALUE_W, 3.0, "F");
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(31, 41, 55);
+    const valLine = doc.splitTextToSize(": " + (row.val || "—"), VALUE_W)[0];
+    doc.text(valLine, VALUE_X, cy+row.y);
+  });
+  doc.setFillColor(245, 245, 245);
+  doc.rect(VALUE_X, cy+37.8, VALUE_W, 6.6, "F");
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(31, 41, 55);
+  const addrLines = doc.splitTextToSize(": " + (fmtAddr(s) || "—"), VALUE_W).slice(0, 2);
+  addrLines.forEach((line, i) => doc.text(line, VALUE_X, cy+40.4+i*3.2));
+}
+
+async function drawCard(doc, s, designId, bgB64, photoB64, cx, cy) {
+  if (designId === 2) return drawCardDesign2(doc, s, bgB64, photoB64, cx, cy);
+  return drawCardDesign1(doc, s, bgB64, photoB64, cx, cy);
 }
 
 // ── Generate PDF ──────────────────────────────────────────────────────────────
@@ -394,10 +301,10 @@ async function drawCard(doc, s, designId, logoB64, photoB64, cx, cy) {
 // CR80-style card (8 per A4 page, 2 columns x 4 rows) - and design 2's photo
 // is a rounded square, not a circle, so it needs its own crop.
 const DESIGN1_POSITIONS = [
-  { cx:10, cy:8.5  },
-  { cx:105, cy:8.5 },
-  { cx:10, cy:153  },
-  { cx:105, cy:153 },
+  { cx:10,    cy:8   },
+  { cx:99.5,  cy:8   },
+  { cx:10,    cy:151.1 },
+  { cx:99.5,  cy:151.1 },
 ];
 const DESIGN2_POSITIONS = [0,1,2,3].flatMap(row =>
   [10, 110].map(cx => ({ cx, cy: 8 + row*70 }))
@@ -407,8 +314,8 @@ async function generatePDF(students, designId, onProgress) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" });
 
-  const logoUrl = window.location.origin + "/school-logo.jpg";
-  const logoB64 = await fetchBase64(logoUrl);
+  const bgUrl = window.location.origin + (designId === 2 ? "/id-card-bg-2.jpg" : "/id-card-bg-1.jpg");
+  const bgB64 = await fetchBase64(bgUrl);
 
   const positions  = designId === 2 ? DESIGN2_POSITIONS : DESIGN1_POSITIONS;
   const perPage    = positions.length;
@@ -420,14 +327,14 @@ async function generatePDF(students, designId, onProgress) {
     let photoUrl = "";
     if (s.photo) { try { photoUrl = (await getS3ViewUrl(s.photo))||""; } catch {} }
     const photoB64 = photoUrl
-      ? await (designId === 2 ? roundedSquareBase64(photoUrl) : circularBase64(photoUrl))
+      ? await (designId === 2 ? roundedSquareBase64(photoUrl, 0.02) : circularBase64(photoUrl))
       : null;
 
     const slot = i % perPage;
     if (i > 0 && slot === 0) doc.addPage();
     const { cx, cy } = positions[slot];
 
-    await drawCard(doc, s, designId, logoB64, photoB64, cx, cy);
+    await drawCard(doc, s, designId, bgB64, photoB64, cx, cy);
   }
 
   doc.save("ID_Cards_Satyam_Stars.pdf");
@@ -1027,144 +934,88 @@ function BonafidePreview({ student, logoUrl }) {
 }
 
 // ── Live card preview (React component, matches jsPDF output) ─────────────────
-function CardPreviewDesign1({ student, logoUrl }) {
+// Both previews use the real "SCHOOL ID CARD *.jpg" Canva exports as a
+// full-bleed background image, at their exact pixel aspect ratio, so the
+// on-screen preview is pixel-identical to the actual template - only the
+// photo/name/values are overlaid, mirroring the PDF drawing functions above.
+function CardPreviewDesign1({ student }) {
   const s = student || {};
-
   const infoRows = [
-    { label:"FATHER'S NAME", val: s.fatherName || "—" },
-    { label:"MOTHER'S NAME", val: s.motherName || "—" },
-    { label:"DOB",           val: fmtDMY(s.dob) || "—" },
-    { label:"MOBILE NO",     val: s.mobile || s.mobile1 || "—" },
-    { label:"ADDRESS",       val: fmtAddr(s) || "—" },
+    { val: s.fatherName || "—" },
+    { val: s.motherName || "—" },
+    { val: fmtDMY(s.dob) || "—" },
+    { val: s.mobile || s.mobile1 || "—" },
   ];
+  const W = 270, H = 459; // 591:1004 aspect ratio
 
   return (
-    <div style={{ width:270, height:420, fontFamily:"Arial,Helvetica,sans-serif", position:"relative", overflow:"hidden", borderRadius:9, boxShadow:"0 4px 20px rgba(0,0,0,0.4)", background:"white", flexShrink:0 }}>
-      {/* Logo + school name */}
-      <div style={{ position:"absolute", top:10, left:10, width:48, height:48, borderRadius:"50%", overflow:"hidden", background:"white", boxShadow:"0 1px 4px rgba(0,0,0,0.15)" }}>
-        {logoUrl
-          ? <img src={logoUrl} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} onError={e=>e.target.style.display="none"}/>
-          : <div style={{ width:"100%", height:"100%", background:"#e2e8f0", display:"flex", alignItems:"center", justifyContent:"center", color:CARD_NAVY, fontSize:20, fontWeight:900 }}>S</div>}
-      </div>
-      <div style={{ position:"absolute", top:14, left:66, right:10 }}>
-        <div style={{ color:"#111827", fontSize:15, fontWeight:900, lineHeight:1.15 }}>SATYAM STARS</div>
-        <div style={{ color:"#111827", fontSize:13, fontWeight:900, lineHeight:1.15 }}>INTERNATIONAL SCHOOL</div>
+    <div style={{ width:W, height:H, fontFamily:"Arial,Helvetica,sans-serif", position:"relative", overflow:"hidden", borderRadius:9, boxShadow:"0 4px 20px rgba(0,0,0,0.4)", flexShrink:0 }}>
+      <img src="/id-card-bg-1.jpg" alt="" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"fill" }}/>
+
+      {/* Photo (inside the template's gold ring) */}
+      <div style={{ position:"absolute", top:73.3, left:85.1, width:100.4, height:100.4, borderRadius:"50%", overflow:"hidden", background:"#e5e7eb" }}>
+        {s.photo ? <S3Image s3Key={s.photo} alt={s.name} className="w-full h-full object-cover"/> : <div style={{ width:"100%", height:"100%", background:"#d1d5db", display:"flex", alignItems:"center", justifyContent:"center", fontSize:32, color:"#9ca3af" }}>👤</div>}
       </div>
 
-      {/* Photo circle (gold ring) */}
-      <div style={{ position:"absolute", top:66, left:"50%", transform:"translateX(-50%)", width:110, height:110, borderRadius:"50%", background:CARD_GOLD, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 2px 10px rgba(0,0,0,0.25)" }}>
-        <div style={{ width:98, height:98, borderRadius:"50%", overflow:"hidden", background:"#e5e7eb" }}>
-          {s.photo ? <S3Image s3Key={s.photo} alt={s.name} className="w-full h-full object-cover"/> : <div style={{ width:"100%", height:"100%", background:"#d1d5db", display:"flex", alignItems:"center", justifyContent:"center", fontSize:32, color:"#9ca3af" }}>👤</div>}
-        </div>
+      {/* Name (over the red pill) */}
+      <div style={{ position:"absolute", top:195.3, left:29.7, width:209.3, height:19.7, borderRadius:9.9, background:CARD_RED, display:"flex", alignItems:"center", justifyContent:"center" }}>
+        <span style={{ color:"white", fontSize:13, fontWeight:900, letterSpacing:0.5, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", padding:"0 10px" }}>{(s.name||"Student Name").toUpperCase()}</span>
       </div>
 
-      {/* Name pill (red) */}
-      <div style={{ position:"absolute", top:184, left:15, right:15, height:32, background:CARD_RED, borderRadius:16, display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 2px 6px rgba(0,0,0,0.2)" }}>
-        <span style={{ color:"white", fontSize:15, fontWeight:900, letterSpacing:0.5, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", padding:"0 12px" }}>{(s.name||"Student Name").toUpperCase()}</span>
-      </div>
-
-      {/* Info rows */}
-      <div style={{ position:"absolute", top:228, left:16, right:16, display:"flex", flexDirection:"column", gap:9 }}>
+      {/* Info row values (labels are already printed on the template) */}
+      <div style={{ position:"absolute", top:230, left:139, width:122, background:"white" }}>
         {infoRows.map((row, i) => (
-          <div key={i} style={{ display:"flex", fontSize:11 }}>
-            <span style={{ fontWeight:800, color:"#111827", width:92, flexShrink:0 }}>{row.label}</span>
-            <span style={{ color:"#4b5563", flex:1, minWidth:0, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>: {row.val}</span>
-          </div>
+          <div key={i} style={{ height:17.1, display:"flex", alignItems:"center", fontSize:10.5, color:"#1f2937", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>: {row.val}</div>
         ))}
-      </div>
-
-      {/* Signature */}
-      <div style={{ position:"absolute", bottom:52, left:0, right:0, textAlign:"center" }}>
-        <div style={{ width:96, height:1, background:"#9ca3af", margin:"0 auto 5px" }}/>
-        <span style={{ color:"#111827", fontSize:9, fontWeight:800, letterSpacing:1 }}>PRINCIPAL SIGN</span>
-      </div>
-
-      {/* Footer (navy, gold top edge) */}
-      <div style={{ position:"absolute", bottom:0, left:0, right:0, height:40 }}>
-        <div style={{ height:3, background:CARD_GOLD }}/>
-        <div style={{ height:37, background:CARD_NAVY, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2 }}>
-          <span style={{ color:"white", fontSize:13, fontWeight:800 }}>Help line : {PHONE.slice(0,5)}-{PHONE.slice(5)}</span>
-          <span style={{ color:"white", fontSize:8, textAlign:"center", padding:"0 10px" }}>{ADDR1}, {ADDR2}</span>
-        </div>
+        <div style={{ minHeight:51, fontSize:10.5, color:"#1f2937", lineHeight:"17.1px" }}>: {fmtAddr(s) || "—"}</div>
       </div>
     </div>
   );
 }
 
 // Landscape CR80-style preview matching "SCHOOL ID CARD 2.jpg".
-function CardPreviewDesign2({ student, logoUrl }) {
+function CardPreviewDesign2({ student }) {
   const s = student || {};
-
   const infoRows = [
-    { label:"Father's Name", val: s.fatherName || "—" },
-    { label:"Mother's Name", val: s.motherName || "—" },
-    { label:"D.O.B",         val: fmtDMY(s.dob) || "—" },
-    { label:"Mobile No.",    val: s.mobile || s.mobile1 || "—" },
+    { val: s.fatherName || "—" },
+    { val: s.motherName || "—" },
+    { val: fmtDMY(s.dob) || "—" },
+    { val: s.mobile || s.mobile1 || "—" },
   ];
+  const W = 400, H = 253; // 1011:639 aspect ratio
 
   return (
-    <div style={{ width:400, height:250, fontFamily:"Arial,Helvetica,sans-serif", position:"relative", overflow:"hidden", borderRadius:8, boxShadow:"0 4px 20px rgba(0,0,0,0.4)", background:"#f0f2f5", flexShrink:0 }}>
-      {/* Header */}
-      <div style={{ position:"absolute", top:0, left:0, right:0, height:68, background:CARD_NAVY, overflow:"hidden" }}>
-        <div style={{ position:"absolute", top:0, right:60, width:8, height:"100%", background:"rgba(255,255,255,0.35)" }}/>
-        <div style={{ position:"absolute", top:0, right:38, width:8, height:"100%", background:"rgba(255,255,255,0.35)" }}/>
-        <div style={{ position:"absolute", top:6, left:8, width:54, height:54, borderRadius:8, overflow:"hidden", background:"white" }}>
-          {logoUrl
-            ? <img src={logoUrl} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }} onError={e=>e.target.style.display="none"}/>
-            : <div style={{ width:"100%", height:"100%", background:"#e2e8f0", display:"flex", alignItems:"center", justifyContent:"center", color:CARD_NAVY, fontSize:22, fontWeight:900 }}>S</div>}
-        </div>
-        <div style={{ position:"absolute", top:8, left:78, right:80 }}>
-          <div style={{ color:"white", fontSize:9, fontWeight:800, lineHeight:1.3 }}>SATYAM EDUCATION &amp; CHARITABLE TRUST (E/8941)</div>
-          <div style={{ color:"white", fontSize:22, fontWeight:900, lineHeight:1.2, marginTop:3 }}>SATYAM STARS</div>
-          <div style={{ color:"white", fontSize:18, fontWeight:900, lineHeight:1.2 }}>INTERNATIONAL SCHOOL</div>
-        </div>
+    <div style={{ width:W, height:H, fontFamily:"Arial,Helvetica,sans-serif", position:"relative", overflow:"hidden", borderRadius:8, boxShadow:"0 4px 20px rgba(0,0,0,0.4)", flexShrink:0 }}>
+      <img src="/id-card-bg-2.jpg" alt="" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"fill" }}/>
+
+      {/* Photo (inside the template's pale-blue box) */}
+      <div style={{ position:"absolute", top:78.4, left:15.8, width:83.9, height:104.1, overflow:"hidden", background:"#e5e7eb" }}>
+        {s.photo ? <S3Image s3Key={s.photo} alt={s.name} className="w-full h-full object-cover"/> : <div style={{ width:"100%", height:"100%", background:"#d1d5db", display:"flex", alignItems:"center", justifyContent:"center", fontSize:32, color:"#9ca3af" }}>👤</div>}
       </div>
 
-      {/* Photo (square, pale-blue backdrop) */}
-      <div style={{ position:"absolute", top:78, left:16, width:84, height:100, borderRadius:8, background:CARD2_BLUE, padding:3 }}>
-        <div style={{ width:"100%", height:"100%", borderRadius:6, overflow:"hidden", background:"#e5e7eb" }}>
-          {s.photo ? <S3Image s3Key={s.photo} alt={s.name} className="w-full h-full object-cover"/> : <div style={{ width:"100%", height:"100%", background:"#d1d5db", display:"flex", alignItems:"center", justifyContent:"center", fontSize:32, color:"#9ca3af" }}>👤</div>}
-        </div>
+      {/* Name + Class (redraw navy, same as the template) */}
+      <div style={{ position:"absolute", top:79.2, left:98.9, width:184.4, height:30.5, background:CARD_NAVY, display:"flex", alignItems:"center", justifyContent:"center" }}>
+        <span style={{ color:"white", fontSize:16, fontWeight:900, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", padding:"0 8px" }}>{(s.name||"Student Name").toUpperCase()}</span>
+      </div>
+      <div style={{ position:"absolute", top:79.2, left:283.3, width:56.6, height:30.5, background:CARD_NAVY, display:"flex", alignItems:"center", justifyContent:"center" }}>
+        <span style={{ color:"white", fontSize:14, fontWeight:900 }}>{(s.std||"—").toUpperCase()}</span>
       </div>
 
-      {/* Name + Class boxes (navy) */}
-      <div style={{ position:"absolute", top:78, left:108, right:16, height:32, display:"flex", gap:6 }}>
-        <div style={{ flex:1, background:CARD_NAVY, borderRadius:2, display:"flex", alignItems:"center", justifyContent:"center", overflow:"hidden" }}>
-          <span style={{ color:"white", fontSize:16, fontWeight:900, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", padding:"0 8px" }}>{(s.name||"Student Name").toUpperCase()}</span>
-        </div>
-        <div style={{ width:64, background:CARD_NAVY, borderRadius:2, display:"flex", alignItems:"center", justifyContent:"center" }}>
-          <span style={{ color:"white", fontSize:14, fontWeight:900 }}>{(s.std||"—").toUpperCase()}</span>
-        </div>
-      </div>
-
-      {/* Info rows */}
-      <div style={{ position:"absolute", top:120, left:108, right:16, display:"flex", flexDirection:"column", gap:6 }}>
+      {/* Info row values (labels are already printed on the template) */}
+      <div style={{ position:"absolute", top:114, left:174.1, width:212.1, background:"#f5f5f5" }}>
         {infoRows.map((row, i) => (
-          <div key={i} style={{ display:"flex", fontSize:12 }}>
-            <span style={{ fontWeight:800, color:"#111827", width:92, flexShrink:0 }}>{row.label}</span>
-            <span style={{ color:"#111827", flex:1, minWidth:0, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>: {row.val}</span>
-          </div>
+          <div key={i} style={{ height:14.3, display:"flex", alignItems:"center", fontSize:11, color:"#1f2937", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>: {row.val}</div>
         ))}
-        <div style={{ display:"flex", fontSize:12 }}>
-          <span style={{ fontWeight:800, color:"#111827", width:92, flexShrink:0 }}>Address</span>
-          <span style={{ color:"#111827", flex:1, minWidth:0 }}>: {fmtAddr(s) || "—"}</span>
-        </div>
-      </div>
-
-      {/* Footer */}
-      <div style={{ position:"absolute", bottom:0, left:0, right:0, height:31, background:CARD_NAVY, display:"flex", alignItems:"center", padding:"0 10px", gap:8 }}>
-        <div style={{ width:6, height:22, background:"rgba(255,255,255,0.35)", flexShrink:0 }}/>
-        <div style={{ width:6, height:22, background:"rgba(255,255,255,0.35)", flexShrink:0 }}/>
-        <span style={{ color:"white", fontSize:9, fontWeight:700, lineHeight:1.25, flex:1 }}>{ADDR1}, {ADDR2} / Helpline no. : {PHONE}</span>
+        <div style={{ minHeight:28.6, fontSize:11, color:"#1f2937", lineHeight:"14.3px" }}>: {fmtAddr(s) || "—"}</div>
       </div>
     </div>
   );
 }
 
-function CardPreview({ student, designId, logoUrl }) {
+function CardPreview({ student, designId }) {
   return designId === 2
-    ? <CardPreviewDesign2 student={student} logoUrl={logoUrl}/>
-    : <CardPreviewDesign1 student={student} logoUrl={logoUrl}/>;
+    ? <CardPreviewDesign2 student={student}/>
+    : <CardPreviewDesign1 student={student}/>;
 }
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
@@ -1419,7 +1270,7 @@ export default function DocumentsPage() {
 
               {previewStudent ? (
                 <>
-                  <CardPreview student={previewStudent} designId={designId} logoUrl={logoUrl}/>
+                  <CardPreview student={previewStudent} designId={designId}/>
                   {selectedStudents.length > 1 && (
                     <div className="flex items-center gap-3 text-sm text-gray-500">
                       <button onClick={()=>setPreviewIdx(i=>Math.max(0,i-1))} disabled={previewIdx===0} className="p-1 rounded hover:bg-gray-100 disabled:opacity-30">
