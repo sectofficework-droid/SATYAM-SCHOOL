@@ -316,7 +316,7 @@ class _StudentDashboard extends StatelessWidget {
                 color: AppColors.purple, bgColor: AppColors.purpleLight,
                 centered: true,
                 onTap: () => Get.toNamed(Routes.studentHomework)),
-              StatCard(label: 'Syllabus', icon: Icons.menu_book_rounded,
+              StatCard(label: 'Syllabus', icon: Icons.list_alt_rounded,
                 color: AppColors.orange, bgColor: AppColors.orangeLight,
                 centered: true,
                 onTap: () => Get.toNamed(Routes.studentSyllabus)),
