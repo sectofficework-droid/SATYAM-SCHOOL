@@ -278,6 +278,7 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
           separatorBuilder: (_, __) => const SizedBox(height: 10),
           itemBuilder: (_, i) {
             final e = _exams[i];
+            final startDate = DateTime.tryParse(e['start_date'] ?? '');
             final endDate = DateTime.tryParse(e['end_date'] ?? '');
             final locked = _isLocked(e);
             return TweenAnimationBuilder<double>(
@@ -314,7 +315,12 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
                           child: Row(children: [
                             const Icon(Icons.event_rounded, size: 11, color: AppColors.textHint),
                             const SizedBox(width: 4),
-                            Text('Ends ${DateFormat('d MMM yyyy').format(endDate)}', style: const TextStyle(color: AppColors.textHint, fontSize: 11)),
+                            Text(
+                              startDate != null
+                                  ? '${DateFormat('d MMM').format(startDate)} – ${DateFormat('d MMM yyyy').format(endDate)}'
+                                  : 'Ends ${DateFormat('d MMM yyyy').format(endDate)}',
+                              style: const TextStyle(color: AppColors.textHint, fontSize: 11),
+                            ),
                           ]),
                         ),
                       ])),

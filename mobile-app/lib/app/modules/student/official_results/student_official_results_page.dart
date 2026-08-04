@@ -106,6 +106,7 @@ class _StudentOfficialResultsPageState extends State<StudentOfficialResultsPage>
   Widget _buildExamCard(Map<String, dynamic> exam) {
     final id     = exam['id'] as String;
     final locked = exam['locked'] == true;
+    final startDate = DateTime.tryParse(exam['start_date'] ?? '');
     final endDate = DateTime.tryParse(exam['end_date'] ?? '');
     final subjectRows = List<Map<String, dynamic>>.from(exam['subjectRows'] ?? []);
     final anyMarked = exam['anyMarked'] == true;
@@ -137,8 +138,12 @@ class _StudentOfficialResultsPageState extends State<StudentOfficialResultsPage>
                     ),
                 ]),
                 if (endDate != null)
-                  Text(locked ? 'Starts after ${DateFormat('d MMM yyyy').format(endDate)}' : DateFormat('d MMM yyyy').format(endDate),
-                    style: const TextStyle(color: AppColors.textHint, fontSize: 11)),
+                  Text(
+                    startDate != null
+                        ? '${DateFormat('d MMM').format(startDate)} – ${DateFormat('d MMM yyyy').format(endDate)}'
+                        : DateFormat('d MMM yyyy').format(endDate),
+                    style: const TextStyle(color: AppColors.textHint, fontSize: 11),
+                  ),
               ])),
               if (!locked) Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
