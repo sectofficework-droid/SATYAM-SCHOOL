@@ -60,3 +60,18 @@ export async function saveExamSubjectMaxMarks(examId, className, subjectName, ma
     );
   if (error) throw error;
 }
+
+// Applies one "full marks" value to every class+subject at once (e.g. when
+// a new exam is created) - a single bulk upsert rather than one call per
+// subject. Individual subjects can still be edited afterward via
+// saveExamSubjectMaxMarks, same as today.
+export async function saveExamSubjectMaxMarksBulk(examId, rows) {
+  if (!rows.length) return;
+  const { error } = await supabase
+    .from("official_exam_subject_config")
+    .upsert(
+      rows.map(r => ({ exam_id: examId, class_name: r.className, subject_name: r.subjectName, max_marks: r.maxMarks })),
+      { onConflict: "exam_id,class_name,subject_name" }
+    );
+  if (error) throw error;
+}

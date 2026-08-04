@@ -8,7 +8,7 @@ import {
 import { getAcademicYears, getClassesWithSections, getAllClassSubjects } from "@/lib/settingsService";
 import {
   getOfficialExams, createOfficialExam, updateOfficialExam, deleteOfficialExam,
-  isExamUnlocked, getExamSubjectConfig, saveExamSubjectMaxMarks,
+  isExamUnlocked, getExamSubjectConfig, saveExamSubjectMaxMarks, saveExamSubjectMaxMarksBulk,
 } from "@/lib/examService";
 
 const inp = "border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-school-navy w-full";
@@ -98,6 +98,7 @@ export default function ExamsTab() {
   const [newName, setNewName] = useState("");
   const [newStartDate, setNewStartDate] = useState("");
   const [newEndDate, setNewEndDate] = useState("");
+  const [newFullMarks, setNewFullMarks] = useState("100");
   const [addError, setAddError] = useState("");
   const [adding, setAdding] = useState(false);
 
@@ -129,14 +130,24 @@ export default function ExamsTab() {
     if (!newStartDate) { setAddError("Pick a start date."); return; }
     if (!newEndDate) { setAddError("Pick an end date."); return; }
     if (newEndDate < newStartDate) { setAddError("End date can't be before the start date."); return; }
+    const fullMarks = Number(newFullMarks);
+    if (!Number.isFinite(fullMarks) || fullMarks <= 0) { setAddError("Enter valid full marks."); return; }
     setAddError("");
     setAdding(true);
     try {
       const exam = await createOfficialExam({
         name, startDate: newStartDate, endDate: newEndDate, academicYearId: currentYear?.id, sortOrder: exams.length,
       });
+      // Pre-fill every class's every subject with this exam's full marks, so
+      // nothing silently falls back to an invisible default - each one can
+      // still be edited individually afterward below.
+      const configRows = [];
+      Object.entries(classSubjectsMap).forEach(([className, subjects]) => {
+        subjects.forEach(subjectName => configRows.push({ className, subjectName, maxMarks: fullMarks }));
+      });
+      await saveExamSubjectMaxMarksBulk(exam.id, configRows);
       setExams(prev => [...prev, exam]);
-      setNewName(""); setNewStartDate(""); setNewEndDate("");
+      setNewName(""); setNewStartDate(""); setNewEndDate(""); setNewFullMarks("100");
     } catch (err) {
       setAddError(err?.message || "Failed to add exam.");
     } finally {
@@ -260,11 +271,18 @@ export default function ExamsTab() {
             <input type="date" className={inp + " max-w-[150px]"} value={newStartDate} onChange={e => setNewStartDate(e.target.value)} title="Start date" />
             <span className="text-gray-400 text-xs">to</span>
             <input type="date" className={inp + " max-w-[150px]"} value={newEndDate} onChange={e => setNewEndDate(e.target.value)} title="End date" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-gray-500 whitespace-nowrap">Full Marks</span>
+              <input type="number" min="1" className={inp + " w-20"} value={newFullMarks} onChange={e => setNewFullMarks(e.target.value)} title="Full marks (applies to every subject, editable per-subject after)" />
+            </div>
             <button onClick={handleAdd} disabled={adding}
               className="flex items-center gap-1.5 bg-school-navy text-white text-xs font-semibold px-3.5 py-2.5 rounded-lg hover:bg-school-navy/90 disabled:opacity-50 transition-colors">
               <Plus className="w-3.5 h-3.5"/> {adding ? "Adding…" : "Add Exam"}
             </button>
           </div>
+          <p className="text-xs text-gray-400 mt-1.5">
+            Full Marks applies to every class and subject at once — you can still change it for a specific subject afterward by expanding the exam below.
+          </p>
           {addError && <p className="text-xs text-red-500 mt-1.5">{addError}</p>}
         </div>
       </div>
