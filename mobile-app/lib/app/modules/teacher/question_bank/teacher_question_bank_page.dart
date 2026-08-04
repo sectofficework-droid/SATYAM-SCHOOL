@@ -11,18 +11,13 @@ class TeacherQuestionBankPage extends StatefulWidget {
   State<TeacherQuestionBankPage> createState() => _TeacherQuestionBankPageState();
 }
 
-const List<String> _defaultChapters = [
-  'Chapter 1', 'Chapter 2', 'Chapter 3', 'Chapter 4', 'Chapter 5',
-  'Chapter 6', 'Chapter 7', 'Chapter 8', 'Chapter 9', 'Chapter 10',
-  'Chapter 11', 'Chapter 12',
-];
-
 class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
   late String _selectedClass;
   String? _selectedSubject;
   String? _selectedChapter;
   final _customChapterCtrl = TextEditingController();
-  List<String> _chapterSuggestions = [];
+  List<String> _chapterSuggestions = [];  // chapters already used on existing questions
+  List<String> _syllabusChapters   = [];  // the real chapter list from the Syllabus module
 
   List<Map<String, dynamic>> _questions = [];
   bool _loading = false;
@@ -44,8 +39,11 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
 
   String? get _employeeId => (AuthService.to.profile.value ?? {})['id'] as String?;
 
+  // Syllabus chapters (the real curriculum breakdown for this class+subject)
+  // first, then any chapter names already used on a question but not yet in
+  // the syllabus (kept for backward compatibility with older questions).
   List<String> get _chapterOptions {
-    final set = <String>{..._defaultChapters, ..._chapterSuggestions};
+    final set = <String>{..._syllabusChapters, ..._chapterSuggestions};
     if (_selectedChapter != null) set.add(_selectedChapter!);
     final list = set.toList();
     list.sort((a, b) {
@@ -60,13 +58,16 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
   }
 
   Future<void> _onSubjectChanged(String? v) async {
-    setState(() { _selectedSubject = v; _selectedChapter = null; _questions = []; _chapterSuggestions = []; _customChapterCtrl.clear(); });
+    setState(() { _selectedSubject = v; _selectedChapter = null; _questions = []; _chapterSuggestions = []; _syllabusChapters = []; _customChapterCtrl.clear(); });
     final employeeId = _employeeId;
     if (employeeId == null || v == null) return;
     final chapters = await SupabaseService.fetchQuestionChapters(
       teacherId: employeeId, className: _selectedClass, subject: v,
     );
-    if (mounted) setState(() => _chapterSuggestions = chapters);
+    final syllabusChapters = await SupabaseService.fetchSyllabusChapterNames(
+      className: _selectedClass, subject: v,
+    );
+    if (mounted) setState(() { _chapterSuggestions = chapters; _syllabusChapters = syllabusChapters; });
   }
 
   void _confirmCustomChapter() {
@@ -92,7 +93,10 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
     final chapters = await SupabaseService.fetchQuestionChapters(
       teacherId: employeeId, className: _selectedClass, subject: _selectedSubject!,
     );
-    if (mounted) setState(() { _questions = questions; _chapterSuggestions = chapters; _loading = false; });
+    final syllabusChapters = await SupabaseService.fetchSyllabusChapterNames(
+      className: _selectedClass, subject: _selectedSubject!,
+    );
+    if (mounted) setState(() { _questions = questions; _chapterSuggestions = chapters; _syllabusChapters = syllabusChapters; _loading = false; });
   }
 
   Map<String, List<Map<String, dynamic>>> get _grouped {

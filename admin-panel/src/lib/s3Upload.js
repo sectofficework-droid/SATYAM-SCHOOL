@@ -19,6 +19,32 @@ export async function uploadFileToS3(file, key) {
   return key;
 }
 
+// Large files (e.g. an APK) can blow past Vercel's serverless request body
+// limit if proxied through /api/s3/upload like uploadFileToS3 above - this
+// PUTs straight from the browser to S3 via a short-lived presigned URL
+// instead, so the file body never passes through the Next.js server.
+export async function uploadFileToS3Presigned(file, key) {
+  const res = await fetch("/api/s3/upload-url", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ key, contentType: file.type || "application/octet-stream" }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error || `Could not get an upload URL (${res.status})`);
+  }
+  const { uploadUrl } = await res.json();
+
+  const putRes = await fetch(uploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  if (!putRes.ok) throw new Error(`Upload to S3 failed (${putRes.status})`);
+
+  return key;
+}
+
 export async function getS3ViewUrl(key, filename) {
   if (!key) return null;
   let url = `/api/s3/view-url?key=${encodeURIComponent(key)}`;

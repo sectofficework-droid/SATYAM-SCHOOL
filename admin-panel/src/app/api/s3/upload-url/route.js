@@ -4,7 +4,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import s3, { S3_BUCKET } from "@/lib/s3";
 
 function isAllowedKey(key) {
-  return typeof key === "string" && (key.startsWith("students/") || key.startsWith("employees/"));
+  return typeof key === "string" && (key.startsWith("students/") || key.startsWith("employees/") || key.startsWith("app/"));
 }
 
 export async function POST(request) {

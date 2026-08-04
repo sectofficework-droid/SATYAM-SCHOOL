@@ -133,8 +133,8 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                   ),
                   const SizedBox(width: 12),
                   const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('Add Chapter', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text)),
-                    Text('Add a chapter to your syllabus', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
+                    Text('Add Chapters', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text)),
+                    Text('Add one or several at once - one per line', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
                   ])),
                   IconButton(icon: const Icon(Icons.close_rounded, color: AppColors.textHint), onPressed: () => Navigator.pop(ctx)),
                 ]),
@@ -155,25 +155,43 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                 const SizedBox(height: 14),
                 TextField(
                   controller: chapterCtrl,
-                  decoration: const InputDecoration(labelText: 'Chapter / Topic', prefixIcon: Icon(Icons.edit_outlined, color: AppColors.navy, size: 20)),
+                  maxLines: 6,
+                  minLines: 3,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    labelText: 'Chapters / Topics',
+                    hintText: 'e.g.\nPhotosynthesis\nRespiration in Plants\nTransportation in Plants',
+                    alignLabelWithHint: true,
+                    prefixIcon: Padding(padding: EdgeInsets.only(bottom: 60), child: Icon(Icons.edit_outlined, color: AppColors.navy, size: 20)),
+                  ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 6),
+                ValueListenableBuilder<TextEditingValue>(
+                  valueListenable: chapterCtrl,
+                  builder: (_, value, __) {
+                    final count = value.text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).length;
+                    return Text(count == 0 ? 'One line = one chapter' : '$count chapter${count == 1 ? '' : 's'} will be added',
+                      style: const TextStyle(fontSize: 11.5, color: AppColors.textLight));
+                  },
+                ),
+                const SizedBox(height: 14),
                 GestureDetector(
                   onTap: () async {
-                    if (chapterCtrl.text.trim().isEmpty) {
+                    final names = chapterCtrl.text.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty).toSet().toList();
+                    if (names.isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Please enter a chapter name'),
+                        content: Text('Enter at least one chapter name'),
                         behavior: SnackBarBehavior.floating,
                       ));
                       return;
                     }
-                    await SupabaseService.createSyllabusChapter({
+                    await SupabaseService.createSyllabusChapters(names.map((name) => {
                       'teacher_id': profile['id'],
                       'class':      selectedClass,
                       'subject':    selectedSubject,
-                      'chapter':    chapterCtrl.text.trim(),
+                      'chapter':    name,
                       'status':     'Not Started',
-                    });
+                    }).toList());
                     if (mounted) Navigator.pop(ctx);
                     _load();
                   },
@@ -187,7 +205,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                     child: const Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
                       Icon(Icons.add_circle_outline_rounded, color: Colors.white, size: 20),
                       SizedBox(width: 8),
-                      Text('Add Chapter', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
+                      Text('Add Chapters', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
                     ])),
                   ),
                 ),
@@ -215,7 +233,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
       onPressed: _showAddChapterSheet,
       backgroundColor: AppColors.navy,
       icon: const Icon(Icons.add, color: Colors.white),
-      label: const Text('Add Chapter', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+      label: const Text('Add Chapters', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
     );
 
     if (widget.embedded) {
@@ -270,7 +288,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
       return _emptyState(
         title: _scope == 0 ? 'No Chapters Added' : 'No Syllabus Yet',
         subtitle: _scope == 0
-          ? 'Tap "Add Chapter" below to start building your syllabus.'
+          ? 'Tap "Add Chapters" below to start building your syllabus.'
           : 'No chapters have been added for your class yet.',
       );
     }

@@ -5,6 +5,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/utils/recent_notices.dart';
+import '../../../../core/utils/app_update.dart';
 import '../../../../common/widgets/notification_bell.dart';
 import '../../../../common/widgets/recent_notices_sheet.dart';
 import '../../../../common/widgets/stat_card.dart';
@@ -41,7 +42,10 @@ class _StudentHomeState extends State<StudentHome> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadNotifications());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadNotifications();
+      checkForAppUpdate(context);
+    });
   }
 
   Future<void> _loadNotifications() async {

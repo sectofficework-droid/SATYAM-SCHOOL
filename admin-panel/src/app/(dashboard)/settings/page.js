@@ -12,11 +12,12 @@ import {
   Phone, Mail, MapPin, Hash, Shield, UserPlus,
   GraduationCap, Lock, ChevronDown, ChevronUp, Pencil,
   AlertCircle, LogOut, SlidersHorizontal, LayoutGrid,
-  Download, FileSpreadsheet, MessageSquare, CalendarRange, Layers, ScrollText, Award,
+  Download, FileSpreadsheet, MessageSquare, CalendarRange, Layers, ScrollText, Award, Smartphone,
 } from "lucide-react";
 import YearPlanningTab from "./YearPlanningTab";
 import RulesRegulationsTab from "./RulesRegulationsTab";
 import ExamsTab from "./ExamsTab";
+import AppUpdateTab from "./AppUpdateTab";
 import DateInputDMY from "@/components/DateInputDMY";
 import {
   isNonEmpty, isValidEmail, isValidPhone, isValidPincode, isValidName,
@@ -2292,6 +2293,7 @@ const TABS = [
   { key:"reminders",  label:"Fee Reminders",      icon:MessageSquare},
   { key:"users",      label:"Users & Roles",      icon:Users        },
   { key:"rules",      label:"Rules & Regulations",icon:ScrollText   },
+  { key:"appupdate",  label:"App Update",         icon:Smartphone   },
 ];
 
 export default function SettingsPage() {
@@ -2342,6 +2344,7 @@ export default function SettingsPage() {
       {tab === "reminders"  && <FeeReminderTab/>}
       {tab === "users"      && <UsersRolesTab/>}
       {tab === "rules"      && <RulesRegulationsTab/>}
+      {tab === "appupdate"  && <AppUpdateTab/>}
     </div>
   );
 }

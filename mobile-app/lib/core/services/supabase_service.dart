@@ -57,6 +57,18 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  // App update check ──────────────────────────────────────────────────────────
+
+  static Future<Map<String, dynamic>?> fetchLatestAppVersion() async {
+    final res = await client
+        .from('app_versions')
+        .select()
+        .order('version_code', ascending: false)
+        .limit(1);
+    final rows = List<Map<String, dynamic>>.from(res);
+    return rows.isEmpty ? null : rows.first;
+  }
+
   static Future<void> submitAttendanceEditRequest({
     required String teacherId,
     required String className,
@@ -278,8 +290,24 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
-  static Future<void> createSyllabusChapter(Map<String, dynamic> data) async {
-    await client.from('syllabus').insert(data);
+  // Bulk insert so a teacher can add a whole chapter list in one go instead
+  // of one at a time - each row still gets its own id/status/progress.
+  static Future<void> createSyllabusChapters(List<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty) return;
+    await client.from('syllabus').insert(rows);
+  }
+
+  // Distinct chapter names already added to the syllabus for a class+subject
+  // (by any teacher) - lets Question Bank offer the real curriculum chapter
+  // list instead of generic "Chapter 1..12" placeholders.
+  static Future<List<String>> fetchSyllabusChapterNames({
+    required String className, required String subject,
+  }) async {
+    final res = await client.from('syllabus').select('chapter')
+        .eq('class', className).eq('subject', subject);
+    final chapters = List<Map<String, dynamic>>.from(res).map((r) => r['chapter'] as String).toSet().toList();
+    chapters.sort();
+    return chapters;
   }
 
   static Future<void> updateSyllabusStatus(String id, String status) async {
