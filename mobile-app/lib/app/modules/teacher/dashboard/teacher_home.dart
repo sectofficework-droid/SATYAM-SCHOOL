@@ -48,14 +48,19 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
     if (employeeId == null) return;
     _userKey = 'teacher_$employeeId';
 
-    // Merge Notices with newly assigned Tasks into one feed - a task
-    // assignment is "something new for this teacher" the same way a notice
-    // is, and previously only showed up on the separate My Tasks screen.
+    // Merge Notices with newly assigned Tasks and targeted admin Alerts
+    // (attendance reminders, edit-request approvals) into one feed - each is
+    // "something new for this teacher" the same way a notice is.
     final notices = await SupabaseService.fetchNotices(
       audiences: const ['Everyone', 'All Staff', 'Management'],
     );
     final taskAssignments = await SupabaseService.fetchTeacherTasks(employeeId);
-    final combined = [...notices, ...taskAssignments.map(taskAsNoticeItem)];
+    final alerts = await SupabaseService.fetchTeacherAlerts(employeeId);
+    final combined = [
+      ...notices,
+      ...taskAssignments.map(taskAsNoticeItem),
+      ...alerts.map(alertAsNoticeItem),
+    ];
 
     final visible = await visibleRecentNotices(combined, _userKey!);
     if (!mounted) return;
@@ -74,7 +79,10 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
       userKey: _userKey!,
       onViewAll: () => _setTab(_noticesTabIndex),
       onDismissed: (notice) => setState(() => _recent.removeWhere((n) => n['id'] == notice['id'])),
-      onItemTap: (notice) { if (notice['_isTask'] == true) Get.toNamed(Routes.teacherTasks); },
+      onItemTap: (notice) {
+        if (notice['_isTask'] == true) Get.toNamed(Routes.teacherTasks);
+        if (notice['_isAlert'] == true) _setTab(1); // Attendance tab
+      },
     );
   }
 

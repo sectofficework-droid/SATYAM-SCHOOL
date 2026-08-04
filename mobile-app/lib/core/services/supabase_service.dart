@@ -27,11 +27,50 @@ class SupabaseService {
     await client.from('student_attendance').upsert(records, onConflict: 'student_id,date');
   }
 
-  // Just the day's statuses for a class - used to show a real "X% present
-  // today" stat on the teacher dashboard instead of a static call-to-action.
+  // Per-student statuses already submitted for a class+date - used to show
+  // real prior marks (not a blank all-Present form) when a teacher reopens
+  // a day they already marked.
   static Future<List<Map<String, dynamic>>> fetchAttendanceForClassDate(String className, String date) async {
-    final res = await client.from('student_attendance').select('status').eq('class', className).eq('date', date);
+    final res = await client.from('student_attendance').select('student_id, status').eq('class', className).eq('date', date);
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  // Attendance edit-request workflow ─────────────────────────────────────────
+
+  static Future<List<Map<String, dynamic>>> fetchTeacherAlerts(String teacherId) async {
+    final res = await client
+        .from('teacher_alerts')
+        .select()
+        .eq('teacher_id', teacherId)
+        .order('created_at', ascending: false)
+        .limit(50);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchMyEditRequests(String teacherId) async {
+    final res = await client
+        .from('attendance_edit_requests')
+        .select()
+        .eq('teacher_id', teacherId)
+        .order('created_at', ascending: false)
+        .limit(50);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<void> submitAttendanceEditRequest({
+    required String teacherId,
+    required String className,
+    String? sectionName,
+    required String date,
+    String? reason,
+  }) async {
+    await client.from('attendance_edit_requests').insert({
+      'teacher_id': teacherId,
+      'class_name': className,
+      'section_name': sectionName,
+      'date': date,
+      'reason': reason,
+    });
   }
 
   static Future<List<Map<String, dynamic>>> fetchStudentAttendance(String studentId) async {

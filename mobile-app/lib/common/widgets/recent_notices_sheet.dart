@@ -113,7 +113,7 @@ class _RecentNoticesSheetState extends State<_RecentNoticesSheet> {
                     final light  = noticeTypeLight(type);
                     final dateStr = (n['posted_date'] ?? n['created_at']) as String?;
                     final date   = dateStr != null ? DateTime.tryParse(dateStr) : null;
-                    final tappable = n['_isTask'] == true && widget.onItemTap != null;
+                    final tappable = (n['_isTask'] == true || n['_isAlert'] == true) && widget.onItemTap != null;
                     return Dismissible(
                       key: ValueKey(n['id'] ?? '${n['title']}_$i'),
                       direction: DismissDirection.horizontal,

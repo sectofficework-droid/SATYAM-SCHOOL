@@ -73,3 +73,19 @@ Map<String, dynamic> taskAsNoticeItem(Map<String, dynamic> assignment) {
     '_taskId': taskId,
   };
 }
+
+// Adapts a teacher_alerts row into the same shape as a notice - same reasoning
+// as taskAsNoticeItem above, so a targeted admin alert (attendance reminder,
+// or "your edit request was approved") shows up in the one shared notice bell
+// instead of needing its own separate inbox screen.
+Map<String, dynamic> alertAsNoticeItem(Map<String, dynamic> alert) {
+  return {
+    'id': 'alert-${alert['id']}',
+    'title': alert['title'] ?? '',
+    'content': alert['message'] ?? '',
+    'type': 'Alert',
+    'posted_date': alert['created_at'],
+    'created_at': alert['created_at'],
+    '_isAlert': true,
+  };
+}

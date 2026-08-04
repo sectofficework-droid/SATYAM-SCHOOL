@@ -4,9 +4,14 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   CalendarCheck, Search, Users, Check, X as XIcon, Clock,
   Save, History, GraduationCap, ChevronLeft, ChevronRight,
+  Pencil, Bell, Send, ShieldAlert,
 } from "lucide-react";
 import { getStudents } from "@/lib/studentService";
-import { getAttendanceForClassDate, saveAttendanceForClassDate, getStudentAttendanceHistory } from "@/lib/attendanceService";
+import {
+  getAttendanceForClassDate, saveAttendanceForClassDate, getStudentAttendanceHistory,
+  getAttendanceOverviewForDate, sendAttendanceReminder,
+  getPendingEditRequests, approveEditRequest, rejectEditRequest,
+} from "@/lib/attendanceService";
 import S3Image from "@/components/S3Image";
 import DateInputDMY from "@/components/DateInputDMY";
 
@@ -32,12 +37,60 @@ function fmtDateLabel(iso) {
 }
 
 export default function AttendancePage() {
+  const [tab, setTab] = useState("mark"); // 'mark' | 'overview' | 'requests'
+  const [pendingCount, setPendingCount] = useState(0);
+
+  const refreshPendingCount = useCallback(() => {
+    getPendingEditRequests().then(rows => setPendingCount(rows.length)).catch(() => {});
+  }, []);
+
+  useEffect(() => { refreshPendingCount(); }, [refreshPendingCount, tab]);
+
+  return (
+    <div className="flex flex-col gap-5 max-w-6xl mx-auto">
+      <div>
+        <h1 className="text-2xl font-bold text-school-navy">Student Attendance</h1>
+        <p className="text-sm text-gray-500 mt-0.5">
+          View and correct daily attendance marked from the teacher app, or mark it directly from here.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-1.5 bg-white rounded-xl border border-gray-100 shadow-sm p-1.5 w-fit">
+        <TabButton active={tab === "mark"} onClick={() => setTab("mark")} icon={CalendarCheck} label="Mark / View" />
+        <TabButton active={tab === "overview"} onClick={() => setTab("overview")} icon={Users} label="Overview" />
+        <TabButton active={tab === "requests"} onClick={() => setTab("requests")} icon={ShieldAlert} label="Edit Requests" badge={pendingCount} />
+      </div>
+
+      {tab === "mark" && <MarkAttendanceTab />}
+      {tab === "overview" && <OverviewTab />}
+      {tab === "requests" && <EditRequestsTab onChange={refreshPendingCount} />}
+    </div>
+  );
+}
+
+function TabButton({ active, onClick, icon: Icon, label, badge }) {
+  return (
+    <button onClick={onClick}
+      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors ${
+        active ? "bg-school-navy text-white" : "text-gray-500 hover:bg-gray-50"
+      }`}>
+      <Icon className="w-4 h-4" />{label}
+      {badge > 0 && (
+        <span className={`ml-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${active ? "bg-white/20 text-white" : "bg-red-100 text-red-600"}`}>{badge}</span>
+      )}
+    </button>
+  );
+}
+
+// ── Mark / View attendance for one class + date ────────────────────────────
+function MarkAttendanceTab() {
   const [students,   setStudents]   = useState([]);
   const [loading,     setLoading]   = useState(true);
   const [selectedClass, setSelectedClass] = useState("");
   const [selectedDate,  setSelectedDate]  = useState(todayStr);
   const [statusMap,   setStatusMap]  = useState({});   // student_id -> 'P'|'A'
   const [wasMarked,   setWasMarked]  = useState(false); // any record already existed for this class+date
+  const [editMode,    setEditMode]   = useState(false); // false = read-only badges, true = clickable P/A buttons
   const [attLoading,  setAttLoading] = useState(false);
   const [saving,      setSaving]     = useState(false);
   const [saved,        setSaved]      = useState(false);
@@ -75,6 +128,9 @@ export default function AttendancePage() {
       const map = {};
       for (const r of rows) map[r.student_id] = r.status;
       setWasMarked(rows.length > 0);
+      // Nothing marked yet for this class+date - go straight to editable entry.
+      // Already marked - default to a read-only view; admin clicks Edit to change it.
+      setEditMode(rows.length === 0);
       // Anyone in the class with no row yet defaults to Present, same as the
       // teacher app - matches what a fresh Mark Attendance session shows.
       for (const s of classStudents) if (!map[s._studentId]) map[s._studentId] = "P";
@@ -116,7 +172,7 @@ export default function AttendancePage() {
       await saveAttendanceForClassDate(records);
       setWasMarked(true);
       setSaved(true);
-      setTimeout(() => setSaved(false), 2500);
+      setTimeout(() => { setSaved(false); setEditMode(false); }, 2500);
     } catch (e) {
       alert("Failed to save attendance: " + e.message);
     } finally {
@@ -125,14 +181,7 @@ export default function AttendancePage() {
   }
 
   return (
-    <div className="flex flex-col gap-5 max-w-6xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold text-school-navy">Student Attendance</h1>
-        <p className="text-sm text-gray-500 mt-0.5">
-          View and correct daily attendance marked from the teacher app, or mark it directly from here.
-        </p>
-      </div>
-
+    <div className="flex flex-col gap-5">
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col sm:flex-row gap-3 sm:items-center">
         <select
@@ -180,6 +229,20 @@ export default function AttendancePage() {
 
       {/* Student list */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {classStudents.length > 0 && !loading && !attLoading && (
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100 bg-gray-50/60">
+            <span className="text-sm font-medium text-gray-600">
+              {editMode ? "Editing" : "Viewing"} attendance — {fmtDateLabel(selectedDate)}
+            </span>
+            <button
+              onClick={() => setEditMode(m => !m)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                editMode ? "bg-gray-100 text-gray-600 hover:bg-gray-200" : "bg-school-navy text-white hover:bg-school-navy/90"
+              }`}>
+              {editMode ? <>Done Editing</> : <><Pencil className="w-3.5 h-3.5" />Edit</>}
+            </button>
+          </div>
+        )}
         {loading || attLoading ? (
           <div className="flex items-center justify-center h-40 gap-3">
             <div className="w-8 h-8 border-2 border-school-navy/20 border-t-school-navy rounded-full animate-spin" />
@@ -220,19 +283,26 @@ export default function AttendancePage() {
                     <td className="px-3 py-2.5 text-gray-500 hidden md:table-cell">{s.grno || "—"}</td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center justify-end gap-1.5">
-                        {["P", "A"].map(v => {
-                          const st = STATUS_STYLE[v];
-                          const active = status === v;
-                          return (
-                            <button key={v} onClick={() => setStatus(s._studentId, v)}
-                              title={st.label}
-                              className={`w-9 h-9 rounded-lg text-xs font-bold border transition-colors ${
-                                active ? `${st.bg} ${st.text} ${st.border} border-2` : "border-gray-200 text-gray-400 hover:bg-gray-50"
-                              }`}>
-                              {v}
-                            </button>
-                          );
-                        })}
+                        {editMode ? (
+                          ["P", "A"].map(v => {
+                            const st = STATUS_STYLE[v];
+                            const active = status === v;
+                            return (
+                              <button key={v} onClick={() => setStatus(s._studentId, v)}
+                                title={st.label}
+                                className={`w-9 h-9 rounded-lg text-xs font-bold border transition-colors ${
+                                  active ? `${st.bg} ${st.text} ${st.border} border-2` : "border-gray-200 text-gray-400 hover:bg-gray-50"
+                                }`}>
+                                {v}
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <span title={STATUS_STYLE[status].label}
+                            className={`w-9 h-9 rounded-lg text-xs font-bold border-2 flex items-center justify-center ${STATUS_STYLE[status].bg} ${STATUS_STYLE[status].text} ${STATUS_STYLE[status].border}`}>
+                            {status}
+                          </span>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -244,7 +314,7 @@ export default function AttendancePage() {
       </div>
 
       {/* Save bar */}
-      {classStudents.length > 0 && (
+      {classStudents.length > 0 && editMode && (
         <div className="flex justify-end">
           <button onClick={handleSave} disabled={saving || attLoading}
             className={`flex items-center gap-2 px-6 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-sm disabled:opacity-50 ${
@@ -263,6 +333,211 @@ export default function AttendancePage() {
 
       {historyStudent && (
         <HistoryModal student={historyStudent} onClose={() => setHistoryStudent(null)} />
+      )}
+    </div>
+  );
+}
+
+// ── Overview: which classes/sections have marked attendance today ─────────
+function OverviewTab() {
+  const [date, setDate] = useState(todayStr);
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [reminderFor, setReminderFor] = useState(null); // row object or null
+  const [reminderMsg, setReminderMsg] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sentFor, setSentFor] = useState(null); // sectionId a reminder was just sent for
+
+  const load = useCallback(() => {
+    setLoading(true);
+    getAttendanceOverviewForDate(date).then(setRows).catch(() => setRows([])).finally(() => setLoading(false));
+  }, [date]);
+
+  useEffect(() => { load(); }, [load]);
+
+  function openReminder(row) {
+    setReminderFor(row);
+    setReminderMsg(`Please mark attendance for ${row.className}${row.sectionName ? " - " + row.sectionName : ""} on ${fmtDateLabel(date)} — it hasn't been submitted yet.`);
+  }
+
+  async function sendReminder() {
+    if (!reminderFor) return;
+    setSending(true);
+    try {
+      await sendAttendanceReminder(reminderFor.teacherId, reminderFor.className, reminderFor.sectionName, reminderMsg);
+      setSentFor(reminderFor.sectionId);
+      setReminderFor(null);
+      setTimeout(() => setSentFor(null), 3000);
+    } catch (e) {
+      alert("Failed to send reminder: " + e.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  const notMarked = rows.filter(r => r.status !== "Marked").length;
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col sm:flex-row gap-3 sm:items-center">
+        <DateInputDMY value={date} onChange={e => setDate(e.target.value)} max={todayStr}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-school-navy" />
+        <span className="text-sm text-gray-500 ml-auto">
+          {loading ? "Loading..." : notMarked === 0 ? "All sections marked" : `${notMarked} section${notMarked === 1 ? "" : "s"} not fully marked`}
+        </span>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center h-40 gap-3">
+            <div className="w-8 h-8 border-2 border-school-navy/20 border-t-school-navy rounded-full animate-spin" />
+            <span className="text-sm text-gray-500">Loading...</span>
+          </div>
+        ) : rows.length === 0 ? (
+          <div className="flex items-center justify-center h-32 text-sm text-gray-400">No sections found</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100 text-left text-xs text-gray-500 uppercase tracking-wide">
+                <th className="px-4 py-2.5 font-semibold">Class</th>
+                <th className="px-3 py-2.5 font-semibold">Class Teacher</th>
+                <th className="px-3 py-2.5 font-semibold">Marked</th>
+                <th className="px-3 py-2.5 font-semibold">Status</th>
+                <th className="px-3 py-2.5 font-semibold text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {rows.map(row => {
+                const badgeStyle = row.status === "Marked"
+                  ? "bg-green-50 text-green-700 border-green-200"
+                  : row.status === "Partial"
+                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                  : "bg-red-50 text-red-700 border-red-200";
+                return (
+                  <tr key={row.sectionId} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-2.5 font-medium text-gray-800">{row.className}{row.sectionName ? " - " + row.sectionName : ""}</td>
+                    <td className="px-3 py-2.5 text-gray-600">{row.teacherName || <span className="text-gray-300">Not assigned</span>}</td>
+                    <td className="px-3 py-2.5 text-gray-500">{row.markedCount}/{row.totalStudents}</td>
+                    <td className="px-3 py-2.5">
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${badgeStyle}`}>{row.status}</span>
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      {row.status !== "Marked" && (
+                        sentFor === row.sectionId ? (
+                          <span className="text-xs text-green-600 font-medium">Reminder sent</span>
+                        ) : (
+                          <button onClick={() => openReminder(row)} disabled={!row.teacherId}
+                            title={!row.teacherId ? "No class teacher assigned to this section" : "Send a reminder"}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed ml-auto">
+                            <Bell className="w-3.5 h-3.5" />Send Reminder
+                          </button>
+                        )
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {reminderFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setReminderFor(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+            <h3 className="font-semibold text-gray-800">Send Reminder — {reminderFor.teacherName}</h3>
+            <textarea value={reminderMsg} onChange={e => setReminderMsg(e.target.value)} rows={3}
+              className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-school-navy resize-none" />
+            <div className="flex justify-end gap-2 mt-1">
+              <button onClick={() => setReminderFor(null)} className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50">Cancel</button>
+              <button onClick={sendReminder} disabled={sending}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-school-navy text-white hover:bg-school-navy/90 disabled:opacity-50">
+                {sending ? "Sending..." : <><Send className="w-3.5 h-3.5" />Send</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Pending teacher requests to re-open an already-submitted day ──────────
+function EditRequestsTab({ onChange }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    getPendingEditRequests().then(setRows).catch(() => setRows([])).finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleApprove(req) {
+    setBusyId(req.id);
+    try {
+      await approveEditRequest(req);
+      await load();
+      onChange?.();
+    } catch (e) {
+      alert("Failed to approve: " + e.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleReject(req) {
+    const note = window.prompt("Optional note for the teacher (why this is being rejected):", "") || null;
+    setBusyId(req.id);
+    try {
+      await rejectEditRequest(req.id, note);
+      await load();
+      onChange?.();
+    } catch (e) {
+      alert("Failed to reject: " + e.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      {loading ? (
+        <div className="flex items-center justify-center h-40 gap-3">
+          <div className="w-8 h-8 border-2 border-school-navy/20 border-t-school-navy rounded-full animate-spin" />
+          <span className="text-sm text-gray-500">Loading...</span>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-40 gap-2">
+          <ShieldAlert className="w-10 h-10 text-gray-200" />
+          <p className="text-sm text-gray-400">No pending edit requests</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-gray-50">
+          {rows.map(req => (
+            <div key={req.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-800 text-sm">
+                  {req.teacher?.name || "Unknown teacher"} — {req.class_name}{req.section_name ? " - " + req.section_name : ""}
+                </p>
+                <p className="text-xs text-gray-400 mt-0.5">Wants to edit attendance for {fmtDateLabel(req.date)}</p>
+                {req.reason && <p className="text-sm text-gray-600 mt-1.5 bg-gray-50 rounded-lg px-3 py-1.5">&quot;{req.reason}&quot;</p>}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button onClick={() => handleReject(req)} disabled={busyId === req.id}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+                  Reject
+                </button>
+                <button onClick={() => handleApprove(req)} disabled={busyId === req.id}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-school-navy text-white hover:bg-school-navy/90 disabled:opacity-50">
+                  {busyId === req.id ? "Working..." : "Approve"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

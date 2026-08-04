@@ -67,18 +67,22 @@ function ExamSubjectConfig({ examId, classesWithSections, classSubjectsMap }) {
           No subjects configured for {selectedClass} yet — add them in Settings → Subjects first.
         </p>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           {subjects.map(subject => (
-            <div key={subject} className="flex items-center gap-2">
-              <span className="text-xs text-gray-600 flex-1 truncate">{subject}</span>
-              <input
-                type="number"
-                min="1"
-                className={inp + " w-20 text-center"}
-                defaultValue={config[subject] ?? 100}
-                onBlur={e => handleSave(subject, e.target.value)}
-              />
-              {savedSubject === subject && <Check className="w-3.5 h-3.5 text-green-500 flex-shrink-0"/>}
+            <div key={subject} className="bg-white border border-gray-200 rounded-lg p-2.5">
+              <label className="block text-[11px] font-semibold text-gray-600 mb-1 truncate" title={subject}>
+                {subject}
+              </label>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="number"
+                  min="1"
+                  className={inp + " text-center"}
+                  defaultValue={config[subject] ?? 100}
+                  onBlur={e => handleSave(subject, e.target.value)}
+                />
+                {savedSubject === subject && <Check className="w-3.5 h-3.5 text-green-500 flex-shrink-0"/>}
+              </div>
             </div>
           ))}
         </div>

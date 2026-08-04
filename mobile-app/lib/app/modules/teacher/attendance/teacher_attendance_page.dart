@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
@@ -16,12 +17,25 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
   List<Map<String, dynamic>> _students = [];
   final Map<String, String> _status = {};
   bool _loading = true;
+  bool _attLoading = false; // reloading existing marks when the date changes
   bool _saving  = false;
   bool _saved   = false;
   DateTime _date = DateTime.now();
 
+  bool _wasMarked = false;                 // a row already exists for this class+date
+  Map<String, dynamic>? _pendingRequest;   // this teacher's own Pending edit request for this class+date
+  Map<String, dynamic>? _approvedWindow;   // this teacher's own Approved request, still within the 10-min window
+  Timer? _countdownTimer;
+  int _remainingSeconds = 0;
+  bool _requesting = false;
+
+  bool get _isLocked => _wasMarked && _approvedWindow == null;
+
   @override
   void initState() { super.initState(); _loadStudents(); }
+
+  @override
+  void dispose() { _countdownTimer?.cancel(); super.dispose(); }
 
   Future<void> _loadStudents() async {
     setState(() => _loading = true);
@@ -29,11 +43,74 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
     final sectionId  = profile['class_teacher_of_section_id']?.toString() ?? '';
     if (sectionId.isEmpty) { setState(() => _loading = false); return; }
     final students = await SupabaseService.fetchClassStudents(sectionId);
-    if (mounted) setState(() {
-      _students = students;
-      for (final s in students) _status[s['id'] as String] ??= 'P';
-      _loading = false;
+    if (!mounted) return;
+    setState(() { _students = students; _loading = false; });
+    await _loadAttendanceForDate();
+  }
+
+  // Loads whatever's already been submitted for the selected class+date (if
+  // anything) instead of always starting from a blank all-Present form, and
+  // resolves whether this teacher currently has an edit request pending or
+  // an approved 10-minute unlock window still running for this exact date.
+  Future<void> _loadAttendanceForDate() async {
+    _countdownTimer?.cancel();
+    setState(() => _attLoading = true);
+    final profile   = AuthService.to.profile.value ?? {};
+    final teacherId = profile['id'] as String?;
+    final className = profile['class_name'] as String? ?? '';
+    final dateStr   = DateFormat('yyyy-MM-dd').format(_date);
+
+    final rows = await SupabaseService.fetchAttendanceForClassDate(className, dateStr);
+    _status.clear();
+    for (final r in rows) _status[r['student_id'] as String] = r['status'] as String;
+    for (final s in _students) _status[s['id'] as String] ??= 'P';
+    final wasMarked = rows.isNotEmpty;
+
+    Map<String, dynamic>? pending;
+    Map<String, dynamic>? approved;
+    if (teacherId != null) {
+      final requests = await SupabaseService.fetchMyEditRequests(teacherId);
+      for (final r in requests) {
+        if (r['class_name'] != className || r['date'] != dateStr) continue;
+        if (r['status'] == 'Pending' && pending == null) pending = r;
+        if (r['status'] == 'Approved') {
+          final approvedAt = DateTime.tryParse(r['approved_at']?.toString() ?? '');
+          if (approvedAt != null && DateTime.now().difference(approvedAt).inMinutes < 10) {
+            approved = r;
+          }
+        }
+      }
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _wasMarked = wasMarked;
+      _pendingRequest = pending;
+      _approvedWindow = approved;
+      _attLoading = false;
     });
+    if (approved != null) _startCountdown(DateTime.parse(approved['approved_at'].toString()));
+  }
+
+  void _startCountdown(DateTime approvedAt) {
+    _countdownTimer?.cancel();
+    void tick() {
+      final remaining = const Duration(minutes: 10) - DateTime.now().difference(approvedAt);
+      if (remaining.isNegative || remaining == Duration.zero) {
+        _countdownTimer?.cancel();
+        if (mounted) setState(() { _approvedWindow = null; _remainingSeconds = 0; });
+        return;
+      }
+      if (mounted) setState(() => _remainingSeconds = remaining.inSeconds);
+    }
+    tick();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) => tick());
+  }
+
+  String _formatRemaining(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '$m:${s.toString().padLeft(2, '0')}';
   }
 
   Future<void> _save() async {
@@ -50,8 +127,15 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
       'marked_by':  teacherId,
     }).toList();
     await SupabaseService.saveAttendanceBatch(records);
+    _countdownTimer?.cancel();
     if (mounted) {
-      setState(() { _saving = false; _saved = true; });
+      setState(() {
+        _saving = false;
+        _saved = true;
+        _wasMarked = true;
+        _approvedWindow = null;
+        _pendingRequest = null;
+      });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Row(children: [
           Icon(Icons.check_circle, color: Colors.white, size: 18),
@@ -67,6 +151,66 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
     }
   }
 
+  Future<void> _openRequestEditSheet() async {
+    final reasonController = TextEditingController();
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: const BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Text('Request Attendance Edit', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
+            const SizedBox(height: 6),
+            Text('This asks admin to unlock ${DateFormat('d MMM yyyy').format(_date)} for editing.',
+              style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: reasonController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: 'Reason (optional) — e.g. marked a student absent by mistake',
+                filled: true, fillColor: AppColors.blueLight.withOpacity(.4),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(width: double.infinity, child: GestureDetector(
+              onTap: () => Navigator.of(ctx).pop(true),
+              child: Container(
+                height: 48,
+                decoration: BoxDecoration(gradient: AppColors.navyGradient, borderRadius: BorderRadius.circular(12)),
+                child: const Center(child: Text('Send Request',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontFamily: 'Poppins'))),
+              ),
+            )),
+          ]),
+        ),
+      ),
+    );
+
+    if (result != true) return;
+    setState(() => _requesting = true);
+    final profile     = AuthService.to.profile.value ?? {};
+    final teacherId   = profile['id'] as String?;
+    final className   = profile['class_name'] as String? ?? '';
+    final sectionName = profile['section_name'] as String?;
+    if (teacherId != null) {
+      await SupabaseService.submitAttendanceEditRequest(
+        teacherId: teacherId,
+        className: className,
+        sectionName: sectionName,
+        date: DateFormat('yyyy-MM-dd').format(_date),
+        reason: reasonController.text.trim().isEmpty ? null : reasonController.text.trim(),
+      );
+    }
+    if (mounted) setState(() => _requesting = false);
+    await _loadAttendanceForDate();
+  }
+
   int get _presentCount => _status.values.where((v) => v == 'P').length;
   int get _absentCount  => _status.values.where((v) => v == 'A').length;
 
@@ -74,7 +218,7 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
   Widget build(BuildContext context) {
     Widget body;
 
-    if (_loading) {
+    if (_loading || _attLoading) {
       body = _buildShimmer();
     } else if (_students.isEmpty) {
       body = _emptyState();
@@ -111,7 +255,10 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
                       firstDate: DateTime.now().subtract(const Duration(days: 30)),
                       lastDate: DateTime.now(),
                     );
-                    if (picked != null) setState(() => _date = picked);
+                    if (picked != null) {
+                      setState(() => _date = picked);
+                      await _loadAttendanceForDate();
+                    }
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -154,7 +301,7 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
               ]),
             ),
 
-            // P / A / L summary chips
+            // P / A summary chips
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
               child: Row(children: [
@@ -162,6 +309,31 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
                 const SizedBox(width: 8),
                 _summaryChip('Absent',  _absentCount,  AppColors.red,   AppColors.redLight),
               ]),
+            ),
+
+            // Already-marked / locked / countdown banner
+            if (_wasMarked) Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: (_approvedWindow != null ? AppColors.green : AppColors.amber).withOpacity(.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: (_approvedWindow != null ? AppColors.green : AppColors.amber).withOpacity(.25)),
+                ),
+                child: Row(children: [
+                  Icon(_approvedWindow != null ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
+                    size: 16, color: _approvedWindow != null ? AppColors.green : AppColors.amber),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    _approvedWindow != null
+                      ? 'Editing unlocked — ${_formatRemaining(_remainingSeconds)} remaining'
+                      : 'Already marked for this date — view only. Use Request Edit below to change it.',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600,
+                      color: _approvedWindow != null ? AppColors.green : AppColors.amber),
+                  )),
+                ]),
+              ),
             ),
             const Divider(height: 1, color: AppColors.border),
           ]),
@@ -218,12 +390,12 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
                     return Padding(
                       padding: const EdgeInsets.only(left: 6),
                       child: GestureDetector(
-                        onTap: () => setState(() => _status[id] = v),
+                        onTap: _isLocked ? null : () => setState(() => _status[id] = v),
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 180),
                           width: 36, height: 36,
                           decoration: BoxDecoration(
-                            color: active ? color : color.withOpacity(.08),
+                            color: active ? color.withOpacity(_isLocked ? .55 : 1) : color.withOpacity(.08),
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(color: active ? color : color.withOpacity(.3)),
                           ),
@@ -242,37 +414,10 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
           ),
         ),
 
-        // Save button
+        // Save / Request Edit button
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-          child: GestureDetector(
-            onTap: _saving ? null : _save,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              height: 52,
-              decoration: BoxDecoration(
-                gradient: _saving ? null : (_saved
-                  ? const LinearGradient(colors: [AppColors.green, Color(0xFF059669)])
-                  : AppColors.navyGradient),
-                color: _saving ? AppColors.textHint : null,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: _saving ? [] : [
-                  BoxShadow(
-                    color: (_saved ? AppColors.green : AppColors.navy).withOpacity(.35),
-                    blurRadius: 16, offset: const Offset(0, 6),
-                  ),
-                ],
-              ),
-              child: Center(child: _saving
-                ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
-                : Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(_saved ? Icons.check_rounded : Icons.save_rounded, color: Colors.white, size: 20),
-                    const SizedBox(width: 8),
-                    Text(_saved ? 'Saved!' : 'Save Attendance',
-                      style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
-                  ])),
-            ),
-          ),
+          child: _isLocked ? _buildRequestEditBar() : _buildSaveButton(),
         ),
       ]);
     }
@@ -284,6 +429,73 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
         title: const Text('Mark Attendance'),
       ),
       body: body,
+    );
+  }
+
+  Widget _buildSaveButton() => GestureDetector(
+    onTap: _saving ? null : _save,
+    child: AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      height: 52,
+      decoration: BoxDecoration(
+        gradient: _saving ? null : (_saved
+          ? const LinearGradient(colors: [AppColors.green, Color(0xFF059669)])
+          : AppColors.navyGradient),
+        color: _saving ? AppColors.textHint : null,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: _saving ? [] : [
+          BoxShadow(
+            color: (_saved ? AppColors.green : AppColors.navy).withOpacity(.35),
+            blurRadius: 16, offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Center(child: _saving
+        ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+        : Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(_saved ? Icons.check_rounded : Icons.save_rounded, color: Colors.white, size: 20),
+            const SizedBox(width: 8),
+            Text(_saved ? 'Saved!' : 'Save Attendance',
+              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
+          ])),
+    ),
+  );
+
+  Widget _buildRequestEditBar() {
+    if (_pendingRequest != null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+        decoration: BoxDecoration(
+          color: AppColors.amber.withOpacity(.1),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.amber.withOpacity(.3)),
+        ),
+        child: Row(children: [
+          const Icon(Icons.hourglass_top_rounded, color: AppColors.amber, size: 20),
+          const SizedBox(width: 10),
+          const Expanded(child: Text('Edit request sent — waiting for admin approval.',
+            style: TextStyle(fontSize: 13, color: AppColors.text, fontWeight: FontWeight.w600))),
+        ]),
+      );
+    }
+    return GestureDetector(
+      onTap: _requesting ? null : _openRequestEditSheet,
+      child: Container(
+        height: 52,
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.navy.withOpacity(.3)),
+        ),
+        child: Center(child: _requesting
+          ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5))
+          : Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.edit_note_rounded, color: AppColors.navy, size: 20),
+              const SizedBox(width: 8),
+              Text('Request Edit',
+                style: const TextStyle(color: AppColors.navy, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
+            ])),
+      ),
     );
   }
 
