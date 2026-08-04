@@ -96,12 +96,14 @@ export default function ExamsTab() {
   const [expanded, setExpanded] = useState(null);
 
   const [newName, setNewName] = useState("");
+  const [newStartDate, setNewStartDate] = useState("");
   const [newEndDate, setNewEndDate] = useState("");
   const [addError, setAddError] = useState("");
   const [adding, setAdding] = useState(false);
 
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName] = useState("");
+  const [editStartDate, setEditStartDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
 
   function load() {
@@ -123,15 +125,17 @@ export default function ExamsTab() {
   async function handleAdd() {
     const name = newName.trim();
     if (!name) { setAddError("Enter an exam name."); return; }
+    if (!newStartDate) { setAddError("Pick a start date."); return; }
     if (!newEndDate) { setAddError("Pick an end date."); return; }
+    if (newEndDate < newStartDate) { setAddError("End date can't be before the start date."); return; }
     setAddError("");
     setAdding(true);
     try {
       const exam = await createOfficialExam({
-        name, endDate: newEndDate, academicYearId: currentYear?.id, sortOrder: exams.length,
+        name, startDate: newStartDate, endDate: newEndDate, academicYearId: currentYear?.id, sortOrder: exams.length,
       });
       setExams(prev => [...prev, exam]);
-      setNewName(""); setNewEndDate("");
+      setNewName(""); setNewStartDate(""); setNewEndDate("");
     } catch (err) {
       setAddError(err?.message || "Failed to add exam.");
     } finally {
@@ -142,14 +146,16 @@ export default function ExamsTab() {
   function startEdit(exam) {
     setEditingId(exam.id);
     setEditName(exam.name);
+    setEditStartDate(exam.start_date || "");
     setEditEndDate(exam.end_date);
   }
 
   async function saveEdit(id) {
     const name = editName.trim();
-    if (!name || !editEndDate) return;
-    await updateOfficialExam(id, { name, endDate: editEndDate, sortOrder: exams.find(e => e.id === id)?.sort_order ?? 0 });
-    setExams(prev => prev.map(e => (e.id === id ? { ...e, name, end_date: editEndDate } : e)));
+    if (!name || !editStartDate || !editEndDate) return;
+    if (editEndDate < editStartDate) { alert("End date can't be before the start date."); return; }
+    await updateOfficialExam(id, { name, startDate: editStartDate, endDate: editEndDate, sortOrder: exams.find(e => e.id === id)?.sort_order ?? 0 });
+    setExams(prev => prev.map(e => (e.id === id ? { ...e, name, start_date: editStartDate, end_date: editEndDate } : e)));
     setEditingId(null);
   }
 
@@ -171,6 +177,7 @@ export default function ExamsTab() {
           <p className="text-xs text-gray-400 mt-0.5">
             Add or remove the school's official exams (First Unit Test, Half Yearly, Annual, etc.).
             Marks entry automatically unlocks for teachers the day after each exam's end date.
+            Exams that run over several days can be given a start and end date.
           </p>
         </div>
 
@@ -189,7 +196,9 @@ export default function ExamsTab() {
                   {isEditingRow ? (
                     <div className="flex-1 flex flex-wrap items-center gap-2">
                       <input className={inp + " max-w-[220px]"} value={editName} onChange={e => setEditName(e.target.value)} />
-                      <input type="date" className={inp + " max-w-[160px]"} value={editEndDate} onChange={e => setEditEndDate(e.target.value)} />
+                      <input type="date" className={inp + " max-w-[150px]"} value={editStartDate} onChange={e => setEditStartDate(e.target.value)} title="Start date" />
+                      <span className="text-gray-400 text-xs">to</span>
+                      <input type="date" className={inp + " max-w-[150px]"} value={editEndDate} onChange={e => setEditEndDate(e.target.value)} title="End date" />
                       <button onClick={() => saveEdit(exam.id)} className="p-2 rounded-lg text-green-600 hover:bg-green-50 transition-colors"><Save className="w-4 h-4"/></button>
                       <button onClick={() => setEditingId(null)} className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"><X className="w-4 h-4"/></button>
                     </div>
@@ -198,7 +207,8 @@ export default function ExamsTab() {
                       <div>
                         <p className="text-sm font-semibold text-gray-800">{exam.name}</p>
                         <p className="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5">
-                          <CalendarDays className="w-3 h-3"/> Ends {fmtDMY(exam.end_date)}
+                          <CalendarDays className="w-3 h-3"/>
+                          {exam.start_date ? `${fmtDMY(exam.start_date)} to ${fmtDMY(exam.end_date)}` : `Ends ${fmtDMY(exam.end_date)}`}
                           <span className={`ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${unlocked ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
                             {unlocked ? <LockOpen className="w-2.5 h-2.5"/> : <Lock className="w-2.5 h-2.5"/>}
                             {unlocked ? "Marks entry open" : "Coming Soon"}
@@ -232,7 +242,9 @@ export default function ExamsTab() {
           <p className="text-xs font-semibold text-gray-500 mb-2">Add New Exam</p>
           <div className="flex flex-wrap items-center gap-2">
             <input className={inp + " max-w-[220px]"} placeholder="e.g. First Unit Test" value={newName} onChange={e => setNewName(e.target.value)} />
-            <input type="date" className={inp + " max-w-[160px]"} value={newEndDate} onChange={e => setNewEndDate(e.target.value)} />
+            <input type="date" className={inp + " max-w-[150px]"} value={newStartDate} onChange={e => setNewStartDate(e.target.value)} title="Start date" />
+            <span className="text-gray-400 text-xs">to</span>
+            <input type="date" className={inp + " max-w-[150px]"} value={newEndDate} onChange={e => setNewEndDate(e.target.value)} title="End date" />
             <button onClick={handleAdd} disabled={adding}
               className="flex items-center gap-1.5 bg-school-navy text-white text-xs font-semibold px-3.5 py-2.5 rounded-lg hover:bg-school-navy/90 disabled:opacity-50 transition-colors">
               <Plus className="w-3.5 h-3.5"/> {adding ? "Adding…" : "Add Exam"}

@@ -13,20 +13,20 @@ export async function getOfficialExams(academicYearId) {
   return data || [];
 }
 
-export async function createOfficialExam({ name, endDate, academicYearId, sortOrder = 0 }) {
+export async function createOfficialExam({ name, startDate, endDate, academicYearId, sortOrder = 0 }) {
   const { data, error } = await supabase
     .from("official_exams")
-    .insert({ name, end_date: endDate, academic_year_id: academicYearId, sort_order: sortOrder })
+    .insert({ name, start_date: startDate, end_date: endDate, academic_year_id: academicYearId, sort_order: sortOrder })
     .select()
     .single();
   if (error) throw error;
   return data;
 }
 
-export async function updateOfficialExam(id, { name, endDate, sortOrder }) {
+export async function updateOfficialExam(id, { name, startDate, endDate, sortOrder }) {
   const { error } = await supabase
     .from("official_exams")
-    .update({ name, end_date: endDate, sort_order: sortOrder, updated_at: new Date().toISOString() })
+    .update({ name, start_date: startDate, end_date: endDate, sort_order: sortOrder, updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw error;
 }
