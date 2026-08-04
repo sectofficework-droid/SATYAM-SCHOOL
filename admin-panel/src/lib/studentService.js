@@ -660,6 +660,24 @@ export async function deactivateStudent(studentId, enrollmentId, reason, date) {
   if (stuErr) throw stuErr;
 }
 
+// ── Readmit Student ────────────────────────────────────────────────────────────
+// Inverse of deactivateStudent - brings a Left/Inactive student back to Active
+// so they reappear in active lists, fee collection, etc.
+
+export async function readmitStudent(studentId, enrollmentId) {
+  const { error: enrollErr } = await supabase
+    .from("student_enrollments")
+    .update({ deactivate_reason: null, deactivate_date: null })
+    .eq("id", enrollmentId);
+  if (enrollErr) throw enrollErr;
+
+  const { error: stuErr } = await supabase
+    .from("students")
+    .update({ status: "Active", updated_at: new Date().toISOString() })
+    .eq("id", studentId);
+  if (stuErr) throw stuErr;
+}
+
 // ── Promote Student ───────────────────────────────────────────────────────────
 
 export async function promoteStudent(studentId, fromEnrollmentId, nextClassName, discountData) {

@@ -10,6 +10,7 @@ import DateInputDMY from "@/components/DateInputDMY";
 import {
   getStudents as fetchStudentsFromDB,
   deactivateStudent as svcDeactivate,
+  readmitStudent as svcReadmit,
   promoteStudent as svcPromote,
 } from "@/lib/studentService";
 import { getActiveClasses } from "@/lib/settingsService";
@@ -18,7 +19,7 @@ import {
   Plus, Search, GraduationCap, Phone, Calendar, Edit, Trash2,
   LogOut, Eye, EyeOff, User, ChevronDown, ArrowUpCircle,
   CheckCircle2, X, AlertTriangle, Package, FileText,
-  IndianRupee, Check, ArrowLeft, Download,
+  IndianRupee, Check, ArrowLeft, Download, RotateCcw,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { fmtDMY } from "@/lib/utils";
@@ -178,6 +179,41 @@ function DeactivateModal({ student, onClose, onConfirm }) {
               className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-red-600 hover:bg-red-700"
             >
               Confirm Deactivate
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Readmit modal ──────────────────────────────────────────────
+function ReadmitModal({ student, onClose, onConfirm }) {
+  const [submitting, setSubmitting] = useState(false);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="bg-gradient-to-r from-green-600 to-emerald-700 px-5 py-4 flex items-center justify-between">
+          <p className="text-white font-bold">Readmit Student</p>
+          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-gray-600">
+            Readmitting <span className="font-bold text-gray-900">{student.name}</span>. Status will be set back to Active and they will reappear in active lists.
+          </p>
+          <div className="flex gap-3 pt-1">
+            <button onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button
+              onClick={async () => { setSubmitting(true); await onConfirm(); }}
+              disabled={submitting}
+              className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-green-600 hover:bg-green-700"
+            >
+              {submitting ? "Readmitting..." : "Confirm Readmission"}
             </button>
           </div>
         </div>
@@ -545,6 +581,7 @@ export default function StudentPage() {
   const [feesMap, setFeesMap]                 = useState({});
   const [promoteModal, setPromoteModal]       = useState(null);
   const [deactivateModal, setDeactivateModal] = useState(null);
+  const [readmitModal, setReadmitModal]       = useState(null);
 
 
   const togglePw = (enr) => setShowPasswords((p) => ({ ...p, [enr]: !p[enr] }));
@@ -629,6 +666,19 @@ export default function StudentPage() {
       }
     } catch (err) {
       alert("Could not deactivate student: " + err.message);
+    }
+  };
+
+  const handleReadmit = async (student) => {
+    try {
+      await svcReadmit(student._studentId, student._enrollmentId);
+      setReadmitModal(null);
+      if (selectedYearId) {
+        const data = await fetchStudentsFromDB(selectedYearId);
+        setStudents(data);
+      }
+    } catch (err) {
+      alert("Could not readmit student: " + err.message);
     }
   };
 
@@ -758,6 +808,13 @@ export default function StudentPage() {
           student={deactivateModal}
           onClose={() => setDeactivateModal(null)}
           onConfirm={(data) => handleDeactivate(deactivateModal, data)}
+        />
+      )}
+      {readmitModal && (
+        <ReadmitModal
+          student={readmitModal}
+          onClose={() => setReadmitModal(null)}
+          onConfirm={() => handleReadmit(readmitModal)}
         />
       )}
 
@@ -986,6 +1043,7 @@ export default function StudentPage() {
               const a             = ACCENTS[idx % ACCENTS.length];
               const pwVisible     = showPasswords[student.enrollment] || false;
               const isPromoted      = !!student.promotedTo;
+              const isLeftOrInactive = !isPromoted && (student.status === "Left" || student.status === "Inactive");
               const feeTotal        = feesMap[student.std] ?? CLASS_FEES[student.std] ?? 0;
               const feeDiscount     = student.fees?.discount ?? 0;
               const feePaid         = student.fees?.paid ?? 0;
@@ -1067,22 +1125,39 @@ export default function StudentPage() {
                         </div>
                       );
                     })()}
-                    <div className="flex gap-2 px-3 pb-3 pt-1.5 border-t border-gray-50">
+                    <div className="flex flex-col gap-1.5 px-3 pb-3 pt-1.5 border-t border-gray-50">
                       {isPromoted ? (
                         <Link href={`/student/${student.enrollment}?session=${student.session}`}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-school-navy text-white">
                           <Eye className="w-3.5 h-3.5 flex-shrink-0"/> View Profile
                         </Link>
-                      ) : (
+                      ) : isLeftOrInactive ? (
                         <>
-                          <Link href={`/student/${student.enrollment}/edit`}
-                            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-                            <Edit className="w-3.5 h-3.5 flex-shrink-0"/> Update
-                          </Link>
                           <Link href={`/student/${student.enrollment}?session=${student.session}`}
                             className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-school-navy text-white">
                             <Eye className="w-3.5 h-3.5 flex-shrink-0"/> View
                           </Link>
+                          <button onClick={() => setReadmitModal(student)}
+                            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold bg-green-600 hover:bg-green-700 text-white">
+                            <RotateCcw className="w-3.5 h-3.5 flex-shrink-0"/> Readmission
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex gap-2">
+                            <Link href={`/student/${student.enrollment}/edit`}
+                              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                              <Edit className="w-3.5 h-3.5 flex-shrink-0"/> Update
+                            </Link>
+                            <Link href={`/student/${student.enrollment}?session=${student.session}`}
+                              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-school-navy text-white">
+                              <Eye className="w-3.5 h-3.5 flex-shrink-0"/> View
+                            </Link>
+                          </div>
+                          <button disabled
+                            className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200">
+                            <RotateCcw className="w-3.5 h-3.5 flex-shrink-0"/> Readmission
+                          </button>
                         </>
                       )}
                     </div>
@@ -1349,6 +1424,27 @@ export default function StudentPage() {
                           </Link>
                         </div>
 
+                      ) : isLeftOrInactive ? (
+                        /* ── Left / Inactive — only Readmission (enabled) + View ── */
+                        <div className="space-y-2">
+                          <div className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5 text-center">
+                            <p className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">{student.status}</p>
+                            <p className="text-[11px] text-gray-400 mt-0.5 font-semibold">Not currently enrolled</p>
+                          </div>
+                          <Link
+                            href={`/student/${student.enrollment}?session=${student.session}`}
+                            className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-school-navy text-white hover:bg-school-navy-dark transition-colors"
+                          >
+                            <Eye className="w-4 h-4 flex-shrink-0" /> View
+                          </Link>
+                          <button
+                            onClick={() => setReadmitModal(student)}
+                            className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-bold bg-green-600 hover:bg-green-700 text-white transition-colors"
+                          >
+                            <RotateCcw className="w-4 h-4 flex-shrink-0" /> Readmission
+                          </button>
+                        </div>
+
                       ) : (
                         /* ── Active / normal student ── */
                         <>
@@ -1371,6 +1467,17 @@ export default function StudentPage() {
                             >
                               <Trash2 className="w-4 h-4 flex-shrink-0" /> Deactivate
                             </button>
+                          </div>
+                          <div className="pt-2 border-t border-gray-100 space-y-1.5">
+                            <button
+                              disabled
+                              className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-bold bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200"
+                            >
+                              <RotateCcw className="w-4 h-4 flex-shrink-0" /> Readmission
+                            </button>
+                            <p className="text-[10px] text-gray-400 font-semibold text-center">
+                              Only available for left / inactive students
+                            </p>
                           </div>
                           {student.session !== CURRENT_SESSION && getNextClass(student.std) && (
                             <div className="pt-2 border-t border-gray-100 space-y-1.5">
