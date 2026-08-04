@@ -218,9 +218,13 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
       appBar: AppBar(
         flexibleSpace: Container(decoration: const BoxDecoration(gradient: AppColors.navyGradient)),
         title: Text(_title),
-        leading: _step != 'list'
-            ? IconButton(icon: const Icon(Icons.arrow_back_ios_rounded), onPressed: _goBack)
-            : null,
+        // Always shown, unlike relying on Flutter's automatic back button -
+        // on the list step it leaves the page entirely, on every other step
+        // it steps back one screen in the exam-entry flow.
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_rounded),
+          onPressed: _step == 'list' ? () => Navigator.of(context).pop() : _goBack,
+        ),
       ),
       body: body,
     );
