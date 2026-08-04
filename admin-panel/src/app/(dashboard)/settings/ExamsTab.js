@@ -105,6 +105,7 @@ export default function ExamsTab() {
   const [editName, setEditName] = useState("");
   const [editStartDate, setEditStartDate] = useState("");
   const [editEndDate, setEditEndDate] = useState("");
+  const [editError, setEditError] = useState("");
 
   function load() {
     setLoading(true);
@@ -148,15 +149,26 @@ export default function ExamsTab() {
     setEditName(exam.name);
     setEditStartDate(exam.start_date || "");
     setEditEndDate(exam.end_date);
+    setEditError("");
   }
 
   async function saveEdit(id) {
     const name = editName.trim();
-    if (!name || !editStartDate || !editEndDate) return;
-    if (editEndDate < editStartDate) { alert("End date can't be before the start date."); return; }
-    await updateOfficialExam(id, { name, startDate: editStartDate, endDate: editEndDate, sortOrder: exams.find(e => e.id === id)?.sort_order ?? 0 });
-    setExams(prev => prev.map(e => (e.id === id ? { ...e, name, start_date: editStartDate, end_date: editEndDate } : e)));
-    setEditingId(null);
+    // Exams created before start_date existed may have no value here yet -
+    // silently doing nothing when it's blank made Save look broken, so this
+    // now tells the admin exactly what's missing instead of no-oping.
+    if (!name) { setEditError("Enter an exam name."); return; }
+    if (!editStartDate) { setEditError("Pick a start date."); return; }
+    if (!editEndDate) { setEditError("Pick an end date."); return; }
+    if (editEndDate < editStartDate) { setEditError("End date can't be before the start date."); return; }
+    setEditError("");
+    try {
+      await updateOfficialExam(id, { name, startDate: editStartDate, endDate: editEndDate, sortOrder: exams.find(e => e.id === id)?.sort_order ?? 0 });
+      setExams(prev => prev.map(e => (e.id === id ? { ...e, name, start_date: editStartDate, end_date: editEndDate } : e)));
+      setEditingId(null);
+    } catch (err) {
+      setEditError(err?.message || "Failed to save changes.");
+    }
   }
 
   async function handleDelete(exam) {
@@ -194,13 +206,16 @@ export default function ExamsTab() {
                   </div>
 
                   {isEditingRow ? (
-                    <div className="flex-1 flex flex-wrap items-center gap-2">
-                      <input className={inp + " max-w-[220px]"} value={editName} onChange={e => setEditName(e.target.value)} />
-                      <input type="date" className={inp + " max-w-[150px]"} value={editStartDate} onChange={e => setEditStartDate(e.target.value)} title="Start date" />
-                      <span className="text-gray-400 text-xs">to</span>
-                      <input type="date" className={inp + " max-w-[150px]"} value={editEndDate} onChange={e => setEditEndDate(e.target.value)} title="End date" />
-                      <button onClick={() => saveEdit(exam.id)} className="p-2 rounded-lg text-green-600 hover:bg-green-50 transition-colors"><Save className="w-4 h-4"/></button>
-                      <button onClick={() => setEditingId(null)} className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"><X className="w-4 h-4"/></button>
+                    <div className="flex-1 flex flex-col gap-1.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input className={inp + " max-w-[220px]"} value={editName} onChange={e => setEditName(e.target.value)} />
+                        <input type="date" className={inp + " max-w-[150px]"} value={editStartDate} onChange={e => setEditStartDate(e.target.value)} title="Start date" />
+                        <span className="text-gray-400 text-xs">to</span>
+                        <input type="date" className={inp + " max-w-[150px]"} value={editEndDate} onChange={e => setEditEndDate(e.target.value)} title="End date" />
+                        <button onClick={() => saveEdit(exam.id)} className="p-2 rounded-lg text-green-600 hover:bg-green-50 transition-colors"><Save className="w-4 h-4"/></button>
+                        <button onClick={() => { setEditingId(null); setEditError(""); }} className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"><X className="w-4 h-4"/></button>
+                      </div>
+                      {editError && <p className="text-xs text-red-500">{editError}</p>}
                     </div>
                   ) : (
                     <button className="flex-1 flex items-center justify-between text-left" onClick={() => setExpanded(isOpen ? null : exam.id)}>
