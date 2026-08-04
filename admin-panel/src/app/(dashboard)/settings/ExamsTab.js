@@ -1,0 +1,246 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import {
+  Award, Plus, Trash2, Pencil, Save, X, Check, ChevronDown, ChevronUp,
+  Lock, LockOpen, CalendarDays,
+} from "lucide-react";
+import { getAcademicYears, getClassesWithSections, getAllClassSubjects } from "@/lib/settingsService";
+import {
+  getOfficialExams, createOfficialExam, updateOfficialExam, deleteOfficialExam,
+  isExamUnlocked, getExamSubjectConfig, saveExamSubjectMaxMarks,
+} from "@/lib/examService";
+
+const inp = "border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-school-navy w-full";
+const sel = inp + " cursor-pointer";
+
+function fmtDMY(iso) {
+  if (!iso) return "";
+  const [y, m, d] = iso.split("-");
+  return `${d}-${m}-${y}`;
+}
+
+// Nested per-class max-marks editor, shown when an exam row is expanded.
+// Each field auto-saves on blur (independent of the others) rather than a
+// batch form, since these are unrelated per-subject values.
+function ExamSubjectConfig({ examId, classesWithSections, classSubjectsMap }) {
+  const [selectedClass, setSelectedClass] = useState(classesWithSections[0]?.name || "");
+  const [config, setConfig] = useState({}); // { [subject]: max_marks }
+  const [loading, setLoading] = useState(true);
+  const [savedSubject, setSavedSubject] = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    getExamSubjectConfig(examId)
+      .then(rows => {
+        const map = {};
+        rows.forEach(r => {
+          if (r.class_name === selectedClass) map[r.subject_name] = r.max_marks;
+        });
+        setConfig(map);
+      })
+      .finally(() => setLoading(false));
+  }, [examId, selectedClass]);
+
+  const subjects = classSubjectsMap[selectedClass] || [];
+
+  async function handleSave(subject, value) {
+    const maxMarks = Number(value);
+    if (!Number.isFinite(maxMarks) || maxMarks <= 0) return;
+    setConfig(prev => ({ ...prev, [subject]: maxMarks }));
+    await saveExamSubjectMaxMarks(examId, selectedClass, subject, maxMarks);
+    setSavedSubject(subject);
+    setTimeout(() => setSavedSubject(s => (s === subject ? null : s)), 1500);
+  }
+
+  return (
+    <div className="px-5 pb-4 pt-3 bg-gray-50/60 border-t border-gray-100">
+      <p className="text-xs font-semibold text-gray-500 mb-2">Max Marks per Subject</p>
+      <select className={sel + " max-w-xs mb-3"} value={selectedClass} onChange={e => setSelectedClass(e.target.value)}>
+        {classesWithSections.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+      </select>
+
+      {loading ? (
+        <p className="text-xs text-gray-400">Loading…</p>
+      ) : subjects.length === 0 ? (
+        <p className="text-xs text-gray-400">
+          No subjects configured for {selectedClass} yet — add them in Settings → Subjects first.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+          {subjects.map(subject => (
+            <div key={subject} className="flex items-center gap-2">
+              <span className="text-xs text-gray-600 flex-1 truncate">{subject}</span>
+              <input
+                type="number"
+                min="1"
+                className={inp + " w-20 text-center"}
+                defaultValue={config[subject] ?? 100}
+                onBlur={e => handleSave(subject, e.target.value)}
+              />
+              {savedSubject === subject && <Check className="w-3.5 h-3.5 text-green-500 flex-shrink-0"/>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function ExamsTab() {
+  const [exams, setExams] = useState([]);
+  const [currentYear, setCurrentYear] = useState(null);
+  const [classesWithSections, setClassesWithSections] = useState([]);
+  const [classSubjectsMap, setClassSubjectsMap] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState(null);
+
+  const [newName, setNewName] = useState("");
+  const [newEndDate, setNewEndDate] = useState("");
+  const [addError, setAddError] = useState("");
+  const [adding, setAdding] = useState(false);
+
+  const [editingId, setEditingId] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editEndDate, setEditEndDate] = useState("");
+
+  function load() {
+    setLoading(true);
+    Promise.all([getAcademicYears(), getClassesWithSections(), getAllClassSubjects()])
+      .then(async ([years, classes, subjMap]) => {
+        const cur = years.find(y => y.is_current) || years[years.length - 1];
+        setCurrentYear(cur || null);
+        setClassesWithSections(classes.filter(c => c.is_active));
+        setClassSubjectsMap(subjMap);
+        if (cur) setExams(await getOfficialExams(cur.id));
+      })
+      .finally(() => setLoading(false));
+  }
+  useEffect(load, []);
+
+  const sortedExams = useMemo(() => [...exams].sort((a, b) => a.sort_order - b.sort_order), [exams]);
+
+  async function handleAdd() {
+    const name = newName.trim();
+    if (!name) { setAddError("Enter an exam name."); return; }
+    if (!newEndDate) { setAddError("Pick an end date."); return; }
+    setAddError("");
+    setAdding(true);
+    try {
+      const exam = await createOfficialExam({
+        name, endDate: newEndDate, academicYearId: currentYear?.id, sortOrder: exams.length,
+      });
+      setExams(prev => [...prev, exam]);
+      setNewName(""); setNewEndDate("");
+    } catch (err) {
+      setAddError(err?.message || "Failed to add exam.");
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  function startEdit(exam) {
+    setEditingId(exam.id);
+    setEditName(exam.name);
+    setEditEndDate(exam.end_date);
+  }
+
+  async function saveEdit(id) {
+    const name = editName.trim();
+    if (!name || !editEndDate) return;
+    await updateOfficialExam(id, { name, endDate: editEndDate, sortOrder: exams.find(e => e.id === id)?.sort_order ?? 0 });
+    setExams(prev => prev.map(e => (e.id === id ? { ...e, name, end_date: editEndDate } : e)));
+    setEditingId(null);
+  }
+
+  async function handleDelete(exam) {
+    if (!confirm(`Delete "${exam.name}"? This also deletes every mark entered for it. This cannot be undone.`)) return;
+    await deleteOfficialExam(exam.id);
+    setExams(prev => prev.filter(e => e.id !== exam.id));
+  }
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-16 text-gray-400 text-sm">Loading exams…</div>
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100">
+          <h3 className="text-sm font-bold text-gray-700">Official Exams{currentYear ? ` — ${currentYear.label}` : ""}</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Add or remove the school's official exams (First Unit Test, Half Yearly, Annual, etc.).
+            Marks entry automatically unlocks for teachers the day after each exam's end date.
+          </p>
+        </div>
+
+        <div className="divide-y divide-gray-100">
+          {sortedExams.map(exam => {
+            const unlocked = isExamUnlocked(exam);
+            const isEditingRow = editingId === exam.id;
+            const isOpen = expanded === exam.id;
+            return (
+              <div key={exam.id}>
+                <div className="flex items-center gap-3 px-5 py-3.5">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${unlocked ? "bg-green-50" : "bg-amber-50"}`}>
+                    <Award className={`w-4 h-4 ${unlocked ? "text-green-600" : "text-amber-600"}`}/>
+                  </div>
+
+                  {isEditingRow ? (
+                    <div className="flex-1 flex flex-wrap items-center gap-2">
+                      <input className={inp + " max-w-[220px]"} value={editName} onChange={e => setEditName(e.target.value)} />
+                      <input type="date" className={inp + " max-w-[160px]"} value={editEndDate} onChange={e => setEditEndDate(e.target.value)} />
+                      <button onClick={() => saveEdit(exam.id)} className="p-2 rounded-lg text-green-600 hover:bg-green-50 transition-colors"><Save className="w-4 h-4"/></button>
+                      <button onClick={() => setEditingId(null)} className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 transition-colors"><X className="w-4 h-4"/></button>
+                    </div>
+                  ) : (
+                    <button className="flex-1 flex items-center justify-between text-left" onClick={() => setExpanded(isOpen ? null : exam.id)}>
+                      <div>
+                        <p className="text-sm font-semibold text-gray-800">{exam.name}</p>
+                        <p className="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5">
+                          <CalendarDays className="w-3 h-3"/> Ends {fmtDMY(exam.end_date)}
+                          <span className={`ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${unlocked ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
+                            {unlocked ? <LockOpen className="w-2.5 h-2.5"/> : <Lock className="w-2.5 h-2.5"/>}
+                            {unlocked ? "Marks entry open" : "Coming Soon"}
+                          </span>
+                        </p>
+                      </div>
+                      {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400"/> : <ChevronDown className="w-4 h-4 text-gray-400"/>}
+                    </button>
+                  )}
+
+                  {!isEditingRow && (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button onClick={() => startEdit(exam)} className="p-2 rounded-lg text-gray-400 hover:text-school-navy hover:bg-gray-100 transition-colors"><Pencil className="w-3.5 h-3.5"/></button>
+                      <button onClick={() => handleDelete(exam)} className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"><Trash2 className="w-3.5 h-3.5"/></button>
+                    </div>
+                  )}
+                </div>
+
+                {isOpen && !isEditingRow && (
+                  <ExamSubjectConfig examId={exam.id} classesWithSections={classesWithSections} classSubjectsMap={classSubjectsMap}/>
+                )}
+              </div>
+            );
+          })}
+          {sortedExams.length === 0 && (
+            <p className="px-5 py-6 text-sm text-gray-400 text-center">No official exams added yet.</p>
+          )}
+        </div>
+
+        <div className="px-5 py-4 bg-gray-50/60 border-t border-gray-100">
+          <p className="text-xs font-semibold text-gray-500 mb-2">Add New Exam</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input className={inp + " max-w-[220px]"} placeholder="e.g. First Unit Test" value={newName} onChange={e => setNewName(e.target.value)} />
+            <input type="date" className={inp + " max-w-[160px]"} value={newEndDate} onChange={e => setNewEndDate(e.target.value)} />
+            <button onClick={handleAdd} disabled={adding}
+              className="flex items-center gap-1.5 bg-school-navy text-white text-xs font-semibold px-3.5 py-2.5 rounded-lg hover:bg-school-navy/90 disabled:opacity-50 transition-colors">
+              <Plus className="w-3.5 h-3.5"/> {adding ? "Adding…" : "Add Exam"}
+            </button>
+          </div>
+          {addError && <p className="text-xs text-red-500 mt-1.5">{addError}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}

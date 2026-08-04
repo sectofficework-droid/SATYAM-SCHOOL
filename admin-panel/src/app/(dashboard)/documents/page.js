@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getStudents } from "@/lib/studentService";
 import { getS3ViewUrl } from "@/lib/s3Upload";
 import { fmtDMY } from "@/lib/utils";
-import { getMarksheetsForClass, EXAM_TYPES } from "@/lib/marksheetService";
+import { getMarksheetsForClass, getSingleExamMarksheet, getCurrentOfficialExams } from "@/lib/marksheetService";
+import { isExamUnlocked } from "@/lib/examService";
 import S3Image from "@/components/S3Image";
 import * as XLSX from "xlsx";
 import {
@@ -644,10 +645,15 @@ async function generateBonafidePDF(students, onProgress) {
 
 // ── Marksheet: full A4 page per student ────────────────────────────────────────
 // sheet comes from marksheetService.getMarksheetsForClass() - subjects/marks
-// pulled live from the mobile app's exams/exam_marks tables (see that file
-// for the matching rules and grading scale). sheet is null if the student's
-// class has no subjects configured yet in Settings → Subjects.
-function drawMarksheetPage(doc, s, sheet, logoB64, autoTable) {
+// pulled live from the official_exams/official_exam_marks tables (see that
+// file for the grading scale). sheet is null if the student's class has no
+// subjects configured yet in Settings → Subjects. examNames is the list of
+// official exams (Settings → Exams), in display order, shown as columns.
+//
+// Shared letterhead/border/student-info block for both marksheet page types
+// (combined "Final Marksheet" and a single exam) - returns the page metrics
+// plus the y cursor to keep drawing from.
+function drawMarksheetHeader(doc, s, title, logoB64) {
   const PW = 210, PH = 297; // A4 mm
   const marginX = 15;
 
@@ -679,7 +685,7 @@ function drawMarksheetPage(doc, s, sheet, logoB64, autoTable) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
   doc.setTextColor(...rgb("#1a2b6b"));
-  doc.text("ANNUAL MARKSHEET", PW / 2, titleY + 2, { align: "center" });
+  doc.text(title, PW / 2, titleY + 2, { align: "center" });
   doc.line(marginX, titleY + 5, PW - marginX, titleY + 5);
 
   // Student info block
@@ -708,7 +714,13 @@ function drawMarksheetPage(doc, s, sheet, logoB64, autoTable) {
     doc.text(String(val || "—"), PW / 2 + 30, infoY + i * 7);
   });
 
-  let y = infoY + infoLeft.length * 7 + 8;
+  const y = infoY + infoLeft.length * 7 + 8;
+  return { PW, PH, marginX, y };
+}
+
+function drawMarksheetPage(doc, s, sheet, examNames, logoB64, autoTable) {
+  const { PW, PH, marginX, y: startY } = drawMarksheetHeader(doc, s, "FINAL MARKSHEET", logoB64);
+  let y = startY;
 
   if (!sheet || sheet.subjectRows.length === 0) {
     doc.setFont("helvetica", "normal");
@@ -721,12 +733,10 @@ function drawMarksheetPage(doc, s, sheet, logoB64, autoTable) {
   // Subjects grid
   autoTable(doc, {
     startY: y,
-    head: [["Subject", ...EXAM_TYPES, "Total", "Obtained", "Grade"]],
+    head: [["Subject", ...examNames, "Total", "Obtained", "Grade"]],
     body: sheet.subjectRows.map(row => [
       row.subject,
-      `${row.marks[0].obtained}/${row.marks[0].max}`,
-      `${row.marks[1].obtained}/${row.marks[1].max}`,
-      `${row.marks[2].obtained}/${row.marks[2].max}`,
+      ...row.marks.map(m => `${m.obtained}/${m.max}`),
       row.total,
       row.obtained,
       row.grade,
@@ -778,7 +788,73 @@ function drawMarksheetPage(doc, s, sheet, logoB64, autoTable) {
   doc.text("Principal's Sign.", PW - marginX - 50, sigY + 5);
 }
 
-async function generateMarksheetPDF(targetStudents, allStudents, onProgress) {
+// Same page shape as drawMarksheetPage, but for exactly one official exam -
+// sheet comes from marksheetService.getSingleExamMarksheet(), whose
+// subjectRows are {subject,obtained,max,grade} (no per-exam marks array).
+function drawSingleExamMarksheetPage(doc, s, sheet, examName, logoB64, autoTable) {
+  const { PW, PH, marginX, y: startY } = drawMarksheetHeader(doc, s, `${examName.toUpperCase()} MARKSHEET`, logoB64);
+  let y = startY;
+
+  if (!sheet || sheet.subjectRows.length === 0) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(150, 150, 150);
+    doc.text("No subjects configured for this class yet — add them in Settings → Subjects.", marginX, y);
+    return;
+  }
+
+  autoTable(doc, {
+    startY: y,
+    head: [["Subject", "Obtained", "Max", "Grade"]],
+    body: sheet.subjectRows.map(row => [row.subject, row.obtained, row.max, row.grade]),
+    margin: { left: marginX, right: marginX },
+    headStyles: { fillColor: rgb("#1a2b6b"), textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8.5, halign: "center" },
+    bodyStyles: { fontSize: 8.5, halign: "center" },
+    columnStyles: { 0: { halign: "left", fontStyle: "bold" } },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+  });
+  y = doc.lastAutoTable.finalY + 5;
+
+  autoTable(doc, {
+    startY: y,
+    body: [["Total Marks", String(sheet.totalMax), String(sheet.totalObtained)]],
+    theme: "grid",
+    margin: { left: marginX, right: marginX },
+    styles: { fontSize: 9, fontStyle: "bold", halign: "center" },
+    columnStyles: { 0: { halign: "left" } },
+  });
+  y = doc.lastAutoTable.finalY + 8;
+
+  autoTable(doc, {
+    startY: y,
+    head: [["Result", "Percentage", "Rank", "Grade", "Present Days"]],
+    body: [[
+      sheet.result,
+      `${sheet.percentage.toFixed(2)}%`,
+      String(sheet.rank),
+      sheet.grade,
+      `${sheet.present} / ${sheet.totalDays}`,
+    ]],
+    margin: { left: marginX, right: marginX },
+    headStyles: { fillColor: [100, 100, 100], textColor: [255, 255, 255], fontSize: 8.5, halign: "center" },
+    bodyStyles: { fontSize: 9.5, fontStyle: "bold", halign: "center" },
+  });
+  y = doc.lastAutoTable.finalY + 22;
+
+  // Signatures
+  const sigY = Math.min(y, PH - 28);
+  doc.setDrawColor(150, 150, 150);
+  doc.setLineWidth(0.3);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(0, 0, 0);
+  doc.line(marginX, sigY, marginX + 50, sigY);
+  doc.text("Class Teacher's Sign.", marginX, sigY + 5);
+  doc.line(PW - marginX - 50, sigY, PW - marginX, sigY);
+  doc.text("Principal's Sign.", PW - marginX - 50, sigY + 5);
+}
+
+async function generateMarksheetPDF(targetStudents, allStudents, mode, examId, officialExams, onProgress) {
   const { jsPDF } = await import("jspdf");
   const autoTable = (await import("jspdf-autotable")).default;
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
@@ -795,22 +871,33 @@ async function generateMarksheetPDF(targetStudents, allStudents, onProgress) {
   const sheetByStudentId = {};
   for (const className of Object.keys(classGroups)) {
     const classmates = allStudents.filter(s => s.std === className);
-    const sheets = await getMarksheetsForClass(classmates, className);
+    const sheets = mode === "single"
+      ? await getSingleExamMarksheet(classmates, className, examId)
+      : await getMarksheetsForClass(classmates, className);
     sheets.forEach(sh => { sheetByStudentId[sh.studentId] = sh; });
   }
+
+  const examNames = officialExams.map(e => e.name);
+  const examName = officialExams.find(e => e.id === examId)?.name || "";
 
   for (let i = 0; i < targetStudents.length; i++) {
     const s = targetStudents[i];
     onProgress && onProgress(i + 1, targetStudents.length);
     if (i > 0) doc.addPage();
-    drawMarksheetPage(doc, s, sheetByStudentId[s._studentId], logoB64, autoTable);
+    if (mode === "single") {
+      drawSingleExamMarksheetPage(doc, s, sheetByStudentId[s._studentId], examName, logoB64, autoTable);
+    } else {
+      drawMarksheetPage(doc, s, sheetByStudentId[s._studentId], examNames, logoB64, autoTable);
+    }
   }
-  doc.save("Marksheets_Satyam_Stars.pdf");
+  doc.save(mode === "single" ? `${examName.replace(/[\s/]+/g,"_")}_Marksheets_Satyam_Stars.pdf` : "Final_Marksheets_Satyam_Stars.pdf");
 }
 
 // ── Marksheet: live preview (React, matches jsPDF output) ──────────────────────
-function MarksheetPreview({ student, sheet, logoUrl, loading }) {
+function MarksheetPreview({ student, sheet, mode, examNames, examName, logoUrl, loading }) {
   const s = student || {};
+  const title = mode === "single" ? `${(examName || "").toUpperCase()} MARKSHEET` : "FINAL MARKSHEET";
+  const colCount = mode === "single" ? 5 : (examNames?.length || 0) + 3;
 
   if (loading) {
     return (
@@ -835,7 +922,7 @@ function MarksheetPreview({ student, sheet, logoUrl, loading }) {
           </div>
         </div>
         <div style={{ borderTop: "1px solid #f59e0b", margin: "8px 0 6px" }} />
-        <div style={{ textAlign: "center", fontWeight: 900, fontSize: 13, color: "#1a2b6b", margin: "2px 0 6px" }}>ANNUAL MARKSHEET</div>
+        <div style={{ textAlign: "center", fontWeight: 900, fontSize: 13, color: "#1a2b6b", margin: "2px 0 6px" }}>{title}</div>
         <div style={{ borderTop: "1px solid #f59e0b", margin: "0 0 8px" }} />
 
         <div style={{ fontSize: 8, lineHeight: 1.7, marginBottom: 8 }}>
@@ -851,9 +938,14 @@ function MarksheetPreview({ student, sheet, logoUrl, loading }) {
           <thead>
             <tr style={{ background: "#1a2b6b", color: "white" }}>
               <th style={{ padding: "3px 2px", textAlign: "left" }}>Subject</th>
-              <th style={{ padding: "3px 2px" }}>Unit</th>
-              <th style={{ padding: "3px 2px" }}>Half Yr</th>
-              <th style={{ padding: "3px 2px" }}>Annual</th>
+              {mode === "single" ? (
+                <>
+                  <th style={{ padding: "3px 2px" }}>Obtained</th>
+                  <th style={{ padding: "3px 2px" }}>Max</th>
+                </>
+              ) : (
+                (examNames || []).map(name => <th key={name} style={{ padding: "3px 2px" }}>{name}</th>)
+              )}
               <th style={{ padding: "3px 2px" }}>Total</th>
               <th style={{ padding: "3px 2px" }}>Grade</th>
             </tr>
@@ -862,15 +954,20 @@ function MarksheetPreview({ student, sheet, logoUrl, loading }) {
             {(sheet?.subjectRows || []).map((row, i) => (
               <tr key={row.subject} style={{ background: i % 2 ? "#f8fafc" : "white" }}>
                 <td style={{ padding: "2.5px 2px", fontWeight: 700 }}>{row.subject}</td>
-                <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{row.marks[0].obtained}</td>
-                <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{row.marks[1].obtained}</td>
-                <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{row.marks[2].obtained}</td>
-                <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{row.obtained}/{row.total}</td>
+                {mode === "single" ? (
+                  <>
+                    <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{row.obtained}</td>
+                    <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{row.max}</td>
+                  </>
+                ) : (
+                  row.marks.map((m, mi) => <td key={mi} style={{ padding: "2.5px 2px", textAlign: "center" }}>{m.obtained}</td>)
+                )}
+                <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{mode === "single" ? `${row.obtained}/${row.max}` : `${row.obtained}/${row.total}`}</td>
                 <td style={{ padding: "2.5px 2px", textAlign: "center", fontWeight: 700 }}>{row.grade}</td>
               </tr>
             ))}
             {(!sheet || sheet.subjectRows.length === 0) && (
-              <tr><td colSpan={6} style={{ padding: 8, textAlign: "center", color: "#94a3b8", fontSize: 6.5 }}>
+              <tr><td colSpan={colCount} style={{ padding: 8, textAlign: "center", color: "#94a3b8", fontSize: 6.5 }}>
                 No subjects configured for this class yet — add them in Settings → Subjects.
               </td></tr>
             )}
@@ -1067,12 +1164,20 @@ export default function DocumentsPage() {
   const [logoUrl, setLogoUrl]         = useState("");
   const [marksheetSheet, setMarksheetSheet]     = useState(null);
   const [marksheetLoading, setMarksheetLoading] = useState(false);
+  const [marksheetMode, setMarksheetMode]       = useState("final"); // "final" | "single"
+  const [selectedExamId, setSelectedExamId]     = useState("");
+  const [officialExams, setOfficialExams]       = useState([]);
 
   useEffect(() => {
     setLoading(true);
     getStudents().then(d => setStudents(d||[])).catch(()=>{}).finally(()=>setLoading(false));
     setLogoUrl(window.location.origin + "/school-logo.jpg");
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== "marksheet") return;
+    getCurrentOfficialExams().then(setOfficialExams).catch(() => setOfficialExams([]));
+  }, [activeTab]);
 
   const filtered = students.filter(s => {
     if (classFilter !== "All" && s.std !== classFilter) return false;
@@ -1089,17 +1194,22 @@ export default function DocumentsPage() {
   const allSelected = filtered.length > 0 && filtered.every(s => selected.has(s.enrollment));
   const previewStudent = selectedStudents[previewIdx] || filtered[0] || null;
 
-  // Marksheet data is pulled live from Supabase (exams/exam_marks), unlike
-  // the ID Card/Bonafide previews which are pure transforms of the already-
-  // loaded student list - Rank also needs the previewed student's whole
-  // class, not just the ones selected, so this always fetches from `students`
-  // (the full roster), not `selectedStudents`.
+  // Marksheet data is pulled live from Supabase (official_exams/
+  // official_exam_marks), unlike the ID Card/Bonafide previews which are
+  // pure transforms of the already-loaded student list - Rank also needs
+  // the previewed student's whole class, not just the ones selected, so
+  // this always fetches from `students` (the full roster), not
+  // `selectedStudents`.
   useEffect(() => {
     if (activeTab !== "marksheet" || !previewStudent) { setMarksheetSheet(null); return; }
+    if (marksheetMode === "single" && !selectedExamId) { setMarksheetSheet(null); return; }
     let cancelled = false;
     setMarksheetLoading(true);
     const classmates = students.filter(s => s.std === previewStudent.std);
-    getMarksheetsForClass(classmates, previewStudent.std)
+    const fetchSheets = marksheetMode === "single"
+      ? getSingleExamMarksheet(classmates, previewStudent.std, selectedExamId)
+      : getMarksheetsForClass(classmates, previewStudent.std);
+    fetchSheets
       .then(sheets => {
         if (cancelled) return;
         setMarksheetSheet(sheets.find(sh => sh.studentId === previewStudent._studentId) || null);
@@ -1107,7 +1217,7 @@ export default function DocumentsPage() {
       .catch(() => { if (!cancelled) setMarksheetSheet(null); })
       .finally(() => { if (!cancelled) setMarksheetLoading(false); });
     return () => { cancelled = true; };
-  }, [activeTab, previewStudent, students]);
+  }, [activeTab, previewStudent, students, marksheetMode, selectedExamId]);
 
   const toggleAll = useCallback(() => {
     setSelected(prev => {
@@ -1168,17 +1278,18 @@ export default function DocumentsPage() {
   const handleDownloadMarksheet = useCallback(async () => {
     const targets = selectedStudents;
     if (!targets.length) { alert("Please select at least one student."); return; }
+    if (marksheetMode === "single" && !selectedExamId) { alert("Please select an exam first."); return; }
     setGenerating(true);
     setProgress({ done:0, total:targets.length });
     try {
-      await generateMarksheetPDF(targets, students, (done, total) => setProgress({ done, total }));
+      await generateMarksheetPDF(targets, students, marksheetMode, selectedExamId, officialExams, (done, total) => setProgress({ done, total }));
     } catch(e) {
       alert("PDF generation failed: " + e.message);
     } finally {
       setGenerating(false);
       setProgress({ done:0, total:0 });
     }
-  }, [selectedStudents, students]);
+  }, [selectedStudents, students, marksheetMode, selectedExamId, officialExams]);
 
   return (
     <div className="flex flex-col gap-5 max-w-7xl mx-auto">
@@ -1385,10 +1496,36 @@ export default function DocumentsPage() {
       {activeTab === "marksheet" && (
         <div className="flex flex-col gap-5">
 
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
-            Marks are pulled live from the mobile app — an exam only shows up here if it's named exactly
-            {" "}{EXAM_TYPES.map((t, i) => <b key={t}>{i > 0 ? " / " : " "}&quot;{t}&quot;</b>)}{" "}
-            (case-insensitive). Subjects come from Settings → Subjects — configure a class there first if it shows no subjects below.
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1 flex-shrink-0">
+              <button onClick={() => setMarksheetMode("final")}
+                className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${marksheetMode==="final" ? "bg-white text-school-navy shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                Final Marksheet
+              </button>
+              <button onClick={() => setMarksheetMode("single")}
+                className={`px-3.5 py-1.5 rounded-md text-xs font-semibold transition-colors ${marksheetMode==="single" ? "bg-white text-school-navy shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                Single Exam
+              </button>
+            </div>
+
+            {marksheetMode === "single" && (
+              <select value={selectedExamId} onChange={e => setSelectedExamId(e.target.value)}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-school-navy min-w-48">
+                <option value="">Select an exam…</option>
+                {officialExams.map(ex => (
+                  <option key={ex.id} value={ex.id} disabled={!isExamUnlocked(ex)}>
+                    {ex.name}{!isExamUnlocked(ex) ? ` (locked until ${fmtDMY(ex.end_date)})` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <p className="text-xs text-gray-400">
+              {marksheetMode === "final"
+                ? "Shows every official exam side by side per subject, with a grand total. Manage exams in Settings → Exams."
+                : "Shows one exam's marks alone. Locked exams (before their end date) can’t be picked yet."}
+              {" "}Subjects come from Settings → Subjects.
+            </p>
           </div>
 
           {/* Main content: list + preview */}
@@ -1473,7 +1610,13 @@ export default function DocumentsPage() {
 
               {previewStudent ? (
                 <>
-                  <MarksheetPreview student={previewStudent} sheet={marksheetSheet} logoUrl={logoUrl} loading={marksheetLoading}/>
+                  <MarksheetPreview
+                    student={previewStudent} sheet={marksheetSheet}
+                    mode={marksheetMode}
+                    examNames={officialExams.map(e => e.name)}
+                    examName={officialExams.find(e => e.id === selectedExamId)?.name}
+                    logoUrl={logoUrl} loading={marksheetLoading}
+                  />
                   {selectedStudents.length > 1 && (
                     <div className="flex items-center gap-3 text-sm text-gray-500">
                       <button onClick={()=>setPreviewIdx(i=>Math.max(0,i-1))} disabled={previewIdx===0} className="p-1 rounded hover:bg-gray-100 disabled:opacity-30">
@@ -1513,7 +1656,7 @@ export default function DocumentsPage() {
                 </span>
               </div>
             ) : (
-              <button onClick={handleDownloadMarksheet} disabled={selected.size===0}
+              <button onClick={handleDownloadMarksheet} disabled={selected.size===0 || (marksheetMode==="single" && !selectedExamId)}
                 className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-school-navy text-white text-sm font-medium hover:bg-school-navy/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
                 <Download className="w-4 h-4"/>
                 Download PDF ({selected.size} marksheet{selected.size!==1?"s":""})

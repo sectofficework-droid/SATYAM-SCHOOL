@@ -12,10 +12,11 @@ import {
   Phone, Mail, MapPin, Hash, Shield, UserPlus,
   GraduationCap, Lock, ChevronDown, ChevronUp, Pencil,
   AlertCircle, LogOut, SlidersHorizontal, LayoutGrid,
-  Download, FileSpreadsheet, MessageSquare, CalendarRange, Layers, ScrollText,
+  Download, FileSpreadsheet, MessageSquare, CalendarRange, Layers, ScrollText, Award,
 } from "lucide-react";
 import YearPlanningTab from "./YearPlanningTab";
 import RulesRegulationsTab from "./RulesRegulationsTab";
+import ExamsTab from "./ExamsTab";
 import DateInputDMY from "@/components/DateInputDMY";
 import {
   isNonEmpty, isValidEmail, isValidPhone, isValidPincode, isValidName,
@@ -2285,6 +2286,7 @@ const TABS = [
   { key:"fees",       label:"Fee Structure",      icon:IndianRupee  },
   { key:"classes",    label:"Classes & Sections", icon:BookOpen     },
   { key:"subjects",   label:"Subjects",           icon:Layers       },
+  { key:"exams",      label:"Exams",              icon:Award        },
   { key:"timetable",  label:"Timetable",          icon:LayoutGrid   },
   { key:"planning",   label:"Year Planning",      icon:CalendarRange},
   { key:"reminders",  label:"Fee Reminders",      icon:MessageSquare},
@@ -2334,6 +2336,7 @@ export default function SettingsPage() {
       {tab === "fees"       && <FeeStructureTab/>}
       {tab === "classes"    && <ClassSectionsTab/>}
       {tab === "subjects"   && <SubjectsTab/>}
+      {tab === "exams"      && <ExamsTab/>}
       {tab === "timetable"  && <TimetableTab/>}
       {tab === "planning"   && <YearPlanningTab/>}
       {tab === "reminders"  && <FeeReminderTab/>}
