@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:printing/printing.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/utils/teacher_classes.dart';
+import '../../../../core/utils/official_exam_table_pdf.dart';
 
 class TeacherOfficialExamsPage extends StatefulWidget {
   final bool embedded;
@@ -44,6 +46,12 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
   List<Map<String, dynamic>> _overviewMarks = [];
   bool _loadingOverview = false;
 
+  // 'subject' = grouped-by-subject list (optionally filtered to one
+  // subject), 'table' = spreadsheet-style grid of every subject at once.
+  String _overviewMode = 'subject';
+  String? _overviewSubjectFilter;
+  bool _exportingOverviewPdf = false;
+
   @override
   void initState() { super.initState(); _load(); }
 
@@ -82,7 +90,7 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
     }
     setState(() { _selectedExam = exam; });
     if (_scope == 1 && _isClassTeacher) {
-      setState(() => _step = 'overview');
+      setState(() { _step = 'overview'; _overviewMode = 'subject'; _overviewSubjectFilter = null; });
       _loadOverview();
     } else {
       setState(() => _step = 'class');
@@ -489,22 +497,125 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
     ),
   ]);
 
+  Map<String, dynamic> get _overviewMarksLookup {
+    final map = <String, dynamic>{};
+    for (final m in _overviewMarks) {
+      map['${m['subject_name']}|${m['student_id']}'] = m['marks_obtained'];
+    }
+    return map;
+  }
+
+  Future<void> _downloadOverviewPdf() async {
+    setState(() => _exportingOverviewPdf = true);
+    try {
+      final bytes = await buildOfficialExamTablePdf(
+        examName: _selectedExam?['name'] ?? '',
+        className: _ownClassName ?? '',
+        subjects: _overviewSubjects,
+        students: _overviewStudents,
+        marks: _overviewMarks,
+      );
+      final safeExam = (_selectedExam?['name'] ?? 'Exam').toString().replaceAll(RegExp(r'[^\w\- ]'), '');
+      await Printing.sharePdf(bytes: bytes, filename: '${safeExam}_${_ownClassName}_ClassOverview.pdf');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to generate PDF: $e'),
+          backgroundColor: AppColors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _exportingOverviewPdf = false);
+    }
+  }
+
   // Read-only: every subject's marks for the class teacher's own class,
-  // regardless of which teacher entered them.
+  // regardless of which teacher entered them. Two modes: grouped-by-subject
+  // (optionally filtered to one subject) or a full spreadsheet-style table
+  // of every subject at once, which can be exported to PDF.
   Widget _buildOverview() {
     if (_loadingOverview) return const Center(child: CircularProgressIndicator(color: AppColors.navy));
     if (_overviewSubjects.isEmpty) {
       return _emptyState(icon: Icons.menu_book_outlined, title: 'No Subjects Configured', subtitle: 'No subjects have been added for $_ownClassName yet.');
     }
-    final marksLookup = <String, dynamic>{};
-    for (final m in _overviewMarks) {
-      marksLookup['${m['subject_name']}|${m['student_id']}'] = m['marks_obtained'];
-    }
+    return Column(children: [
+      _buildOverviewModeTabBar(),
+      if (_overviewMode == 'subject') _buildOverviewSubjectChips(),
+      Expanded(child: _overviewMode == 'subject' ? _buildOverviewSubjectList() : _buildOverviewTable()),
+    ]);
+  }
+
+  Widget _buildOverviewModeTabBar() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+    child: Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(color: AppColors.navy.withOpacity(.08), borderRadius: BorderRadius.circular(12)),
+      child: Row(children: [
+        Expanded(child: _overviewModeButton('By Subject', 'subject')),
+        Expanded(child: _overviewModeButton('Full Table', 'table')),
+      ]),
+    ),
+  );
+
+  Widget _overviewModeButton(String label, String mode) {
+    final active = _overviewMode == mode;
+    return GestureDetector(
+      onTap: () => setState(() => _overviewMode = mode),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 9),
+        decoration: BoxDecoration(
+          color: active ? AppColors.navy : Colors.transparent,
+          borderRadius: BorderRadius.circular(9),
+          boxShadow: active ? AppShadows.card : null,
+        ),
+        child: Center(child: Text(label,
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: active ? Colors.white : AppColors.textLight))),
+      ),
+    );
+  }
+
+  Widget _buildOverviewSubjectChips() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+    child: SizedBox(
+      height: 34,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _overviewSubjects.length + 1,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) {
+          final isAll = i == 0;
+          final subject = isAll ? null : _overviewSubjects[i - 1];
+          final selected = _overviewSubjectFilter == subject;
+          return GestureDetector(
+            onTap: () => setState(() => _overviewSubjectFilter = subject),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              decoration: BoxDecoration(
+                color: selected ? AppColors.navy : AppColors.card,
+                borderRadius: BorderRadius.circular(17),
+                border: Border.all(color: selected ? AppColors.navy : AppColors.border),
+              ),
+              child: Center(child: Text(isAll ? 'All Subjects' : subject!,
+                style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: selected ? Colors.white : AppColors.text))),
+            ),
+          );
+        },
+      ),
+    ),
+  );
+
+  Widget _buildOverviewSubjectList() {
+    final marksLookup = _overviewMarksLookup;
+    final subjects = _overviewSubjectFilter != null ? [_overviewSubjectFilter!] : _overviewSubjects;
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: _overviewSubjects.length,
+      itemCount: subjects.length,
       itemBuilder: (_, si) {
-        final subject = _overviewSubjects[si];
+        final subject = subjects[si];
         return Padding(
           padding: const EdgeInsets.only(bottom: 16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -535,6 +646,70 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
         );
       },
     );
+  }
+
+  // Excel-style grid: every subject as its own column, one row per student.
+  Widget _buildOverviewTable() {
+    final marksLookup = _overviewMarksLookup;
+    return Column(children: [
+      Expanded(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: DataTable(
+              headingRowColor: WidgetStateProperty.all(AppColors.navy),
+              headingTextStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12.5),
+              dataTextStyle: const TextStyle(color: AppColors.text, fontSize: 12.5),
+              columnSpacing: 20,
+              border: TableBorder.all(color: AppColors.border, width: 0.6, borderRadius: BorderRadius.circular(10)),
+              columns: [
+                const DataColumn(label: Text('#')),
+                const DataColumn(label: Text('Student Name')),
+                ..._overviewSubjects.map((s) => DataColumn(label: Text(s))),
+              ],
+              rows: _overviewStudents.asMap().entries.map((entry) {
+                final i = entry.key;
+                final s = entry.value;
+                final fullName = '${s['first_name'] ?? ''} ${s['last_name'] ?? ''}'.trim();
+                return DataRow(cells: [
+                  DataCell(Text('${i + 1}')),
+                  DataCell(Text(fullName.isNotEmpty ? fullName : (s['full_name'] ?? '—'))),
+                  ..._overviewSubjects.map((subject) {
+                    final marks = marksLookup['$subject|${s['id']}'];
+                    return DataCell(Text(marks != null ? '$marks' : '—',
+                      style: TextStyle(fontWeight: FontWeight.w700, color: marks != null ? AppColors.navy : AppColors.textHint)));
+                  }),
+                ]);
+              }).toList(),
+            ),
+          ),
+        ),
+      ),
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+        child: GestureDetector(
+          onTap: _exportingOverviewPdf ? null : _downloadOverviewPdf,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            height: 52,
+            decoration: BoxDecoration(
+              gradient: _exportingOverviewPdf ? null : AppColors.navyGradient,
+              color: _exportingOverviewPdf ? AppColors.textHint : null,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: _exportingOverviewPdf ? [] : [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+            ),
+            child: Center(child: _exportingOverviewPdf
+              ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
+              : const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.picture_as_pdf_rounded, color: Colors.white, size: 20),
+                  SizedBox(width: 8),
+                  Text('Download PDF', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
+                ])),
+          ),
+        ),
+      ),
+    ]);
   }
 
   Widget _tag(String label, Color bg, Color fg) => Container(
