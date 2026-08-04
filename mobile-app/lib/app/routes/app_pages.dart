@@ -17,6 +17,7 @@ import '../modules/teacher/profile/teacher_profile_page.dart';
 import '../modules/teacher/syllabus/teacher_syllabus_page.dart';
 import '../modules/teacher/query/teacher_query_page.dart';
 import '../modules/teacher/rules/teacher_rules_page.dart';
+import '../modules/teacher/official_exams/teacher_official_exams_page.dart';
 import '../modules/student/dashboard/student_home.dart';
 import '../modules/student/attendance/student_attendance_page.dart';
 import '../modules/student/marks/student_marks_page.dart';
@@ -27,6 +28,7 @@ import '../modules/student/profile/student_profile_page.dart';
 import '../modules/student/syllabus/student_syllabus_page.dart';
 import '../modules/student/query/student_query_page.dart';
 import '../modules/student/rules/student_rules_page.dart';
+import '../modules/student/official_results/student_official_results_page.dart';
 import 'app_routes.dart';
 
 class AppPages {
@@ -54,6 +56,7 @@ class AppPages {
     GetPage(name: Routes.teacherSyllabus, page: () => const TeacherSyllabusPage()),
     GetPage(name: Routes.teacherQuery,    page: () => const TeacherQueryPage()),
     GetPage(name: Routes.teacherRules,    page: () => const TeacherRulesPage()),
+    GetPage(name: Routes.teacherOfficialExams, page: () => const TeacherOfficialExamsPage()),
 
     // ── Student ──────────────────────────────────────────────────────────────
     GetPage(name: Routes.studentHome,     page: () => const StudentHome()),
@@ -66,5 +69,6 @@ class AppPages {
     GetPage(name: Routes.studentSyllabus, page: () => const StudentSyllabusPage()),
     GetPage(name: Routes.studentQuery,    page: () => const StudentQueryPage()),
     GetPage(name: Routes.studentRules,    page: () => const StudentRulesPage()),
+    GetPage(name: Routes.studentOfficialResults, page: () => const StudentOfficialResultsPage()),
   ];
 }

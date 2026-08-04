@@ -140,6 +140,78 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res as List);
   }
 
+  // Official Exams ────────────────────────────────────────────────────────────
+  // Admin-managed exams (First Unit Test / Half Yearly / Annual, etc.) -
+  // separate from the freeform exams/exam_marks above. Marks entry unlocks
+  // once an exam's end_date has passed (checked app-side, no stored flag).
+
+  static Future<List<Map<String, dynamic>>> fetchOfficialExams({String? academicYearId}) async {
+    var query = client.from('official_exams').select();
+    if (academicYearId != null) query = query.eq('academic_year_id', academicYearId);
+    final res = await query.order('sort_order');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<List<String>> fetchClassSubjects(String className) async {
+    final res = await client
+        .from('class_subjects')
+        .select('subject_name')
+        .eq('class_name', className)
+        .order('sort_order');
+    return List<Map<String, dynamic>>.from(res).map((r) => r['subject_name'] as String).toList();
+  }
+
+  static Future<double> fetchExamSubjectMaxMarks(String examId, String className, String subjectName) async {
+    final res = await client
+        .from('official_exam_subject_config')
+        .select('max_marks')
+        .eq('exam_id', examId)
+        .eq('class_name', className)
+        .eq('subject_name', subjectName)
+        .maybeSingle();
+    return (res?['max_marks'] as num?)?.toDouble() ?? 100;
+  }
+
+  // Bulk variant of the above - every subject's max marks for one exam+class
+  // in a single query, used by the student results view (one exam spans
+  // every subject, so fetching per-subject would be N+1).
+  static Future<Map<String, double>> fetchExamSubjectConfigForClass(String examId, String className) async {
+    final res = await client
+        .from('official_exam_subject_config')
+        .select('subject_name, max_marks')
+        .eq('exam_id', examId)
+        .eq('class_name', className);
+    final map = <String, double>{};
+    for (final row in List<Map<String, dynamic>>.from(res)) {
+      map[row['subject_name'] as String] = (row['max_marks'] as num?)?.toDouble() ?? 100;
+    }
+    return map;
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchOfficialExamMarks(String examId, String className, String subjectName) async {
+    final res = await client
+        .from('official_exam_marks')
+        .select()
+        .eq('exam_id', examId)
+        .eq('class_name', className)
+        .eq('subject_name', subjectName);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  // Class-teacher read-only "all subjects for my class" view.
+  static Future<List<Map<String, dynamic>>> fetchOfficialExamMarksForClass(String examId, String className) async {
+    final res = await client
+        .from('official_exam_marks')
+        .select()
+        .eq('exam_id', examId)
+        .eq('class_name', className);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<void> saveOfficialMarksBatch(List<Map<String, dynamic>> records) async {
+    await client.from('official_exam_marks').upsert(records, onConflict: 'exam_id,student_id,subject_name');
+  }
+
   // Syllabus ──────────────────────────────────────────────────────────────────
 
   // Same classNames-UNION-createdBy shape as fetchHomework/fetchExams above -

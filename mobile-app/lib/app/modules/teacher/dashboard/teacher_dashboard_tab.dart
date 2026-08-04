@@ -144,6 +144,12 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                     centered: true,
                     onTap: () => Get.toNamed(Routes.teacherRules),
                   )),
+                  _AnimEntry(delay: 980, child: StatCard(
+                    label: 'Official Exams', icon: Icons.fact_check_rounded,
+                    color: AppColors.lime, bgColor: AppColors.limeLight,
+                    centered: true,
+                    onTap: () => Get.toNamed(Routes.teacherOfficialExams),
+                  )),
                 ],
               ),
             ),
