@@ -10,7 +10,7 @@ const CORS = {
 };
 
 function isAllowedKey(key) {
-  return typeof key === "string" && (key.startsWith("students/") || key.startsWith("employees/"));
+  return typeof key === "string" && (key.startsWith("students/") || key.startsWith("employees/") || key.startsWith("gr-book/"));
 }
 
 export async function OPTIONS() {
