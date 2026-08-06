@@ -1,5 +1,6 @@
 import supabase from "./supabase";
-import { getS3ViewUrl, uploadFileToS3Presigned } from "./s3Upload";
+import { getS3ViewUrl, uploadFileToS3, fileExt } from "./s3Upload";
+import { compressFile } from "./fileCompression";
 
 const CLASS_NAME_MAP = {
   "JR KG": "JR.KG", "SR KG": "SR.KG",
@@ -225,10 +226,14 @@ export async function updateGrBookImportRow(id, data) {
 }
 
 // docField is one of the gr_book_imports.*_key columns, e.g. "birth_cert_key".
+// Compressed + proxied through /api/s3/upload (same pattern as every other
+// document upload in this app) rather than a direct-to-S3 presigned PUT -
+// the bucket has no CORS policy allowing browser PUTs, so a presigned PUT
+// fails client-side with an opaque "Failed to fetch".
 export async function uploadGrBookDocument(importRowId, docField, file) {
-  const ext = file.name.includes(".") ? file.name.split(".").pop() : "bin";
-  const key = `gr-book/${importRowId}-${docField}-${Date.now()}.${ext}`;
-  await uploadFileToS3Presigned(file, key);
+  const compressed = await compressFile(file);
+  const key = `gr-book/${importRowId}-${docField}-${Date.now()}.${fileExt(compressed)}`;
+  await uploadFileToS3(compressed, key);
   await updateGrBookImportRow(importRowId, { [docField]: key });
   return key;
 }
