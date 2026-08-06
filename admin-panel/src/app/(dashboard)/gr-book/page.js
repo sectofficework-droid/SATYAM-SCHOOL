@@ -42,11 +42,19 @@ const FIELD_DEFS = [
   { key: "tcNo",            label: "TC No" },
 ];
 
+// requiredIf: a document that's only mandatory in certain cases - shown as a
+// "Required" flag when missing and the condition holds, same reasoning as
+// the main Documents module already applies to "Leaving Certificate" (only
+// required when the student has previous-school info on file).
 const DOC_FIELDS = [
   { key: "birthCertificate", label: "Student Birth Certificate", dbField: "birth_cert_key" },
   { key: "studentAadhar",    label: "Student Aadhar Card",       dbField: "student_aadhar_key" },
   { key: "fatherAadhar",     label: "Father's Aadhar Card",      dbField: "father_aadhar_key" },
   { key: "motherAadhar",     label: "Mother's Aadhar Card",      dbField: "mother_aadhar_key" },
+  {
+    key: "previousSchoolTc", label: "Previous School TC (Leaving Certificate)", dbField: "previous_school_tc_key",
+    requiredIf: (entry) => !!(entry.lastSchoolName || entry.lastSchoolGrNo),
+  },
   { key: "tc",                label: "TC (if left school)",       dbField: "tc_key" },
 ];
 
@@ -324,11 +332,15 @@ function GrDetailModal({ entry, onClose, onSaved }) {
               <div className="flex flex-col gap-2">
                 {DOC_FIELDS.map(d => {
                   const url = docs?.[d.key];
+                  const isRequiredMissing = !url && d.requiredIf && d.requiredIf(entry);
                   return (
-                    <div key={d.key} className="flex items-center justify-between gap-3 bg-gray-50 rounded-lg px-3 py-2.5">
+                    <div key={d.key} className={`flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 ${isRequiredMissing ? "bg-red-50 border border-red-100" : "bg-gray-50"}`}>
                       <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                        <FileText className={`w-4 h-4 flex-shrink-0 ${isRequiredMissing ? "text-red-400" : "text-gray-400"}`} />
                         <span className="text-sm text-gray-700 truncate">{d.label}</span>
+                        {isRequiredMissing && (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 flex-shrink-0">Required</span>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         {url ? (

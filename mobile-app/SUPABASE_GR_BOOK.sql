@@ -35,11 +35,12 @@ CREATE TABLE IF NOT EXISTS gr_book_imports (
   date_of_leaving    DATE,
   class_when_left    TEXT,
   tc_no              TEXT,
-  birth_cert_key     TEXT,   -- S3 key, prefix gr-book/
-  student_aadhar_key TEXT,
-  father_aadhar_key  TEXT,
-  mother_aadhar_key  TEXT,
-  tc_key             TEXT,
+  birth_cert_key         TEXT,   -- S3 key, prefix gr-book/
+  student_aadhar_key     TEXT,
+  father_aadhar_key      TEXT,
+  mother_aadhar_key      TEXT,
+  previous_school_tc_key TEXT,   -- Leaving Certificate from the school they came from
+  tc_key                 TEXT,   -- TC this school issued if/when they left
   created_at         TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_gr_book_imports_gr_no ON gr_book_imports(gr_no);

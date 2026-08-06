@@ -12,6 +12,7 @@ const DOC_TYPE_NAMES = {
   studentAadhar:    "Student Aadhar Card",
   fatherAadhar:      "Father's Aadhar Card",
   motherAadhar:      "Mother's Aadhar Card",
+  previousSchoolTc:  "Leaving Certificate",
 };
 
 // ── Date of birth, spelled out register-style (e.g. "Twelfth August Two Thousand Fifteen") ──
@@ -153,6 +154,7 @@ export async function getGrBookEntries() {
       studentAadhar:    r.student_aadhar_key,
       fatherAadhar:     r.father_aadhar_key,
       motherAadhar:     r.mother_aadhar_key,
+      previousSchoolTc: r.previous_school_tc_key,
       tc:               r.tc_key,
     },
   }));
@@ -171,14 +173,15 @@ export async function getGrBookEntries() {
 export async function getGrBookDocuments(entry) {
   if (entry._source === "import") {
     const keys = entry._docKeys || {};
-    const [birthCertificate, studentAadhar, fatherAadhar, motherAadhar, tc] = await Promise.all([
+    const [birthCertificate, studentAadhar, fatherAadhar, motherAadhar, previousSchoolTc, tc] = await Promise.all([
       getS3ViewUrl(keys.birthCertificate),
       getS3ViewUrl(keys.studentAadhar),
       getS3ViewUrl(keys.fatherAadhar),
       getS3ViewUrl(keys.motherAadhar),
+      getS3ViewUrl(keys.previousSchoolTc),
       getS3ViewUrl(keys.tc),
     ]);
-    return { birthCertificate, studentAadhar, fatherAadhar, motherAadhar, tc };
+    return { birthCertificate, studentAadhar, fatherAadhar, motherAadhar, previousSchoolTc, tc };
   }
 
   const { data: docs, error } = await supabase
@@ -197,14 +200,15 @@ export async function getGrBookDocuments(entry) {
     .limit(1)
     .maybeSingle();
 
-  const [birthCertificate, studentAadhar, fatherAadhar, motherAadhar, tc] = await Promise.all([
+  const [birthCertificate, studentAadhar, fatherAadhar, motherAadhar, previousSchoolTc, tc] = await Promise.all([
     getS3ViewUrl(keyFor(DOC_TYPE_NAMES.birthCertificate)),
     getS3ViewUrl(keyFor(DOC_TYPE_NAMES.studentAadhar)),
     getS3ViewUrl(keyFor(DOC_TYPE_NAMES.fatherAadhar)),
     getS3ViewUrl(keyFor(DOC_TYPE_NAMES.motherAadhar)),
+    getS3ViewUrl(keyFor(DOC_TYPE_NAMES.previousSchoolTc)),
     getS3ViewUrl(tcRow?.file_url),
   ]);
-  return { birthCertificate, studentAadhar, fatherAadhar, motherAadhar, tc };
+  return { birthCertificate, studentAadhar, fatherAadhar, motherAadhar, previousSchoolTc, tc };
 }
 
 // ── Historical / not-in-system records ──────────────────────────────────────
