@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import useStore from "@/lib/store";
 import { useParams, useRouter } from "next/navigation";
-import { getStudentByEnrollment, bagItemAllowedForClass } from "@/lib/studentService";
+import { getStudentByEnrollment, bagItemAllowedForClass, markDocumentNotRequired, clearDocumentNotRequired } from "@/lib/studentService";
 import { fmtDMY } from "@/lib/utils";
 import S3Image from "@/components/S3Image";
 import { getS3ViewUrl, buildDocDownloadName } from "@/lib/s3Upload";
@@ -12,7 +12,7 @@ import {
   ArrowLeft, User, Phone, Calendar, BookOpen,
   FileText, IndianRupee, ClipboardCheck, Award, Edit,
   Download, CheckCircle, XCircle, GraduationCap, Shield,
-  Package, Clock, AlertTriangle, Bell, Send, X,
+  Package, Clock, AlertTriangle, Bell, Send, X, MinusCircle, RotateCcw,
 } from "lucide-react";
 
 
@@ -125,12 +125,89 @@ function PersonalTab({ s }) {
   );
 }
 
-function DocumentsTab({ docs, s }) {
-  const pendingDocs               = docs.filter((d) => !d.uploaded);
+function DocumentsTab({ docs, s, onRefresh }) {
+  const pendingDocs               = docs.filter((d) => !d.uploaded && !d.notRequired);
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [notifyMsg,  setNotifyMsg]  = useState("");
   const [mounted,    setMounted]    = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // Mark-as-Not-Required flow: doc being marked + the mandatory reason text.
+  const [notReqTarget, setNotReqTarget] = useState(null); // doc object or null
+  const [notReqReason, setNotReqReason] = useState("");
+  const [notReqSaving, setNotReqSaving] = useState(false);
+  const [undoingName,  setUndoingName]  = useState(null);
+
+  async function confirmNotRequired() {
+    if (!notReqTarget || !notReqReason.trim()) return;
+    setNotReqSaving(true);
+    try {
+      await markDocumentNotRequired(s._studentId, notReqTarget.documentTypeId, notReqReason.trim());
+      setNotReqTarget(null);
+      setNotReqReason("");
+      onRefresh?.();
+    } catch (err) {
+      alert("Could not update this document: " + err.message);
+    } finally {
+      setNotReqSaving(false);
+    }
+  }
+
+  async function undoNotRequired(doc) {
+    setUndoingName(doc.name);
+    try {
+      await clearDocumentNotRequired(s._studentId, doc.documentTypeId);
+      onRefresh?.();
+    } catch (err) {
+      alert("Could not update this document: " + err.message);
+    } finally {
+      setUndoingName(null);
+    }
+  }
+
+  const notReqModal = notReqTarget && (
+    <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/60 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="bg-gray-700 px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <MinusCircle className="w-4 h-4 text-white" />
+            <p className="text-white font-bold">Mark as Not Required</p>
+          </div>
+          <button onClick={() => setNotReqTarget(null)} className="text-white/60 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-gray-600">
+            Marking <span className="font-semibold text-gray-800">{notReqTarget.name}</span> as not required / not available.
+            It will stop showing as pending.
+          </p>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+              Reason <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              value={notReqReason}
+              onChange={(e) => setNotReqReason(e.target.value)}
+              rows={3}
+              placeholder="e.g. Family does not have this document"
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-gray-300 focus:border-gray-400 resize-none"
+            />
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => setNotReqTarget(null)}
+              className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button onClick={confirmNotRequired} disabled={!notReqReason.trim() || notReqSaving}
+              className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-gray-700 hover:bg-gray-800">
+              {notReqSaving ? "Saving..." : "Confirm"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 
   const openNotify = () => {
     const docList = pendingDocs.map((d) => `• ${d.name}`).join("\n");
@@ -203,17 +280,21 @@ function DocumentsTab({ docs, s }) {
         {docs.map((doc) => (
           <div key={doc.name} className="flex items-center gap-4 bg-gray-50 rounded-xl px-5 py-4">
             <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${
-              doc.uploaded ? "bg-green-100" : "bg-red-50"
+              doc.uploaded ? "bg-green-100" : doc.notRequired ? "bg-gray-200" : "bg-red-50"
             }`}>
               {doc.uploaded
                 ? <CheckCircle className="w-5 h-5 text-green-600" />
+                : doc.notRequired
+                ? <MinusCircle className="w-5 h-5 text-gray-500" />
                 : <XCircle className="w-5 h-5 text-red-400" />
               }
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-800">{doc.name}</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {doc.uploaded ? (doc.file?.split("/").pop() || "Uploaded") : "Not uploaded yet"}
+              <p className="text-xs text-gray-400 mt-0.5 truncate">
+                {doc.uploaded ? (doc.file?.split("/").pop() || "Uploaded")
+                  : doc.notRequired ? `Not required — ${doc.reason || "no reason given"}`
+                  : "Not uploaded yet"}
               </p>
             </div>
             {doc.uploaded ? (
@@ -223,18 +304,37 @@ function DocumentsTab({ docs, s }) {
                   const url = await getS3ViewUrl(doc.file, downloadName);
                   if (url) window.open(url, "_blank");
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors flex-shrink-0"
               >
                 <Download className="w-3.5 h-3.5" /> View
               </button>
+            ) : doc.notRequired ? (
+              <button
+                onClick={() => undoNotRequired(doc)}
+                disabled={undoingName === doc.name}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50 flex-shrink-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" /> {undoingName === doc.name ? "Undoing..." : "Mark Required Again"}
+              </button>
             ) : (
-              <span className="text-xs text-red-400 font-medium">Pending</span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="text-xs text-red-400 font-medium">Pending</span>
+                <button
+                  onClick={() => { setNotReqTarget(doc); setNotReqReason(""); }}
+                  disabled={!doc.documentTypeId}
+                  title={!doc.documentTypeId ? "This document type isn't set up yet" : "Mark as not required / not available"}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg text-gray-500 hover:bg-gray-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <MinusCircle className="w-3.5 h-3.5" /> Not Required
+                </button>
+              </div>
             )}
           </div>
         ))}
       </div>
 
       {notifyOpen && mounted && createPortal(notifyModal, document.body)}
+      {notReqTarget && mounted && createPortal(notReqModal, document.body)}
     </div>
   );
 }
@@ -776,13 +876,18 @@ export default function StudentDetailPage() {
   const [loading,    setLoading]    = useState(true);
   const [loadError,  setLoadError]  = useState(null);
 
-  useEffect(() => {
+  // silent: true skips the full-page spinner - used when refreshing after a
+  // small in-place action (e.g. marking a document Not Required) so the
+  // whole profile doesn't flash a loading state under the user.
+  const load = useCallback(({ silent = false } = {}) => {
     if (!id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     getStudentByEnrollment(id)
       .then(data => { setRawStudent(data); setLoading(false); })
       .catch(err  => { setLoadError(err.message); setLoading(false); });
   }, [id]);
+
+  useEffect(() => { load(); }, [load]);
 
   // Map DB result to the field names used throughout this page's rendering code
   const student = rawStudent ? {
@@ -968,6 +1073,7 @@ export default function StudentDetailPage() {
               : ["Leaving Certificate", "Marksheet"];
             const pendingDocs = docs.filter((d) =>
               !d.uploaded &&
+              !d.notRequired &&
               !notRequired.includes(d.name) &&
               !(hasBCWarning && d.name === "Birth Certificate")
             );
@@ -1112,7 +1218,7 @@ export default function StudentDetailPage() {
         {/* Tab Content */}
         <div className="p-5 lg:p-6">
           {activeTab === "personal"   && <PersonalTab   s={student} />}
-          {activeTab === "documents"  && <DocumentsTab  docs={student.documents ?? []} s={student} />}
+          {activeTab === "documents"  && <DocumentsTab  docs={student.documents ?? []} s={student} onRefresh={() => load({ silent: true })} />}
           {activeTab === "fees"       && <FeesTab       fees={student.fees} />}
           {activeTab === "attendance" && <AttendanceTab attendance={student.attendance ?? []} />}
           {activeTab === "results"    && <ResultsTab    results={student.results ?? []} />}

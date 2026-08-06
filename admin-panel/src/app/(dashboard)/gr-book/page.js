@@ -10,6 +10,7 @@ import {
   getGrBookEntries, getGrBookDocuments, createGrBookImportRows,
   updateGrBookImportRow, uploadGrBookDocument,
 } from "@/lib/grBookService";
+import { renderTablePdf } from "@/lib/pdfTableExport";
 import DateInputDMY from "@/components/DateInputDMY";
 import { fmtDMY } from "@/lib/utils";
 
@@ -96,6 +97,46 @@ export default function GrBookPage() {
       || (e.fatherName || "").toLowerCase().includes(q);
   });
 
+  function sourceLabel(e) { return e._source === "system" ? "In System" : "Imported Record"; }
+
+  function doExportExcel() {
+    const isoToday = new Date().toISOString().slice(0, 10);
+    const headerRow = ["Status", "Source", ...REGISTER_COLUMNS.map(f => f.label)];
+    const rows = [
+      ["Satyam Stars International School"],
+      ["Surat, Gujarat  |  GSEB Board  |  English Medium"],
+      ["GR Book — Digital General Register"],
+      [`Generated: ${fmtDMY(isoToday)}`, "", `Total Records: ${filtered.length}`],
+      [],
+      headerRow,
+      ...filtered.map(e => [
+        e.status, sourceLabel(e),
+        ...REGISTER_COLUMNS.map(f => fmtField(e[f.key], f.type)),
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"] = headerRow.map(() => ({ wch: 18 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "GR Book");
+    XLSX.writeFile(wb, `GR_Book_${isoToday}.xlsx`);
+  }
+
+  async function doExportPDF() {
+    const isoToday = new Date().toISOString().slice(0, 10);
+    const columns = [{ key: "status", label: "Status" }, { key: "source", label: "Source" }, ...REGISTER_COLUMNS];
+    const rows = filtered.map(e => ({
+      status: e.status,
+      source: sourceLabel(e),
+      ...Object.fromEntries(REGISTER_COLUMNS.map(f => [f.key, fmtField(e[f.key], f.type)])),
+    }));
+    await renderTablePdf({
+      bandLabel: "GR Book — Digital General Register",
+      columns, rows,
+      infoLines: [`Total Records: ${filtered.length}`],
+      filename: `GR_Book_${isoToday}.pdf`,
+    });
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <div>
@@ -112,12 +153,22 @@ export default function GrBookPage() {
 
       {tab === "register" ? (
         <>
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-            <div className="relative max-w-sm">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col sm:flex-row gap-3 sm:items-center">
+            <div className="relative max-w-sm flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input type="text" placeholder="Search by GR No, name or father's name" value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-school-navy" />
+            </div>
+            <div className="flex gap-2">
+              <button onClick={doExportExcel} disabled={filtered.length === 0}
+                className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-40">
+                <Download className="w-4 h-4" />Export Excel
+              </button>
+              <button onClick={doExportPDF} disabled={filtered.length === 0}
+                className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-40">
+                <FileText className="w-4 h-4" />Export PDF
+              </button>
             </div>
           </div>
 
@@ -139,22 +190,23 @@ export default function GrBookPage() {
                 <table className="text-sm">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100 text-left text-[11px] text-gray-500 uppercase tracking-wide">
+                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">Documents</th>
+                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">Status</th>
+                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">Source</th>
                       {REGISTER_COLUMNS.map(f => (
                         <th key={f.key} className="px-3 py-2.5 font-semibold whitespace-nowrap">{f.label}</th>
                       ))}
-                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">Status</th>
-                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">Source</th>
-                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">Documents</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {filtered.map((e, i) => (
                       <tr key={e._studentId || e._importId || i} className="hover:bg-gray-50 transition-colors">
-                        {REGISTER_COLUMNS.map(f => (
-                          <td key={f.key} className="px-3 py-2.5 text-gray-700 whitespace-nowrap">
-                            {fmtField(e[f.key], f.type)}
-                          </td>
-                        ))}
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <button onClick={() => setSelected(e)}
+                            className="text-xs font-semibold text-school-navy hover:underline">
+                            {e._source === "import" ? "View / Edit" : "View"}
+                          </button>
+                        </td>
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
                             e.status === "Active" ? "bg-green-50 text-green-700"
@@ -165,14 +217,13 @@ export default function GrBookPage() {
                         <td className="px-3 py-2.5 whitespace-nowrap">
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                             e._source === "system" ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600"
-                          }`}>{e._source === "system" ? "In System" : "Imported Record"}</span>
+                          }`}>{sourceLabel(e)}</span>
                         </td>
-                        <td className="px-3 py-2.5 whitespace-nowrap">
-                          <button onClick={() => setSelected(e)}
-                            className="text-xs font-semibold text-school-navy hover:underline">
-                            {e._source === "import" ? "View / Edit" : "View"}
-                          </button>
-                        </td>
+                        {REGISTER_COLUMNS.map(f => (
+                          <td key={f.key} className="px-3 py-2.5 text-gray-700 whitespace-nowrap">
+                            {fmtField(e[f.key], f.type)}
+                          </td>
+                        ))}
                       </tr>
                     ))}
                   </tbody>

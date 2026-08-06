@@ -13,6 +13,7 @@ import {
   getEmployeesForReport, getInventoryForReport,
   getPaymentsForReport, getAcademicYearLabels, getTcIssuedForReport,
 } from "@/lib/reportService";
+import { MM, computeColumnLayout, triggerPdfDownload } from "@/lib/pdfTableExport";
 import DateInputDMY from "@/components/DateInputDMY";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -708,59 +709,6 @@ function EligBadge({ eligible, done }) {
   if (done)      return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-green-100 text-green-700">Completed</span>;
   if (!eligible) return <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 text-gray-400">Not Eligible</span>;
   return             <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700">Eligible</span>;
-}
-
-// ── PDF table rendering (pdf-lib has no built-in table/autofit, so it's
-// built by hand here) ───────────────────────────────────────────────────────
-const MM = 2.8346; // pdf-lib works in points; layout constants below are
-                   // authored in the same mm figures the old jsPDF version used.
-
-// No column is ever allowed to wrap onto a second line, every column is
-// exactly as wide as its own longest value needs (not stretched, not
-// squeezed to fit its neighbours), and every cell - header or body, any
-// column - renders at the same single font size. Text width scales exactly
-// linearly with font size for a given string, so if the natural (per-column,
-// content-fit) widths don't all fit the page at the base size, the ONE size
-// used everywhere is scaled down uniformly until they do - columns shrink
-// together, not independently, so nothing ends up a different size.
-function computeColumnLayout({ columns, rows, availableWidth, headerFont, bodyFont, baseSize, cellPad }) {
-  const n = columns.length;
-  const contentWidths = columns.map((col, i) => {
-    const labelW = headerFont.widthOfTextAtSize(String(col.label), baseSize);
-    let maxBodyW = 0;
-    for (const row of rows) {
-      const w = bodyFont.widthOfTextAtSize(String(row[i] ?? ""), baseSize);
-      if (w > maxBodyW) maxBodyW = w;
-    }
-    return Math.max(labelW, maxBodyW);
-  });
-  const contentTotal = contentWidths.reduce((a, b) => a + b, 0) || 1;
-  const paddingTotal = n * cellPad * 2;
-
-  // Padding stays fixed - only the text itself (which scales exactly
-  // linearly with font size) is shrunk to make everything fit, so the
-  // final column widths are an exact fit with no rounding slack that
-  // could let one column's text bleed into the next. No floor on how
-  // small the shared size can go: a report with enough columns (eg. the
-  // 28-column UDISE Entry sheet) that a legibility floor would push the
-  // table wider than the page - shoving trailing columns off the visible
-  // page entirely - always resolves to the exact-fit size instead, however
-  // small that ends up being.
-  const size = Math.min(baseSize, Math.max(0.5, baseSize * Math.max(0, availableWidth - paddingTotal) / contentTotal));
-  const scale = size / baseSize;
-  const widths = contentWidths.map(w => w * scale + cellPad * 2);
-  return { widths, size };
-}
-
-function triggerPdfDownload(bytes, filename) {
-  const blob = new Blob([bytes], { type: "application/pdf" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────

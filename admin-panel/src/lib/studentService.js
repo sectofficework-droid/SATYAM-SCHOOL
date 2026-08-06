@@ -33,9 +33,12 @@ export function mapToStudent(enrollment) {
     ? enrollment.fee_payments.reduce((sum, p) => sum + (p.amount || 0), 0)
     : 0;
 
-  const uploadedDocNames = new Set(
+  // Excludes both actually-uploaded docs AND ones an admin has manually
+  // marked "Not Required" (with a reason) via the profile's Documents tab -
+  // either way, it should stop nagging as pending.
+  const resolvedDocNames = new Set(
     (enrollment.student?.student_documents || [])
-      .filter(d => d.status === "Uploaded")
+      .filter(d => d.status === "Uploaded" || d.status === "Not Required")
       .map(d => d.document_types?.name)
       .filter(Boolean)
   );
@@ -49,7 +52,7 @@ export function mapToStudent(enrollment) {
   // compulsory - Marksheet is optional and shouldn't nag as pending even if
   // never uploaded. With no previous school, neither applies at all.
   const notRequired   = hasPrevSchool ? ["Marksheet"] : ["Leaving Certificate", "Marksheet"];
-  const pendingDocs   = DEFAULT_DOCS.filter(name => !uploadedDocNames.has(name) && !notRequired.includes(name));
+  const pendingDocs   = DEFAULT_DOCS.filter(name => !resolvedDocNames.has(name) && !notRequired.includes(name));
 
   const std = normClass(enrollment.class?.name);
   const applicableAssignments = (enrollment.student_inventory_assignments || [])
@@ -159,10 +162,13 @@ export function mapToStudent(enrollment) {
     // Full documents list (populated when student_documents is loaded)
     documents: s.student_documents
       ? s.student_documents.map(d => ({
-          id:       d.id || null,
-          name:     d.document_types?.name || "",
-          uploaded: d.status === "Uploaded",
-          file:     d.file_url || "",
+          id:             d.id || null,
+          name:           d.document_types?.name || "",
+          documentTypeId: d.document_types?.id || null,
+          uploaded:       d.status === "Uploaded",
+          notRequired:    d.status === "Not Required",
+          reason:         d.reason || "",
+          file:           d.file_url || "",
         }))
       : [],
 
@@ -361,7 +367,7 @@ export async function getStudentByEnrollment(enrollmentNo) {
         ),
         student_siblings(id, sibling_name, sibling_class),
         student_documents(
-          id, status, file_url, uploaded_at,
+          id, status, file_url, uploaded_at, reason,
           document_types(id, name)
         )
       ),
@@ -379,7 +385,50 @@ export async function getStudentByEnrollment(enrollmentNo) {
     .single();
 
   if (error) throw error;
-  return mapToStudent(data);
+  const student = mapToStudent(data);
+
+  // Synthesize an entry for any DEFAULT_DOCS type with no student_documents
+  // row at all yet (e.g. never checked at admission) - the profile's
+  // Documents tab needs to show and act on these the same as an explicit
+  // Pending row, matching the student list's pendingDocs count exactly
+  // (which already treats "no row" the same as "not uploaded").
+  const { data: docTypes } = await supabase.from("document_types").select("id, name");
+  const presentNames = new Set(student.documents.map(d => d.name));
+  const missingDocs = DEFAULT_DOCS
+    .filter(name => !presentNames.has(name))
+    .map(name => ({
+      id: null, name, uploaded: false, notRequired: false, reason: "", file: "",
+      documentTypeId: docTypes?.find(dt => dt.name === name)?.id || null,
+    }));
+  student.documents = [...student.documents, ...missingDocs];
+
+  return student;
+}
+
+// ── Mark / unmark a document as "Not Required" (with a reason) ─────────────
+// so it stops counting as pending without ever being uploaded - e.g. a
+// document that genuinely doesn't apply to this particular student.
+
+export async function markDocumentNotRequired(studentId, documentTypeId, reason) {
+  const { error } = await supabase.from("student_documents").upsert({
+    student_id:       studentId,
+    document_type_id: documentTypeId,
+    status:           "Not Required",
+    reason:           reason || null,
+    file_url:         null,
+    uploaded_at:       null,
+  }, { onConflict: "student_id,document_type_id" });
+  if (error) throw error;
+}
+
+export async function clearDocumentNotRequired(studentId, documentTypeId) {
+  const { error } = await supabase.from("student_documents").upsert({
+    student_id:       studentId,
+    document_type_id: documentTypeId,
+    status:           "Pending",
+    reason:           null,
+  }, { onConflict: "student_id,document_type_id" });
+  if (error) throw error;
 }
 
 // ── Add Student ───────────────────────────────────────────────────────────────
