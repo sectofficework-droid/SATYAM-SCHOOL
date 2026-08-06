@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/services/auth_service.dart';
 import '../controllers/login_controller.dart';
 
 class LoginView extends GetView<LoginController> {
@@ -114,39 +115,24 @@ class _FormCard extends StatelessWidget {
           ),
           const SizedBox(height: 20),
 
-          const Text('Welcome Back!',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text)),
+          Text(controller.role == UserRole.teacher ? 'Teacher Sign In' : 'Student Sign In',
+            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.text)),
           const SizedBox(height: 4),
           const Text('Sign in to continue',
             style: TextStyle(fontSize: 14, color: AppColors.textLight)),
           const SizedBox(height: 24),
 
-          // Role tabs
-          Container(
-            decoration: BoxDecoration(
-              color: AppColors.border.withOpacity(.5),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            padding: const EdgeInsets.all(4),
-            child: Row(children: [
-              _Tab(label: 'Teacher', t: LoginTab.teacher, controller: controller),
-              _Tab(label: 'Student', t: LoginTab.student, controller: controller),
-            ]),
-          ),
-
-          const SizedBox(height: 24),
-
-          Obx(() => TextFormField(
+          TextFormField(
             controller: controller.idCtrl,
             textInputAction: TextInputAction.next,
             keyboardType: TextInputType.text,
             textCapitalization: TextCapitalization.characters,
             decoration: InputDecoration(
-              labelText: controller.tab.value == LoginTab.teacher ? 'Employee Code' : 'Enrollment No.',
-              hintText: controller.tab.value == LoginTab.teacher ? 'e.g. EMP001' : 'e.g. 0001',
+              labelText: controller.role == UserRole.teacher ? 'Employee Code' : 'Enrollment No.',
+              hintText: controller.role == UserRole.teacher ? 'e.g. EMP001' : 'e.g. 0001',
               prefixIcon: const Icon(Icons.badge_outlined, color: AppColors.navy),
             ),
-          )),
+          ),
           const SizedBox(height: 14),
 
           Obx(() => TextFormField(
@@ -217,42 +203,6 @@ class _FormCard extends StatelessWidget {
         ],
       ),
     ),
-  );
-}
-
-class _Tab extends StatelessWidget {
-  final String label;
-  final LoginTab t;
-  final LoginController controller;
-  const _Tab({required this.label, required this.t, required this.controller});
-
-  @override
-  Widget build(BuildContext context) => Expanded(
-    child: Obx(() {
-      final active = controller.tab.value == t;
-      return GestureDetector(
-        onTap: () => controller.switchTab(t),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            gradient: active ? AppColors.navyGradient : null,
-            borderRadius: BorderRadius.circular(10),
-            boxShadow: active ? [
-              BoxShadow(color: AppColors.navy.withOpacity(.3), blurRadius: 8, offset: const Offset(0, 4)),
-            ] : null,
-          ),
-          child: Text(label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: active ? Colors.white : AppColors.textLight,
-              fontWeight: FontWeight.w700,
-              fontSize: 14,
-            )),
-        ),
-      );
-    }),
   );
 }
 

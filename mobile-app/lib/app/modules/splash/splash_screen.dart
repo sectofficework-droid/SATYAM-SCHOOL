@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/app_config.dart';
 import '../../../app/routes/app_routes.dart';
 
 class SplashScreen extends StatefulWidget {
@@ -87,7 +88,10 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   void _navigate() {
     final auth = AuthService.to;
     if (auth.isLoggedIn.value) {
-      Get.offAllNamed(auth.role.value == UserRole.teacher
+      // This build is locked to one role (see AppConfig), so there's only
+      // ever one home route to restore into - no need to branch on the
+      // stored session role at all.
+      Get.offAllNamed(AppConfig.lockedRole == UserRole.teacher
           ? Routes.teacherHome
           : Routes.studentHome);
     } else {
