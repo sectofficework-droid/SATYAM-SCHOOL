@@ -55,6 +55,11 @@ function fmtField(v, type) {
   return type === "date" ? fmtDMY(v) : v;
 }
 
+// The register table itself shows the paper-register field order exactly -
+// the combined Place of Birth line, not its 4 raw village/city/district/state
+// components (those stay import/edit-only, see GrDetailModal).
+const REGISTER_COLUMNS = FIELD_DEFS.filter(f => !["birthVillage", "birthCity", "birthDistrict", "birthState"].includes(f.key));
+
 export default function GrBookPage() {
   const [tab, setTab]           = useState("register"); // 'register' | 'import'
   const [entries, setEntries]   = useState([]);
@@ -84,7 +89,7 @@ export default function GrBookPage() {
   });
 
   return (
-    <div className="flex flex-col gap-5 max-w-6xl mx-auto">
+    <div className="flex flex-col gap-5">
       <div>
         <h1 className="text-2xl font-bold text-school-navy">GR Book</h1>
         <p className="text-sm text-gray-500 mt-0.5">
@@ -122,41 +127,49 @@ export default function GrBookPage() {
                 <p className="text-sm text-gray-400">{entries.length === 0 ? "No GR records yet" : "No records match your search"}</p>
               </div>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-100 text-left text-xs text-gray-500 uppercase tracking-wide">
-                    <th className="px-4 py-2.5 font-semibold">GR No</th>
-                    <th className="px-3 py-2.5 font-semibold">Student</th>
-                    <th className="px-3 py-2.5 font-semibold hidden md:table-cell">Father's Name</th>
-                    <th className="px-3 py-2.5 font-semibold hidden md:table-cell">DOB</th>
-                    <th className="px-3 py-2.5 font-semibold">Status</th>
-                    <th className="px-3 py-2.5 font-semibold text-right">Source</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {filtered.map((e, i) => (
-                    <tr key={e._studentId || e._importId || i} onClick={() => setSelected(e)}
-                      className="hover:bg-gray-50 transition-colors cursor-pointer">
-                      <td className="px-4 py-2.5 font-mono text-gray-700">{e.grNo || "—"}</td>
-                      <td className="px-3 py-2.5 font-medium text-gray-800">{[e.studentName, e.surname].filter(Boolean).join(" ") || "—"}</td>
-                      <td className="px-3 py-2.5 text-gray-500 hidden md:table-cell">{e.fatherName || "—"}</td>
-                      <td className="px-3 py-2.5 text-gray-500 hidden md:table-cell">{fmtField(e.dob, "date")}</td>
-                      <td className="px-3 py-2.5">
-                        <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
-                          e.status === "Active" ? "bg-green-50 text-green-700"
-                          : e.status === "Imported" ? "bg-purple-50 text-purple-700"
-                          : "bg-gray-100 text-gray-500"
-                        }`}>{e.status}</span>
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          e._source === "system" ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600"
-                        }`}>{e._source === "system" ? "In System" : "Imported Record"}</span>
-                      </td>
+              <div className="overflow-x-auto">
+                <table className="text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 border-b border-gray-100 text-left text-[11px] text-gray-500 uppercase tracking-wide">
+                      {REGISTER_COLUMNS.map(f => (
+                        <th key={f.key} className="px-3 py-2.5 font-semibold whitespace-nowrap">{f.label}</th>
+                      ))}
+                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">Status</th>
+                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">Source</th>
+                      <th className="px-3 py-2.5 font-semibold whitespace-nowrap">Documents</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {filtered.map((e, i) => (
+                      <tr key={e._studentId || e._importId || i} className="hover:bg-gray-50 transition-colors">
+                        {REGISTER_COLUMNS.map(f => (
+                          <td key={f.key} className="px-3 py-2.5 text-gray-700 whitespace-nowrap">
+                            {fmtField(e[f.key], f.type)}
+                          </td>
+                        ))}
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
+                            e.status === "Active" ? "bg-green-50 text-green-700"
+                            : e.status === "Imported" ? "bg-purple-50 text-purple-700"
+                            : "bg-gray-100 text-gray-500"
+                          }`}>{e.status}</span>
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            e._source === "system" ? "bg-blue-50 text-blue-600" : "bg-amber-50 text-amber-600"
+                          }`}>{e._source === "system" ? "In System" : "Imported Record"}</span>
+                        </td>
+                        <td className="px-3 py-2.5 whitespace-nowrap">
+                          <button onClick={() => setSelected(e)}
+                            className="text-xs font-semibold text-school-navy hover:underline">
+                            {e._source === "import" ? "View / Edit" : "View"}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
         </>
