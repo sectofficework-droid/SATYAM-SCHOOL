@@ -22,7 +22,11 @@ const FIELD_DEFS = [
   { key: "motherName",      label: "Mother's Name" },
   { key: "religion",        label: "Religion" },
   { key: "caste",           label: "Caste" },
-  { key: "placeOfBirth",    label: "Place of Birth" },
+  { key: "birthVillage",    label: "Birth Village" },
+  { key: "birthCity",       label: "Birth City" },
+  { key: "birthDistrict",   label: "Birth District" },
+  { key: "birthState",      label: "Birth State" },
+  { key: "placeOfBirth",    label: "Place of Birth (Village, City, District, State)", derived: true },
   { key: "dob",             label: "Date of Birth", type: "date" },
   { key: "dobWords",        label: "Date of Birth (in words)", derived: true },
   { key: "lastSchoolGrNo",  label: "Last School Attended GR No" },
@@ -206,7 +210,9 @@ function GrDetailModal({ entry, onClose, onSaved }) {
       await updateGrBookImportRow(entry._importId, {
         gr_no: form.grNo || null, surname: form.surname || null, student_name: form.studentName || null,
         father_name: form.fatherName || null, mother_name: form.motherName || null,
-        religion: form.religion || null, caste: form.caste || null, place_of_birth: form.placeOfBirth || null,
+        religion: form.religion || null, caste: form.caste || null,
+        birth_village: form.birthVillage || null, birth_city: form.birthCity || null,
+        birth_district: form.birthDistrict || null, birth_state: form.birthState || null,
         dob: form.dob || null, last_school_gr_no: form.lastSchoolGrNo || null, last_school_name: form.lastSchoolName || null,
         date_of_admission: form.dateOfAdmission || null, admission_class: form.admissionClass || null,
         aadhar_no: form.aadharNo || null, udise_no: form.udiseNo || null, apaar_id: form.apaarId || null,
@@ -362,7 +368,8 @@ function ImportGrRecordsPanel({ onImportDone, onSwitchToRegister }) {
     const headerRow = FIELD_DEFS.filter(f => !f.derived).map(f => f.label);
     const reqRow    = FIELD_DEFS.filter(f => !f.derived).map(f => f.key === "grNo" ? "Required *" : "Optional");
     const exampleRow = [
-      "GR001", "Patel", "Arjun", "Rajesh Patel", "Meena Patel", "Hindu", "General", "Surat",
+      "GR001", "Patel", "Arjun", "Rajesh Patel", "Meena Patel", "Hindu", "General",
+      "Pandesara", "Surat", "Surat", "Gujarat",
       "15-06-2015", "45", "St. Xavier's School", "01-06-2021", "1st",
       "1234 5678 9012", "24123456789", "1234567890123", "12345678901",
       "", "", "",
@@ -475,7 +482,9 @@ function ImportGrRecordsPanel({ onImportDone, onSwitchToRegister }) {
       await createGrBookImportRows(valid.map(s => ({
         gr_no: s.grNo, surname: s.surname || null, student_name: s.studentName || null,
         father_name: s.fatherName || null, mother_name: s.motherName || null,
-        religion: s.religion || null, caste: s.caste || null, place_of_birth: s.placeOfBirth || null,
+        religion: s.religion || null, caste: s.caste || null,
+        birth_village: s.birthVillage || null, birth_city: s.birthCity || null,
+        birth_district: s.birthDistrict || null, birth_state: s.birthState || null,
         dob: s.dob || null, last_school_gr_no: s.lastSchoolGrNo || null, last_school_name: s.lastSchoolName || null,
         date_of_admission: s.dateOfAdmission || null, admission_class: s.admissionClass || null,
         aadhar_no: s.aadharNo || null, udise_no: s.udiseNo || null, apaar_id: s.apaarId || null,

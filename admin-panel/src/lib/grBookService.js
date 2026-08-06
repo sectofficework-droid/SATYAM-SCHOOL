@@ -40,12 +40,20 @@ export function dobToWords(dobStr) {
   return `${ORDINALS[d.getDate()]} ${MONTH_NAMES[d.getMonth()]} ${numberToWords(d.getFullYear())}`;
 }
 
+// "Village, City, District, State" - any missing part is skipped (not left as
+// a blank/dangling comma), so a village-less record reads "City, District,
+// State" and a village+city-less one reads "District, State".
+export function composePlaceOfBirth(village, city, district, state) {
+  return [village, city, district, state].map(v => (v || "").trim()).filter(Boolean).join(", ");
+}
+
 // ── GR Book list: every in-system student (derived, read-only) + every ──────
 // standalone historical import row, combined into one 21-field shape.
 export async function getGrBookEntries() {
   const [studentsRes, enrollRes, tcRes, importsRes] = await Promise.all([
     supabase.from("students").select(`
-      id, grno, first_name, last_name, dob, religion, caste, place_of_birth,
+      id, grno, first_name, last_name, dob, religion, caste,
+      birth_village, birth_city, birth_district, birth_state,
       father_name, mother_name, aadhar, udise, pen, apaar, status,
       student_previous_school(school_name, grno, class)
     `),
@@ -90,7 +98,11 @@ export async function getGrBookEntries() {
       motherName:      s.mother_name || "",
       religion:        s.religion || "",
       caste:           s.caste || "",
-      placeOfBirth:    s.place_of_birth || "",
+      birthVillage:    s.birth_village || "",
+      birthCity:       s.birth_city || "",
+      birthDistrict:   s.birth_district || "",
+      birthState:      s.birth_state || "",
+      placeOfBirth:    composePlaceOfBirth(s.birth_village, s.birth_city, s.birth_district, s.birth_state),
       dob:             s.dob || "",
       dobWords:        dobToWords(s.dob),
       lastSchoolGrNo:  s.student_previous_school?.grno || "",
@@ -118,7 +130,11 @@ export async function getGrBookEntries() {
     motherName:      r.mother_name || "",
     religion:        r.religion || "",
     caste:           r.caste || "",
-    placeOfBirth:    r.place_of_birth || "",
+    birthVillage:    r.birth_village || "",
+    birthCity:       r.birth_city || "",
+    birthDistrict:   r.birth_district || "",
+    birthState:      r.birth_state || "",
+    placeOfBirth:    composePlaceOfBirth(r.birth_village, r.birth_city, r.birth_district, r.birth_state),
     dob:             r.dob || "",
     dobWords:        dobToWords(r.dob),
     lastSchoolGrNo:  r.last_school_gr_no || "",
