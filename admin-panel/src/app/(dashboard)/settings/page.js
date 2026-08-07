@@ -28,6 +28,7 @@ import {
   getAcademicYears, addAcademicYear, deleteAcademicYear, saveCurrentYear,
   getFeeStructuresForYear, saveFeeStructuresForYear,
   getClassesWithSections, setClassActiveInDB, insertSection, deleteSectionFromDB, updateSectionTeacher,
+  addSupportingTeacher, removeSupportingTeacher,
   getTeachingEmployees, getAllClassSubjects, saveClassSubjects,
 } from "@/lib/settingsService";
 
@@ -877,6 +878,23 @@ function FeeStructureTab() {
 const DB_TO_STORE = { "JR.KG":"JR KG","SR.KG":"SR KG","11th - Commerce":"11th Commerce","12th - Commerce":"12th Commerce" };
 function dbToStore(name) { return DB_TO_STORE[name] || name; }
 
+// Maps raw sections from getClassesWithSections() into the shape ClassSectionsTab
+// keeps in state — used both on initial load and after save() reloads.
+function mapSections(sections) {
+  const sorted = (sections || []).sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    sections: sorted,
+    sectionTeachers: Object.fromEntries(sorted.map(s => [s.name, s.class_teacher || ""])),
+    sectionSupportingTeachers: Object.fromEntries(sorted.map(s => [
+      s.name,
+      (s.section_supporting_teachers || []).map(st => ({
+        employeeId: st.employee_id,
+        name: st.employees?.name || "",
+      })),
+    ])),
+  };
+}
+
 function ClassSectionsTab() {
   const setActiveClassesInStore = useStore(s => s.setActiveClasses);
 
@@ -895,10 +913,7 @@ function ClassSectionsTab() {
         id:      c.id,
         cls:     c.name,
         isActive: c.is_active,
-        sections: (c.sections || []).sort((a, b) => a.name.localeCompare(b.name)),
-        sectionTeachers: Object.fromEntries(
-          (c.sections || []).map(s => [s.name, s.class_teacher || ""])
-        ),
+        ...mapSections(c.sections),
       }));
       setRows(mapped);
       setActiveClassesInStore(mapped.filter(r => r.isActive).map(r => dbToStore(r.cls)));
@@ -915,6 +930,9 @@ function ClassSectionsTab() {
       ...r,
       sections:        r.sections.map(s => ({ ...s })),
       sectionTeachers: { ...r.sectionTeachers },
+      sectionSupportingTeachers: Object.fromEntries(
+        Object.entries(r.sectionSupportingTeachers || {}).map(([k, v]) => [k, v.map(t => ({ ...t }))])
+      ),
     })));
     setEditMode(true);
   }
@@ -941,6 +959,16 @@ function ClassSectionsTab() {
             const teacherId = teachers.find(t => t.name === newTeacher)?.id || null;
             ops.push(updateSectionTeacher(sec.id, newTeacher, teacherId));
           }
+
+          // Supporting teachers — diff against backup for this section
+          const newSupport  = row.sectionSupportingTeachers?.[sec.name]  || [];
+          const origSupport = orig.sectionSupportingTeachers?.[sec.name] || [];
+          const newIds  = new Set(newSupport.map(t => t.employeeId));
+          const origIds = new Set(origSupport.map(t => t.employeeId));
+          for (const t of newSupport)
+            if (!origIds.has(t.employeeId)) ops.push(addSupportingTeacher(sec.id, t.employeeId));
+          for (const t of origSupport)
+            if (!newIds.has(t.employeeId)) ops.push(removeSupportingTeacher(sec.id, t.employeeId));
         }
       }
       for (const sec of orig.sections) {
@@ -955,13 +983,7 @@ function ClassSectionsTab() {
       setRows(prev => prev.map(r => {
         const f = fresh.find(c => c.id === r.id);
         if (!f) return r;
-        return {
-          ...r,
-          sections: (f.sections || []).sort((a, b) => a.name.localeCompare(b.name)),
-          sectionTeachers: Object.fromEntries(
-            (f.sections || []).map(s => [s.name, s.class_teacher || ""])
-          ),
-        };
+        return { ...r, ...mapSections(f.sections) };
       }));
       setSaved(true);
       setEditMode(false);
@@ -999,7 +1021,12 @@ function ClassSectionsTab() {
       if (r.cls !== cls) return r;
       const next = String.fromCharCode(65 + r.sections.length);
       if (r.sections.find(s => s.name === next)) return r;
-      return { ...r, sections: [...r.sections, { id: null, name: next }], sectionTeachers: { ...r.sectionTeachers, [next]: "" } };
+      return {
+        ...r,
+        sections: [...r.sections, { id: null, name: next }],
+        sectionTeachers: { ...r.sectionTeachers, [next]: "" },
+        sectionSupportingTeachers: { ...r.sectionSupportingTeachers, [next]: [] },
+      };
     }));
   }
 
@@ -1008,7 +1035,9 @@ function ClassSectionsTab() {
       if (r.cls !== cls) return r;
       const st = { ...r.sectionTeachers };
       delete st[secName];
-      return { ...r, sections: r.sections.filter(s => s.name !== secName), sectionTeachers: st };
+      const sst = { ...r.sectionSupportingTeachers };
+      delete sst[secName];
+      return { ...r, sections: r.sections.filter(s => s.name !== secName), sectionTeachers: st, sectionSupportingTeachers: sst };
     }));
   }
 
@@ -1016,6 +1045,37 @@ function ClassSectionsTab() {
     setRows(prev => prev.map(r =>
       r.cls === cls ? { ...r, sectionTeachers: { ...r.sectionTeachers, [sec]: val } } : r
     ));
+  }
+
+  function addSupportingTeacherLocal(cls, sec, employeeId) {
+    setRows(prev => prev.map(r => {
+      if (r.cls !== cls) return r;
+      const emp = teachers.find(t => t.id === employeeId);
+      if (!emp) return r;
+      const current = r.sectionSupportingTeachers?.[sec] || [];
+      if (current.some(t => t.employeeId === employeeId)) return r;
+      return {
+        ...r,
+        sectionSupportingTeachers: {
+          ...r.sectionSupportingTeachers,
+          [sec]: [...current, { employeeId, name: emp.name }],
+        },
+      };
+    }));
+  }
+
+  function removeSupportingTeacherLocal(cls, sec, employeeId) {
+    setRows(prev => prev.map(r => {
+      if (r.cls !== cls) return r;
+      const current = r.sectionSupportingTeachers?.[sec] || [];
+      return {
+        ...r,
+        sectionSupportingTeachers: {
+          ...r.sectionSupportingTeachers,
+          [sec]: current.filter(t => t.employeeId !== employeeId),
+        },
+      };
+    }));
   }
 
   if (loading) return (
@@ -1074,33 +1134,77 @@ function ClassSectionsTab() {
                   <div className="px-5 pb-4 pt-3 bg-gray-50/60 border-t border-gray-100">
                     <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-3">Sections & Class Teachers</p>
                     <div className="space-y-2.5">
-                      {row.sections.map(sec => (
-                        <div key={sec.name} className="flex items-center gap-3">
-                          <div className="flex items-center gap-1 bg-school-navy text-white text-xs font-bold px-3 py-2 rounded-lg flex-shrink-0 min-w-[64px] justify-between">
-                            <span>{row.cls}-{sec.name}</span>
-                            {editMode && row.sections.length > 1 && (
-                              <button onClick={() => removeSectionLocal(row.cls, sec.name)}
-                                className="ml-1.5 hover:text-red-300 transition-colors">
-                                <X className="w-3 h-3"/>
-                              </button>
+                      {row.sections.map(sec => {
+                        const classTeacherName = row.sectionTeachers?.[sec.name] || "";
+                        const supportList = row.sectionSupportingTeachers?.[sec.name] || [];
+                        const availableForSupport = teachers.filter(t =>
+                          t.name !== classTeacherName && !supportList.some(st => st.employeeId === t.id)
+                        );
+                        return (
+                        <div key={sec.name} className="space-y-1.5">
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1 bg-school-navy text-white text-xs font-bold px-3 py-2 rounded-lg flex-shrink-0 min-w-[64px] justify-between">
+                              <span>{row.cls}-{sec.name}</span>
+                              {editMode && row.sections.length > 1 && (
+                                <button onClick={() => removeSectionLocal(row.cls, sec.name)}
+                                  className="ml-1.5 hover:text-red-300 transition-colors">
+                                  <X className="w-3 h-3"/>
+                                </button>
+                              )}
+                            </div>
+                            {editMode ? (
+                              <select
+                                className={`${sel} flex-1 max-w-xs`}
+                                value={classTeacherName}
+                                onChange={e => setSectionTeacher(row.cls, sec.name, e.target.value)}
+                              >
+                                <option value="">— Not Assigned —</option>
+                                {teachers.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
+                              </select>
+                            ) : (
+                              <span className={`text-sm font-medium ${classTeacherName ? "text-gray-700" : "text-gray-300"}`}>
+                                {classTeacherName || "Not assigned"}
+                              </span>
                             )}
                           </div>
-                          {editMode ? (
-                            <select
-                              className={`${sel} flex-1 max-w-xs`}
-                              value={row.sectionTeachers?.[sec.name] || ""}
-                              onChange={e => setSectionTeacher(row.cls, sec.name, e.target.value)}
-                            >
-                              <option value="">— Not Assigned —</option>
-                              {teachers.map(t => <option key={t.id} value={t.name}>{t.name}</option>)}
-                            </select>
-                          ) : (
-                            <span className={`text-sm font-medium ${row.sectionTeachers?.[sec.name] ? "text-gray-700" : "text-gray-300"}`}>
-                              {row.sectionTeachers?.[sec.name] || "Not assigned"}
-                            </span>
-                          )}
+
+                          {/* Supporting Teachers — same mobile-app section access as the Class Teacher */}
+                          <div className="flex items-center gap-2 pl-[76px] flex-wrap">
+                            <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide flex-shrink-0">Supporting:</span>
+                            {supportList.map(t => (
+                              <span key={t.employeeId} className="flex items-center gap-1 bg-gray-100 text-gray-600 text-[11px] font-medium px-2 py-1 rounded-lg">
+                                {t.name}
+                                {editMode && (
+                                  <button onClick={() => removeSupportingTeacherLocal(row.cls, sec.name, t.employeeId)}
+                                    className="hover:text-red-500 transition-colors">
+                                    <X className="w-3 h-3"/>
+                                  </button>
+                                )}
+                              </span>
+                            ))}
+                            {supportList.length === 0 && !editMode && (
+                              <span className="text-[11px] text-gray-300">None</span>
+                            )}
+                            {editMode && (
+                              sec.id ? (
+                                availableForSupport.length > 0 && (
+                                  <select
+                                    className="text-[11px] border border-dashed border-gray-300 rounded-lg px-2 py-1 text-gray-400 hover:border-school-navy hover:text-school-navy transition-colors"
+                                    value=""
+                                    onChange={e => { if (e.target.value) addSupportingTeacherLocal(row.cls, sec.name, e.target.value); }}
+                                  >
+                                    <option value="">+ Add supporting teacher…</option>
+                                    {availableForSupport.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                                  </select>
+                                )
+                              ) : (
+                                <span className="text-[11px] text-gray-300 italic">Save the section first to add supporting teachers</span>
+                              )
+                            )}
+                          </div>
                         </div>
-                      ))}
+                        );
+                      })}
 
                       {editMode && row.sections.length < 5 && (
                         <button onClick={() => addSectionLocal(row.cls)}

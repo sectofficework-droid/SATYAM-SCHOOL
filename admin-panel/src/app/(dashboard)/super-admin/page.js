@@ -2103,7 +2103,13 @@ function EmployeePanel({ employees: propEmployees }) {
                               ) : d.key ? (
                                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                                   <span className="text-[11px] text-green-600 font-medium">✓ {d.size ? formatFileSize(d.size) : "Uploaded"}</span>
-                                  <button type="button" onClick={async () => { const url = await getS3ViewUrl(d.key); if (url) window.open(url, "_blank"); }} className="text-[11px] text-school-navy underline">View</button>
+                                  <button type="button" onClick={async () => {
+                                    const win = window.open("", "_blank");
+                                    const url = await getS3ViewUrl(d.key);
+                                    if (url && win) win.location.href = url;
+                                    else if (win) win.close();
+                                    else alert("Please allow pop-ups to view this document.");
+                                  }} className="text-[11px] text-school-navy underline">View</button>
                                 </div>
                               ) : (
                                 <p className="text-[11px] text-red-400 mt-1">Not uploaded</p>

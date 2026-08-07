@@ -300,9 +300,16 @@ function DocumentsTab({ docs, s, onRefresh }) {
             {doc.uploaded ? (
               <button
                 onClick={async () => {
+                  // Open the tab synchronously (inside the tap gesture) — iOS
+                  // Safari standalone PWA silently blocks window.open() once
+                  // it happens after an await, so we navigate this tab once
+                  // the presigned URL resolves instead of opening fresh.
+                  const win = window.open("", "_blank");
                   const downloadName = buildDocDownloadName(s.enrollment, s.studentName, doc.name, doc.file);
                   const url = await getS3ViewUrl(doc.file, downloadName);
-                  if (url) window.open(url, "_blank");
+                  if (url && win) win.location.href = url;
+                  else if (win) win.close();
+                  else alert("Please allow pop-ups to view this document.");
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors flex-shrink-0"
               >

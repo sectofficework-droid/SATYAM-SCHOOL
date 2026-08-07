@@ -141,7 +141,7 @@ export async function getActiveClasses() {
 export async function getClassesWithSections() {
   const { data, error } = await supabase
     .from("classes")
-    .select("id, name, sort_order, is_active, sections(id, name, class_teacher)")
+    .select("id, name, sort_order, is_active, sections(id, name, class_teacher, section_supporting_teachers(employee_id, employees(id, name)))")
     .order("sort_order");
   if (error) throw error;
   return data || [];
@@ -221,6 +221,24 @@ export async function updateSectionTeacher(sectionId, teacherName, teacherId = n
     .from("sections")
     .update({ class_teacher: teacherName || null })
     .eq("id", sectionId);
+  if (error) throw error;
+}
+
+// Supporting teachers get the same mobile-app section access as the class
+// teacher (see teacher_login RPC) — any number of them per section.
+export async function addSupportingTeacher(sectionId, employeeId) {
+  const { error } = await supabase
+    .from("section_supporting_teachers")
+    .insert({ section_id: sectionId, employee_id: employeeId });
+  if (error) throw error;
+}
+
+export async function removeSupportingTeacher(sectionId, employeeId) {
+  const { error } = await supabase
+    .from("section_supporting_teachers")
+    .delete()
+    .eq("section_id", sectionId)
+    .eq("employee_id", employeeId);
   if (error) throw error;
 }
 

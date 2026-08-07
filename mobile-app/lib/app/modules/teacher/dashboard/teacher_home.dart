@@ -103,16 +103,17 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
     final className  = profile['class_name'] as String? ?? '';
     final sectionName = profile['section_name'] as String? ?? '';
     final classLabel  = className.isEmpty ? '' : (sectionName.isEmpty ? className : '$className - $sectionName');
+    final isSupportingTeacher = profile['is_supporting_teacher'] == true;
 
     return Scaffold(
       extendBody: true,
       body: _pages[_tab],
-      appBar: _buildAppBar(profile, name, classLabel),
+      appBar: _buildAppBar(profile, name, classLabel, isSupportingTeacher),
       bottomNavigationBar: _AnimatedBottomNav(currentIndex: _tab, onTap: _setTab),
     );
   }
 
-  PreferredSizeWidget _buildAppBar(Map profile, String name, String classLabel) {
+  PreferredSizeWidget _buildAppBar(Map profile, String name, String classLabel, bool isSupportingTeacher) {
     final photoKey = profile['photo_url'] as String?;
     return PreferredSize(
       preferredSize: const Size.fromHeight(64),
@@ -130,7 +131,7 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
                       style: const TextStyle(
                         fontSize: 18, fontWeight: FontWeight.w700, color: Colors.white, fontFamily: 'Poppins')),
                     if (classLabel.isNotEmpty)
-                      Text('Class Teacher · $classLabel',
+                      Text('${isSupportingTeacher ? 'Supporting Teacher' : 'Class Teacher'} · $classLabel',
                         style: const TextStyle(fontSize: 11, color: Colors.white60, fontFamily: 'Poppins')),
                   ],
                 ),

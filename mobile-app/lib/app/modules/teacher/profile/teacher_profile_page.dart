@@ -17,6 +17,7 @@ class TeacherProfilePage extends StatelessWidget {
     final className   = profile['class_name'] as String? ?? '';
     final sectionName = profile['section_name'] as String? ?? '';
     final classLabel  = className.isEmpty ? '—' : (sectionName.isEmpty ? className : '$className - $sectionName');
+    final isSupportingTeacher = profile['is_supporting_teacher'] == true;
 
     return Scaffold(
       body: CustomScrollView(
@@ -95,7 +96,7 @@ class TeacherProfilePage extends StatelessWidget {
                     ),
                     const SizedBox(width: 14),
                     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('Class Teacher', style: TextStyle(fontSize: 12, color: AppColors.textLight, fontWeight: FontWeight.w500)),
+                      Text(isSupportingTeacher ? 'Supporting Teacher' : 'Class Teacher', style: const TextStyle(fontSize: 12, color: AppColors.textLight, fontWeight: FontWeight.w500)),
                       Text(classLabel, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)),
                     ]),
                   ]),
