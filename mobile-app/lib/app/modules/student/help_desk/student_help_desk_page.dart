@@ -40,6 +40,10 @@ class _StudentHelpDeskPageState extends State<StudentHelpDeskPage> {
       appBar: AppBar(
         flexibleSpace: Container(decoration: const BoxDecoration(gradient: AppColors.navyGradient)),
         title: const Text('Help Desk'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
       body: body,
     );
