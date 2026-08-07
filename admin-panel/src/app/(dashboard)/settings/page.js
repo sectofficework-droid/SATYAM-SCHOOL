@@ -288,7 +288,7 @@ function SchoolProfileTab() {
     if (!isValidPincode(form.pin)) e.pin = "PIN code must be exactly 6 digits.";
     if (!isValidPhone(form.phone)) e.phone = "Phone must be a valid 10-digit mobile number.";
     if (!isValidEmail(form.email)) e.email = "Enter a valid email address.";
-    if (form.website && !/^https?:\/\/.+\..+/.test(form.website.trim())) e.website = "Website must start with http:// or https://";
+    if (form.website && !/^(https?:\/\/)?[^\s.]+\..+/.test(form.website.trim())) e.website = "Enter a valid website (e.g. www.school.edu.in).";
     if (!isNonEmpty(form.udise) || !/^\d{8,11}$/.test(form.udise.trim())) e.udise = "UDISE code must be 8-11 digits.";
     const adminErrors = form.adminNumbers.map(n => {
       if (!n.label.trim())        return "Enter a label (e.g. Office, Accounts).";
@@ -302,13 +302,19 @@ function SchoolProfileTab() {
   async function save() {
     const e = validate();
     setErrors(e);
-    if (!hasNoErrors(e)) return;
+    if (!hasNoErrors(e)) {
+      const messages = Object.entries(e).map(([k, v]) =>
+        k === "adminNumbers" ? v.filter(Boolean).join(" ") : v
+      );
+      alert("Please fix the following before saving:\n\n" + messages.join("\n"));
+      return;
+    }
     try {
       await saveSchoolProfile(form);
       await saveHelpDeskAdminNumbers(form.adminNumbers.filter(n => n.phone?.trim()));
       setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2500);
     } catch (err) {
-      alert("Failed to save school profile: " + (err?.message || "Unknown error"));
+      alert("Failed to save: " + (err?.message || "Unknown error"));
     }
   }
 
