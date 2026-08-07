@@ -32,6 +32,31 @@ export async function saveSchoolProfile(form) {
   if (error) throw error;
 }
 
+// ── Help Desk — Admin Numbers (Student app) ──────────────────────
+export async function getHelpDeskAdminNumbers() {
+  const { data, error } = await supabase
+    .from("helpdesk_admin_numbers")
+    .select("*")
+    .order("sort_order");
+  if (error) throw error;
+  return data || [];
+}
+
+// Wholesale replace — simplest correct approach for a small admin-managed
+// list that already lives inside one form-level Save (no per-row diffing).
+export async function saveHelpDeskAdminNumbers(numbers) {
+  const { error: delErr } = await supabase
+    .from("helpdesk_admin_numbers")
+    .delete()
+    .not("id", "is", null);
+  if (delErr) throw delErr;
+  if (!numbers.length) return;
+  const { error: insErr } = await supabase
+    .from("helpdesk_admin_numbers")
+    .insert(numbers.map((n, i) => ({ label: n.label.trim(), phone: n.phone.trim(), sort_order: i })));
+  if (insErr) throw insErr;
+}
+
 // ── Academic Years ─────────────────────────────────────────────
 export async function getAcademicYears() {
   const { data, error } = await supabase

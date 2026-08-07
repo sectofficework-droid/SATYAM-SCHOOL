@@ -13,6 +13,7 @@ import '../modules/student/syllabus/student_syllabus_page.dart';
 import '../modules/student/query/student_query_page.dart';
 import '../modules/student/rules/student_rules_page.dart';
 import '../modules/student/official_results/student_official_results_page.dart';
+import '../modules/student/help_desk/student_help_desk_page.dart';
 import 'app_routes.dart';
 
 // Route table for the Student-flavor build only - the Teacher app's build
@@ -37,5 +38,6 @@ class AppPagesStudent {
     GetPage(name: Routes.studentQuery,    page: () => const StudentQueryPage()),
     GetPage(name: Routes.studentRules,    page: () => const StudentRulesPage()),
     GetPage(name: Routes.studentOfficialResults, page: () => const StudentOfficialResultsPage()),
+    GetPage(name: Routes.studentHelpDesk, page: () => const StudentHelpDeskPage()),
   ];
 }

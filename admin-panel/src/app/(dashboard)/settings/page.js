@@ -25,6 +25,7 @@ import {
 } from "@/lib/validators";
 import {
   getSchoolProfile, saveSchoolProfile,
+  getHelpDeskAdminNumbers, saveHelpDeskAdminNumbers,
   getAcademicYears, addAcademicYear, deleteAcademicYear, saveCurrentYear,
   getFeeStructuresForYear, saveFeeStructuresForYear,
   getClassesWithSections, setClassActiveInDB, insertSection, deleteSectionFromDB, updateSectionTeacher,
@@ -231,7 +232,7 @@ function EditBar({ editMode, saved, onEdit, onSave, onCancel }) {
 
 // ── Tab: School Profile ────────────────────────────────────────────────────────
 function SchoolProfileTab() {
-  const [form,     setForm]     = useState(DEF_SCHOOL);
+  const [form,     setForm]     = useState({ ...DEF_SCHOOL, adminNumbers: [] });
   const [saved,    setSaved]    = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [backup,   setBackup]   = useState(null);
@@ -241,7 +242,8 @@ function SchoolProfileTab() {
   useEffect(() => {
     getSchoolProfile().then(p => {
       if (!p) return;
-      setForm({
+      setForm(prev => ({
+        ...prev,
         name:    p.name    || DEF_SCHOOL.name,
         address: p.address || DEF_SCHOOL.address,
         city:    p.city    || DEF_SCHOOL.city,
@@ -253,12 +255,29 @@ function SchoolProfileTab() {
         medium:  p.medium  || DEF_SCHOOL.medium,
         udise:   p.udise   || DEF_SCHOOL.udise,
         website: p.website || DEF_SCHOOL.website,
-      });
+      }));
+    }).catch(() => {});
+    getHelpDeskAdminNumbers().then(rows => {
+      setForm(prev => ({ ...prev, adminNumbers: rows.map(r => ({ label: r.label, phone: r.phone })) }));
     }).catch(() => {});
   }, []);
 
-  function startEdit() { setBackup({ ...form }); setEditMode(true); setErrors({}); }
+  function startEdit() {
+    setBackup({ ...form, adminNumbers: form.adminNumbers.map(n => ({ ...n })) });
+    setEditMode(true);
+    setErrors({});
+  }
   function cancel()    { setForm(backup); setEditMode(false); setErrors({}); }
+
+  function addAdminNumberLocal() {
+    setForm(p => ({ ...p, adminNumbers: [...p.adminNumbers, { label: "", phone: "" }] }));
+  }
+  function removeAdminNumberLocal(i) {
+    setForm(p => ({ ...p, adminNumbers: p.adminNumbers.filter((_, idx) => idx !== i) }));
+  }
+  function setAdminNumberField(i, key, val) {
+    setForm(p => ({ ...p, adminNumbers: p.adminNumbers.map((n, idx) => idx === i ? { ...n, [key]: val } : n) }));
+  }
 
   function validate() {
     const e = {};
@@ -271,6 +290,12 @@ function SchoolProfileTab() {
     if (!isValidEmail(form.email)) e.email = "Enter a valid email address.";
     if (form.website && !/^https?:\/\/.+\..+/.test(form.website.trim())) e.website = "Website must start with http:// or https://";
     if (!isNonEmpty(form.udise) || !/^\d{8,11}$/.test(form.udise.trim())) e.udise = "UDISE code must be 8-11 digits.";
+    const adminErrors = form.adminNumbers.map(n => {
+      if (!n.label.trim())        return "Enter a label (e.g. Office, Accounts).";
+      if (!isValidPhone(n.phone)) return "Phone must be a valid 10-digit mobile number.";
+      return "";
+    });
+    if (adminErrors.some(Boolean)) e.adminNumbers = adminErrors;
     return e;
   }
 
@@ -280,6 +305,7 @@ function SchoolProfileTab() {
     if (!hasNoErrors(e)) return;
     try {
       await saveSchoolProfile(form);
+      await saveHelpDeskAdminNumbers(form.adminNumbers.filter(n => n.phone?.trim()));
       setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2500);
     } catch (err) {
       alert("Failed to save school profile: " + (err?.message || "Unknown error"));
@@ -346,6 +372,50 @@ function SchoolProfileTab() {
                   <input className={inp + " pl-9"} value={form.website} onChange={set("website")} placeholder="https://..."/></div><FieldError msg={errors.website}/></div>
               : <ViewVal val={form.website} icon={MapPin}/>}
           </Field>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
+        <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider border-b border-gray-100 pb-3">
+          Help Desk — Admin Numbers
+        </h3>
+        <p className="text-xs text-gray-400 -mt-3">
+          Shown to students in the mobile app&apos;s Help Desk, after their Class/Supporting Teacher and before the Principal.
+        </p>
+        <div className="space-y-3">
+          {form.adminNumbers.map((n, i) => (
+            <div key={i}>
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  {editMode
+                    ? <input className={inp} value={n.label} onChange={e => setAdminNumberField(i, "label", e.target.value)} placeholder="Label (e.g. Office, Accounts)"/>
+                    : <ViewVal val={n.label}/>}
+                </div>
+                <div className="flex-1">
+                  {editMode
+                    ? <div className="relative"><Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
+                        <input className={inp + " pl-9"} value={n.phone} onChange={e => setAdminNumberField(i, "phone", e.target.value)} maxLength={10} placeholder="10-digit mobile"/></div>
+                    : <ViewVal val={n.phone} icon={Phone}/>}
+                </div>
+                {editMode && (
+                  <button type="button" onClick={() => removeAdminNumberLocal(i)}
+                    className="text-gray-300 hover:text-red-500 transition-colors flex-shrink-0">
+                    <X className="w-4 h-4"/>
+                  </button>
+                )}
+              </div>
+              {editMode && <FieldError msg={errors.adminNumbers?.[i]}/>}
+            </div>
+          ))}
+          {form.adminNumbers.length === 0 && !editMode && (
+            <p className="text-sm text-gray-300">No admin numbers configured</p>
+          )}
+          {editMode && (
+            <button type="button" onClick={addAdminNumberLocal}
+              className="flex items-center gap-1.5 border-2 border-dashed border-gray-300 text-gray-400 hover:border-school-navy hover:text-school-navy text-xs font-semibold px-3 py-2 rounded-lg transition-colors">
+              <Plus className="w-3 h-3"/> Add Admin Number
+            </button>
+          )}
         </div>
       </div>
 

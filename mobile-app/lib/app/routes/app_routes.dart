@@ -28,4 +28,5 @@ abstract class Routes {
   static const studentQuery     = '/student/query';
   static const studentRules     = '/student/rules';
   static const studentOfficialResults = '/student/official-results';
+  static const studentHelpDesk  = '/student/help-desk';
 }

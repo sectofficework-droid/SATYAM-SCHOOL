@@ -336,6 +336,15 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  // Help Desk (Student app) ────────────────────────────────────────────────────
+  // Class teacher, supporting teacher(s), admin numbers, and principal — see
+  // get_student_helpdesk_contacts in SUPABASE_HELPDESK.sql.
+  static Future<Map<String, dynamic>> fetchHelpDeskContacts(String? sectionId) async {
+    final res = await client.rpc('get_student_helpdesk_contacts', params: {'p_section_id': sectionId});
+    if (res == null) return {};
+    return Map<String, dynamic>.from(res as Map);
+  }
+
   // School Rules & Regulations ───────────────────────────────────────────────
   // One row per audience ('teacher' or 'student'), edited from the admin
   // panel - the app just reads its own row.
