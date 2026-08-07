@@ -96,7 +96,7 @@ class TeacherProfilePage extends StatelessWidget {
                     ),
                     const SizedBox(width: 14),
                     Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(isSupportingTeacher ? 'Supporting Teacher' : 'Class Teacher', style: const TextStyle(fontSize: 12, color: AppColors.textLight, fontWeight: FontWeight.w500)),
+                      Text(isSupportingTeacher ? 'Supporting Teacher of' : 'Class Teacher', style: const TextStyle(fontSize: 12, color: AppColors.textLight, fontWeight: FontWeight.w500)),
                       Text(classLabel, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: AppColors.text)),
                     ]),
                   ]),
