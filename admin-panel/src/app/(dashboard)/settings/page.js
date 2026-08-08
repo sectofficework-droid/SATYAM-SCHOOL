@@ -1888,6 +1888,7 @@ function TimetableTab() {
   const [editMode,         setEditMode]         = useState(false);
   const [saved,            setSaved]            = useState(false);
   const [ttLoading,        setTtLoading]        = useState(false);
+  const [ttError,          setTtError]          = useState("");
   const [activeCell,       setActiveCell]       = useState(null);
   const [ttData,           setTtData]           = useState({});
   const [periodsEditMode,  setPeriodsEditMode]  = useState(false);
@@ -1915,7 +1916,19 @@ function TimetableTab() {
 
   async function loadTT(year) {
     setTtLoading(true);
-    const { data } = await supabase.from("timetables").select("*").eq("academic_year", year);
+    setTtError("");
+    const { data, error } = await supabase.from("timetables").select("*").eq("academic_year", year);
+    if (error) {
+      // Was previously swallowed silently - a failed read looked exactly
+      // like "the schedule is just empty", which is how a permissions
+      // issue on this table would present as "I saved, refreshed, and my
+      // changes are gone" with no visible error anywhere.
+      console.error("Failed to load timetable:", error);
+      setTtError(error.message || "Failed to load the saved timetable.");
+      setTtData({});
+      setTtLoading(false);
+      return;
+    }
     const built = {};
     (data || []).forEach(row => {
       if (!built[year])                              built[year]                              = {};
@@ -2272,6 +2285,16 @@ function TimetableTab() {
           </div>
         )}
       </div>
+
+      {ttError && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5 mb-3">
+          <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5"/>
+          <div>
+            <p className="text-xs text-red-700 font-semibold">Couldn&apos;t load the saved timetable</p>
+            <p className="text-xs text-red-600 mt-0.5">{ttError}</p>
+          </div>
+        </div>
+      )}
 
       {ttLoading && (
         <div className="flex items-center justify-center py-16 text-gray-400 text-sm font-medium">
