@@ -6,7 +6,7 @@ import supabase from "@/lib/supabase";
 import useStore from "@/lib/store";
 import { IdleTimerContext } from "@/lib/idleTimerContext";
 
-const IDLE_LIMIT_SECONDS = 10 * 60;
+const IDLE_LIMIT_SECONDS = 15 * 60;
 
 export default function AuthGuard({ children }) {
   const router = useRouter();
@@ -52,18 +52,22 @@ export default function AuthGuard({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // Auto-logout after 10 minutes with no mouse/keyboard/touch/scroll activity.
-  // Any activity resets the idle clock, so the timer only ever counts down
-  // while the admin is genuinely away, not while they're working. Ticks
-  // every second so Header can show a live countdown via IdleTimerContext.
+  // Auto-logout after 15 minutes with no activity anywhere on the page. Any
+  // activity resets the idle clock, so the timer only ever counts down while
+  // the admin is genuinely away, not while they're working. Ticks every
+  // second so Header can show a live countdown via IdleTimerContext.
   useEffect(() => {
     if (!authUser) return;
 
     let lastActivity = Date.now();
     const markActivity = () => { lastActivity = Date.now(); };
 
-    const events = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
+    const events = ["mousemove", "mousedown", "keydown", "wheel", "touchstart", "touchmove", "click"];
     events.forEach((evt) => window.addEventListener(evt, markActivity, { passive: true }));
+    // "scroll" doesn't bubble, so a window-level listener misses scrolling
+    // inside the app's own scrollable content area unless it's registered
+    // for the capture phase, which does see it on the way down.
+    window.addEventListener("scroll", markActivity, { passive: true, capture: true });
 
     const interval = setInterval(async () => {
       const secondsLeft = Math.max(0, IDLE_LIMIT_SECONDS - Math.floor((Date.now() - lastActivity) / 1000));
@@ -78,6 +82,7 @@ export default function AuthGuard({ children }) {
 
     return () => {
       events.forEach((evt) => window.removeEventListener(evt, markActivity));
+      window.removeEventListener("scroll", markActivity, { capture: true });
       clearInterval(interval);
     };
   }, [authUser, clearAuthUser, router]);
