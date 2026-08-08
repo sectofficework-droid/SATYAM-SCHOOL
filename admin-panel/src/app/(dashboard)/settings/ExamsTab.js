@@ -10,6 +10,7 @@ import {
   getOfficialExams, createOfficialExam, updateOfficialExam, deleteOfficialExam,
   isExamUnlocked, getExamSubjectConfig, saveExamSubjectMaxMarks, saveExamSubjectMaxMarksBulk,
   getMonthlyTestMaxMarks, saveMonthlyTestMaxMarks,
+  getMonthlyTests, getMonthlyTestMarks, getOfficialExamMarksEntered,
 } from "@/lib/examService";
 
 const inp = "border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-school-navy w-full";
@@ -88,6 +89,48 @@ function ExamSubjectConfig({ examId, classesWithSections, classSubjectsMap }) {
           ))}
         </div>
       )}
+
+      <ExamMarksEntered examId={examId} className={selectedClass}/>
+    </div>
+  );
+}
+
+// What's actually been entered so far for this exam + the class currently
+// selected above (config's own selectedClass, reused here so the admin
+// doesn't have to pick a class twice) - read-only, teachers still enter
+// marks from the app.
+function ExamMarksEntered({ examId, className }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!className) { setRows([]); setLoading(false); return; }
+    setLoading(true);
+    getOfficialExamMarksEntered(examId, className)
+      .then(setRows)
+      .finally(() => setLoading(false));
+  }, [examId, className]);
+
+  return (
+    <div className="mt-4 pt-3 border-t border-gray-100">
+      <p className="text-xs font-semibold text-gray-500 mb-2">Marks Entered — {className || "—"}</p>
+      {loading ? (
+        <p className="text-xs text-gray-400">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-xs text-gray-400">No marks entered yet for {className}.</p>
+      ) : (
+        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+          <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
+            {rows.map((r, i) => (
+              <div key={`${r.studentId}-${r.subject}-${i}`} className="flex items-center justify-between px-3 py-2 text-xs">
+                <span className="text-gray-700 font-medium">{r.name || "—"}</span>
+                <span className="text-gray-400">{r.subject}</span>
+                <span className="font-semibold text-school-navy">{r.marks ?? "—"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -148,6 +191,113 @@ function MonthlyTestSettings() {
         )}
       </div>
       {error && <p className="px-5 pb-3 text-xs text-red-500">{error}</p>}
+    </div>
+  );
+}
+
+// Read-only visibility into Monthly Tests - teachers create these from the
+// app (name, class, subject, date, marks) with no admin involvement, so
+// this is the only place management can see what's been scheduled and
+// what's been marked, matching the visibility "Official Exams" already has.
+function MonthlyTestsList({ classesWithSections }) {
+  const [tests, setTests] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [classFilter, setClassFilter] = useState("All");
+  const [expanded, setExpanded] = useState(null);
+  const [marksByExam, setMarksByExam] = useState({});
+  const [marksLoading, setMarksLoading] = useState(false);
+
+  useEffect(() => {
+    getMonthlyTests().then(setTests).finally(() => setLoading(false));
+  }, []);
+
+  const filtered = useMemo(
+    () => classFilter === "All" ? tests : tests.filter(t => t.class === classFilter),
+    [tests, classFilter]
+  );
+
+  async function toggleExpand(examId) {
+    if (expanded === examId) { setExpanded(null); return; }
+    setExpanded(examId);
+    if (!marksByExam[examId]) {
+      setMarksLoading(true);
+      const marks = await getMonthlyTestMarks(examId);
+      setMarksByExam(prev => ({ ...prev, [examId]: marks }));
+      setMarksLoading(false);
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h3 className="text-sm font-bold text-gray-700">Monthly Tests</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            Tests subject teachers have scheduled from the app, with the date they picked and who created them.
+            Expand a row to see the marks entered so far.
+          </p>
+        </div>
+        <select className={sel + " max-w-[160px]"} value={classFilter} onChange={e => setClassFilter(e.target.value)}>
+          <option value="All">All Classes</option>
+          {classesWithSections.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+        </select>
+      </div>
+
+      {loading ? (
+        <p className="px-5 py-6 text-sm text-gray-400 text-center">Loading…</p>
+      ) : filtered.length === 0 ? (
+        <p className="px-5 py-6 text-sm text-gray-400 text-center">
+          {classFilter === "All" ? "No monthly tests created yet." : `No monthly tests for ${classFilter} yet.`}
+        </p>
+      ) : (
+        <div className="divide-y divide-gray-100">
+          {filtered.map(test => {
+            const isOpen = expanded === test.id;
+            const marks = marksByExam[test.id] || [];
+            return (
+              <div key={test.id}>
+                <button className="w-full flex items-center gap-3 px-5 py-3.5 text-left" onClick={() => toggleExpand(test.id)}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-purple-50">
+                    <ClipboardList className="w-4 h-4 text-purple-600"/>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800 truncate">{test.name}</p>
+                    <p className="text-xs text-gray-400 flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 font-semibold">{test.class}</span>
+                      <span>{test.subject}</span>
+                      <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3"/>{test.date ? fmtDMY(test.date) : "No date set"}</span>
+                      <span>· Max {test.maxMarks}</span>
+                      <span>· by {test.teacherName}</span>
+                    </p>
+                  </div>
+                  {isOpen ? <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0"/> : <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0"/>}
+                </button>
+
+                {isOpen && (
+                  <div className="px-5 pb-4 pt-1 bg-gray-50/60 border-t border-gray-100">
+                    {marksLoading && !marksByExam[test.id] ? (
+                      <p className="text-xs text-gray-400 py-2">Loading marks…</p>
+                    ) : marks.length === 0 ? (
+                      <p className="text-xs text-gray-400 py-2">No marks entered yet.</p>
+                    ) : (
+                      <div className="bg-white border border-gray-200 rounded-lg overflow-hidden mt-2">
+                        <div className="max-h-64 overflow-y-auto divide-y divide-gray-100">
+                          {marks.map(m => (
+                            <div key={m.studentId} className="flex items-center justify-between px-3 py-2 text-xs">
+                              <span className="text-gray-700 font-medium">{m.name || "—"}</span>
+                              <span className="font-semibold text-school-navy">{m.marks ?? "—"} / {test.maxMarks}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -260,6 +410,7 @@ export default function ExamsTab() {
   return (
     <div className="space-y-4">
       <MonthlyTestSettings/>
+      <MonthlyTestsList classesWithSections={classesWithSections}/>
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="text-sm font-bold text-gray-700">Official Exams{currentYear ? ` — ${currentYear.label}` : ""}</h3>

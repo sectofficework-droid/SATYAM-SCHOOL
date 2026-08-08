@@ -23,6 +23,45 @@ export async function saveMonthlyTestMaxMarks(maxMarks) {
   if (error) throw error;
 }
 
+// ── Monthly Tests (freeform, created by subject teachers in the app) ──────
+// Read-only for admin - teachers still create/manage these from the mobile
+// app; this just gives management visibility into what's been scheduled
+// and marked, matching what the "Official Exams" section below already
+// gives for the admin-managed exams. exams.created_by -> employees(id) is
+// an FK, so Supabase can embed the teacher's name in one query.
+
+export async function getMonthlyTests() {
+  const { data, error } = await supabase
+    .from("exams")
+    .select("id, name, class, subject, date, max_marks, employees:created_by(name)")
+    .order("date", { ascending: false });
+  if (error) throw error;
+  return (data || []).map(e => ({
+    id: e.id,
+    name: e.name,
+    class: e.class,
+    subject: e.subject,
+    date: e.date,
+    maxMarks: e.max_marks,
+    teacherName: e.employees?.name || "—",
+  }));
+}
+
+export async function getMonthlyTestMarks(examId) {
+  const { data, error } = await supabase
+    .from("exam_marks")
+    .select("student_id, marks_obtained, students:student_id(first_name, last_name)")
+    .eq("exam_id", examId);
+  if (error) throw error;
+  return (data || [])
+    .map(m => ({
+      studentId: m.student_id,
+      name: `${m.students?.first_name || ""} ${m.students?.last_name || ""}`.trim(),
+      marks: m.marks_obtained,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 // ── Official Exams (First Unit Test / Half Yearly / Annual, admin-managed) ──
 // Separate from the freeform teacher-created exams/exam_marks tables - these
 // are the school-wide official exams management can add/remove, with marks
@@ -97,4 +136,25 @@ export async function saveExamSubjectMaxMarksBulk(examId, rows) {
       { onConflict: "exam_id,class_name,subject_name" }
     );
   if (error) throw error;
+}
+
+// What's actually been entered so far for one official exam + class - same
+// data the teacher app's "Class Overview" table shows, so admin doesn't have
+// to ask a teacher whether marks are in yet. Only returns rows that have
+// been marked (not a blank roster row per student).
+export async function getOfficialExamMarksEntered(examId, className) {
+  const { data, error } = await supabase
+    .from("official_exam_marks")
+    .select("student_id, subject_name, marks_obtained, students:student_id(first_name, last_name)")
+    .eq("exam_id", examId)
+    .eq("class_name", className);
+  if (error) throw error;
+  return (data || [])
+    .map(m => ({
+      studentId: m.student_id,
+      name: `${m.students?.first_name || ""} ${m.students?.last_name || ""}`.trim(),
+      subject: m.subject_name,
+      marks: m.marks_obtained,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.subject.localeCompare(b.subject));
 }
