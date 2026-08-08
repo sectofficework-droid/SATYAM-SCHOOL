@@ -331,6 +331,79 @@ class SupabaseService {
     await client.from('syllabus').delete().eq('id', id);
   }
 
+  // Subtopics under a chapter - optional, own independent progress. A
+  // chapter with subtopics has its own status derived app-side from these
+  // instead of being cycled directly.
+  static Future<List<Map<String, dynamic>>> fetchSubtopics(List<String> chapterIds) async {
+    if (chapterIds.isEmpty) return [];
+    final res = await client.from('syllabus_subtopics').select().inFilter('chapter_id', chapterIds).order('sort_order');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<void> createSubtopics(List<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty) return;
+    await client.from('syllabus_subtopics').insert(rows);
+  }
+
+  static Future<void> updateSubtopicStatus(String id, String status) async {
+    await client.from('syllabus_subtopics').update({
+      'status': status,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', id);
+  }
+
+  static Future<void> deleteSubtopic(String id) async {
+    await client.from('syllabus_subtopics').delete().eq('id', id);
+  }
+
+  // Syllabus lock + edit-request workflow ──────────────────────────────────
+  // Same idiom as the attendance edit-request workflow above: approving a
+  // request sets approved_at, which opens a 24-hour edit window checked
+  // app-side (now() - approved_at < 24h) - no separate "window open" flag.
+
+  // Sets locked on every chapter row for this teacher+class+subject at once,
+  // since they were all added/locked together as one syllabus.
+  static Future<void> lockSyllabus({required String teacherId, required String className, required String subject}) async {
+    await client.from('syllabus').update({
+      'locked': true,
+      'locked_at': DateTime.now().toIso8601String(),
+    }).eq('teacher_id', teacherId).eq('class', className).eq('subject', subject);
+  }
+
+  static Future<void> submitSyllabusEditRequest({
+    required String teacherId,
+    required String className,
+    required String subject,
+    String? reason,
+    String? requestedChanges,
+  }) async {
+    await client.from('syllabus_edit_requests').insert({
+      'teacher_id': teacherId,
+      'class_name': className,
+      'subject_name': subject,
+      'reason': reason,
+      'requested_changes': requestedChanges,
+    });
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchMySyllabusEditRequests(String teacherId) async {
+    final res = await client
+        .from('syllabus_edit_requests')
+        .select()
+        .eq('teacher_id', teacherId)
+        .order('created_at', ascending: false)
+        .limit(50);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  // Ends an approved edit window early ("Save & Lock") instead of waiting
+  // the full 24 hours out.
+  static Future<void> closeSyllabusEditWindow(String requestId) async {
+    await client.from('syllabus_edit_requests').update({
+      'closed_at': DateTime.now().toIso8601String(),
+    }).eq('id', requestId);
+  }
+
   // Queries & Suggestions ────────────────────────────────────────────────────
 
   static Future<void> submitQuery(Map<String, dynamic> data) async {

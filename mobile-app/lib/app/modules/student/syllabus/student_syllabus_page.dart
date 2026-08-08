@@ -28,6 +28,7 @@ class StudentSyllabusPage extends StatefulWidget {
 
 class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
   List<Map<String, dynamic>> _chapters = [];
+  Map<String, List<Map<String, dynamic>>> _subtopicsByChapter = {};
   bool _loading = true;
 
   @override
@@ -40,7 +41,23 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
     final chapters = (className != null && className.isNotEmpty)
         ? await SupabaseService.fetchSyllabus(className: className)
         : <Map<String, dynamic>>[];
-    if (mounted) setState(() { _chapters = chapters; _loading = false; });
+    final subtopics = await SupabaseService.fetchSubtopics(chapters.map((c) => c['id'] as String).toList());
+    final subMap = <String, List<Map<String, dynamic>>>{};
+    for (final s in subtopics) {
+      subMap.putIfAbsent(s['chapter_id'] as String, () => []).add(s);
+    }
+    if (mounted) setState(() { _chapters = chapters; _subtopicsByChapter = subMap; _loading = false; });
+  }
+
+  // Same derivation as the teacher app: a chapter with subtopics shows a
+  // status computed from them instead of its own stored value.
+  String _statusFor(Map<String, dynamic> chapter) {
+    final subtopics = _subtopicsByChapter[chapter['id']] ?? const [];
+    if (subtopics.isEmpty) return (chapter['status'] ?? 'Not Started') as String;
+    final statuses = subtopics.map((s) => (s['status'] ?? 'Not Started') as String).toList();
+    if (statuses.every((s) => s == 'Completed')) return 'Completed';
+    if (statuses.any((s) => s != 'Not Started')) return 'In Progress';
+    return 'Not Started';
   }
 
   Map<String, List<Map<String, dynamic>>> get _grouped {
@@ -89,7 +106,8 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
                 child: Text(section.key, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.navy)),
               ),
               ...chapters.map((c) {
-                final status = (c['status'] ?? 'Not Started') as String;
+                final status = _statusFor(c);
+                final subtopics = _subtopicsByChapter[c['id']] ?? const [];
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -99,14 +117,34 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
                     boxShadow: AppShadows.card,
                     border: Border.all(color: AppColors.border),
                   ),
-                  child: Row(children: [
-                    Expanded(child: Text(c['chapter'] ?? '',
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.text))),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(color: _statusBg(status), borderRadius: BorderRadius.circular(8)),
-                      child: Text(status, style: TextStyle(color: _statusColor(status), fontSize: 11, fontWeight: FontWeight.w700)),
-                    ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      Expanded(child: Text(c['chapter'] ?? '',
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.text))),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(color: _statusBg(status), borderRadius: BorderRadius.circular(8)),
+                        child: Text(status, style: TextStyle(color: _statusColor(status), fontSize: 11, fontWeight: FontWeight.w700)),
+                      ),
+                    ]),
+                    if (subtopics.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      const Divider(height: 1, color: AppColors.border),
+                      const SizedBox(height: 8),
+                      ...subtopics.map((s) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(children: [
+                          const SizedBox(width: 6),
+                          Expanded(child: Text(s['name'] ?? '', style: const TextStyle(fontSize: 12.5, color: AppColors.textLight))),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(color: _statusBg(s['status'] ?? 'Not Started'), borderRadius: BorderRadius.circular(6)),
+                            child: Text(s['status'] ?? 'Not Started',
+                              style: TextStyle(color: _statusColor(s['status'] ?? 'Not Started'), fontSize: 10, fontWeight: FontWeight.w700)),
+                          ),
+                        ]),
+                      )),
+                    ],
                   ]),
                 );
               }),

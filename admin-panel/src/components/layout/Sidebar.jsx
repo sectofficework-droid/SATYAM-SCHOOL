@@ -22,6 +22,7 @@ import {
   FileText,
   MessageSquareText,
   BookMarked,
+  BookOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import useStore from "@/lib/store";
@@ -31,6 +32,7 @@ const navItems = [
   { href: "/student", label: "Student", icon: GraduationCap },
   { href: "/gr-book", label: "GR Book", icon: BookMarked },
   { href: "/attendance", label: "Attendance", icon: CalendarCheck },
+  { href: "/syllabus", label: "Syllabus", icon: BookOpen },
   { href: "/fees", label: "Fees", icon: IndianRupee },
   { href: "/employee", label: "Employee", icon: Users },
   { href: "/inventory", label: "Inventory Management", icon: Package },
