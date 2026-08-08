@@ -72,11 +72,7 @@ export default function Header() {
         {/* Idle auto-logout countdown — resets whenever there's activity */}
         <div
           title="Time left before auto-logout due to inactivity"
-          className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold tabular-nums transition-colors ${
-            idleSecondsLeft <= 60
-              ? "border-red-200 bg-red-50 text-red-600"
-              : "border-gray-200 text-gray-500"
-          }`}
+          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-school-navy text-xs font-semibold tabular-nums text-red-600"
         >
           <TimerReset className="w-3.5 h-3.5 flex-shrink-0" />
           <span>{formatMMSS(idleSecondsLeft)}</span>
