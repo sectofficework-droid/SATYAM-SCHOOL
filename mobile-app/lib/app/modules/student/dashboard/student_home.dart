@@ -12,7 +12,7 @@ import '../../../../common/widgets/stat_card.dart';
 import '../../../../common/widgets/responsive_module_grid.dart';
 import '../profile/student_profile_page.dart';
 import '../attendance/student_attendance_page.dart';
-import '../marks/student_marks_page.dart';
+import '../exams/student_exams_page.dart';
 import '../fees/student_fees_page.dart';
 import '../homework/student_homework_page.dart';
 import '../notices/student_notices_page.dart';
@@ -31,7 +31,7 @@ class _StudentHomeState extends State<StudentHome> {
   static const _pages = [
     _StudentDashboard(),
     StudentAttendancePage(embedded: true),
-    StudentMarksPage(embedded: true),
+    StudentExamsPage(embedded: true),
     StudentFeesPage(embedded: true),
     StudentNoticesPage(embedded: true),
   ];
@@ -53,11 +53,27 @@ class _StudentHomeState extends State<StudentHome> {
     final studentId = profile['id'] as String?;
     if (studentId == null) return;
     _userKey = 'student_$studentId';
+    final className = profile['class_name'] as String? ?? '';
 
-    final all = await SupabaseService.fetchNotices(
+    final notices = await SupabaseService.fetchNotices(
       audiences: const ['Everyone', 'All Students', 'Parents'],
     );
-    final visible = await visibleRecentNotices(all, _userKey!);
+
+    // Upcoming Monthly Test / Main Exam reminders for this student's class,
+    // merged into the same feed as Notices - see monthlyTestReminders /
+    // officialExamReminders for why these need no server-side scheduling.
+    final classExams = className.isNotEmpty
+        ? await SupabaseService.fetchExams(className: className)
+        : <Map<String, dynamic>>[];
+    final officialExams = await SupabaseService.fetchOfficialExams();
+
+    final combined = [
+      ...notices,
+      ...monthlyTestReminders(classExams),
+      ...officialExamReminders(officialExams),
+    ];
+
+    final visible = await visibleRecentNotices(combined, _userKey!);
     if (!mounted) return;
     setState(() => _recent = visible);
     if (visible.isEmpty) return;
@@ -74,6 +90,9 @@ class _StudentHomeState extends State<StudentHome> {
       userKey: _userKey!,
       onViewAll: () => _setTab(_noticesTabIndex),
       onDismissed: (notice) => setState(() => _recent.removeWhere((n) => n['id'] == notice['id'])),
+      onItemTap: (notice) {
+        if (notice['_isExam'] == true) _setTab(2); // Marks (Exams & Marks) tab
+      },
     );
   }
 
@@ -332,10 +351,6 @@ class _StudentDashboard extends StatelessWidget {
                 color: AppColors.stone, bgColor: AppColors.stoneLight,
                 centered: true,
                 onTap: () => Get.toNamed(Routes.studentRules)),
-              StatCard(label: 'Official Results', icon: Icons.leaderboard_rounded,
-                color: AppColors.teal, bgColor: AppColors.tealLight,
-                centered: true,
-                onTap: () => Get.toNamed(Routes.studentOfficialResults)),
               StatCard(label: 'Help Desk', icon: Icons.support_agent_rounded,
                 color: AppColors.indigo, bgColor: AppColors.indigoLight,
                 centered: true,

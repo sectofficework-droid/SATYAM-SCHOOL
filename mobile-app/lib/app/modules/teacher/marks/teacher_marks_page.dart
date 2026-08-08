@@ -29,6 +29,11 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
   bool _saving        = false;
   bool _isClassTeacher = false;
 
+  // Admin-configurable default (Settings → Exams in the admin panel) - 25
+  // unless management has changed it; fetched fresh each time the list
+  // loads so a mid-session admin change takes effect without a restart.
+  int _monthlyTestMaxMarks = 25;
+
   // 0 = Mine, 1 = Class Overview
   int _scope = 0;
 
@@ -66,8 +71,10 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
     final classWide = _isClassTeacher
         ? await SupabaseService.fetchExams(classNames: [ownClass!])
         : <Map<String, dynamic>>[];
+    final maxMarks = await SupabaseService.fetchMonthlyTestMaxMarks();
 
     if (mounted) setState(() {
+      _monthlyTestMaxMarks = maxMarks;
       _mineExams  = mine;
       _classExams = classWide;
       if (!_isClassTeacher) _scope = 0;
@@ -129,7 +136,6 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
 
   void _showCreateExamSheet() {
     final nameCtrl = TextEditingController();
-    final maxCtrl  = TextEditingController(text: '100');
     final profile  = AuthService.to.profile.value ?? {};
     final myClasses = teacherClasses(profile);
     String? selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
@@ -171,16 +177,16 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                       child: const Icon(Icons.grading_rounded, color: Colors.white, size: 22),
                     ),
                     const SizedBox(width: 12),
-                    const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text('Create Exam', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text)),
-                      Text('Set up a new test for your class', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Create Monthly Test', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text)),
+                      Text('Set up a new monthly test for your class · out of $_monthlyTestMaxMarks', style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
                     ])),
                     IconButton(icon: const Icon(Icons.close_rounded, color: AppColors.textHint), onPressed: () => Navigator.pop(ctx)),
                   ]),
                   const SizedBox(height: 20),
                   TextField(
                     controller: nameCtrl,
-                    decoration: const InputDecoration(labelText: 'Exam Name (e.g. Unit Test 1)', prefixIcon: Icon(Icons.edit_outlined, color: AppColors.navy, size: 20)),
+                    decoration: const InputDecoration(labelText: 'Test Name (e.g. Monthly Test - August)', prefixIcon: Icon(Icons.edit_outlined, color: AppColors.navy, size: 20)),
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
@@ -224,17 +230,11 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                         Icon(Icons.calendar_month_rounded, size: 20, color: examDate != null ? AppColors.navy : AppColors.textHint),
                         const SizedBox(width: 10),
                         Text(
-                          examDate == null ? 'Exam Date (optional)' : DateFormat('EEEE, d MMM yyyy').format(examDate!),
+                          examDate == null ? 'Test Date' : DateFormat('EEEE, d MMM yyyy').format(examDate!),
                           style: TextStyle(color: examDate == null ? AppColors.textHint : AppColors.text, fontWeight: examDate != null ? FontWeight.w600 : FontWeight.normal),
                         ),
                       ]),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: maxCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: const InputDecoration(labelText: 'Max Marks', prefixIcon: Icon(Icons.numbers_rounded, color: AppColors.navy, size: 20)),
                   ),
                   const SizedBox(height: 20),
                   GestureDetector(
@@ -246,12 +246,19 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                         ));
                         return;
                       }
+                      if (examDate == null) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('Please pick a test date'),
+                          behavior: SnackBarBehavior.floating,
+                        ));
+                        return;
+                      }
                       await SupabaseService.createExam({
                         'name':       nameCtrl.text.trim(),
                         'class':      selectedClass,
                         'subject':    selectedSubject!.trim(),
-                        'date':       examDate != null ? DateFormat('yyyy-MM-dd').format(examDate!) : null,
-                        'max_marks':  double.tryParse(maxCtrl.text) ?? 100,
+                        'date':       DateFormat('yyyy-MM-dd').format(examDate!),
+                        'max_marks':  _monthlyTestMaxMarks,
                         'created_by': profile['id'],
                       });
                       if (mounted) Navigator.pop(ctx);
@@ -267,7 +274,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                       child: const Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
                         Icon(Icons.add_circle_outline_rounded, color: Colors.white, size: 20),
                         SizedBox(width: 8),
-                        Text('Create Exam', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
+                        Text('Add Monthly Test', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
                       ])),
                     ),
                   ),
@@ -329,7 +336,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
             onPressed: _showCreateExamSheet,
             backgroundColor: AppColors.navy,
             icon: const Icon(Icons.add, color: Colors.white),
-            label: const Text('Create Exam', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+            label: const Text('Add Monthly Test', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
           )
         : null;
 
@@ -348,7 +355,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
     return Scaffold(
       appBar: AppBar(
         flexibleSpace: Container(decoration: const BoxDecoration(gradient: AppColors.navyGradient)),
-        title: Text(_selExam == null ? 'Exam Marks' : _selExam!['name'] ?? 'Enter Marks'),
+        title: Text(_selExam == null ? 'Monthly Test' : _selExam!['name'] ?? 'Enter Marks'),
         leading: _selExam != null
             ? IconButton(icon: const Icon(Icons.arrow_back_ios_rounded), onPressed: () => setState(() { _selExam = null; _markCtrl.clear(); }))
             : null,
@@ -455,12 +462,12 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
     final list = exams.isEmpty
       ? _emptyState(
           icon: Icons.grading_rounded,
-          title: 'No Exams Found',
+          title: 'No Monthly Tests Found',
           subtitle: _filterMonth != null
-            ? 'No exams in this month - try another month or clear the filter.'
+            ? 'No monthly tests in this month - try another month or clear the filter.'
             : _scope == 0
-              ? 'Tap "Create Exam" below to set up a test for one of your classes.'
-              : 'No exams have been given to your class yet.',
+              ? 'Tap "Add Monthly Test" below to set up a test for one of your classes.'
+              : 'No monthly tests have been given to your class yet.',
         )
       : ListView.separated(
       padding: const EdgeInsets.all(16),

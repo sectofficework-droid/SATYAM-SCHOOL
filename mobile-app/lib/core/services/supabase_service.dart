@@ -162,6 +162,14 @@ class SupabaseService {
     await client.from('exams').insert(data);
   }
 
+  // Admin-configurable default full marks for a new Monthly Test (Settings →
+  // Exams in the admin panel) - stored on the single-row school_profile
+  // table, falls back to 25 if unset/unmigrated.
+  static Future<int> fetchMonthlyTestMaxMarks() async {
+    final res = await client.from('school_profile').select('monthly_test_max_marks').maybeSingle();
+    return (res?['monthly_test_max_marks'] as num?)?.toInt() ?? 25;
+  }
+
   // Which of these exam ids already have at least one mark entered - used to
   // count "pending" exams (held, but marks not started) on the dashboard.
   static Future<Set<String>> fetchExamIdsWithMarks(List<String> examIds) async {

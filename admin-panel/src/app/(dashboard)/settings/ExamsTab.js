@@ -3,12 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Award, Plus, Trash2, Pencil, Save, X, Check, ChevronDown, ChevronUp,
-  Lock, LockOpen, CalendarDays,
+  Lock, LockOpen, CalendarDays, ClipboardList,
 } from "lucide-react";
 import { getAcademicYears, getClassesWithSections, getAllClassSubjects } from "@/lib/settingsService";
 import {
   getOfficialExams, createOfficialExam, updateOfficialExam, deleteOfficialExam,
   isExamUnlocked, getExamSubjectConfig, saveExamSubjectMaxMarks, saveExamSubjectMaxMarksBulk,
+  getMonthlyTestMaxMarks, saveMonthlyTestMaxMarks,
 } from "@/lib/examService";
 
 const inp = "border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-school-navy w-full";
@@ -87,6 +88,66 @@ function ExamSubjectConfig({ examId, classesWithSections, classSubjectsMap }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// Monthly Test's default full marks - a single admin-wide setting (not
+// per-class/subject like Official Exams below), since a Monthly Test is a
+// freeform test a subject teacher creates for their own class; date and
+// subject stay teacher-chosen, this only controls the marks cap the app
+// applies when a new one is created. Auto-saves on blur, same pattern as
+// ExamSubjectConfig's per-subject fields.
+function MonthlyTestSettings() {
+  const [maxMarks, setMaxMarks] = useState(25);
+  const [loading, setLoading] = useState(true);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getMonthlyTestMaxMarks().then(setMaxMarks).finally(() => setLoading(false));
+  }, []);
+
+  async function handleSave(value) {
+    const marks = Number(value);
+    if (!Number.isFinite(marks) || marks <= 0) { setError("Enter a valid number."); return; }
+    setError("");
+    setMaxMarks(marks);
+    await saveMonthlyTestMaxMarks(marks);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100">
+        <h3 className="text-sm font-bold text-gray-700">Monthly Test</h3>
+        <p className="text-xs text-gray-400 mt-0.5">
+          Default full marks for a Monthly Test created by a subject teacher in the app.
+          The teacher still picks the class, subject, and date - this only sets the marks cap.
+        </p>
+      </div>
+      <div className="px-5 py-4 flex items-center gap-3">
+        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-purple-50">
+          <ClipboardList className="w-4 h-4 text-purple-600"/>
+        </div>
+        {loading ? (
+          <p className="text-xs text-gray-400">Loading…</p>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500 whitespace-nowrap">Full Marks</span>
+            <input
+              type="number"
+              min="1"
+              className={inp + " w-24 text-center"}
+              defaultValue={maxMarks}
+              onBlur={e => handleSave(e.target.value)}
+            />
+            {saved && <Check className="w-3.5 h-3.5 text-green-500 flex-shrink-0"/>}
+          </div>
+        )}
+      </div>
+      {error && <p className="px-5 pb-3 text-xs text-red-500">{error}</p>}
     </div>
   );
 }
@@ -198,6 +259,7 @@ export default function ExamsTab() {
 
   return (
     <div className="space-y-4">
+      <MonthlyTestSettings/>
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="px-5 py-4 border-b border-gray-100">
           <h3 className="text-sm font-bold text-gray-700">Official Exams{currentYear ? ` — ${currentYear.label}` : ""}</h3>

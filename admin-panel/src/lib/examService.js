@@ -1,5 +1,28 @@
 import supabase from "./supabase";
 
+// ── Monthly Test — default full marks (admin-configurable, still 25 by default) ──
+// Stored on the single-row school_profile table. The teacher app reads this
+// when creating a new Monthly Test instead of a hardcoded value, so
+// management can change it here without an app release.
+
+export async function getMonthlyTestMaxMarks() {
+  const { data, error } = await supabase
+    .from("school_profile")
+    .select("monthly_test_max_marks")
+    .limit(1)
+    .single();
+  if (error) throw error;
+  return data?.monthly_test_max_marks ?? 25;
+}
+
+export async function saveMonthlyTestMaxMarks(maxMarks) {
+  const { error } = await supabase
+    .from("school_profile")
+    .update({ monthly_test_max_marks: maxMarks, updated_at: new Date().toISOString() })
+    .not("id", "is", null);
+  if (error) throw error;
+}
+
 // ── Official Exams (First Unit Test / Half Yearly / Annual, admin-managed) ──
 // Separate from the freeform teacher-created exams/exam_marks tables - these
 // are the school-wide official exams management can add/remove, with marks

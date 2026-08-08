@@ -16,7 +16,6 @@ abstract class Routes {
   static const teacherSyllabus  = '/teacher/syllabus';
   static const teacherQuery     = '/teacher/query';
   static const teacherRules     = '/teacher/rules';
-  static const teacherOfficialExams = '/teacher/official-exams';
   static const studentHome      = '/student/home';
   static const studentAttend    = '/student/attendance';
   static const studentMarks     = '/student/marks';
@@ -27,6 +26,5 @@ abstract class Routes {
   static const studentSyllabus  = '/student/syllabus';
   static const studentQuery     = '/student/query';
   static const studentRules     = '/student/rules';
-  static const studentOfficialResults = '/student/official-results';
   static const studentHelpDesk  = '/student/help-desk';
 }

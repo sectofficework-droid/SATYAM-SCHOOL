@@ -11,7 +11,7 @@ import '../../../../common/widgets/notification_bell.dart';
 import '../../../../common/widgets/recent_notices_sheet.dart';
 import '../../../../app/routes/app_routes.dart';
 import '../attendance/teacher_attendance_page.dart';
-import '../marks/teacher_marks_page.dart';
+import '../exams/teacher_exams_page.dart';
 import '../homework/teacher_homework_page.dart';
 import '../notices/teacher_notices_page.dart';
 import 'teacher_dashboard_tab.dart';
@@ -29,7 +29,7 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
   static const _pages = [
     TeacherDashboardTab(),
     TeacherAttendancePage(embedded: true),
-    TeacherMarksPage(embedded: true),
+    TeacherExamsPage(embedded: true),
     TeacherHomeworkPage(embedded: true),
     TeacherNoticesPage(embedded: true),
   ];
@@ -51,19 +51,35 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
     final employeeId = profile['id'] as String?;
     if (employeeId == null) return;
     _userKey = 'teacher_$employeeId';
+    final ownClass = profile['class_name'] as String?;
 
-    // Merge Notices with newly assigned Tasks and targeted admin Alerts
-    // (attendance reminders, edit-request approvals) into one feed - each is
-    // "something new for this teacher" the same way a notice is.
+    // Merge Notices with newly assigned Tasks, targeted admin Alerts
+    // (attendance reminders, edit-request approvals), and upcoming-exam
+    // reminders into one feed - each is "something new for this teacher"
+    // the same way a notice is.
     final notices = await SupabaseService.fetchNotices(
       audiences: const ['Everyone', 'All Staff', 'Management'],
     );
     final taskAssignments = await SupabaseService.fetchTeacherTasks(employeeId);
     final alerts = await SupabaseService.fetchTeacherAlerts(employeeId);
+
+    // Same exam sets the Monthly Test tab itself shows for this teacher -
+    // mine plus (if a class teacher) whatever's been set for their own
+    // class, de-duplicated since a teacher can appear in both.
+    final mineExams = await SupabaseService.fetchExams(createdBy: employeeId);
+    final classExams = (ownClass != null && ownClass.isNotEmpty)
+        ? await SupabaseService.fetchExams(classNames: [ownClass])
+        : <Map<String, dynamic>>[];
+    final examsById = <String, Map<String, dynamic>>{};
+    for (final e in [...mineExams, ...classExams]) { examsById[e['id'] as String] = e; }
+    final officialExams = await SupabaseService.fetchOfficialExams();
+
     final combined = [
       ...notices,
       ...taskAssignments.map(taskAsNoticeItem),
       ...alerts.map(alertAsNoticeItem),
+      ...monthlyTestReminders(examsById.values.toList()),
+      ...officialExamReminders(officialExams),
     ];
 
     final visible = await visibleRecentNotices(combined, _userKey!);
@@ -86,6 +102,7 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
       onItemTap: (notice) {
         if (notice['_isTask'] == true) Get.toNamed(Routes.teacherTasks);
         if (notice['_isAlert'] == true) _setTab(1); // Attendance tab
+        if (notice['_isExam'] == true) _setTab(2); // Marks (Exams & Marks) tab
       },
     );
   }

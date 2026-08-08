@@ -6,7 +6,7 @@ import '../modules/teacher/dashboard/teacher_home.dart';
 import '../modules/teacher/attendance/teacher_attendance_page.dart';
 import '../modules/teacher/my_attendance/teacher_my_attendance_page.dart';
 import '../modules/teacher/students/teacher_students_page.dart';
-import '../modules/teacher/marks/teacher_marks_page.dart';
+import '../modules/teacher/exams/teacher_exams_page.dart';
 import '../modules/teacher/homework/teacher_homework_page.dart';
 import '../modules/teacher/tasks/teacher_tasks_page.dart';
 import '../modules/teacher/question_bank/teacher_question_bank_page.dart';
@@ -17,7 +17,6 @@ import '../modules/teacher/profile/teacher_profile_page.dart';
 import '../modules/teacher/syllabus/teacher_syllabus_page.dart';
 import '../modules/teacher/query/teacher_query_page.dart';
 import '../modules/teacher/rules/teacher_rules_page.dart';
-import '../modules/teacher/official_exams/teacher_official_exams_page.dart';
 import 'app_routes.dart';
 
 // Route table for the Teacher-flavor build only - the Student app's build
@@ -35,7 +34,7 @@ class AppPagesTeacher {
     GetPage(name: Routes.teacherAttend,   page: () => const TeacherAttendancePage()),
     GetPage(name: Routes.teacherMyAttend, page: () => const TeacherMyAttendancePage()),
     GetPage(name: Routes.teacherStudents, page: () => const TeacherStudentsPage()),
-    GetPage(name: Routes.teacherMarks,    page: () => const TeacherMarksPage()),
+    GetPage(name: Routes.teacherMarks,    page: () => const TeacherExamsPage()),
     GetPage(name: Routes.teacherHomework, page: () => const TeacherHomeworkPage()),
     GetPage(name: Routes.teacherTasks,    page: () => const TeacherTasksPage()),
     GetPage(name: Routes.teacherQuestionBank, page: () => const TeacherQuestionBankPage()),
@@ -46,6 +45,5 @@ class AppPagesTeacher {
     GetPage(name: Routes.teacherSyllabus, page: () => const TeacherSyllabusPage()),
     GetPage(name: Routes.teacherQuery,    page: () => const TeacherQueryPage()),
     GetPage(name: Routes.teacherRules,    page: () => const TeacherRulesPage()),
-    GetPage(name: Routes.teacherOfficialExams, page: () => const TeacherOfficialExamsPage()),
   ];
 }

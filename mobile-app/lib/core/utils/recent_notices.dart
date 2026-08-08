@@ -1,3 +1,4 @@
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 // Notices posted (or, for older rows with no posted_date, created) within
@@ -72,6 +73,63 @@ Map<String, dynamic> taskAsNoticeItem(Map<String, dynamic> assignment) {
     '_isTask': true,
     '_taskId': taskId,
   };
+}
+
+// Monthly Test rows (exams table) due within `days` of today, adapted into
+// notice-shaped items for the same bell/popup Notices/Tasks/Alerts already
+// share. posted_date is stamped to "now" at call time rather than a stored
+// value, so recentNotices()'s existing 24h-recency filter naturally
+// re-admits the same reminder every day the test stays inside the window,
+// and it stops appearing on its own once the test falls outside it or the
+// date passes - no server-side cron/scheduling needed.
+List<Map<String, dynamic>> monthlyTestReminders(List<Map<String, dynamic>> exams, {int days = 7}) {
+  final now      = DateTime.now();
+  final today    = DateTime(now.year, now.month, now.day);
+  final nowIso   = now.toIso8601String();
+  return exams.where((e) {
+    final d = DateTime.tryParse(e['date'] ?? '');
+    if (d == null) return false;
+    final diff = DateTime(d.year, d.month, d.day).difference(today).inDays;
+    return diff >= 0 && diff <= days;
+  }).map((e) {
+    final d = DateTime.parse(e['date'] as String);
+    return {
+      'id': 'monthlytest-${e['id']}',
+      'title': 'Upcoming Monthly Test: ${e['name'] ?? ''}',
+      'content': '${e['subject'] ?? ''} · Class ${e['class'] ?? ''} · ${DateFormat('d MMM').format(d)}',
+      'type': 'Exam',
+      'posted_date': nowIso,
+      'created_at': nowIso,
+      '_isExam': true,
+    };
+  }).toList();
+}
+
+// Same idea for Main Exams (official_exams table) - keyed off start_date
+// (falling back to end_date for single-day exams that predate start_date).
+List<Map<String, dynamic>> officialExamReminders(List<Map<String, dynamic>> exams, {int days = 7}) {
+  final now    = DateTime.now();
+  final today  = DateTime(now.year, now.month, now.day);
+  final nowIso = now.toIso8601String();
+  return exams.where((e) {
+    final raw = (e['start_date'] ?? e['end_date']) as String?;
+    final d = DateTime.tryParse(raw ?? '');
+    if (d == null) return false;
+    final diff = DateTime(d.year, d.month, d.day).difference(today).inDays;
+    return diff >= 0 && diff <= days;
+  }).map((e) {
+    final raw = (e['start_date'] ?? e['end_date']) as String;
+    final d = DateTime.parse(raw);
+    return {
+      'id': 'officialexam-${e['id']}',
+      'title': 'Upcoming Exam: ${e['name'] ?? ''}',
+      'content': 'Starts ${DateFormat('d MMM').format(d)}',
+      'type': 'Exam',
+      'posted_date': nowIso,
+      'created_at': nowIso,
+      '_isExam': true,
+    };
+  }).toList();
 }
 
 // Adapts a teacher_alerts row into the same shape as a notice - same reasoning
