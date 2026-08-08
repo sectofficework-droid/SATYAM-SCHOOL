@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabase";
 import useStore from "@/lib/store";
+import { IdleTimerContext } from "@/lib/idleTimerContext";
+
+const IDLE_LIMIT_SECONDS = 10 * 60;
 
 export default function AuthGuard({ children }) {
   const router = useRouter();
@@ -11,6 +14,7 @@ export default function AuthGuard({ children }) {
   const setAuthUser = useStore((s) => s.setAuthUser);
   const clearAuthUser = useStore((s) => s.clearAuthUser);
   const [checking, setChecking] = useState(true);
+  const [idleSecondsLeft, setIdleSecondsLeft] = useState(IDLE_LIMIT_SECONDS);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -50,11 +54,11 @@ export default function AuthGuard({ children }) {
 
   // Auto-logout after 10 minutes with no mouse/keyboard/touch/scroll activity.
   // Any activity resets the idle clock, so the timer only ever counts down
-  // while the admin is genuinely away, not while they're working.
+  // while the admin is genuinely away, not while they're working. Ticks
+  // every second so Header can show a live countdown via IdleTimerContext.
   useEffect(() => {
     if (!authUser) return;
 
-    const IDLE_LIMIT_MS = 10 * 60 * 1000;
     let lastActivity = Date.now();
     const markActivity = () => { lastActivity = Date.now(); };
 
@@ -62,13 +66,15 @@ export default function AuthGuard({ children }) {
     events.forEach((evt) => window.addEventListener(evt, markActivity, { passive: true }));
 
     const interval = setInterval(async () => {
-      if (Date.now() - lastActivity >= IDLE_LIMIT_MS) {
+      const secondsLeft = Math.max(0, IDLE_LIMIT_SECONDS - Math.floor((Date.now() - lastActivity) / 1000));
+      setIdleSecondsLeft(secondsLeft);
+      if (secondsLeft <= 0) {
         clearInterval(interval);
         await supabase.auth.signOut();
         clearAuthUser();
         router.replace("/login");
       }
-    }, 15000);
+    }, 1000);
 
     return () => {
       events.forEach((evt) => window.removeEventListener(evt, markActivity));
@@ -87,5 +93,9 @@ export default function AuthGuard({ children }) {
     );
   }
 
-  return children;
+  return (
+    <IdleTimerContext.Provider value={idleSecondsLeft}>
+      {children}
+    </IdleTimerContext.Provider>
+  );
 }

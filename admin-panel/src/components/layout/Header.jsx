@@ -1,9 +1,10 @@
 "use client";
 
-import { Menu, Bell, ChevronDown, Search, LogOut } from "lucide-react";
+import { Menu, Bell, ChevronDown, Search, LogOut, TimerReset } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import useStore from "@/lib/store";
 import supabase from "@/lib/supabase";
+import { useIdleTimer } from "@/lib/idleTimerContext";
 
 const pageTitles = {
   "/dashboard": { title: "Dashboard", sub: "School overview & quick stats" },
@@ -17,12 +18,19 @@ const pageTitles = {
 
 const ROLE_LABELS = { management: "Management Head", senior_admin: "Senior Admin", normal_admin: "Admin" };
 
+function formatMMSS(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const toggleSidebar = useStore((state) => state.toggleSidebar);
   const authUser = useStore((state) => state.authUser);
   const clearAuthUser = useStore((state) => state.clearAuthUser);
+  const idleSecondsLeft = useIdleTimer();
 
   const page = pageTitles[pathname] || pageTitles["/dashboard"];
 
@@ -60,6 +68,17 @@ export default function Header() {
           <Search className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="text-xs">Search...</span>
         </button>
+
+        {/* Idle auto-logout countdown — resets whenever there's activity */}
+        <div
+          title="Time left before auto-logout due to inactivity"
+          className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold tabular-nums transition-colors ${
+            idleSecondsLeft <= 60 ? "text-red-500 bg-red-50" : "text-gray-400"
+          }`}
+        >
+          <TimerReset className="w-3.5 h-3.5" />
+          {formatMMSS(idleSecondsLeft)}
+        </div>
 
         {/* Notifications */}
         <button className="relative p-2.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors">
