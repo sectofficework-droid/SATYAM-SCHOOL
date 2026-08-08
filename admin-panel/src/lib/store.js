@@ -90,39 +90,10 @@ const useStore = create(
       setActiveClasses: (list) => set({ activeClasses: list }),
 
       // ── Timetable ──────────────────────────────────────────────
-      timetables: {},
-      setTimetables: (data) => set({ timetables: data }),
-
-      // Per-day-group period definitions. Each group has its own independent
-      // ordered list so admins can add/remove/reorder periods/breaks per group.
-      periodDefs: {
-        "Mon – Wed": [
-          { id:"prayer", label:"Prayer",   startTime:"09:00", endTime:"09:20", isBreak:true  },
-          { id:"p1",     label:"Period 1", startTime:"09:20", endTime:"10:20", isBreak:false },
-          { id:"p2",     label:"Period 2", startTime:"10:20", endTime:"11:10", isBreak:false },
-          { id:"recess", label:"Recess",   startTime:"11:10", endTime:"11:40", isBreak:true  },
-          { id:"p3",     label:"Period 3", startTime:"11:40", endTime:"12:30", isBreak:false },
-          { id:"p4",     label:"Period 4", startTime:"12:30", endTime:"13:20", isBreak:false },
-          { id:"p5",     label:"Period 5", startTime:"13:20", endTime:"14:00", isBreak:false },
-        ],
-        "Thu – Fri": [
-          { id:"prayer", label:"Prayer",   startTime:"09:00", endTime:"09:20", isBreak:true  },
-          { id:"p1",     label:"Period 1", startTime:"09:20", endTime:"10:20", isBreak:false },
-          { id:"p2",     label:"Period 2", startTime:"10:20", endTime:"11:10", isBreak:false },
-          { id:"recess", label:"Recess",   startTime:"11:10", endTime:"11:40", isBreak:true  },
-          { id:"p3",     label:"Period 3", startTime:"11:40", endTime:"12:30", isBreak:false },
-          { id:"p4",     label:"Period 4", startTime:"12:30", endTime:"13:20", isBreak:false },
-          { id:"p5",     label:"Period 5", startTime:"13:20", endTime:"14:00", isBreak:false },
-        ],
-        "Saturday": [
-          { id:"prayer",  label:"Prayer",   startTime:"09:00", endTime:"09:20", isBreak:true  },
-          { id:"p1",      label:"Period 1", startTime:"09:20", endTime:"10:20", isBreak:false },
-          { id:"p2",      label:"Period 2", startTime:"10:20", endTime:"11:10", isBreak:false },
-          { id:"recess",  label:"Recess",   startTime:"11:10", endTime:"11:40", isBreak:true  },
-          { id:"p3",      label:"Period 3", startTime:"11:40", endTime:"12:30", isBreak:false },
-        ],
-      },
-      setPeriodDefs: (defs) => set({ periodDefs: defs }),
+      // Period definitions (Prayer/Period/Recess timings per day-group) live
+      // in Supabase now (school_profile.period_defs, via settingsService.js)
+      // instead of here - they used to be Zustand-only, which meant an edit
+      // only ever showed up on the browser that made it.
 
       // ── Employee Attendance Summary ───────────────────────────
       attendanceSummary: null,

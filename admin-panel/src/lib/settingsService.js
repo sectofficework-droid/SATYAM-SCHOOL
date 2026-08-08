@@ -32,6 +32,29 @@ export async function saveSchoolProfile(form) {
   if (error) throw error;
 }
 
+// ── Timetable — period definitions ───────────────────────────────
+// Prayer/Period/Recess start-end times per day-group (Mon–Wed, Thu–Fri,
+// Saturday). Stored on the same single-row school_profile table as the rest
+// of school-wide config - was previously Zustand-only (localStorage), which
+// meant an edit only ever showed up on the browser that made it.
+export async function getPeriodDefs() {
+  const { data, error } = await supabase
+    .from("school_profile")
+    .select("period_defs")
+    .limit(1)
+    .single();
+  if (error) throw error;
+  return data?.period_defs || null;
+}
+
+export async function savePeriodDefs(defs) {
+  const { error } = await supabase
+    .from("school_profile")
+    .update({ period_defs: defs, updated_at: new Date().toISOString() })
+    .not("id", "is", null);
+  if (error) throw error;
+}
+
 // ── Help Desk — Admin Numbers (Student app) ──────────────────────
 export async function getHelpDeskAdminNumbers() {
   const { data, error } = await supabase

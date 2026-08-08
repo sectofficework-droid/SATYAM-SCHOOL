@@ -31,6 +31,7 @@ import {
   getClassesWithSections, setClassActiveInDB, insertSection, deleteSectionFromDB, updateSectionTeacher,
   addSupportingTeacher, removeSupportingTeacher,
   getTeachingEmployees, getAllClassSubjects, saveClassSubjects,
+  getPeriodDefs, savePeriodDefs,
 } from "@/lib/settingsService";
 
 function FieldError({ msg }) {
@@ -1871,8 +1872,13 @@ function UsersRolesTab() {
 
 // ── Tab: Timetable ─────────────────────────────────────────────────────────────
 function TimetableTab() {
-  const periodDefs      = useStore(s => s.periodDefs);
-  const setPeriodDefs   = useStore(s => s.setPeriodDefs);
+  // Period timings used to live only in the Zustand store, which persists
+  // to that browser's localStorage - an edit only ever showed up on the
+  // machine that made it, never for any other admin. Now backed by
+  // school_profile.period_defs (Supabase) instead, same as the rest of
+  // school-wide config.
+  const [periodDefs,       setPeriodDefsLocal]  = useState(null);
+  const [periodDefsLoading,setPeriodDefsLoading]= useState(true);
   const ttActiveClasses = useStore(s => s.activeClasses);
   const backupRef       = useRef(null);
   const periodsBackup   = useRef(null);
@@ -1885,9 +1891,18 @@ function TimetableTab() {
   const [activeCell,       setActiveCell]       = useState(null);
   const [ttData,           setTtData]           = useState({});
   const [periodsEditMode,  setPeriodsEditMode]  = useState(false);
-  const [periodsForm,      setPeriodsForm]      = useState(() => JSON.parse(JSON.stringify(periodDefs || DEF_PERIOD_DEFS)));
+  const [periodsForm,      setPeriodsForm]      = useState(() => JSON.parse(JSON.stringify(DEF_PERIOD_DEFS)));
   const [periodsSaved,     setPeriodsSaved]     = useState(false);
   const [activeGroup,      setActiveGroup]      = useState(DAY_GROUPS[0]);
+
+  useEffect(() => {
+    getPeriodDefs()
+      .then(defs => {
+        setPeriodDefsLocal(defs);
+        setPeriodsForm(JSON.parse(JSON.stringify(defs || DEF_PERIOD_DEFS)));
+      })
+      .finally(() => setPeriodDefsLoading(false));
+  }, []);
 
   useEffect(() => {
     supabase.from("academic_years").select("label, is_current").order("label").then(({ data }) => {
@@ -1927,7 +1942,13 @@ function TimetableTab() {
     setPeriodsEditMode(true);
   }
   function cancelPeriodsEdit() { setPeriodsForm(periodsBackup.current); setPeriodsEditMode(false); }
-  function savePeriodsEdit()   { setPeriodDefs(periodsForm); setPeriodsSaved(true); setPeriodsEditMode(false); setTimeout(() => setPeriodsSaved(false), 2500); }
+  async function savePeriodsEdit() {
+    await savePeriodDefs(periodsForm);
+    setPeriodDefsLocal(periodsForm);
+    setPeriodsSaved(true);
+    setPeriodsEditMode(false);
+    setTimeout(() => setPeriodsSaved(false), 2500);
+  }
 
   function moveSlot(group, idx, dir) {
     setPeriodsForm(prev => {
@@ -2104,9 +2125,9 @@ function TimetableTab() {
             <p className="text-xs text-gray-400 mt-0.5">Add, remove, reorder periods and breaks for each day group independently</p>
           </div>
           {!periodsEditMode ? (
-            <button onClick={startPeriodsEdit}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-school-navy text-white hover:bg-school-navy/90 transition-colors shadow-sm">
-              <Pencil className="w-3.5 h-3.5"/> Edit Schedule
+            <button onClick={startPeriodsEdit} disabled={periodDefsLoading}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-school-navy text-white hover:bg-school-navy/90 disabled:opacity-50 transition-colors shadow-sm">
+              <Pencil className="w-3.5 h-3.5"/> {periodDefsLoading ? "Loading…" : "Edit Schedule"}
             </button>
           ) : (
             <div className="flex gap-2">
