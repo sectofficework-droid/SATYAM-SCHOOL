@@ -85,13 +85,15 @@ class SupabaseService {
     });
   }
 
+  // No limit - the Yearly attendance view needs the whole academic year's
+  // records, not just the most recent ones (a school year is well under a
+  // thousand rows per student, so fetching all of it is cheap).
   static Future<List<Map<String, dynamic>>> fetchStudentAttendance(String studentId) async {
     final res = await client
         .from('student_attendance')
         .select()
         .eq('student_id', studentId)
-        .order('date', ascending: false)
-        .limit(90);
+        .order('date', ascending: false);
     return List<Map<String, dynamic>>.from(res);
   }
 
