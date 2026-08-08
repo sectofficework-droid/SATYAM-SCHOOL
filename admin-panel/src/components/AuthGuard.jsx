@@ -48,6 +48,34 @@ export default function AuthGuard({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  // Auto-logout after 10 minutes with no mouse/keyboard/touch/scroll activity.
+  // Any activity resets the idle clock, so the timer only ever counts down
+  // while the admin is genuinely away, not while they're working.
+  useEffect(() => {
+    if (!authUser) return;
+
+    const IDLE_LIMIT_MS = 10 * 60 * 1000;
+    let lastActivity = Date.now();
+    const markActivity = () => { lastActivity = Date.now(); };
+
+    const events = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
+    events.forEach((evt) => window.addEventListener(evt, markActivity, { passive: true }));
+
+    const interval = setInterval(async () => {
+      if (Date.now() - lastActivity >= IDLE_LIMIT_MS) {
+        clearInterval(interval);
+        await supabase.auth.signOut();
+        clearAuthUser();
+        router.replace("/login");
+      }
+    }, 15000);
+
+    return () => {
+      events.forEach((evt) => window.removeEventListener(evt, markActivity));
+      clearInterval(interval);
+    };
+  }, [authUser, clearAuthUser, router]);
+
   if (checking && !authUser) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
