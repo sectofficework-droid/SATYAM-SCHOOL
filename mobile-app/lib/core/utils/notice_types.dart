@@ -18,6 +18,7 @@ Color noticeTypeColor(String? type) {
     case 'Urgent':   return AppColors.red;
     case 'Task':     return AppColors.green;
     case 'Alert':    return AppColors.amber;
+    case 'Birthday': return AppColors.pink;
     default:         return AppColors.textLight; // General / unset
   }
 }
@@ -33,6 +34,7 @@ Color noticeTypeLight(String? type) {
     case 'Urgent':   return AppColors.redLight;
     case 'Task':     return AppColors.greenLight;
     case 'Alert':    return AppColors.amberLight;
+    case 'Birthday': return AppColors.pinkLight;
     default:         return AppColors.border;
   }
 }

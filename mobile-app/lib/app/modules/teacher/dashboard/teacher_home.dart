@@ -9,6 +9,7 @@ import '../../../../core/utils/app_update.dart';
 import '../../../../common/widgets/s3_image.dart';
 import '../../../../common/widgets/notification_bell.dart';
 import '../../../../common/widgets/recent_notices_sheet.dart';
+import '../../../../common/widgets/birthday_celebration_overlay.dart';
 import '../../../../app/routes/app_routes.dart';
 import '../attendance/teacher_attendance_page.dart';
 import '../exams/teacher_exams_page.dart';
@@ -74,18 +75,35 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
     for (final e in [...mineExams, ...classExams]) { examsById[e['id'] as String] = e; }
     final officialExams = await SupabaseService.fetchOfficialExams();
 
+    final birthday = birthdayNoticeItem(profile['dob'] as String?);
+
     final combined = [
       ...notices,
       ...taskAssignments.map(taskAsNoticeItem),
       ...alerts.map(alertAsNoticeItem),
       ...monthlyTestReminders(examsById.values.toList()),
       ...officialExamReminders(officialExams),
+      if (birthday != null) birthday,
     ];
 
     final visible = await visibleRecentNotices(combined, _userKey!);
     if (!mounted) return;
     setState(() => _recent = visible);
-    if (visible.isEmpty) return;
+
+    // Full-screen confetti + photo celebration, separate from (and shown
+    // before) the regular notice popup below - once per day, same idiom as
+    // shouldShowNoticePopupToday, just its own storage key.
+    if (birthday != null) {
+      final shouldCelebrate = await shouldShowNoticePopupToday('birthday_celebration_shown_teacher_$employeeId');
+      if (shouldCelebrate && mounted) {
+        final name = profile['name'] as String? ?? '';
+        await showBirthdayCelebration(context,
+          name: name.isEmpty ? 'Teacher' : name.split(' ').first,
+          photoKey: profile['photo_url'] as String?,
+        );
+      }
+    }
+    if (!mounted || visible.isEmpty) return;
 
     final shouldShow = await shouldShowNoticePopupToday('notif_popup_shown_teacher_$employeeId');
     if (shouldShow && mounted) _showNotifications();

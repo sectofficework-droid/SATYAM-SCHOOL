@@ -147,3 +147,26 @@ Map<String, dynamic> alertAsNoticeItem(Map<String, dynamic> alert) {
     '_isAlert': true,
   };
 }
+
+// Automatic "Happy Birthday" notice for the logged-in user, computed purely
+// from their own cached profile (dob) - no fetch, no admin action, no
+// server-side scheduling. posted_date is stamped to "now" at call time
+// (not stored) so recentNotices()'s existing 24h-recency filter naturally
+// shows it every time they open the app on their birthday and never again
+// once the day passes - same idiom as the exam-date reminders above.
+Map<String, dynamic>? birthdayNoticeItem(String? dob) {
+  final d = dob == null ? null : DateTime.tryParse(dob);
+  if (d == null) return null;
+  final today = DateTime.now();
+  if (d.month != today.month || d.day != today.day) return null;
+  final nowIso = today.toIso8601String();
+  return {
+    'id': 'birthday-${today.year}-${today.month}-${today.day}',
+    'title': 'Happy Birthday!',
+    'content': 'Wishing you a wonderful day, from all of us at Satyam Stars International School!',
+    'type': 'Birthday',
+    'posted_date': nowIso,
+    'created_at': nowIso,
+    '_isBirthday': true,
+  };
+}

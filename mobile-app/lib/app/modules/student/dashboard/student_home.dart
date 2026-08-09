@@ -8,6 +8,7 @@ import '../../../../core/utils/recent_notices.dart';
 import '../../../../core/utils/app_update.dart';
 import '../../../../common/widgets/notification_bell.dart';
 import '../../../../common/widgets/recent_notices_sheet.dart';
+import '../../../../common/widgets/birthday_celebration_overlay.dart';
 import '../../../../common/widgets/stat_card.dart';
 import '../../../../common/widgets/responsive_module_grid.dart';
 import '../profile/student_profile_page.dart';
@@ -66,17 +67,33 @@ class _StudentHomeState extends State<StudentHome> {
         ? await SupabaseService.fetchExams(className: className)
         : <Map<String, dynamic>>[];
     final officialExams = await SupabaseService.fetchOfficialExams();
+    final birthday = birthdayNoticeItem(profile['dob'] as String?);
 
     final combined = [
       ...notices,
       ...monthlyTestReminders(classExams),
       ...officialExamReminders(officialExams),
+      if (birthday != null) birthday,
     ];
 
     final visible = await visibleRecentNotices(combined, _userKey!);
     if (!mounted) return;
     setState(() => _recent = visible);
-    if (visible.isEmpty) return;
+
+    // Full-screen confetti + photo celebration, separate from (and shown
+    // before) the regular notice popup below - once per day, same idiom as
+    // shouldShowNoticePopupToday, just its own storage key.
+    if (birthday != null) {
+      final shouldCelebrate = await shouldShowNoticePopupToday('birthday_celebration_shown_student_$studentId');
+      if (shouldCelebrate && mounted) {
+        final firstName = profile['first_name'] as String? ?? '';
+        await showBirthdayCelebration(context,
+          name: firstName.isEmpty ? 'Student' : firstName,
+          photoKey: profile['photo_url'] as String?,
+        );
+      }
+    }
+    if (!mounted || visible.isEmpty) return;
 
     final shouldShow = await shouldShowNoticePopupToday('notif_popup_shown_student_$studentId');
     if (shouldShow && mounted) _showNotifications();

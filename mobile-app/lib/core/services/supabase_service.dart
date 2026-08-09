@@ -420,6 +420,18 @@ class SupabaseService {
     };
   }
 
+  // Every student/staff birthday (not just today's) for the year-round
+  // scrollable Birthdays list - see SUPABASE_ALL_BIRTHDAYS.sql.
+  static Future<Map<String, List<Map<String, dynamic>>>> fetchAllBirthdays() async {
+    final res = await client.rpc('get_all_birthdays');
+    if (res == null) return {'students': [], 'staff': []};
+    final map = res as Map<String, dynamic>;
+    return {
+      'students': List<Map<String, dynamic>>.from(map['students'] as List? ?? const []),
+      'staff':    List<Map<String, dynamic>>.from(map['staff'] as List? ?? const []),
+    };
+  }
+
   // Timetable ─────────────────────────────────────────────────────────────
   // Read-only in both apps - entirely built by the admin panel's Settings →
   // Timetable (timetables: academic_year/day_group/slot_id/class_name/
