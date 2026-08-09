@@ -404,6 +404,22 @@ class SupabaseService {
     }).eq('id', requestId);
   }
 
+  // Birthdays ─────────────────────────────────────────────────────────────
+  // Who has a birthday today, students and staff separately - via a
+  // SECURITY DEFINER RPC (see SUPABASE_BIRTHDAYS.sql) rather than reading
+  // students/employees directly, since those tables' RLS would otherwise
+  // block seeing anyone but yourself and the RPC only returns non-sensitive
+  // fields for the handful of people who actually match today.
+  static Future<Map<String, List<Map<String, dynamic>>>> fetchTodaysBirthdays() async {
+    final res = await client.rpc('get_todays_birthdays');
+    if (res == null) return {'students': [], 'staff': []};
+    final map = res as Map<String, dynamic>;
+    return {
+      'students': List<Map<String, dynamic>>.from(map['students'] as List? ?? const []),
+      'staff':    List<Map<String, dynamic>>.from(map['staff'] as List? ?? const []),
+    };
+  }
+
   // Timetable ─────────────────────────────────────────────────────────────
   // Read-only in both apps - entirely built by the admin panel's Settings →
   // Timetable (timetables: academic_year/day_group/slot_id/class_name/

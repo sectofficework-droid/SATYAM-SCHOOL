@@ -1,5 +1,16 @@
 import supabase from "./supabase";
 
+// Same RPC the mobile apps use (SUPABASE_BIRTHDAYS.sql) rather than reading
+// students/employees directly, so the admin panel's numbers can never drift
+// from what students/teachers see, and so this stays correct even if those
+// tables' RLS changes later - it only ever returns non-sensitive fields for
+// the handful of people whose birthday is today.
+export async function getTodaysBirthdays() {
+  const { data, error } = await supabase.rpc("get_todays_birthdays");
+  if (error) throw error;
+  return data || { students: [], staff: [] };
+}
+
 export async function getDashboardStats(selectedDate) {
   const curMonth = new Date().toISOString().slice(0, 7);
 

@@ -8,12 +8,13 @@ import {
 import {
   GraduationCap, Users, IndianRupee, TrendingUp, TrendingDown,
   Bell, ArrowUpRight, Package, AlertCircle, Calendar,
-  Activity, ClipboardList,
+  Activity, ClipboardList, Cake, User,
 } from "lucide-react";
-import { getDashboardStats, getRecentNotices, getInventoryAlerts, getRecentActivities, getStudentAttendanceSummary } from "@/lib/dashboardService";
+import { getDashboardStats, getRecentNotices, getInventoryAlerts, getRecentActivities, getStudentAttendanceSummary, getTodaysBirthdays } from "@/lib/dashboardService";
 import { getDashboardTasks } from "@/lib/taskService";
 import useStore from "@/lib/store";
 import DateInputDMY from "@/components/DateInputDMY";
+import S3Image from "@/components/S3Image";
 
 // ── Dummy Data ────────────────────────────────────────────────
 
@@ -118,6 +119,42 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
+// rows is undefined while loading, [] once loaded with nothing to show -
+// distinct "Loading…" vs "None today" states, same idiom as the other
+// dashboard cards on this page (e.g. dbInventoryAlerts).
+function BirthdayCard({ title, icon: Icon, accent, badgeBg, rows, renderRow, emptyLabel }) {
+  return (
+    <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
+      <div className="flex items-center gap-2 px-5 py-4 border-b border-gray-100">
+        <Icon className={`w-4 h-4 ${accent}`} />
+        <h3 className="font-semibold text-gray-800 text-sm">{title}</h3>
+      </div>
+      <div className="divide-y divide-gray-50">
+        {rows === undefined ? (
+          <div className="px-5 py-8 text-center text-gray-400 text-sm">Loading…</div>
+        ) : rows.length === 0 ? (
+          <div className="px-5 py-8 text-center text-gray-400 text-sm">{emptyLabel}</div>
+        ) : rows.map(raw => {
+          const r = renderRow(raw);
+          return (
+            <div key={r.key} className="flex items-center gap-3 px-5 py-3">
+              <S3Image s3Key={r.photo} alt={r.name} className="w-9 h-9 rounded-full object-cover flex-shrink-0"
+                fallback={<div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 ${badgeBg}`}>
+                  <span className={`text-xs font-bold ${accent}`}>{r.name.charAt(0).toUpperCase()}</span>
+                </div>} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800 truncate">{r.name}</p>
+                <p className="text-xs text-gray-400 truncate">{r.subtitle}</p>
+              </div>
+              <Cake className={`w-4 h-4 flex-shrink-0 ${accent} opacity-60`} />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ─────────────────────────────────────────────
 export default function DashboardPage() {
   const [selectedDate, setSelectedDate] = useState(todayStr);
@@ -132,6 +169,7 @@ export default function DashboardPage() {
   const [dbInventoryAlerts,  setDbInventoryAlerts]  = useState(null);
   const [dbRecentActivities, setDbRecentActivities] = useState(null);
   const [dbStudentAttendance, setDbStudentAttendance] = useState(null);
+  const [dbBirthdays,        setDbBirthdays]        = useState(null);
 
   useEffect(() => {
     getDashboardStats().then(s => {
@@ -144,6 +182,7 @@ export default function DashboardPage() {
     getDashboardTasks().then(setDbPinnedTasks).catch(() => {});
     getInventoryAlerts().then(setDbInventoryAlerts).catch(() => {});
     getRecentActivities().then(setDbRecentActivities).catch(() => {});
+    getTodaysBirthdays().then(setDbBirthdays).catch(() => {});
   }, []);
 
   // Re-fetched whenever the date picker changes, same as the fee/expense
@@ -363,6 +402,39 @@ export default function DashboardPage() {
             </a>
           </div>
         </div>
+      </div>
+
+      {/* ── Today's Birthdays — students and staff always kept as separate
+          cards so staff never get mixed into the student list ── */}
+      <div className="grid lg:grid-cols-2 gap-4">
+        <BirthdayCard
+          title="Student Birthdays Today"
+          icon={Cake}
+          accent="text-pink-600"
+          badgeBg="bg-pink-50"
+          rows={dbBirthdays?.students}
+          renderRow={(s) => ({
+            key: s.id,
+            name: `${s.first_name || ""} ${s.last_name || ""}`.trim() || "—",
+            subtitle: [s.class_name, s.section_name].filter(Boolean).join(" - ") || "—",
+            photo: s.photo_url,
+          })}
+          emptyLabel="No student birthdays today"
+        />
+        <BirthdayCard
+          title="Staff Birthdays Today"
+          icon={User}
+          accent="text-school-navy"
+          badgeBg="bg-amber-50"
+          rows={dbBirthdays?.staff}
+          renderRow={(s) => ({
+            key: s.id,
+            name: s.name || "—",
+            subtitle: [s.designation, s.department].filter(Boolean).join(" · ") || "Staff",
+            photo: s.photo_url,
+          })}
+          emptyLabel="No staff birthdays today"
+        />
       </div>
 
       {/* ── Attendance Graphs ── */}

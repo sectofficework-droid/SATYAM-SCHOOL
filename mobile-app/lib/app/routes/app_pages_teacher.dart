@@ -18,6 +18,7 @@ import '../modules/teacher/syllabus/teacher_syllabus_page.dart';
 import '../modules/teacher/query/teacher_query_page.dart';
 import '../modules/teacher/rules/teacher_rules_page.dart';
 import '../modules/teacher/timetable/teacher_timetable_page.dart';
+import '../modules/teacher/birthdays/teacher_birthdays_page.dart';
 import 'app_routes.dart';
 
 // Route table for the Teacher-flavor build only - the Student app's build
@@ -47,5 +48,6 @@ class AppPagesTeacher {
     GetPage(name: Routes.teacherQuery,    page: () => const TeacherQueryPage()),
     GetPage(name: Routes.teacherRules,    page: () => const TeacherRulesPage()),
     GetPage(name: Routes.teacherTimetable, page: () => const TeacherTimetablePage()),
+    GetPage(name: Routes.teacherBirthdays, page: () => const TeacherBirthdaysPage()),
   ];
 }
