@@ -8,12 +8,16 @@ export const YEAR_PLAN_CATEGORIES = [
   { key:"exam",        label:"Exam",         color:"#e11d48", light:"bg-rose-50",   text:"text-rose-700",   chip:"bg-rose-100",   icon:"FileText"   },
   { key:"holiday",     label:"Holiday",      color:"#0d9488", light:"bg-teal-50",   text:"text-teal-700",   chip:"bg-teal-100",   icon:"Palmtree"   },
   { key:"sunday",      label:"Sunday",       color:"#f97316", light:"bg-orange-50", text:"text-orange-700", chip:"bg-orange-100", icon:"Moon"       },
+  // Overrides the default non-working rule for one date (e.g. a Sunday the
+  // school is actually open) - attendance.js's isWorkingDay() treats this
+  // category as taking priority over the Sunday/Holiday/Govt Holiday rules.
+  { key:"working_day", label:"Working Day",  color:"#16a34a", light:"bg-green-50",  text:"text-green-700",  chip:"bg-green-100",  icon:"CalendarCheck"},
 ];
 
 export const YEAR_PLAN_ICON_CHOICES = [
   "Flag","PartyPopper","Sparkles","Users","FileText","Palmtree","Moon","Sun","Gift","Star",
   "CalendarDays","CalendarHeart","BookOpenCheck","PenSquare","GraduationCap","School","Trophy",
-  "Music","Camera","Cake","Heart",
+  "Music","Camera","Cake","Heart","CalendarCheck",
 ];
 
 export const ACADEMIC_MONTHS = [

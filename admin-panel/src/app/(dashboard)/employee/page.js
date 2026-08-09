@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import useStore from "@/lib/store";
 import supabase from "@/lib/supabase";
@@ -23,7 +23,12 @@ import {
   ChevronRight, ChevronLeft, Shield, Upload,
   ClipboardList, IndianRupee, AlertCircle, Download,
   CheckCircle2, TrendingDown, FileSpreadsheet,
+  CalendarCheck, ShieldAlert,
 } from "lucide-react";
+import {
+  getPendingLeaveRequests, approveLeaveRequest, rejectLeaveRequest,
+  getEmployeeAttendanceForDate, saveEmployeeAttendanceForDate,
+} from "@/lib/staffLeaveService";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const DESIGNATIONS = {
@@ -1330,6 +1335,202 @@ function AttendanceSection({ employees, salaries, setAttendanceSummary }) {
 }
 
 
+// ── Leave & Attendance (day-by-day staff attendance + leave approvals) ─────────
+// Previously there was no day-by-day staff attendance at all - AttendanceSection
+// above is an Excel-import period summary for salary only. This is a real
+// per-date table (employee_attendance), populated either by admin marking a
+// day directly (Mark Attendance sub-tab) or automatically when a leave
+// request is approved (Leave Requests sub-tab, status 'L').
+function LeaveAttendanceSection({ employees }) {
+  const [subView, setSubView] = useState("requests"); // "requests" | "mark"
+  const [pendingCount, setPendingCount] = useState(0);
+
+  const refreshPendingCount = useCallback(() => {
+    getPendingLeaveRequests().then(rows => setPendingCount(rows.length)).catch(() => {});
+  }, []);
+  useEffect(() => { refreshPendingCount(); }, [refreshPendingCount, subView]);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-1.5 bg-white rounded-xl border border-gray-100 shadow-sm p-1.5 w-fit">
+        <SubTabButton active={subView === "requests"} onClick={() => setSubView("requests")} icon={ShieldAlert} label="Leave Requests" badge={pendingCount} />
+        <SubTabButton active={subView === "mark"} onClick={() => setSubView("mark")} icon={CalendarCheck} label="Mark Attendance" />
+      </div>
+      {subView === "requests" && <LeaveRequestsTab onChange={refreshPendingCount} />}
+      {subView === "mark" && <MarkStaffAttendanceTab employees={employees} />}
+    </div>
+  );
+}
+
+function SubTabButton({ active, onClick, icon: Icon, label, badge }) {
+  return (
+    <button onClick={onClick}
+      className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-colors ${
+        active ? "bg-school-navy text-white" : "text-gray-500 hover:bg-gray-50"
+      }`}>
+      <Icon className="w-4 h-4" />{label}
+      {badge > 0 && (
+        <span className={`ml-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${active ? "bg-white/20 text-white" : "bg-red-100 text-red-600"}`}>{badge}</span>
+      )}
+    </button>
+  );
+}
+
+function LeaveRequestsTab({ onChange }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    getPendingLeaveRequests().then(setRows).catch(() => setRows([])).finally(() => setLoading(false));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function handleApprove(req) {
+    setBusyId(req.id);
+    try {
+      await approveLeaveRequest(req);
+      await load();
+      onChange?.();
+    } catch (e) {
+      alert("Failed to approve: " + e.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleReject(req) {
+    const note = window.prompt("Optional note for the staff member (why this is being rejected):", "") || null;
+    setBusyId(req.id);
+    try {
+      await rejectLeaveRequest(req.id, note);
+      await load();
+      onChange?.();
+    } catch (e) {
+      alert("Failed to reject: " + e.message);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      {loading ? (
+        <div className="flex items-center justify-center h-40 gap-3">
+          <div className="w-8 h-8 border-2 border-school-navy/20 border-t-school-navy rounded-full animate-spin" />
+          <span className="text-sm text-gray-500">Loading...</span>
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-40 gap-2">
+          <ShieldAlert className="w-10 h-10 text-gray-200" />
+          <p className="text-sm text-gray-400">No pending leave requests</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-gray-50">
+          {rows.map(req => (
+            <div key={req.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-4">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-800 text-sm">{req.employee?.name || "Unknown staff"}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {req.from_date === req.to_date ? req.from_date : `${req.from_date} → ${req.to_date}`}
+                </p>
+                {req.reason && <p className="text-sm text-gray-600 mt-1.5 bg-gray-50 rounded-lg px-3 py-1.5">&quot;{req.reason}&quot;</p>}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button onClick={() => handleReject(req)} disabled={busyId === req.id}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-medium border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50">
+                  Reject
+                </button>
+                <button onClick={() => handleApprove(req)} disabled={busyId === req.id}
+                  className="px-3.5 py-1.5 rounded-lg text-xs font-medium bg-school-navy text-white hover:bg-school-navy/90 disabled:opacity-50">
+                  {busyId === req.id ? "Working..." : "Approve"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MarkStaffAttendanceTab({ employees }) {
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [status, setStatus] = useState({}); // employee_id -> 'P'|'A'
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const activeEmployees = employees.filter(e => e.status !== "Inactive");
+
+  useEffect(() => {
+    setLoading(true);
+    getEmployeeAttendanceForDate(date).then(rows => {
+      const map = {};
+      rows.forEach(r => { map[r.employee_id] = r.status; });
+      activeEmployees.forEach(e => { if (!map[e.id]) map[e.id] = "P"; });
+      setStatus(map);
+    }).finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [date]);
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const records = Object.entries(status).map(([employee_id, s]) => ({ employee_id, date, status: s }));
+      await saveEmployeeAttendanceForDate(records);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      alert("Failed to save: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-wrap gap-2">
+        <input type="date" value={date} onChange={e => setDate(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+        <button onClick={handleSave} disabled={saving}
+          className={`px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-50 ${
+            saved ? "bg-green-500" : "bg-school-navy hover:bg-school-navy/90"
+          }`}>
+          {saving ? "Saving..." : saved ? "Saved!" : "Save Attendance"}
+        </button>
+      </div>
+      {loading ? (
+        <div className="flex items-center justify-center h-40 text-sm text-gray-400">Loading…</div>
+      ) : (
+        <div className="divide-y divide-gray-50 max-h-[520px] overflow-y-auto">
+          {activeEmployees.map(e => (
+            <div key={e.id} className="flex items-center justify-between px-5 py-3">
+              <div>
+                <p className="text-sm font-medium text-gray-800">{e.name}</p>
+                <p className="text-xs text-gray-400">{e.designation}</p>
+              </div>
+              <div className="flex gap-1.5">
+                {["P", "A"].map(v => (
+                  <button key={v} onClick={() => setStatus(prev => ({ ...prev, [e.id]: v }))}
+                    className={`w-9 h-9 rounded-lg text-xs font-bold border transition-colors ${
+                      status[e.id] === v
+                        ? (v === "P" ? "bg-green-500 border-green-500 text-white" : "bg-red-500 border-red-500 text-white")
+                        : (v === "P" ? "border-green-200 text-green-600 hover:bg-green-50" : "border-red-200 text-red-600 hover:bg-red-50")
+                    }`}>
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function EmployeePage() {
   const setStoreEmployees = useStore(s => s.setEmployees);
@@ -1408,7 +1609,7 @@ export default function EmployeePage() {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
-            {[["staff","Staff List",Users],["attendance","Attendance",ClipboardList]].map(([v,l,Icon]) => (
+            {[["staff","Staff List",Users],["attendance","Attendance",ClipboardList],["leave","Leave & Attendance",CalendarCheck]].map(([v,l,Icon]) => (
               <button key={v} onClick={() => setView(v)}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all ${view===v?"bg-white shadow text-school-navy":"text-gray-500 hover:text-gray-700"}`}>
                 <Icon className="w-3.5 h-3.5"/>{l}
@@ -1432,6 +1633,9 @@ export default function EmployeePage() {
           setAttendanceSummary={setAttendanceSummary}
         />
       )}
+
+      {/* Leave & day-by-day attendance view */}
+      {view === "leave" && <LeaveAttendanceSection employees={employees} />}
 
       {/* Staff list view */}
       {view === "staff" && empLoading && (

@@ -5,6 +5,7 @@ import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
+import '../../../../core/utils/working_day.dart';
 
 class TeacherAttendancePage extends StatefulWidget {
   final bool embedded;
@@ -28,6 +29,12 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
   Timer? _countdownTimer;
   int _remainingSeconds = 0;
   bool _requesting = false;
+
+  // Admin-managed working-day/holiday calendar (Year Planning) - a non-
+  // working date blocks marking entirely, see isWorkingDay().
+  List<Map<String, dynamic>> _calendarEvents = [];
+  bool get _isWorkingDayForDate => isWorkingDay(_date, _calendarEvents);
+  String get _nonWorkingReason => nonWorkingReason(_date, _calendarEvents);
 
   bool get _isLocked => _wasMarked && _approvedWindow == null;
 
@@ -66,6 +73,12 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
     for (final s in _students) _status[s['id'] as String] ??= 'P';
     final wasMarked = rows.isNotEmpty;
 
+    // Same calendar Year Planning manages - a month range covers whichever
+    // date is selected without needing a fetch per single day.
+    final monthStart = DateTime(_date.year, _date.month, 1);
+    final monthEnd   = DateTime(_date.year, _date.month + 1, 0);
+    final calendarEvents = await SupabaseService.fetchCalendarEvents(monthStart, monthEnd);
+
     Map<String, dynamic>? pending;
     Map<String, dynamic>? approved;
     if (teacherId != null) {
@@ -87,6 +100,7 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
       _wasMarked = wasMarked;
       _pendingRequest = pending;
       _approvedWindow = approved;
+      _calendarEvents = calendarEvents;
       _attLoading = false;
     });
     if (approved != null) _startCountdown(DateTime.parse(approved['approved_at'].toString()));
@@ -222,6 +236,8 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
       body = _buildShimmer();
     } else if (_students.isEmpty) {
       body = _emptyState();
+    } else if (!_isWorkingDayForDate) {
+      body = _nonWorkingDayState();
     } else {
       final total   = _students.length;
       final percent = total > 0 ? _presentCount / total : 0.0;
@@ -524,6 +540,65 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
       child: Container(height: 68, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14))),
     ),
   );
+
+  // A non-working date (Sunday by default, or a Holiday/Govt Holiday entry
+  // in Year Planning) blocks marking entirely - admin can override a
+  // specific date by adding a "Working Day" entry there.
+  Widget _nonWorkingDayState() => Column(children: [
+    Container(
+      color: AppColors.card,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(children: [
+        Container(
+          width: 40, height: 40,
+          decoration: BoxDecoration(color: AppColors.amberLight, borderRadius: BorderRadius.circular(10)),
+          child: const Icon(Icons.event_busy_rounded, color: AppColors.amber, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(DateFormat('EEEE').format(_date),
+            style: const TextStyle(fontSize: 12, color: AppColors.textLight, fontWeight: FontWeight.w500)),
+          Text(DateFormat('d MMMM yyyy').format(_date),
+            style: const TextStyle(fontSize: 15, color: AppColors.text, fontWeight: FontWeight.w700)),
+        ])),
+        GestureDetector(
+          onTap: () async {
+            final picked = await showDatePicker(
+              context: context, initialDate: _date,
+              firstDate: DateTime.now().subtract(const Duration(days: 30)), lastDate: DateTime.now(),
+            );
+            if (picked != null) {
+              setState(() => _date = picked);
+              await _loadAttendanceForDate();
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(gradient: AppColors.navyGradient, borderRadius: BorderRadius.circular(10)),
+            child: const Text('Change', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600)),
+          ),
+        ),
+      ]),
+    ),
+    Expanded(child: Center(child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 80, height: 80,
+          decoration: const BoxDecoration(color: AppColors.amberLight, shape: BoxShape.circle),
+          child: const Icon(Icons.event_busy_rounded, color: AppColors.amber, size: 38),
+        ),
+        const SizedBox(height: 16),
+        Text(_nonWorkingReason, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: AppColors.text)),
+        const SizedBox(height: 8),
+        const Text(
+          'Attendance can\'t be marked on a non-working day. Ask admin to add a "Working Day" entry in Year Planning for this date if you need to take attendance.',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.5),
+        ),
+      ]),
+    ))),
+  ]);
 
   Widget _emptyState() => Center(child: Padding(
     padding: const EdgeInsets.all(32),

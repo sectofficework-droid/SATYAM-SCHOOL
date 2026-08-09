@@ -97,6 +97,45 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  // Staff leave + staff attendance ─────────────────────────────────────────
+  // Same request/approve/reject shape as the attendance-edit-request
+  // workflow above - approving a leave request (admin panel) auto-inserts
+  // employee_attendance rows with status 'L' for every day in the range.
+
+  static Future<void> submitLeaveRequest({
+    required String employeeId,
+    required String fromDate,
+    required String toDate,
+    required String reason,
+  }) async {
+    await client.from('leave_requests').insert({
+      'employee_id': employeeId,
+      'from_date': fromDate,
+      'to_date': toDate,
+      'reason': reason,
+    });
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchMyLeaveRequests(String employeeId) async {
+    final res = await client
+        .from('leave_requests')
+        .select()
+        .eq('employee_id', employeeId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  // No limit, same reasoning as fetchStudentAttendance above - the Yearly
+  // attendance view needs the whole academic year's records.
+  static Future<List<Map<String, dynamic>>> fetchEmployeeAttendance(String employeeId) async {
+    final res = await client
+        .from('employee_attendance')
+        .select()
+        .eq('employee_id', employeeId)
+        .order('date', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
   // Homework ──────────────────────────────────────────────────────────────────
 
   // Returns homework in any of classNames UNION homework created by

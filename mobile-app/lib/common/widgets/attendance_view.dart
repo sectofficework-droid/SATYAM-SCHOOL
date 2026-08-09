@@ -18,12 +18,18 @@ const List<Color> _monthAccentLights = [
 
 // Shared Monthly / Yearly attendance viewer for both the student app's "My
 // Attendance" and the teacher app's "My Attendance" - same shape of data
-// (a list of {date, status} records, status 'P' or 'A'), same look, so the
-// calendar-grid and percent-ring logic isn't built twice. Purely
-// presentational - the parent page owns fetching/refreshing `records`.
+// (a list of {date, status} records), same look, so the calendar-grid and
+// percent-ring logic isn't built twice. Purely presentational - the parent
+// page owns fetching/refreshing `records`.
+//
+// showLeave: students never have a 'L' (Leave) status, so it defaults off
+// and their layout is unchanged; staff attendance passes true to also
+// recognize 'L' (a third dot color, an extra stat tile, an extra Yearly
+// line) alongside the existing 'P'/'A'.
 class AttendanceView extends StatefulWidget {
   final List<Map<String, dynamic>> records;
-  const AttendanceView({super.key, required this.records});
+  final bool showLeave;
+  const AttendanceView({super.key, required this.records, this.showLeave = false});
 
   @override
   State<AttendanceView> createState() => _AttendanceViewState();
@@ -55,8 +61,10 @@ class _AttendanceViewState extends State<AttendanceView> {
   @override
   Widget build(BuildContext context) => Column(children: [
     _buildTabBar(),
-    Expanded(child: _tab == 0 ? _MonthlyTab(visibleMonth: _visibleMonth, statusByDay: _statusByDay,
-      onChangeMonth: (m) => setState(() => _visibleMonth = m)) : _YearlyTab(records: widget.records)),
+    Expanded(child: _tab == 0
+      ? _MonthlyTab(visibleMonth: _visibleMonth, statusByDay: _statusByDay, showLeave: widget.showLeave,
+          onChangeMonth: (m) => setState(() => _visibleMonth = m))
+      : _YearlyTab(records: widget.records, showLeave: widget.showLeave)),
   ]);
 
   Widget _buildTabBar() => Padding(
@@ -95,8 +103,9 @@ class _AttendanceViewState extends State<AttendanceView> {
 class _MonthlyTab extends StatelessWidget {
   final DateTime visibleMonth;
   final Map<DateTime, String> statusByDay;
+  final bool showLeave;
   final ValueChanged<DateTime> onChangeMonth;
-  const _MonthlyTab({required this.visibleMonth, required this.statusByDay, required this.onChangeMonth});
+  const _MonthlyTab({required this.visibleMonth, required this.statusByDay, required this.showLeave, required this.onChangeMonth});
 
   @override
   Widget build(BuildContext context) {
@@ -105,13 +114,14 @@ class _MonthlyTab extends StatelessWidget {
     final now = DateTime.now();
     final isCurrentMonth = now.year == visibleMonth.year && now.month == visibleMonth.month;
 
-    int present = 0, absent = 0;
+    int present = 0, absent = 0, leave = 0;
     for (int d = 1; d <= daysInMonth; d++) {
       final status = statusByDay[DateTime(visibleMonth.year, visibleMonth.month, d)];
       if (status == 'P') present++;
       if (status == 'A') absent++;
+      if (status == 'L') leave++;
     }
-    final marked = present + absent;
+    final marked = present + absent + leave;
     final presentPct = marked == 0 ? 0.0 : present / marked * 100;
     final absentPct  = marked == 0 ? 0.0 : absent / marked * 100;
 
@@ -149,7 +159,7 @@ class _MonthlyTab extends StatelessWidget {
                   final day = i + 1;
                   final isToday = isCurrentMonth && now.day == day;
                   final status = statusByDay[DateTime(visibleMonth.year, visibleMonth.month, day)];
-                  final dotColor = status == 'P' ? AppColors.green : status == 'A' ? AppColors.red : null;
+                  final dotColor = status == 'P' ? AppColors.green : status == 'A' ? AppColors.red : status == 'L' ? AppColors.purple : null;
                   return Container(
                     margin: const EdgeInsets.all(2),
                     decoration: BoxDecoration(
@@ -190,6 +200,7 @@ class _MonthlyTab extends StatelessWidget {
             _statTile('$absent', 'Absent', AppColors.red, AppColors.redLight),
             _statTile('${absentPct.toStringAsFixed(0)}%', 'Absent %', AppColors.red, AppColors.redLight),
             _statTile('$daysInMonth', 'Days in Month', AppColors.navy, AppColors.blueLight),
+            if (showLeave) _statTile('$leave', 'Leave', AppColors.purple, AppColors.purpleLight),
           ],
         ),
       ],
@@ -212,7 +223,8 @@ class _MonthlyTab extends StatelessWidget {
 
 class _YearlyTab extends StatelessWidget {
   final List<Map<String, dynamic>> records;
-  const _YearlyTab({required this.records});
+  final bool showLeave;
+  const _YearlyTab({required this.records, required this.showLeave});
 
   @override
   Widget build(BuildContext context) {
@@ -245,7 +257,7 @@ class _YearlyTab extends StatelessWidget {
       itemBuilder: (_, i) {
         final month = months[i];
         final daysInMonth = DateTime(month.year, month.month + 1, 0).day;
-        int present = 0, absent = 0;
+        int present = 0, absent = 0, leave = 0;
         final absentDates = <int>[];
         for (final r in records) {
           final d = DateTime.tryParse((r['date'] ?? '').toString());
@@ -253,9 +265,10 @@ class _YearlyTab extends StatelessWidget {
           final s = r['status'] as String?;
           if (s == 'P') present++;
           if (s == 'A') { absent++; absentDates.add(d.day); }
+          if (s == 'L') leave++;
         }
         absentDates.sort();
-        final marked = present + absent;
+        final marked = present + absent + leave;
         final pct = marked == 0 ? 0.0 : present / marked * 100;
         final accent = _monthAccents[i % _monthAccents.length];
         final accentLight = _monthAccentLights[i % _monthAccentLights.length];
@@ -276,6 +289,7 @@ class _YearlyTab extends StatelessWidget {
               Text('Absent Days: $absent', style: const TextStyle(fontSize: 12.5, color: AppColors.textLight)),
               Text('Absent Dates: ${absentDates.isEmpty ? '-' : absentDates.join(', ')}',
                 style: const TextStyle(fontSize: 12.5, color: AppColors.textLight)),
+              if (showLeave) Text('Leave Days: $leave', style: const TextStyle(fontSize: 12.5, color: AppColors.textLight)),
               Text('$daysInMonth days this month', style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
             ])),
             const SizedBox(width: 12),

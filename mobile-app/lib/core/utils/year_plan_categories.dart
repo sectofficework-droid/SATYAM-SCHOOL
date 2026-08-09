@@ -22,6 +22,9 @@ const List<YearPlanCategory> yearPlanCategories = [
   YearPlanCategory('exam', 'Exam', Color(0xFFE11D48), Icons.edit_note_rounded),
   YearPlanCategory('holiday', 'Holiday', Color(0xFF0D9488), Icons.beach_access_rounded),
   YearPlanCategory('sunday', 'Sunday', Color(0xFFF97316), Icons.nightlight_round),
+  // Overrides the default non-working rule for one date - see isWorkingDay()
+  // in core/utils/working_day.dart.
+  YearPlanCategory('working_day', 'Working Day', Color(0xFF16A34A), Icons.event_available_rounded),
 ];
 
 final Map<String, YearPlanCategory> yearPlanCategoryByKey = {

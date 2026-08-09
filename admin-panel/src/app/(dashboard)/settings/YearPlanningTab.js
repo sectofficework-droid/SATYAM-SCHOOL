@@ -7,7 +7,7 @@ import autoTable from "jspdf-autotable";
 import {
   Flag, PartyPopper, Sparkles, Users, FileText, Palmtree, Moon, Sun, Gift, Star,
   CalendarDays, CalendarHeart, BookOpenCheck, PenSquare, GraduationCap, School, Trophy,
-  Music, Camera, Cake, Heart, X, Trash2, Download, FileSpreadsheet, Save, RotateCcw,
+  Music, Camera, Cake, Heart, CalendarCheck, X, Trash2, Download, FileSpreadsheet, Save, RotateCcw,
 } from "lucide-react";
 import { YEAR_PLAN_CATEGORIES, YEAR_PLAN_ICON_CHOICES, ACADEMIC_MONTHS, SEED_YEAR_PLAN_EVENTS } from "@/lib/yearPlanData";
 import { isValidLength } from "@/lib/validators";
@@ -16,7 +16,7 @@ import { getCalendarEvents, addCalendarEvent, updateCalendarEvent, deleteCalenda
 const ICONS = {
   Flag, PartyPopper, Sparkles, Users, FileText, Palmtree, Moon, Sun, Gift, Star,
   CalendarDays, CalendarHeart, BookOpenCheck, PenSquare, GraduationCap, School, Trophy,
-  Music, Camera, Cake, Heart,
+  Music, Camera, Cake, Heart, CalendarCheck,
 };
 
 const CAT_BY_KEY = Object.fromEntries(YEAR_PLAN_CATEGORIES.map(c => [c.key, c]));
