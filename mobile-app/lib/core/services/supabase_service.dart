@@ -404,6 +404,58 @@ class SupabaseService {
     }).eq('id', requestId);
   }
 
+  // Timetable ─────────────────────────────────────────────────────────────
+  // Read-only in both apps - entirely built by the admin panel's Settings →
+  // Timetable (timetables: academic_year/day_group/slot_id/class_name/
+  // subject/teacher, plus school_profile.period_defs for period timings).
+
+  // The admin panel's Timetable grid stores 4 class names in a different
+  // format than the rest of the app (settings/page.js's own CLASSES
+  // constant, not the DB-canonical classes.name used everywhere else) -
+  // same drift PROJECT_CONTEXT.md already flags for `activeClasses`.
+  static const Map<String, String> _timetableClassNameOverrides = {
+    'JR.KG': 'JR KG',
+    'SR.KG': 'SR KG',
+    '11th - Commerce': '11th Commerce',
+    '12th - Commerce': '12th Commerce',
+  };
+
+  static Future<String?> fetchCurrentAcademicYearLabel() async {
+    final res = await client.from('academic_years').select('label, is_current').order('label');
+    final rows = List<Map<String, dynamic>>.from(res);
+    if (rows.isEmpty) return null;
+    final current = rows.where((r) => r['is_current'] == true).toList();
+    return (current.isNotEmpty ? current.first : rows.last)['label'] as String?;
+  }
+
+  // Same school_profile.period_defs the admin panel's Timetable tab reads/
+  // writes (Prayer/Period/Recess start-end times per day-group).
+  static Future<Map<String, dynamic>?> fetchPeriodDefs() async {
+    final res = await client.from('school_profile').select('period_defs').maybeSingle();
+    return res?['period_defs'] as Map<String, dynamic>?;
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchTimetableForClass(String academicYear, String className) async {
+    final ttClassName = _timetableClassNameOverrides[className] ?? className;
+    final res = await client
+        .from('timetables')
+        .select()
+        .eq('academic_year', academicYear)
+        .eq('class_name', ttClassName);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  // teacherName must match employees.name exactly - the timetable grid
+  // stores it as free text, not a teacher_id FK.
+  static Future<List<Map<String, dynamic>>> fetchTimetableForTeacher(String academicYear, String teacherName) async {
+    final res = await client
+        .from('timetables')
+        .select()
+        .eq('academic_year', academicYear)
+        .eq('teacher', teacherName);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
   // Queries & Suggestions ────────────────────────────────────────────────────
 
   static Future<void> submitQuery(Map<String, dynamic> data) async {

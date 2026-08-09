@@ -12,6 +12,7 @@ import '../modules/student/profile/student_profile_page.dart';
 import '../modules/student/syllabus/student_syllabus_page.dart';
 import '../modules/student/query/student_query_page.dart';
 import '../modules/student/rules/student_rules_page.dart';
+import '../modules/student/timetable/student_timetable_page.dart';
 import '../modules/student/help_desk/student_help_desk_page.dart';
 import 'app_routes.dart';
 
@@ -36,6 +37,7 @@ class AppPagesStudent {
     GetPage(name: Routes.studentSyllabus, page: () => const StudentSyllabusPage()),
     GetPage(name: Routes.studentQuery,    page: () => const StudentQueryPage()),
     GetPage(name: Routes.studentRules,    page: () => const StudentRulesPage()),
+    GetPage(name: Routes.studentTimetable, page: () => const StudentTimetablePage()),
     GetPage(name: Routes.studentHelpDesk, page: () => const StudentHelpDeskPage()),
   ];
 }
