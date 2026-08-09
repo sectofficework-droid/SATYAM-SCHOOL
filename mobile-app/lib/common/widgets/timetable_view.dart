@@ -43,9 +43,12 @@ class _TimetableViewState extends State<TimetableView> {
   @override
   void initState() {
     super.initState();
-    // Sunday has no school schedule - default to Monday instead of a blank day.
-    final todayIndex = DateTime.now().weekday; // Mon=1 .. Sun=7
-    _selectedWeekday = (todayIndex >= 1 && todayIndex <= 6) ? _weekdays[todayIndex - 1] : _weekdays.first;
+    // Defaults to tomorrow's schedule, not today's - most useful when
+    // checking in the evening to prepare for the next school day. If
+    // tomorrow is Sunday (no school), roll forward to Monday instead of a
+    // blank day.
+    final tomorrowIndex = DateTime.now().add(const Duration(days: 1)).weekday; // Mon=1 .. Sun=7
+    _selectedWeekday = (tomorrowIndex >= 1 && tomorrowIndex <= 6) ? _weekdays[tomorrowIndex - 1] : _weekdays.first;
   }
 
   @override
@@ -110,6 +113,7 @@ class _TimetableViewState extends State<TimetableView> {
     final timeRange = '${_fmtTime(slot['startTime'] as String?)} – ${_fmtTime(slot['endTime'] as String?)}';
 
     if (isBreak) {
+      final isPrayer = label.toLowerCase().contains('prayer');
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
@@ -117,7 +121,9 @@ class _TimetableViewState extends State<TimetableView> {
           borderRadius: BorderRadius.circular(14),
         ),
         child: Row(children: [
-          const Icon(Icons.free_breakfast_rounded, size: 16, color: AppColors.amber),
+          isPrayer
+              ? const Text('🙏', style: TextStyle(fontSize: 16))
+              : const Icon(Icons.free_breakfast_rounded, size: 16, color: AppColors.amber),
           const SizedBox(width: 10),
           Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.amber))),
           Text(timeRange, style: const TextStyle(fontSize: 11.5, color: AppColors.amber, fontWeight: FontWeight.w600)),

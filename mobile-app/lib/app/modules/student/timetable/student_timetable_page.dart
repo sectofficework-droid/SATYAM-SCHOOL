@@ -46,12 +46,9 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> {
         : TimetableView(
             periodDefs: _periodDefs,
             rowsByGroupSlot: _rowsByGroupSlot,
-            buildFilled: (row) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text((row['subject'] ?? '').toString().isEmpty ? 'Free Period' : row['subject'],
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.text)),
-              if ((row['teacher'] ?? '').toString().isNotEmpty)
-                Text(row['teacher'], style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
-            ]),
+            // Teacher name intentionally not shown to students here.
+            buildFilled: (row) => Text((row['subject'] ?? '').toString().isEmpty ? 'Free Period' : row['subject'],
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.text)),
             buildEmpty: () => const Text('Free Period', style: TextStyle(fontSize: 13, color: AppColors.textHint, fontStyle: FontStyle.italic)),
           );
 
