@@ -47,7 +47,7 @@ const DEPARTMENTS = [
 const EMPLOYMENT_TYPES = ["Permanent", "Contractual", "Part-time"];
 
 const SUBJECTS_LIST = [
-  "Mathematics", "Science", "English", "Hindi", "Social Studies",
+  "Mathematics", "Science", "English", "Hindi", "Social Science",
   "Computer Science", "Accountancy", "Economics", "Business Studies",
   "Physical Education", "Drawing", "Sanskrit", "Gujarati", "EVS", "Odia",
 ];

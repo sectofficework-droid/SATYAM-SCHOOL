@@ -38,7 +38,7 @@ List<String> teacherClasses(Map profile) {
 // subject list (SUBJECTS_TT in settings/page.js). Used as the Question Bank's
 // Subject dropdown since most teachers have no subject_mappings configured.
 const List<String> schoolSubjects = [
-  "Mathematics", "Science", "English", "Hindi", "Social Studies", "Computer",
+  "Mathematics", "Science", "English", "Hindi", "Social Science", "Computer",
   "Accountancy", "Economics", "Business Studies", "P.E.", "Drawing",
   "Sanskrit", "Gujarati", "EVS", "Odia", "Rhymes & Activity", "Dance / Yoga",
   "Activity & Play", "Free Period",

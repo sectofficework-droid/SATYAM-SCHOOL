@@ -126,7 +126,7 @@ const DEF_PERIOD_DEFS = {
 };
 
 const SUBJECTS_TT = [
-  "Mathematics","Science","English","Hindi","Social Studies","Computer",
+  "Mathematics","Science","English","Hindi","Social Science","Computer",
   "Accountancy","Economics","Business Studies","P.E.","Drawing",
   "Sanskrit","Gujarati","EVS","Rhymes & Activity","Dance / Yoga",
   "Activity & Play","Free Period","Odia - MIL","G.K.",
