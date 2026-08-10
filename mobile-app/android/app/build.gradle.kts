@@ -50,12 +50,12 @@ android {
         create("teacher") {
             dimension = "role"
             applicationId = "com.satyamstars.teacher"
-            resValue("string", "app_name", "Satyam Stars - Teacher")
+            resValue("string", "app_name", "Teacher App - Satyam School")
         }
         create("student") {
             dimension = "role"
             applicationId = "com.satyamstars.student"
-            resValue("string", "app_name", "Satyam Stars - Student")
+            resValue("string", "app_name", "SATYAM SCHOOL")
         }
     }
 }
