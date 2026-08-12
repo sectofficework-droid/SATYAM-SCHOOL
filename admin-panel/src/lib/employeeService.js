@@ -20,6 +20,7 @@ function mapFromDB(row) {
     joiningDate:     row.joining_date || "",
     employmentType:  row.employment_type || "Permanent",
     status:          row.status || "Active",
+    appPassword:     row.app_password || "",
     classTeacherOf:  row.class_teacher_of_section_id || null,
     subjectMappings: row.subject_mappings || [],
     documents:       row.documents || [],
