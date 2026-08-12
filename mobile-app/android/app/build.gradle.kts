@@ -62,7 +62,7 @@ android {
         create("attendance") {
             dimension = "role"
             applicationId = "com.satyamstars.attendance"
-            resValue("string", "app_name", "Attendance - Satyam School")
+            resValue("string", "app_name", "Staff Attendance")
         }
     }
 }
