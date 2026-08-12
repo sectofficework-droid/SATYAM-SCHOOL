@@ -42,19 +42,25 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
   }
 
   Future<void> _initCamera() async {
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) {
-      setState(() { _stage = _Stage.error; _message = 'No camera available on this device.'; });
-      return;
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        setState(() { _stage = _Stage.error; _message = 'No camera available on this device.'; });
+        return;
+      }
+      final front = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+      final controller = CameraController(front, ResolutionPreset.medium, enableAudio: false);
+      await controller.initialize();
+      if (!mounted) return;
+      setState(() => _controller = controller);
+    } catch (e, st) {
+      debugPrint('Camera init failed: $e\n$st');
+      if (!mounted) return;
+      setState(() { _stage = _Stage.error; _message = 'Camera error: $e'; });
     }
-    final front = cameras.firstWhere(
-      (c) => c.lensDirection == CameraLensDirection.front,
-      orElse: () => cameras.first,
-    );
-    final controller = CameraController(front, ResolutionPreset.medium, enableAudio: false);
-    await controller.initialize();
-    if (!mounted) return;
-    setState(() => _controller = controller);
   }
 
   @override
@@ -101,8 +107,9 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       if (!mounted) return;
       setState(() => _stage = _Stage.success);
       Timer(const Duration(seconds: 3), () { if (mounted) Get.until((r) => r.settings.name == Routes.kioskHome); });
-    } catch (e) {
-      setState(() => _message = 'Something went wrong - please try again.');
+    } catch (e, st) {
+      debugPrint('Face enroll capture failed: $e\n$st');
+      setState(() { _stage = _Stage.camera; _message = 'Error: $e'; });
     }
   }
 

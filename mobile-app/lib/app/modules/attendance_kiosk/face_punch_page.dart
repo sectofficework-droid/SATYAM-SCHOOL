@@ -40,19 +40,25 @@ class _FacePunchPageState extends State<FacePunchPage> {
   }
 
   Future<void> _initCamera() async {
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) {
-      setState(() { _stage = _Stage.error; _message = 'No camera available on this device.'; });
-      return;
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) {
+        setState(() { _stage = _Stage.error; _message = 'No camera available on this device.'; });
+        return;
+      }
+      final front = cameras.firstWhere(
+        (c) => c.lensDirection == CameraLensDirection.front,
+        orElse: () => cameras.first,
+      );
+      final controller = CameraController(front, ResolutionPreset.medium, enableAudio: false);
+      await controller.initialize();
+      if (!mounted) return;
+      setState(() => _controller = controller);
+    } catch (e, st) {
+      debugPrint('Camera init failed: $e\n$st');
+      if (!mounted) return;
+      setState(() { _stage = _Stage.error; _message = 'Camera error: $e'; });
     }
-    final front = cameras.firstWhere(
-      (c) => c.lensDirection == CameraLensDirection.front,
-      orElse: () => cameras.first,
-    );
-    final controller = CameraController(front, ResolutionPreset.medium, enableAudio: false);
-    await controller.initialize();
-    if (!mounted) return;
-    setState(() => _controller = controller);
   }
 
   @override
@@ -132,8 +138,9 @@ class _FacePunchPageState extends State<FacePunchPage> {
         _resultTime = result['time'] as DateTime;
       });
       _scheduleReturn();
-    } catch (e) {
-      _showError('Something went wrong. Please try again.');
+    } catch (e, st) {
+      debugPrint('Face punch failed: $e\n$st');
+      _showError('Error: $e');
     }
   }
 
