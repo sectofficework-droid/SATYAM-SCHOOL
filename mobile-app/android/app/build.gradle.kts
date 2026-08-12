@@ -57,6 +57,13 @@ android {
             applicationId = "com.satyamstars.student"
             resValue("string", "app_name", "SATYAM SCHOOL")
         }
+        // Standalone kiosk app for face-scan staff attendance - meant to run
+        // on one shared tablet/phone at the entrance, not installed per-user.
+        create("attendance") {
+            dimension = "role"
+            applicationId = "com.satyamstars.attendance"
+            resValue("string", "app_name", "Attendance - Satyam School")
+        }
     }
 }
 

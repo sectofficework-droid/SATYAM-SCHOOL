@@ -411,18 +411,19 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                     onChanged: (v) => setS(() { selectedClass = v!; selectedSubject = null; }),
                   ),
                   const SizedBox(height: 14),
-                  if (subjectOptions.isNotEmpty)
-                    DropdownButtonFormField<String>(
-                      value: selectedSubject,
-                      decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
-                      items: subjectOptions.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-                      onChanged: (v) => setS(() => selectedSubject = v),
-                    )
-                  else
-                    TextField(
-                      onChanged: (v) => selectedSubject = v,
-                      decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
-                    ),
+                  DropdownButtonFormField<String>(
+                    value: selectedSubject,
+                    isExpanded: true,
+                    hint: const Text('Select', style: TextStyle(fontSize: 13)),
+                    decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
+                    // Prefer this teacher's own mapped subjects for the class
+                    // (most teachers have none set up - see teacherSubjectsForClass),
+                    // falling back to every school-wide subject so this is
+                    // always a dropdown, never free text.
+                    items: (subjectOptions.isNotEmpty ? subjectOptions : schoolSubjects)
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
+                    onChanged: (v) => setS(() => selectedSubject = v),
+                  ),
                   const SizedBox(height: 14),
                   TextField(
                     controller: chapterCtrl,

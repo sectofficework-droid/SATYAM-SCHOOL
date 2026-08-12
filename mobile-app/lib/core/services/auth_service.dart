@@ -3,7 +3,10 @@ import 'package:get/get.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'supabase_service.dart';
 
-enum UserRole { teacher, student, none }
+// kiosk: the standalone Attendance flavor - never persists a session (see
+// runSatyamApp/AppConfig), so AuthService's login/session methods below are
+// only ever used by the teacher/student flavors.
+enum UserRole { teacher, student, kiosk, none }
 
 class AuthService extends GetxService {
   static AuthService get to => Get.find();

@@ -86,6 +86,12 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
   }
 
   void _navigate() {
+    // The kiosk flavor never persists a session (see runSatyamApp/
+    // AuthService) - it always boots straight to its idle punch screen.
+    if (AppConfig.lockedRole == UserRole.kiosk) {
+      Get.offAllNamed(Routes.kioskHome);
+      return;
+    }
     final auth = AuthService.to;
     if (auth.isLoggedIn.value) {
       // This build is locked to one role (see AppConfig), so there's only

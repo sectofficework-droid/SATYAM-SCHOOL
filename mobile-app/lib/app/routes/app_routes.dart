@@ -19,6 +19,7 @@ abstract class Routes {
   static const teacherTimetable = '/teacher/timetable';
   static const teacherBirthdays = '/teacher/birthdays';
   static const teacherLeave     = '/teacher/leave';
+  static const teacherDailyTasks = '/teacher/daily-tasks';
   static const studentHome      = '/student/home';
   static const studentAttend    = '/student/attendance';
   static const studentMarks     = '/student/marks';
@@ -31,4 +32,9 @@ abstract class Routes {
   static const studentRules     = '/student/rules';
   static const studentTimetable = '/student/timetable';
   static const studentHelpDesk  = '/student/help-desk';
+  // Attendance kiosk flavor - standalone, no login-gated home route.
+  static const kioskHome          = '/attendance/home';
+  static const kioskPunch         = '/attendance/punch';
+  static const kioskEnrollLogin   = '/attendance/enroll-login';
+  static const kioskEnrollCapture = '/attendance/enroll-capture';
 }

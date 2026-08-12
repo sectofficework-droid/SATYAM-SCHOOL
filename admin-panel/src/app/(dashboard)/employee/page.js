@@ -23,12 +23,15 @@ import {
   ChevronRight, ChevronLeft, Shield, Upload, Lock, Copy,
   ClipboardList, IndianRupee, AlertCircle, Download,
   CheckCircle2, TrendingDown, FileSpreadsheet,
-  CalendarCheck, ShieldAlert,
+  CalendarCheck, ShieldAlert, ListChecks, Trash2,
 } from "lucide-react";
 import {
   getPendingLeaveRequests, approveLeaveRequest, rejectLeaveRequest,
   getEmployeeAttendanceForDate, saveEmployeeAttendanceForDate,
 } from "@/lib/staffLeaveService";
+import {
+  getDailyTasks, addDailyTask, updateDailyTask, deactivateDailyTask, getCompletionStatus,
+} from "@/lib/dailyTaskService";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 const DESIGNATIONS = {
@@ -1499,9 +1502,15 @@ function LeaveRequestsTab({ onChange }) {
   );
 }
 
+function fmtPunchTime(iso) {
+  if (!iso) return null;
+  return new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
+}
+
 function MarkStaffAttendanceTab({ employees }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [status, setStatus] = useState({}); // employee_id -> 'P'|'A'
+  const [punches, setPunches] = useState({}); // employee_id -> { check_in_at, check_out_at, punch_method }
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -1512,9 +1521,14 @@ function MarkStaffAttendanceTab({ employees }) {
     setLoading(true);
     getEmployeeAttendanceForDate(date).then(rows => {
       const map = {};
-      rows.forEach(r => { map[r.employee_id] = r.status; });
+      const punchMap = {};
+      rows.forEach(r => {
+        map[r.employee_id] = r.status;
+        punchMap[r.employee_id] = { check_in_at: r.check_in_at, check_out_at: r.check_out_at, punch_method: r.punch_method };
+      });
       activeEmployees.forEach(e => { if (!map[e.id]) map[e.id] = "P"; });
       setStatus(map);
+      setPunches(punchMap);
     }).finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
@@ -1549,26 +1563,364 @@ function MarkStaffAttendanceTab({ employees }) {
         <div className="flex items-center justify-center h-40 text-sm text-gray-400">Loading…</div>
       ) : (
         <div className="divide-y divide-gray-50 max-h-[520px] overflow-y-auto">
-          {activeEmployees.map(e => (
-            <div key={e.id} className="flex items-center justify-between px-5 py-3">
-              <div>
-                <p className="text-sm font-medium text-gray-800">{e.name}</p>
-                <p className="text-xs text-gray-400">{e.designation}</p>
+          {activeEmployees.map(e => {
+            const punch = punches[e.id];
+            const checkIn  = fmtPunchTime(punch?.check_in_at);
+            const checkOut = fmtPunchTime(punch?.check_out_at);
+            return (
+              <div key={e.id} className="flex items-center justify-between px-5 py-3 gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-gray-800">{e.name}</p>
+                  <p className="text-xs text-gray-400">{e.designation}</p>
+                  {(checkIn || checkOut) && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {checkIn ? `In: ${checkIn}` : "In: —"} · {checkOut ? `Out: ${checkOut}` : "Out: —"}
+                      {punch?.punch_method === "face" && (
+                        <span className="ml-1.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 text-[10px] font-semibold align-middle">Face Punch</span>
+                      )}
+                    </p>
+                  )}
+                </div>
+                <div className="flex gap-1.5 flex-shrink-0">
+                  {["P", "A"].map(v => (
+                    <button key={v} onClick={() => setStatus(prev => ({ ...prev, [e.id]: v }))}
+                      className={`w-9 h-9 rounded-lg text-xs font-bold border transition-colors ${
+                        status[e.id] === v
+                          ? (v === "P" ? "bg-green-500 border-green-500 text-white" : "bg-red-500 border-red-500 text-white")
+                          : (v === "P" ? "border-green-200 text-green-600 hover:bg-green-50" : "border-red-200 text-red-600 hover:bg-red-50")
+                      }`}>
+                      {v}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex gap-1.5">
-                {["P", "A"].map(v => (
-                  <button key={v} onClick={() => setStatus(prev => ({ ...prev, [e.id]: v }))}
-                    className={`w-9 h-9 rounded-lg text-xs font-bold border transition-colors ${
-                      status[e.id] === v
-                        ? (v === "P" ? "bg-green-500 border-green-500 text-white" : "bg-red-500 border-red-500 text-white")
-                        : (v === "P" ? "border-green-200 text-green-600 hover:bg-green-50" : "border-red-200 text-red-600 hover:bg-red-50")
-                    }`}>
-                    {v}
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Daily Tasks (recurring staff checklist, separate from the one-off Task
+// Management module) - admin defines standing checklist items, some common
+// to every staff member ("All Staff"), some assigned to specific staff only.
+// Each staff member ticks them off daily in the app; the tick's timestamp
+// (daily_task_completions.completed_at) is captured automatically, and since
+// completions are keyed by calendar date the checklist naturally resets each
+// day while history stays queryable. ────────────────────────────────────────
+function DailyTasksSection({ employees }) {
+  const [subView, setSubView] = useState("manage"); // "manage" | "status"
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-1.5 bg-white rounded-xl border border-gray-100 shadow-sm p-1.5 w-fit">
+        <SubTabButton active={subView === "manage"} onClick={() => setSubView("manage")} icon={ListChecks} label="Manage Tasks" />
+        <SubTabButton active={subView === "status"} onClick={() => setSubView("status")} icon={CalendarCheck} label="Today's Status" />
+      </div>
+      {subView === "manage" && <ManageDailyTasksTab employees={employees} />}
+      {subView === "status" && <DailyTaskStatusTab />}
+    </div>
+  );
+}
+
+function ManageDailyTasksTab({ employees }) {
+  const [tasks,      setTasks]      = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [modal,      setModal]      = useState(null); // "add" | task object | null
+  const [deactivateId, setDeactivateId] = useState(null);
+
+  const activeEmployees = employees.filter(e => e.status !== "Inactive");
+
+  const load = useCallback(() => {
+    setLoading(true);
+    getDailyTasks().then(setTasks).catch(() => setTasks([])).finally(() => setLoading(false));
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  async function handleSave(form) {
+    if (form.id) {
+      const updated = await updateDailyTask(form.id, form);
+      setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
+    } else {
+      const created = await addDailyTask(form);
+      setTasks(prev => [created, ...prev]);
+    }
+    setModal(null);
+  }
+
+  async function handleDeactivate(id) {
+    await deactivateDailyTask(id);
+    setTasks(prev => prev.filter(t => t.id !== id));
+    setDeactivateId(null);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex justify-end">
+        <button onClick={() => setModal("add")}
+          className="flex items-center gap-2 bg-school-navy text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors shadow-sm">
+          <Plus className="w-4 h-4"/> Add Daily Task
+        </button>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {loading ? (
+          <div className="flex items-center justify-center h-40 text-sm text-gray-400">Loading…</div>
+        ) : tasks.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 gap-2">
+            <ListChecks className="w-10 h-10 text-gray-200" />
+            <p className="text-sm text-gray-400">No daily tasks yet</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {tasks.map(task => (
+              <div key={task.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-4">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-gray-800 text-sm">{task.title}</p>
+                  {task.description && <p className="text-xs text-gray-500 mt-0.5">{task.description}</p>}
+                  <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    task.targetType === "all" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
+                  }`}>
+                    {task.targetType === "all" ? "All Staff" : `${task.targetIds.length} Staff`}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <button onClick={() => setModal(task)}
+                    className="p-2 rounded-lg text-gray-400 hover:text-school-navy hover:bg-school-navy/10 transition-colors">
+                    <Pencil className="w-4 h-4"/>
                   </button>
-                ))}
+                  <button onClick={() => setDeactivateId(task.id)}
+                    className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                    <Trash2 className="w-4 h-4"/>
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {modal && (
+        <DailyTaskModal
+          task={modal === "add" ? null : modal}
+          employees={activeEmployees}
+          onClose={() => setModal(null)}
+          onSave={handleSave}
+        />
+      )}
+
+      {deactivateId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <div className="w-12 h-12 bg-red-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-6 h-6 text-red-600"/>
+            </div>
+            <p className="font-bold text-gray-800 mb-1">Remove Daily Task?</p>
+            <p className="text-sm text-gray-500 mb-5">It will stop appearing in staff checklists. Past completion history is kept.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeactivateId(null)}
+                className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+              <button onClick={() => handleDeactivate(deactivateId)}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-sm font-bold hover:bg-red-700 transition-colors">
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DailyTaskModal({ task, employees, onClose, onSave }) {
+  const isEdit = !!task?.id;
+  const blank  = { title: "", description: "", targetType: "all", employeeIds: [] };
+  const [form,   setForm]   = useState(task?.id ? { ...task, employeeIds: task.targetIds || [] } : blank);
+  const [error,  setError]  = useState("");
+  const [saving, setSaving] = useState(false);
+
+  function toggleEmployee(id) {
+    setForm(p => ({
+      ...p,
+      employeeIds: p.employeeIds.includes(id) ? p.employeeIds.filter(e => e !== id) : [...p.employeeIds, id],
+    }));
+  }
+
+  async function handleSave() {
+    if (!form.title.trim()) { setError("Title is required"); return; }
+    if (form.targetType === "specific" && form.employeeIds.length === 0) {
+      setError("Select at least one staff member");
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(form);
+    } catch (e) {
+      setError(e.message || "Failed to save");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+        <div className="bg-school-navy px-5 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <ListChecks className="w-5 h-5 text-school-gold"/>
+            <p className="text-white font-bold">{isEdit ? "Edit Daily Task" : "Add Daily Task"}</p>
+          </div>
+          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
+            <X className="w-4 h-4"/>
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4 max-h-[82vh] overflow-y-auto">
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+              Task Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
+              placeholder="e.g. School photo & video STS update"
+              value={form.title}
+              onChange={e => { setForm(p => ({ ...p, title: e.target.value })); setError(""); }}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Description</label>
+            <textarea rows={2}
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy resize-none"
+              placeholder="Optional details"
+              value={form.description}
+              onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-2">Applies To</label>
+            <div className="flex gap-2">
+              {[["all","All Staff"],["specific","Specific Staff"]].map(([v,l]) => (
+                <button key={v} type="button"
+                  onClick={() => { setForm(p => ({ ...p, targetType: v })); setError(""); }}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border-2 transition-all ${
+                    form.targetType === v ? "bg-school-navy border-school-navy text-white" : "border-gray-200 text-gray-500 hover:border-gray-300 bg-white"
+                  }`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {form.targetType === "specific" && (
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">
+                Select Staff <span className="text-red-500">*</span>
+              </label>
+              <div className="border border-gray-200 rounded-xl max-h-48 overflow-y-auto divide-y divide-gray-50">
+                {employees.map(emp => {
+                  const selected = form.employeeIds.includes(emp.id);
+                  return (
+                    <button key={emp.id} type="button" onClick={() => toggleEmployee(emp.id)}
+                      className={`w-full flex items-center gap-2.5 px-3.5 py-2.5 hover:bg-gray-50 text-sm transition-colors text-left ${selected ? "bg-school-navy/5" : ""}`}>
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                        selected ? "bg-school-navy border-school-navy" : "border-gray-300"
+                      }`}>
+                        {selected && <Check className="w-2.5 h-2.5 text-white"/>}
+                      </div>
+                      <span className={selected ? "font-semibold text-school-navy" : "text-gray-700"}>{emp.name}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
-          ))}
+          )}
+
+          {error && <p className="text-xs text-red-500">{error}</p>}
+
+          <div className="flex gap-2 pt-1">
+            <button onClick={onClose} disabled={saving}
+              className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">
+              Cancel
+            </button>
+            <button onClick={handleSave} disabled={saving}
+              className="flex-1 py-2.5 bg-school-navy text-white rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors shadow-sm disabled:opacity-60">
+              {saving ? "Saving…" : isEdit ? "Update Task" : "Add Task"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DailyTaskStatusTab() {
+  const [date, setDate]       = useState(new Date().toISOString().slice(0, 10));
+  const [board, setBoard]     = useState({ tasks: [], rows: [] });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    getCompletionStatus(date).then(setBoard).catch(() => setBoard({ tasks: [], rows: [] })).finally(() => setLoading(false));
+  }, [date]);
+
+  function fmtTime(iso) {
+    if (!iso) return "";
+    return new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit", hour12: true });
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-wrap gap-2">
+        <input type="date" value={date} onChange={e => setDate(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+      </div>
+      {loading ? (
+        <div className="flex items-center justify-center h-40 text-sm text-gray-400">Loading…</div>
+      ) : board.tasks.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-40 gap-2">
+          <ListChecks className="w-10 h-10 text-gray-200" />
+          <p className="text-sm text-gray-400">No daily tasks configured</p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="text-left font-semibold text-gray-500 text-xs uppercase tracking-wide px-5 py-3 sticky left-0 bg-white">Staff</th>
+                {board.tasks.map(t => (
+                  <th key={t.id} className="text-left font-semibold text-gray-500 text-xs uppercase tracking-wide px-4 py-3 whitespace-nowrap">{t.title}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {board.rows.map(row => (
+                <tr key={row.employeeId}>
+                  <td className="px-5 py-3 font-medium text-gray-800 whitespace-nowrap sticky left-0 bg-white">{row.employeeName}</td>
+                  {board.tasks.map(t => {
+                    const cell = row.cells[t.id];
+                    return (
+                      <td key={t.id} className="px-4 py-3 whitespace-nowrap">
+                        {!cell?.applicable ? (
+                          <span className="text-gray-300">—</span>
+                        ) : cell.completedAt ? (
+                          <span className="flex items-center gap-1 text-green-600 font-semibold text-xs">
+                            <Check className="w-3.5 h-3.5"/> {fmtTime(cell.completedAt)}
+                          </span>
+                        ) : (
+                          <span className="text-amber-500 text-xs font-medium">Pending</span>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -1593,7 +1945,7 @@ export default function EmployeePage() {
       .catch(() => setEmpLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [view, setView]             = useState("staff"); // "staff" | "attendance"
+  const [view, setView]             = useState("staff"); // "staff" | "attendance" | "leave" | "dailyTasks"
   const [search, setSearch]         = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [deptFilter, setDeptFilter] = useState("all");
@@ -1653,7 +2005,7 @@ export default function EmployeePage() {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex gap-1 bg-gray-100 p-1 rounded-xl">
-            {[["staff","Staff List",Users],["attendance","Attendance",ClipboardList],["leave","Leave & Attendance",CalendarCheck]].map(([v,l,Icon]) => (
+            {[["staff","Staff List",Users],["attendance","Attendance",ClipboardList],["leave","Leave & Attendance",CalendarCheck],["dailyTasks","Daily Tasks",ListChecks]].map(([v,l,Icon]) => (
               <button key={v} onClick={() => setView(v)}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all ${view===v?"bg-white shadow text-school-navy":"text-gray-500 hover:text-gray-700"}`}>
                 <Icon className="w-3.5 h-3.5"/>{l}
@@ -1680,6 +2032,9 @@ export default function EmployeePage() {
 
       {/* Leave & day-by-day attendance view */}
       {view === "leave" && <LeaveAttendanceSection employees={employees} />}
+
+      {/* Daily Tasks view */}
+      {view === "dailyTasks" && <DailyTasksSection employees={employees} />}
 
       {/* Staff list view */}
       {view === "staff" && empLoading && (

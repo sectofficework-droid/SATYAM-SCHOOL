@@ -9,7 +9,10 @@ import supabase from "./supabase";
 //
 // employee_attendance: a real day-by-day P/A/L table for staff - previously
 // there was none; Employee → Attendance was an Excel-import period summary
-// for salary only (Zustand, no table).
+// for salary only (Zustand, no table). check_in_at/check_out_at/punch_method
+// are written by the standalone Attendance Kiosk app's face-scan punches
+// (SUPABASE_FACE_PUNCH.sql) - null for rows set by admin or by leave
+// approval, exactly like marked_by already distinguishes those.
 
 export async function getPendingLeaveRequests() {
   const { data, error } = await supabase
@@ -74,7 +77,7 @@ export async function rejectLeaveRequest(requestId, adminNote) {
 export async function getEmployeeAttendanceForDate(date) {
   const { data, error } = await supabase
     .from("employee_attendance")
-    .select("employee_id, status")
+    .select("employee_id, status, check_in_at, check_out_at, punch_method")
     .eq("date", date);
   if (error) throw error;
   return data || [];
@@ -92,7 +95,7 @@ export async function saveEmployeeAttendanceForDate(records) {
 export async function getEmployeeAttendanceHistory(employeeId, fromDate, toDate) {
   let query = supabase
     .from("employee_attendance")
-    .select("date, status")
+    .select("date, status, check_in_at, check_out_at, punch_method")
     .eq("employee_id", employeeId)
     .order("date", { ascending: false });
   if (fromDate) query = query.gte("date", fromDate);

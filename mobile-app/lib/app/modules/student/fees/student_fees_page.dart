@@ -59,7 +59,8 @@ class _StudentFeesPageState extends State<StudentFeesPage> {
     final discount = (d['fee_discount'] as num?)?.toDouble() ?? 0;
     final paid     = (d['total_paid']   as num?)?.toDouble() ?? 0;
     final balance  = (d['balance']      as num?)?.toDouble() ?? 0;
-    final payments = (d['payments'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final payments  = (d['payments']  as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final inventory = (d['inventory'] as List?)?.cast<Map<String, dynamic>>() ?? [];
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -141,6 +142,11 @@ class _StudentFeesPageState extends State<StudentFeesPage> {
               final p = entry.value;
               final amt  = (p['amount'] as num?)?.toDouble() ?? 0;
               final date = DateTime.tryParse(p['payment_date'] ?? '');
+              // Chronological number from the server (1 = earliest payment
+              // ever made), independent of this list's most-recent-first
+              // display order - falls back to list position only if a row
+              // somehow has no payment_number (e.g. before the RPC update).
+              final number = (p['payment_number'] as num?)?.toInt() ?? (i + 1);
               return Container(
                 margin: EdgeInsets.only(bottom: i < payments.length - 1 ? 10 : 0),
                 padding: const EdgeInsets.all(14),
@@ -162,7 +168,7 @@ class _StudentFeesPageState extends State<StudentFeesPage> {
                   Expanded(child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Payment #${i + 1}',
+                      Text('Payment #$number',
                         style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                       if (date != null)
                         Text(DateFormat('d MMM yyyy').format(date),
@@ -175,6 +181,67 @@ class _StudentFeesPageState extends State<StudentFeesPage> {
                   Text('₹${fmt.format(amt)}',
                     style: const TextStyle(
                       color: AppColors.green, fontWeight: FontWeight.w700, fontSize: 15)),
+                ]),
+              );
+            }),
+
+          const SizedBox(height: 24),
+          Text('Inventory Items',
+            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text)),
+          const SizedBox(height: 10),
+
+          if (inventory.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: AppColors.border),
+              ),
+              child: const Center(
+                child: Text('No inventory items assigned yet.',
+                  style: TextStyle(color: AppColors.textLight)),
+              ),
+            )
+          else
+            ...inventory.asMap().entries.map((entry) {
+              final i    = entry.key;
+              final item = entry.value;
+              final given = item['status'] == 'Given';
+              final givenDate = DateTime.tryParse(item['given_date'] ?? '');
+              final color = given ? AppColors.green : AppColors.amber;
+              final bg    = given ? AppColors.greenLight : AppColors.amberLight;
+              return Container(
+                margin: EdgeInsets.only(bottom: i < inventory.length - 1 ? 10 : 0),
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.border),
+                ),
+                child: Row(children: [
+                  Container(
+                    width: 44, height: 44,
+                    decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
+                    child: Icon(given ? Icons.inventory_2_rounded : Icons.hourglass_empty_rounded, color: color, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text((item['item_name'] ?? '').toString(),
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                      if (given && givenDate != null)
+                        Text('Given on ${DateFormat('d MMM yyyy').format(givenDate)}',
+                          style: const TextStyle(color: AppColors.textHint, fontSize: 12)),
+                    ],
+                  )),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8)),
+                    child: Text(given ? 'Given' : 'Pending',
+                      style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 11.5)),
+                  ),
                 ]),
               );
             }),

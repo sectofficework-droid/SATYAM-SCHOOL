@@ -136,6 +136,88 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  // Face-scan punch attendance ──────────────────────────────────────────────
+  // face_embedding is a jsonb array of doubles (MobileFaceNet output) -
+  // supabase_flutter already decodes jsonb into a plain List, no manual
+  // jsonDecode needed.
+
+  static Future<List<double>?> fetchFaceEmbedding(String employeeId) async {
+    final res = await client
+        .from('employees')
+        .select('face_embedding')
+        .eq('id', employeeId)
+        .maybeSingle();
+    final raw = res?['face_embedding'];
+    if (raw is! List) return null;
+    return raw.map((e) => (e as num).toDouble()).toList();
+  }
+
+  static Future<void> saveFaceEmbedding(String employeeId, List<double> embedding) async {
+    await client.from('employees').update({
+      'face_embedding': embedding,
+      'face_enrolled_at': DateTime.now().toIso8601String(),
+    }).eq('id', employeeId);
+  }
+
+  // Every enrolled staff member's reference embedding, for the kiosk's
+  // 1-to-many "whose face is this" match - inactive staff are excluded so a
+  // former employee's old enrollment can't still clock someone in.
+  static Future<List<Map<String, dynamic>>> fetchAllFaceEmbeddings() async {
+    final res = await client
+        .from('employees')
+        .select('id, name, face_embedding')
+        .not('face_embedding', 'is', null)
+        .neq('status', 'Inactive');
+    return List<Map<String, dynamic>>.from(res).map((row) {
+      final raw = row['face_embedding'];
+      return {
+        'id': row['id'],
+        'name': row['name'],
+        'embedding': raw is List ? raw.map((e) => (e as num).toDouble()).toList() : <double>[],
+      };
+    }).where((row) => (row['embedding'] as List).isNotEmpty).toList();
+  }
+
+  // Decides check-in vs check-out from today's existing row (if any) and
+  // upserts only the field that changed - onConflict upsert only touches
+  // columns present in the payload, so an already-set check_in_at survives
+  // the check-out call untouched. Returns what happened so the punch screen
+  // can show the right message.
+  static Future<Map<String, dynamic>> recordFacePunch(String employeeId, String date) async {
+    final existing = await client
+        .from('employee_attendance')
+        .select('check_in_at, check_out_at')
+        .eq('employee_id', employeeId)
+        .eq('date', date)
+        .maybeSingle();
+
+    final now = DateTime.now();
+
+    if (existing == null || existing['check_in_at'] == null) {
+      await client.from('employee_attendance').upsert({
+        'employee_id':  employeeId,
+        'date':         date,
+        'status':       'P',
+        'check_in_at':  now.toIso8601String(),
+        'punch_method': 'face',
+      }, onConflict: 'employee_id,date');
+      return {'action': 'check_in', 'time': now};
+    }
+
+    if (existing['check_out_at'] == null) {
+      await client.from('employee_attendance').upsert({
+        'employee_id':  employeeId,
+        'date':         date,
+        'status':       'P',
+        'check_out_at': now.toIso8601String(),
+        'punch_method': 'face',
+      }, onConflict: 'employee_id,date');
+      return {'action': 'check_out', 'time': now};
+    }
+
+    return {'action': 'already_done'};
+  }
+
   // Homework ──────────────────────────────────────────────────────────────────
 
   // Returns homework in any of classNames UNION homework created by
@@ -573,6 +655,67 @@ class SupabaseService {
       'status': status,
       'status_updated_at': DateTime.now().toIso8601String(),
     }).eq('task_id', taskId).eq('employee_id', employeeId);
+  }
+
+  // Daily Tasks ───────────────────────────────────────────────────────────────
+  // A recurring admin-defined staff checklist - separate from tasks/
+  // task_assignees above (one-off, deadline-based). 'all' tasks apply to
+  // every employee implicitly; 'specific' tasks only apply if
+  // daily_task_targets has a row for this employee. Completion is a per
+  // (task, employee, calendar date) row so it resets automatically each day.
+
+  static Future<List<Map<String, dynamic>>> fetchDailyTasksForEmployee(String employeeId) async {
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final tasksRes = await client
+        .from('daily_tasks')
+        .select('id, title, description, target_type, daily_task_targets(employee_id)')
+        .eq('active', true)
+        .order('created_at');
+    final completionsRes = await client
+        .from('daily_task_completions')
+        .select('daily_task_id, completed_at')
+        .eq('employee_id', employeeId)
+        .eq('completion_date', today);
+
+    final completedAt = <String, String>{};
+    for (final c in List<Map<String, dynamic>>.from(completionsRes)) {
+      completedAt[c['daily_task_id'] as String] = c['completed_at'] as String;
+    }
+
+    final applicable = <Map<String, dynamic>>[];
+    for (final t in List<Map<String, dynamic>>.from(tasksRes)) {
+      final targetType = t['target_type'] as String;
+      final targets = List<Map<String, dynamic>>.from(t['daily_task_targets'] as List? ?? []);
+      final isTargeted = targets.any((x) => x['employee_id'] == employeeId);
+      if (targetType == 'all' || isTargeted) {
+        applicable.add({
+          'id': t['id'],
+          'title': t['title'],
+          'description': t['description'],
+          'completedAt': completedAt[t['id']],
+        });
+      }
+    }
+    return applicable;
+  }
+
+  static Future<void> markDailyTaskDone(String dailyTaskId, String employeeId) async {
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    await client.from('daily_task_completions').upsert({
+      'daily_task_id': dailyTaskId,
+      'employee_id': employeeId,
+      'completion_date': today,
+    }, onConflict: 'daily_task_id,employee_id,completion_date');
+  }
+
+  static Future<void> unmarkDailyTaskDone(String dailyTaskId, String employeeId) async {
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    await client
+        .from('daily_task_completions')
+        .delete()
+        .eq('daily_task_id', dailyTaskId)
+        .eq('employee_id', employeeId)
+        .eq('completion_date', today);
   }
 
   // Notices ───────────────────────────────────────────────────────────────────
