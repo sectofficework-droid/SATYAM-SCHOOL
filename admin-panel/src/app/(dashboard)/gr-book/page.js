@@ -8,8 +8,9 @@ import {
 } from "lucide-react";
 import {
   getGrBookEntries, getGrBookDocuments, createGrBookImportRows,
-  updateGrBookImportRow, uploadGrBookDocument,
+  updateGrBookImportRow, uploadGrBookDocument, composePlaceOfBirth,
 } from "@/lib/grBookService";
+import { addStudent } from "@/lib/studentService";
 import { renderTablePdf } from "@/lib/pdfTableExport";
 import DateInputDMY from "@/components/DateInputDMY";
 import { fmtDMY } from "@/lib/utils";
@@ -68,6 +69,88 @@ function fmtField(v, type) {
 // the combined Place of Birth line, not its 4 raw village/city/district/state
 // components (those stay import/edit-only, see GrDetailModal).
 const REGISTER_COLUMNS = FIELD_DEFS.filter(f => !["birthVillage", "birthCity", "birthDistrict", "birthState"].includes(f.key));
+
+// ── Import-only field list (Import GR Records tab) ──────────────────────────
+// Separate from FIELD_DEFS/REGISTER_COLUMNS above, which are the *display*
+// shape and must stay exactly as they are. This is the richer sheet used to
+// digitize the whole GR sequence in one pass: a Status column decides where
+// each row goes (see confirmImport) - "Active" students get the same
+// student+enrollment fields the Super Admin bulk importer collects (so they
+// become real students, matching IMPORT_FIELDS in super-admin/page.js
+// exactly, key-for-key, so the same confirmImport payload-building logic can
+// be reused), "Left" students only need the original GR-only fields below.
+const STATUS_FIELD = { key: "status", label: "Status (Active/Left)", required: true };
+
+// Keep in sync with IMPORT_FIELDS in super-admin/page.js - same keys/labels/
+// required flags, since Active rows are written via the same addStudent().
+const BULK_IMPORT_FIELDS = [
+  { key: "grNo",              label: "GR Number",                        required: false },
+  { key: "cls",                label: "Class",                            required: true  },
+  { key: "admissionClass",    label: "Admission Class",                  required: false },
+  { key: "section",            label: "Section (A/B/C)",                  required: false },
+  { key: "rollNo",             label: "Roll No",                          required: false },
+  { key: "joinDate",           label: "Date of Joining (DD-MM-YYYY)",     required: false },
+  { key: "feeTotal",           label: "Fee Total (Rs)",                   required: false },
+  { key: "discountAmount",     label: "Discount Amount (Rs)",             required: false },
+  { key: "discountReason",     label: "Discount Reason",                  required: false },
+  { key: "firstName",          label: "First Name",                       required: true  },
+  { key: "lastName",           label: "Last Name",                        required: true  },
+  { key: "fatherName",         label: "Father Name",                      required: true  },
+  { key: "motherName",         label: "Mother Name",                      required: true  },
+  { key: "dob",                label: "Date of Birth (DD-MM-YYYY)",       required: true  },
+  { key: "birthCertRegNo",     label: "Birth Cert Reg No",                required: false },
+  { key: "birthCertRegDate",   label: "Birth Cert Reg Date (DD-MM-YYYY)", required: false },
+  { key: "gender",             label: "Gender (Male/Female/Other)",       required: true  },
+  { key: "birthVillage",       label: "Birth Village",                    required: false },
+  { key: "birthCity",          label: "Birth City",                       required: true  },
+  { key: "birthDistrict",      label: "Birth District",                   required: false },
+  { key: "birthState",         label: "Birth State",                      required: false },
+  { key: "motherTongue",       label: "Mother Tongue",                    required: true  },
+  { key: "religion",           label: "Religion",                         required: true  },
+  { key: "caste",              label: "Category / Caste",                required: true  },
+  { key: "subCaste",           label: "Sub Caste",                        required: false },
+  { key: "height",             label: "Height (cm)",                      required: false },
+  { key: "weight",             label: "Weight (kg)",                      required: false },
+  { key: "mobile1",            label: "Mobile 1",                         required: true  },
+  { key: "mobile2",            label: "Mobile 2",                         required: false },
+  { key: "roomPlotNo",         label: "Room / Plot No",                   required: true  },
+  { key: "society",            label: "Society / Colony",                 required: true  },
+  { key: "landmark",           label: "Landmark",                         required: false },
+  { key: "area",               label: "Area / Locality",                  required: true  },
+  { key: "pinCode",            label: "Pin Code",                         required: true  },
+  { key: "address",            label: "Full Address",                     required: false },
+  { key: "aadharNo",           label: "Aadhar Number",                    required: false },
+  { key: "aadharName",         label: "Aadhar Name",                      required: false },
+  { key: "fatherAadhar",       label: "Father's Aadhar Number",           required: false },
+  { key: "fatherAadharName",   label: "Father's Name as per Aadhar",      required: false },
+  { key: "motherAadhar",       label: "Mother's Aadhar Number",           required: false },
+  { key: "motherAadharName",   label: "Mother's Name as per Aadhar",      required: false },
+  { key: "udise",              label: "UDISE Number",                     required: false },
+  { key: "pen",                label: "PEN Number",                       required: false },
+  { key: "apaar",              label: "APAAR ID",                         required: false },
+  { key: "lastSchoolName",     label: "Last School Name",                 required: false },
+  { key: "lastSchoolClass",    label: "Last School Class",                required: false },
+  { key: "lastSchoolGrNo",     label: "Last School GR No",                required: false },
+  { key: "lastSchoolMedium",   label: "Last School Medium",               required: false },
+  { key: "lastSchoolPlace",    label: "Last School Place",                required: false },
+  { key: "prevAttendanceDays", label: "Previous Attendance Days",         required: false },
+  { key: "lastExamGiven",      label: "Last Exam Given (Yes/No)",         required: false },
+  { key: "prevPercentage",     label: "Previous Percentage",              required: false },
+];
+
+// GR-only fields not already covered by BULK_IMPORT_FIELDS - only meaningful
+// for "Left" rows (a currently-enrolled student has no leaving date/TC yet).
+const GR_ONLY_FIELDS = [
+  { key: "surname",       label: "Surname",         required: false },
+  { key: "dateOfLeaving", label: "Date of Leaving (DD-MM-YYYY)", required: false, isDate: true },
+  { key: "classWhenLeft", label: "Class When Left", required: false },
+  { key: "tcNo",          label: "TC No",           required: false },
+];
+
+const IMPORT_FIELD_DEFS = [STATUS_FIELD, ...BULK_IMPORT_FIELDS, ...GR_ONLY_FIELDS];
+
+const IMPORT_DATE_KEYS = new Set(["joinDate", "dob", "birthCertRegDate", "dateOfLeaving"]);
+const IMPORT_LONG_ID_KEYS = new Set(["udise", "pen", "apaar", "aadharNo", "fatherAadhar", "motherAadhar"]);
 
 export default function GrBookPage() {
   const [tab, setTab]           = useState("register"); // 'register' | 'import'
@@ -429,9 +512,12 @@ function GrDetailModal({ entry, onClose, onSaved }) {
 }
 
 // ── Import GR Records: download template -> upload -> preview -> confirm ──
-// Mirrors ImportStudentsPanel's flow (super-admin/page.js) but for the much
-// smaller, all-optional-except-GR-No GR Book field set - no fee/section/roll
-// machinery since these rows never create a live student record.
+// Same download -> upload -> preview -> confirm flow as ImportStudentsPanel
+// (super-admin/page.js), but each row's Status decides where it's written:
+// "Active" rows go through the same addStudent() call the Super Admin bulk
+// importer uses (a real student + enrollment), "Left" rows go into
+// gr_book_imports as a paper-register-only entry, same as before this field
+// list was merged with the bulk importer's.
 function ImportGrRecordsPanel({ onImportDone, onSwitchToRegister }) {
   const fileRef = useRef(null);
   const [step, setStep]           = useState("idle"); // idle | preview | importing | done
@@ -441,25 +527,40 @@ function ImportGrRecordsPanel({ onImportDone, onSwitchToRegister }) {
   const [importLog, setImportLog] = useState([]);
 
   function downloadTemplate() {
-    const headerRow = FIELD_DEFS.filter(f => !f.derived).map(f => f.label);
-    const reqRow    = FIELD_DEFS.filter(f => !f.derived).map(f => f.key === "grNo" ? "Required *" : "Optional");
+    const fields = IMPORT_FIELD_DEFS;
+    const headerRow = fields.map(f => f.label);
+    const reqRow = fields.map(f => {
+      if (f.key === "status") return "Required *";
+      if (f.required) return "Required for Active";
+      return "Optional";
+    });
     const exampleRow = [
-      "GR001", "Patel", "Arjun", "Rajesh Patel", "Meena Patel", "Hindu", "General",
-      "Pandesara", "Surat", "Surat", "Gujarat",
-      "15-06-2015", "45", "St. Xavier's School", "01-06-2021", "1st",
-      "1234 5678 9012", "24123456789", "1234567890123", "12345678901",
+      "Active",
+      // Admission Info
+      "GR001", "5th", "5th", "A", "1", "01-06-2026", "15500", "0", "",
+      // Personal Info
+      "Arjun", "Patel", "Rajesh Patel", "Meena Patel", "15-06-2015",
+      "BC2015/001", "01-01-2016",
+      "Male", "Pandesara", "Surat", "Surat", "Gujarat", "Gujarati", "Hindu", "General", "Patel", "120", "25",
+      // Contact
+      "9876543210", "", "12", "Gandhi Nagar", "Near Park", "Adajan", "395009", "12 Gandhi Nagar, Adajan, Surat",
+      // IDs
+      "1234 5678 9012", "Arjun Rajesh Patel",
+      "9876 5432 1012", "Rajesh Kumar Patel",
+      "8765 4321 0123", "Meena Rajesh Patel",
       "", "", "",
+      // Previous School
+      "City Primary School", "4th", "", "Gujarati", "Surat", "200", "Yes", "75.5",
+      // GR-only (Left rows)
+      "", "", "", "",
     ];
     const ws = XLSX.utils.aoa_to_sheet([headerRow, reqRow, exampleRow]);
 
     // Dates and long ID numbers formatted as Text down to row 1000, same
     // silent-corruption fix as the student importer's downloadTemplate().
-    const DATE_COLS = new Set(["dob", "dateOfAdmission", "dateOfLeaving"]);
-    const LONG_ID_COLS = new Set(["aadharNo", "udiseNo", "apaarId", "penNo"]);
-    const fields = FIELD_DEFS.filter(f => !f.derived);
     const TOTAL_ROWS = 1000;
     fields.forEach((f, colIdx) => {
-      if (!DATE_COLS.has(f.key) && !LONG_ID_COLS.has(f.key)) return;
+      if (!IMPORT_DATE_KEYS.has(f.key) && !IMPORT_LONG_ID_KEYS.has(f.key)) return;
       for (let r = 2; r < TOTAL_ROWS; r++) {
         const addr = XLSX.utils.encode_cell({ r, c: colIdx });
         if (ws[addr]) ws[addr].z = "@";
@@ -503,8 +604,7 @@ function ImportGrRecordsPanel({ onImportDone, onSwitchToRegister }) {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    const fields = FIELD_DEFS.filter(f => !f.derived);
-    const DATE_KEYS = new Set(["dob", "dateOfAdmission", "dateOfLeaving"]);
+    const fields = IMPORT_FIELD_DEFS;
     reader.onload = (evt) => {
       try {
         const wb = XLSX.read(evt.target.result, { type: "binary", cellDates: true });
@@ -526,17 +626,32 @@ function ImportGrRecordsPanel({ onImportDone, onSwitchToRegister }) {
           const s = { _row: i + 3, _errors: [] };
           fields.forEach(f => {
             const raw = colMap[f.key] !== undefined ? (row[colMap[f.key]] ?? "") : "";
-            if (DATE_KEYS.has(f.key)) {
+            if (IMPORT_DATE_KEYS.has(f.key)) {
               s[f.key] = raw ? (normalizeDate(raw) || "") : "";
               s["_raw_" + f.key] = raw instanceof Date ? raw.toDateString() : String(raw).trim();
             } else {
               s[f.key] = raw instanceof Date ? (normalizeDate(raw) || "") : String(raw).trim();
             }
           });
-          if (!s.grNo) s._errors.push("GR No missing");
+
+          // Status decides which validation rules and which write-path apply.
+          const statusNorm = String(s.status || "").trim().toLowerCase();
+          if (statusNorm === "active") s.status = "Active";
+          else if (statusNorm === "left") s.status = "Left";
+          else s._errors.push(`Status "${s.status || ""}" must be "Active" or "Left"`);
+
+          if (s.status === "Active") {
+            BULK_IMPORT_FIELDS.filter(f => f.required).forEach(f => {
+              if (!s[f.key]) s._errors.push(`${f.label} is required for an Active student`);
+            });
+          } else {
+            if (!s.grNo) s._errors.push("GR No missing");
+          }
+
           if (!s.dob && s._raw_dob) s._errors.push(`Date of Birth "${s._raw_dob}" is not a valid date — use DD-MM-YYYY`);
-          if (!s.dateOfAdmission && s._raw_dateOfAdmission) s._errors.push(`Date of Admission "${s._raw_dateOfAdmission}" is not a valid date`);
+          if (!s.joinDate && s._raw_joinDate) s._errors.push(`Date of Joining "${s._raw_joinDate}" is not a valid date`);
           if (!s.dateOfLeaving && s._raw_dateOfLeaving) s._errors.push(`Date of Leaving "${s._raw_dateOfLeaving}" is not a valid date`);
+
           result.push(s);
           if (s._errors.length) errs.push("Row " + s._row + ": " + s._errors.join(", "));
         });
@@ -551,26 +666,103 @@ function ImportGrRecordsPanel({ onImportDone, onSwitchToRegister }) {
 
   async function confirmImport() {
     const valid = parsed.filter(s => s._errors.length === 0);
+    const leftRows   = valid.filter(s => s.status === "Left");
+    const activeRows = valid.filter(s => s.status === "Active");
     setImporting(true);
     setStep("importing");
     const log = [];
-    try {
-      await createGrBookImportRows(valid.map(s => ({
-        gr_no: s.grNo, surname: s.surname || null, student_name: s.studentName || null,
-        father_name: s.fatherName || null, mother_name: s.motherName || null,
-        religion: s.religion || null, caste: s.caste || null,
-        birth_village: s.birthVillage || null, birth_city: s.birthCity || null,
-        birth_district: s.birthDistrict || null, birth_state: s.birthState || null,
-        dob: s.dob || null, last_school_gr_no: s.lastSchoolGrNo || null, last_school_name: s.lastSchoolName || null,
-        date_of_admission: s.dateOfAdmission || null, admission_class: s.admissionClass || null,
-        aadhar_no: s.aadharNo || null, udise_no: s.udiseNo || null, apaar_id: s.apaarId || null,
-        pen_no: s.penNo || null, date_of_leaving: s.dateOfLeaving || null,
-        class_when_left: s.classWhenLeft || null, tc_no: s.tcNo || null,
-      })));
-      valid.forEach(s => log.push({ row: s._row, grNo: s.grNo, ok: true }));
-    } catch (err) {
-      log.push({ ok: false, error: err.message });
+
+    // Left rows: unchanged from before - a single batch insert into
+    // gr_book_imports, the paper-register-only table.
+    if (leftRows.length) {
+      try {
+        await createGrBookImportRows(leftRows.map(s => ({
+          gr_no: s.grNo, surname: s.surname || s.lastName || null, student_name: s.firstName || null,
+          father_name: s.fatherName || null, mother_name: s.motherName || null,
+          religion: s.religion || null, caste: s.caste || null,
+          birth_village: s.birthVillage || null, birth_city: s.birthCity || null,
+          birth_district: s.birthDistrict || null, birth_state: s.birthState || null,
+          dob: s.dob || null, last_school_gr_no: s.lastSchoolGrNo || null, last_school_name: s.lastSchoolName || null,
+          date_of_admission: s.joinDate || null, admission_class: s.admissionClass || null,
+          aadhar_no: s.aadharNo || null, udise_no: s.udise || null, apaar_id: s.apaar || null,
+          pen_no: s.pen || null, date_of_leaving: s.dateOfLeaving || null,
+          class_when_left: s.classWhenLeft || null, tc_no: s.tcNo || null,
+        })));
+        leftRows.forEach(s => log.push({ row: s._row, grNo: s.grNo, status: "Left", ok: true }));
+      } catch (err) {
+        leftRows.forEach(s => log.push({ row: s._row, grNo: s.grNo, status: "Left", ok: false, error: err.message }));
+      }
     }
+
+    // Active rows: one addStudent() call per row, same payload shape and
+    // per-row try/catch as the Super Admin bulk importer (super-admin/page.js
+    // ImportStudentsPanel.confirmImport) - reused, not reimplemented, since
+    // it's the exact same "create a real student" operation.
+    for (const s of activeRows) {
+      try {
+        const payload = {
+          std:               s.cls,
+          admissionClass:    s.admissionClass || s.cls,
+          section:           s.section || "A",
+          rollNo:            s.rollNo ? Number(s.rollNo) : undefined,
+          firstName:         s.firstName,
+          lastName:          s.lastName,
+          fatherName:        s.fatherName || "",
+          motherName:        s.motherName || "",
+          gender:            s.gender,
+          dob:               s.dob || null,
+          placeOfBirth:      composePlaceOfBirth(s.birthCity, s.birthDistrict, s.birthState),
+          birthState:        s.birthState || "",
+          birthDistrict:     s.birthDistrict || "",
+          birthCity:         s.birthCity || "",
+          birthVillage:      s.birthVillage || "",
+          motherTongue:      s.motherTongue || "",
+          religion:          s.religion || "",
+          caste:             s.caste || "General",
+          subCaste:          s.subCaste || "",
+          height:            s.height || null,
+          weight:            s.weight || null,
+          grNo:              s.grNo || "",
+          mobile:            s.mobile1 || "",
+          mobile2:           s.mobile2 || "",
+          roomPlotNo:        s.roomPlotNo || "",
+          society:           s.society || "",
+          landmark:          s.landmark || "",
+          area:              s.area || "",
+          pinCode:           s.pinCode || "",
+          address:           s.address || [s.roomPlotNo, s.society, s.landmark, s.area, "SURAT", "GUJARAT", s.pinCode].filter(Boolean).join(", "),
+          aadhar:            s.aadharNo || "",
+          aadharName:        s.aadharName || "",
+          fatherAadhar:      s.fatherAadhar?.replace(/\s/g, "") || null,
+          fatherAadharName:  s.fatherAadharName || null,
+          motherAadhar:      s.motherAadhar?.replace(/\s/g, "") || null,
+          motherAadharName:  s.motherAadharName || null,
+          birthCertRegNo:    s.birthCertRegNo || null,
+          birthCertRegDate:  s.birthCertRegDate || null,
+          udise:             s.udise || "",
+          pen:               s.pen || "",
+          apaar:             s.apaar || "",
+          dateOfJoin:        s.joinDate || new Date().toISOString().split("T")[0],
+          feeTotal:          s.feeTotal ? Number(s.feeTotal) : 0,
+          discountAmount:    s.discountAmount ? Number(s.discountAmount) : 0,
+          discountReason:    s.discountReason || "",
+          lastSchoolName:    s.lastSchoolName || "",
+          lastSchoolClass:   s.lastSchoolClass || "",
+          lastSchoolGrNo:    s.lastSchoolGrNo || "",
+          lastSchoolMedium:  s.lastSchoolMedium || "",
+          lastSchoolPlace:   s.lastSchoolPlace || "",
+          prevAttendanceDays: s.prevAttendanceDays || "",
+          lastExamGiven:     s.lastExamGiven || "No",
+          prevPercentage:    s.prevPercentage || "",
+        };
+        await addStudent(payload);
+        log.push({ row: s._row, grNo: s.grNo, name: `${s.firstName} ${s.lastName}`, status: "Active", ok: true });
+      } catch (err) {
+        log.push({ row: s._row, grNo: s.grNo, name: `${s.firstName} ${s.lastName}`, status: "Active", ok: false, error: err.message });
+      }
+      setImportLog([...log]);
+    }
+
     setImportLog(log);
     setImporting(false);
     setStep("done");
@@ -587,9 +779,10 @@ function ImportGrRecordsPanel({ onImportDone, onSwitchToRegister }) {
           <div className="border-2 border-blue-100 bg-blue-50/50 rounded-xl p-5">
             <p className="text-sm font-bold text-blue-800 mb-2">Step 1 — Download Template</p>
             <ul className="text-xs text-blue-600 space-y-1 mb-4 list-disc list-inside">
-              <li>One row per student, GR No is the only required field</li>
+              <li>One row per student — mark each row's Status as <strong>Active</strong> or <strong>Left</strong></li>
+              <li><strong>Active</strong> students are added as real enrolled students (current academic year) and will appear in the Student module too — fill the full field set (class, address, mobile, etc.)</li>
+              <li><strong>Left</strong> students are recorded in the historical register only, same as before — just the GR fields, plus Date of Leaving / Class When Left / TC No</li>
               <li>Dates must be DD-MM-YYYY</li>
-              <li>For students who have left, fill Date of Leaving / Class When Left / TC No too</li>
             </ul>
             <button onClick={downloadTemplate}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-school-navy text-white text-sm font-semibold hover:bg-school-navy-dark transition-colors">
@@ -599,7 +792,8 @@ function ImportGrRecordsPanel({ onImportDone, onSwitchToRegister }) {
           <div className="border-2 border-green-100 bg-green-50/50 rounded-xl p-5">
             <p className="text-sm font-bold text-green-800 mb-2">Step 2 — Upload Filled File</p>
             <p className="text-xs text-green-600 mb-4">
-              These records are for students not currently in the system - past students being digitized from paper records.
+              Digitize the whole GR sequence in one pass — students still studying this session become real student
+              records, students who left long ago are recorded in the register only.
             </p>
             <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
             <button onClick={() => fileRef.current?.click()}
@@ -631,6 +825,7 @@ function ImportGrRecordsPanel({ onImportDone, onSwitchToRegister }) {
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-gray-50 text-left text-gray-500 uppercase tracking-wide">
+                  <th className="px-3 py-2 font-semibold">Status</th>
                   <th className="px-3 py-2 font-semibold">GR No</th>
                   <th className="px-3 py-2 font-semibold">Name</th>
                   <th className="px-3 py-2 font-semibold">Father's Name</th>
@@ -640,8 +835,15 @@ function ImportGrRecordsPanel({ onImportDone, onSwitchToRegister }) {
               <tbody className="divide-y divide-gray-50">
                 {parsed.slice(0, 10).map((s, i) => (
                   <tr key={i} className={s._errors.length ? "bg-red-50/50" : ""}>
+                    <td className="px-3 py-1.5">
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        s.status === "Active" ? "bg-green-50 text-green-700"
+                        : s.status === "Left" ? "bg-gray-100 text-gray-500"
+                        : "bg-red-50 text-red-600"
+                      }`}>{s.status || "—"}</span>
+                    </td>
                     <td className="px-3 py-1.5">{s.grNo || "—"}</td>
-                    <td className="px-3 py-1.5">{[s.studentName, s.surname].filter(Boolean).join(" ") || "—"}</td>
+                    <td className="px-3 py-1.5">{[s.firstName, s.lastName].filter(Boolean).join(" ") || "—"}</td>
                     <td className="px-3 py-1.5">{s.fatherName || "—"}</td>
                     <td className="px-3 py-1.5">{s.dob || "—"}</td>
                   </tr>
@@ -673,11 +875,16 @@ function ImportGrRecordsPanel({ onImportDone, onSwitchToRegister }) {
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-green-700 font-semibold">
             <Check className="w-5 h-5" />
-            {importLog.filter(l => l.ok).length} record{importLog.filter(l => l.ok).length === 1 ? "" : "s"} imported
+            {importLog.filter(l => l.ok && l.status === "Left").length} recorded in register,{" "}
+            {importLog.filter(l => l.ok && l.status === "Active").length} added as students
           </div>
           {importLog.some(l => !l.ok) && (
             <div className="bg-red-50 border border-red-100 rounded-xl p-3">
-              {importLog.filter(l => !l.ok).map((l, i) => <p key={i} className="text-xs text-red-600">{l.error}</p>)}
+              {importLog.filter(l => !l.ok).map((l, i) => (
+                <p key={i} className="text-xs text-red-600">
+                  {l.row ? `Row ${l.row} (${l.grNo || l.name || "—"}): ` : ""}{l.error}
+                </p>
+              ))}
             </div>
           )}
           <div className="flex gap-3">
