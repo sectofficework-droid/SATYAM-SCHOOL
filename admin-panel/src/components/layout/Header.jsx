@@ -33,6 +33,8 @@ export default function Header() {
   const toggleSidebar = useStore((state) => state.toggleSidebar);
   const authUser = useStore((state) => state.authUser);
   const clearAuthUser = useStore((state) => state.clearAuthUser);
+  const activeOrg = useStore((state) => state.activeOrg);
+  const setActiveOrg = useStore((state) => state.setActiveOrg);
   const idleSecondsLeft = useIdleTimer();
 
   const page = pageTitles[pathname] || pageTitles["/dashboard"];
@@ -41,6 +43,12 @@ export default function Header() {
     await supabase.auth.signOut();
     clearAuthUser();
     router.replace("/login");
+  }
+
+  function switchOrg(org) {
+    if (org === activeOrg) return;
+    setActiveOrg(org);
+    router.push(org === "sef" ? "/sef/dashboard" : "/dashboard");
   }
 
   return (
@@ -71,6 +79,21 @@ export default function Header() {
           <Search className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="text-xs">Search...</span>
         </button>
+
+        {/* Org switcher — School / SEF */}
+        <div className="hidden sm:flex items-center bg-gray-100 rounded-lg p-1 gap-1">
+          {["school", "sef"].map((org) => (
+            <button
+              key={org}
+              onClick={() => switchOrg(org)}
+              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
+                activeOrg === org ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {org === "school" ? "School" : "SEF"}
+            </button>
+          ))}
+        </div>
 
         {/* Idle auto-logout countdown — resets whenever there's activity */}
         <div

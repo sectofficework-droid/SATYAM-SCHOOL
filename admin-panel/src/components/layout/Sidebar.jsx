@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import {
   LayoutDashboard,
@@ -49,12 +49,14 @@ const navItems = [
   { href: "/question-papers", label: "Question Papers", icon: FileText, orgs: ["school"] },
   { href: "/tasks", label: "Task Management", icon: ClipboardList, orgs: ["school"] },
   { href: "/super-admin", label: "Super Admin", icon: ShieldCheck, orgs: ["school"] },
-  { href: "/settings", label: "Setting", icon: Settings, orgs: ["school", "sef"] },
 
   // SEF (Satyam Education Foundation) — Phase 1
   { href: "/sef/dashboard", label: "Dashboard", icon: LayoutDashboard, orgs: ["sef"] },
   { href: "/sef/student", label: "Student", icon: GraduationCap, orgs: ["sef"] },
   { href: "/sef/fees", label: "Fees", icon: IndianRupee, orgs: ["sef"] },
+
+  // Always last, for either org.
+  { href: "/settings", label: "Setting", icon: Settings, orgs: ["school", "sef"] },
 ];
 
 const ORG_BRANDING = {
@@ -64,8 +66,7 @@ const ORG_BRANDING = {
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
-  const { sidebarOpen, closeSidebar, user, activeOrg, setActiveOrg } = useStore();
+  const { sidebarOpen, closeSidebar, user, activeOrg } = useStore();
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
@@ -75,12 +76,6 @@ export default function Sidebar() {
   const brand = ORG_BRANDING[activeOrg];
   const BrandIcon = brand.icon;
   const visibleNavItems = navItems.filter((item) => item.orgs.includes(activeOrg));
-
-  function switchOrg(org) {
-    if (org === activeOrg) return;
-    setActiveOrg(org);
-    router.push(org === "sef" ? "/sef/dashboard" : "/dashboard");
-  }
 
   return (
     <>
@@ -118,24 +113,6 @@ export default function Sidebar() {
           >
             <X className="w-4 h-4" />
           </button>
-        </div>
-
-        {/* Org switcher — School / SEF */}
-        <div className="px-5 pt-3 pb-1">
-          <div className="flex items-center bg-white/5 rounded-lg p-1 gap-1">
-            {["school", "sef"].map((org) => (
-              <button
-                key={org}
-                onClick={() => switchOrg(org)}
-                className={cn(
-                  "flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors",
-                  activeOrg === org ? "bg-school-gold text-white shadow" : "text-white/50 hover:text-white"
-                )}
-              >
-                {org === "school" ? "School" : "SEF"}
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Navigation */}
