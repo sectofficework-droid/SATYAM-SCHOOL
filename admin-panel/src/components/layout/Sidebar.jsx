@@ -55,8 +55,10 @@ const navItems = [
   { href: "/sef/student", label: "Student", icon: GraduationCap, orgs: ["sef"] },
   { href: "/sef/fees", label: "Fees", icon: IndianRupee, orgs: ["sef"] },
 
-  // Always last, for either org.
-  { href: "/settings", label: "Setting", icon: Settings, orgs: ["school", "sef"] },
+  // Always last, for either org - separate hrefs since each org has its own
+  // Settings page/data (school's has 12 tabs, SEF's has 7 much simpler ones).
+  { href: "/settings", label: "Setting", icon: Settings, orgs: ["school"] },
+  { href: "/sef/settings", label: "Setting", icon: Settings, orgs: ["sef"] },
 ];
 
 const ORG_BRANDING = {

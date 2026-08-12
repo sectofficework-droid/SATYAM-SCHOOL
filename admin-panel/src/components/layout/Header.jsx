@@ -17,6 +17,7 @@ const pageTitles = {
   "/sef/dashboard": { title: "SEF Dashboard", sub: "Satyam Education Foundation overview" },
   "/sef/student": { title: "SEF Students", sub: "Tuition student records" },
   "/sef/fees": { title: "SEF Fees", sub: "Tuition fee collection" },
+  "/sef/settings": { title: "SEF Settings", sub: "Satyam Education Foundation configuration" },
 };
 
 const ROLE_LABELS = { management: "Management Head", senior_admin: "Senior Admin", normal_admin: "Admin" };

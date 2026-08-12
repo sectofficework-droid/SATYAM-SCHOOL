@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Plus, X, Search, User, Upload, FileText, Pencil, Power } from "lucide-react";
 import { getStudents, addStudent, updateStudent, setStudentStatus } from "@/lib/sefStudentService";
+import { getSefClasses, getSefFeeStructure } from "@/lib/sefSettingsService";
 import { uploadFileToS3, getS3ViewUrl, slugify } from "@/lib/s3Upload";
 import { compressFile, formatFileSize } from "@/lib/fileCompression";
 import DateInputDMY from "@/components/DateInputDMY";
@@ -138,8 +139,30 @@ function StudentModal({ student, onClose, onSaved }) {
   const [error, setError] = useState("");
   const docRef = useRef(null);
 
+  const [classes, setClasses] = useState([]);
+  const [feeMap, setFeeMap] = useState({});
+  useEffect(() => {
+    Promise.all([getSefClasses(), getSefFeeStructure()]).then(([cls, fees]) => {
+      setClasses(cls);
+      const map = {};
+      fees.forEach(f => { map[f.std] = f.default_fee; });
+      setFeeMap(map);
+    }).catch(() => {});
+  }, []);
+
   function set(field) {
     return (e) => setForm(f => ({ ...f, [field]: e.target.value }));
+  }
+
+  // Picking a std prefills Monthly Fee from Settings → Fee Structure, but
+  // only if it's still empty - never overwrites a value already typed/edited.
+  function handleStdChange(e) {
+    const std = e.target.value;
+    setForm(f => ({
+      ...f,
+      std,
+      monthlyFee: f.monthlyFee === "" && feeMap[std] != null ? feeMap[std] : f.monthlyFee,
+    }));
   }
 
   async function handleDocUpload(e) {
@@ -203,7 +226,16 @@ function StudentModal({ student, onClose, onSaved }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className={LBL}>Std *</label>
-              <input className={IPT} placeholder="e.g. 8th" value={form.std} onChange={set("std")} />
+              {classes.length > 0 ? (
+                <select className={IPT} value={form.std} onChange={handleStdChange}>
+                  <option value="">Select...</option>
+                  {/* Keeps an existing student's std selectable even if it predates the Classes & Section list or isn't in it. */}
+                  {form.std && !classes.some(c => c.std === form.std) && <option value={form.std}>{form.std}</option>}
+                  {classes.map(c => <option key={c.std} value={c.std}>{c.std}</option>)}
+                </select>
+              ) : (
+                <input className={IPT} placeholder="e.g. 8th" value={form.std} onChange={set("std")} />
+              )}
             </div>
             <div>
               <label className={LBL}>Medium</label>
