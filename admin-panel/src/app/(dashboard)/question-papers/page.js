@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
-  FileText, Users, ChevronRight, CheckSquare, Square, Download, Save, ClipboardEdit,
+  FileText, GraduationCap, BookOpen, ChevronRight, CheckSquare, Square, Download, Save, ClipboardEdit,
 } from "lucide-react";
-import { getTeachingEmployees } from "@/lib/settingsService";
-import { getQuestionFilters, getChapters, getQuestions, saveQuestionPaper } from "@/lib/questionBankService";
+import {
+  getClassesWithQuestions, getSubjectsForClass, getChapters, getQuestions, saveQuestionPaper,
+} from "@/lib/questionBankService";
 import DateInputDMY from "@/components/DateInputDMY";
 
 const TRUST_ADDR1 = "Swaminarayan Nagar - Bhidbhanjan Society";
@@ -232,8 +233,6 @@ async function generatePaperPDF(paper, questions, logoB64) {
 export default function QuestionPapersPage() {
   const [paperType, setPaperType] = useState("Exam");
 
-  const [teachers, setTeachers] = useState([]);
-  const [teacherId, setTeacherId] = useState("");
   const [classes, setClasses] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [selClass, setSelClass] = useState("");
@@ -251,30 +250,30 @@ export default function QuestionPapersPage() {
   const [generating, setGenerating] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => { getTeachingEmployees().then(setTeachers).catch(() => {}); }, []);
+  useEffect(() => { getClassesWithQuestions().then(setClasses).catch(() => {}); }, []);
 
   useEffect(() => {
-    setSelClass(""); setSelSubject(""); setClasses([]); setSubjects([]);
+    setSelSubject(""); setSubjects([]);
     setChapters([]); setSelChapters(new Set()); setQuestions([]); setSelQuestionIds(new Set());
-    if (!teacherId) return;
-    getQuestionFilters(teacherId).then(({ classes, subjects }) => { setClasses(classes); setSubjects(subjects); }).catch(() => {});
-  }, [teacherId]);
+    if (!selClass) return;
+    getSubjectsForClass(selClass).then(setSubjects).catch(() => {});
+  }, [selClass]);
 
   const loadChapters = useCallback(() => {
     setChapters([]); setSelChapters(new Set()); setQuestions([]); setSelQuestionIds(new Set());
-    if (!teacherId || !selClass || !selSubject) return;
-    getChapters(teacherId, selClass, selSubject).then(setChapters).catch(() => {});
-  }, [teacherId, selClass, selSubject]);
+    if (!selClass || !selSubject) return;
+    getChapters(selClass, selSubject).then(setChapters).catch(() => {});
+  }, [selClass, selSubject]);
 
   useEffect(() => { loadChapters(); }, [loadChapters]);
 
   const loadQuestions = useCallback(() => {
     if (!selChapters.size) { setQuestions([]); setSelQuestionIds(new Set()); return; }
-    getQuestions(teacherId, selClass, selSubject, [...selChapters]).then(qs => {
+    getQuestions(selClass, selSubject, [...selChapters]).then(qs => {
       setQuestions(qs);
       setSelQuestionIds(new Set()); // default: none selected - admin ticks what they want
     }).catch(() => {});
-  }, [teacherId, selClass, selSubject, selChapters]);
+  }, [selClass, selSubject, selChapters]);
 
   useEffect(() => { loadQuestions(); }, [loadQuestions]);
 
@@ -308,7 +307,7 @@ export default function QuestionPapersPage() {
         ? (parseInt(durationHours) || 0) * 60 + (parseInt(durationMinutes) || 0)
         : null;
       const paper = {
-        teacherId, paperType, title: title.trim(), class: selClass, subject: selSubject,
+        paperType, title: title.trim(), class: selClass, subject: selSubject,
         durationMinutes: totalMinutes || null,
         examDate: paperType === "Exam" ? (examDate || null) : null,
         fullMarks,
@@ -330,7 +329,7 @@ export default function QuestionPapersPage() {
       <div>
         <h1 className="text-2xl font-bold text-school-navy">Question Papers</h1>
         <p className="text-sm text-gray-500 mt-0.5">
-          Generate an exam paper or assignment from a teacher&apos;s question bank.
+          Generate an exam paper or assignment from the question bank.
         </p>
       </div>
 
@@ -351,39 +350,36 @@ export default function QuestionPapersPage() {
         </div>
       </div>
 
-      {/* Step 2: Teacher */}
+      {/* Step 2: Class */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
         <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-          <Users className="w-4 h-4 text-school-navy" /> Select Teacher
+          <GraduationCap className="w-4 h-4 text-school-navy" /> Select Class
         </h2>
-        <select value={teacherId} onChange={e => setTeacherId(e.target.value)}
-          className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-school-navy">
-          <option value="">Choose a teacher...</option>
-          {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
+        {classes.length === 0 ? (
+          <p className="text-sm text-gray-400">No questions have been added to the question bank yet.</p>
+        ) : (
+          <select value={selClass} onChange={e => setSelClass(e.target.value)}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-school-navy">
+            <option value="">Choose a class...</option>
+            {classes.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
       </div>
 
-      {/* Step 3: Class + Subject */}
-      {teacherId && (
+      {/* Step 3: Subject */}
+      {selClass && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
-            <ChevronRight className="w-4 h-4 text-school-navy" /> Class &amp; Subject
+            <BookOpen className="w-4 h-4 text-school-navy" /> Select Subject
           </h2>
-          {classes.length === 0 ? (
-            <p className="text-sm text-gray-400">This teacher hasn&apos;t added any questions yet.</p>
+          {subjects.length === 0 ? (
+            <p className="text-sm text-gray-400">No questions found for this class.</p>
           ) : (
-            <div className="flex gap-3 flex-wrap">
-              <select value={selClass} onChange={e => setSelClass(e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-school-navy min-w-40">
-                <option value="">Class...</option>
-                {classes.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-              <select value={selSubject} onChange={e => setSelSubject(e.target.value)}
-                className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-school-navy min-w-40">
-                <option value="">Subject...</option>
-                {subjects.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
+            <select value={selSubject} onChange={e => setSelSubject(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-school-navy">
+              <option value="">Choose a subject...</option>
+              {subjects.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
           )}
         </div>
       )}
@@ -438,7 +434,10 @@ export default function QuestionPapersPage() {
                           checked ? "border-school-navy/30 bg-school-navy/5" : "border-gray-100 hover:bg-gray-50"
                         }`}>
                         {checked ? <CheckSquare className="w-4 h-4 text-school-navy flex-shrink-0 mt-0.5" /> : <Square className="w-4 h-4 text-gray-300 flex-shrink-0 mt-0.5" />}
-                        <span className="text-sm text-gray-700">{q.question_text} <span className="text-gray-400">({q.marks} Mark{q.marks === 1 ? "" : "s"})</span></span>
+                        <span className="text-sm text-gray-700">
+                          {q.question_text} <span className="text-gray-400">({q.marks} Mark{q.marks === 1 ? "" : "s"})</span>
+                          {q.teacher?.name && <span className="text-gray-400 italic"> — by {q.teacher.name}</span>}
+                        </span>
                       </button>
                     );
                   })}

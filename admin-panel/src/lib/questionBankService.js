@@ -1,39 +1,48 @@
 import supabase from "./supabase";
 
 // Question Bank / Paper Generator - teachers build their own private
-// question bank in the teacher app; this service reads a chosen teacher's
-// bank (there's no per-teacher login on the admin panel, so "which teacher"
-// has to be picked explicitly here) and records the papers generated from
-// it. See mobile-app/SUPABASE_QUESTION_BANK.sql.
+// question bank in the teacher app (still scoped by teacher_id there); the
+// admin panel used to require picking that teacher first, but admin rarely
+// remembers which teacher owns which class+subject, so this instead
+// searches question_bank across every teacher once Class + Subject are
+// picked. A generated paper can therefore mix questions from more than one
+// teacher, which is why question_papers.teacher_id is now nullable (see
+// SUPABASE_QUESTION_BANK_V3.sql) and saveQuestionPaper no longer sets it.
 
-export async function getQuestionFilters(teacherId) {
-  const { data, error } = await supabase
-    .from("question_bank")
-    .select("class, subject")
-    .eq("teacher_id", teacherId);
+export async function getClassesWithQuestions() {
+  const { data, error } = await supabase.from("question_bank").select("class");
   if (error) throw error;
-  const classes = [...new Set((data || []).map(r => r.class))].sort();
-  const subjects = [...new Set((data || []).map(r => r.subject))].sort();
-  return { classes, subjects };
+  return [...new Set((data || []).map(r => r.class))].sort();
 }
 
-export async function getChapters(teacherId, className, subject) {
+export async function getSubjectsForClass(className) {
+  const { data, error } = await supabase
+    .from("question_bank")
+    .select("subject")
+    .eq("class", className);
+  if (error) throw error;
+  return [...new Set((data || []).map(r => r.subject))].sort();
+}
+
+export async function getChapters(className, subject) {
   const { data, error } = await supabase
     .from("question_bank")
     .select("chapter")
-    .eq("teacher_id", teacherId)
     .eq("class", className)
     .eq("subject", subject);
   if (error) throw error;
   return [...new Set((data || []).map(r => r.chapter))].sort();
 }
 
-export async function getQuestions(teacherId, className, subject, chapters) {
+// Includes the contributing teacher's name per question - since the whole
+// point of dropping the teacher-first picker is that admin doesn't track
+// who owns what, it's worth surfacing that as context once questions from
+// possibly-different teachers are mixed together in one list.
+export async function getQuestions(className, subject, chapters) {
   if (!chapters.length) return [];
   const { data, error } = await supabase
     .from("question_bank")
-    .select("*")
-    .eq("teacher_id", teacherId)
+    .select("*, teacher:employees(name)")
     .eq("class", className)
     .eq("subject", subject)
     .in("chapter", chapters)
@@ -46,7 +55,6 @@ export async function saveQuestionPaper(paper, questionIds) {
   const { data, error } = await supabase
     .from("question_papers")
     .insert({
-      teacher_id: paper.teacherId,
       paper_type: paper.paperType,
       title: paper.title,
       class: paper.class,
