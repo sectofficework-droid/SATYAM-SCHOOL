@@ -8,6 +8,13 @@ const useStore = create(
       toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
       closeSidebar: () => set({ sidebarOpen: false }),
 
+      // ── Org switcher (School vs SEF) ────────────────────────────
+      // A per-browser preference like sidebarOpen, not a per-user DB
+      // setting - either org is reachable by any admin who's logged in,
+      // this just remembers which one they were last looking at.
+      activeOrg: "school", // "school" | "sef"
+      setActiveOrg: (org) => set({ activeOrg: org }),
+
       authUser: null,
       setAuthUser: (user) => set({ authUser: user }),
       clearAuthUser: () => set({ authUser: null }),

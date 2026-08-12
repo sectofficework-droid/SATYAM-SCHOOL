@@ -14,6 +14,9 @@ const pageTitles = {
   "/inventory": { title: "Inventory Management", sub: "Stock, vendors & purchase tracking" },
   "/report": { title: "Reports", sub: "Attendance, fee & student reports" },
   "/settings": { title: "Settings", sub: "System configuration & preferences" },
+  "/sef/dashboard": { title: "SEF Dashboard", sub: "Satyam Education Foundation overview" },
+  "/sef/student": { title: "SEF Students", sub: "Tuition student records" },
+  "/sef/fees": { title: "SEF Fees", sub: "Tuition fee collection" },
 };
 
 const ROLE_LABELS = { management: "Management Head", senior_admin: "Senior Admin", normal_admin: "Admin" };
