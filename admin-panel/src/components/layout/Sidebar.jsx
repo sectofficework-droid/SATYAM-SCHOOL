@@ -28,10 +28,7 @@ import {
 import { cn } from "@/lib/utils";
 import useStore from "@/lib/store";
 
-// orgs: which org(s) this item applies to - Phase 1 of SEF only has
-// Dashboard/Student/Fees/Setting built, so everything else stays
-// school-only until Phase 2 gives it a SEF counterpart (avoids a sidebar
-// full of dead links when SEF is active).
+// orgs: which org(s) this item applies to.
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, orgs: ["school"] },
   { href: "/student", label: "Student", icon: GraduationCap, orgs: ["school"] },
@@ -50,10 +47,18 @@ const navItems = [
   { href: "/tasks", label: "Task Management", icon: ClipboardList, orgs: ["school"] },
   { href: "/super-admin", label: "Super Admin", icon: ShieldCheck, orgs: ["school"] },
 
-  // SEF (Satyam Education Foundation) — Phase 1
+  // SEF (Satyam Education Foundation)
   { href: "/sef/dashboard", label: "Dashboard", icon: LayoutDashboard, orgs: ["sef"] },
   { href: "/sef/student", label: "Student", icon: GraduationCap, orgs: ["sef"] },
   { href: "/sef/fees", label: "Fees", icon: IndianRupee, orgs: ["sef"] },
+  { href: "/sef/inventory", label: "Inventory Management", icon: Package, orgs: ["sef"] },
+  { href: "/sef/employee", label: "Employee", icon: Users, orgs: ["sef"] },
+  { href: "/sef/notice", label: "Notice Board", icon: Bell, orgs: ["sef"] },
+  { href: "/sef/report", label: "Report", icon: BarChart3, orgs: ["sef"] },
+  { href: "/sef/question-papers", label: "Question Papers", icon: FileText, orgs: ["sef"] },
+  { href: "/sef/tasks", label: "Task Management", icon: ClipboardList, orgs: ["sef"] },
+  { href: "/sef/syllabus", label: "Syllabus", icon: BookOpen, orgs: ["sef"] },
+  { href: "/sef/super-admin", label: "Super Admin", icon: ShieldCheck, orgs: ["sef"] },
 
   // Always last, for either org - separate hrefs since each org has its own
   // Settings page/data (school's has 12 tabs, SEF's has 7 much simpler ones).

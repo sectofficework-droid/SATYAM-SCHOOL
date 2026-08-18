@@ -17,6 +17,14 @@ const pageTitles = {
   "/sef/dashboard": { title: "SEF Dashboard", sub: "Satyam Education Foundation overview" },
   "/sef/student": { title: "SEF Students", sub: "Tuition student records" },
   "/sef/fees": { title: "SEF Fees", sub: "Tuition fee collection" },
+  "/sef/inventory": { title: "SEF Inventory", sub: "Stock items" },
+  "/sef/employee": { title: "SEF Employee", sub: "Tutors and staff records" },
+  "/sef/notice": { title: "SEF Notice Board", sub: "Post, pin & archive notices" },
+  "/sef/report": { title: "SEF Reports", sub: "Student, fee, employee & inventory reports" },
+  "/sef/question-papers": { title: "SEF Question Papers", sub: "Question bank & paper generator" },
+  "/sef/tasks": { title: "SEF Task Management", sub: "Assign and track staff tasks" },
+  "/sef/syllabus": { title: "SEF Syllabus", sub: "Chapter & subtopic progress" },
+  "/sef/super-admin": { title: "SEF Super Admin", sub: "Privileged bulk tools" },
   "/sef/settings": { title: "SEF Settings", sub: "Satyam Education Foundation configuration" },
 };
 
