@@ -1,5 +1,4 @@
 const { execSync, spawn } = require("child_process");
-const { rmSync } = require("fs");
 const path = require("path");
 
 // Kill any process using port 3000
@@ -12,11 +11,6 @@ try {
 
 // Short wait to let the port free up
 setTimeout(() => {
-  // Delete .next cache
-  try {
-    rmSync(path.join(__dirname, "../.next"), { recursive: true, force: true });
-  } catch (e) {}
-
   // Start next dev
   const next = spawn("npx", ["next", "dev"], {
     cwd: path.join(__dirname, ".."),
