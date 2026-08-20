@@ -62,7 +62,18 @@
       "Bash(node -e ' *)",
       "Bash(rm -f .env.production.check)",
       "Bash(awk -F'=' '/^NEXT_PUBLIC_SUPABASE_URL=/{print \"URL line length\\(bytes\\):\", length\\($0\\); print \"value part length:\", length\\($0\\)-length\\($1\\)-1}' .env.local)",
-      "Bash(awk -F'=' '/^NEXT_PUBLIC_SUPABASE_ANON_KEY=/{print \"KEY line length\\(bytes\\):\", length\\($0\\); print \"value part length:\", length\\($0\\)-length\\($1\\)-1}' .env.local)"
+      "Bash(awk -F'=' '/^NEXT_PUBLIC_SUPABASE_ANON_KEY=/{print \"KEY line length\\(bytes\\):\", length\\($0\\); print \"value part length:\", length\\($0\\)-length\\($1\\)-1}' .env.local)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/login --max-time 3)",
+      "Bash(npm run *)",
+      "Bash(git -C \"D:\\\\Project\\\\SSIS SCHOOL\\\\SATYAM-SCHOOL\" log -1 --stat ca98218)",
+      "Bash(git -C \"D:\\\\Project\\\\SSIS SCHOOL\\\\SATYAM-SCHOOL\" diff \"admin-panel/src/app/\\(dashboard\\)/student/add/page.js\")",
+      "Bash(git -C \"D:\\\\Project\\\\SSIS SCHOOL\\\\SATYAM-SCHOOL\" diff \"admin-panel/src/app/\\(dashboard\\)/student/page.js\")",
+      "Bash(git *)",
+      "Bash(grep -Hm1 ^description: '/d/Project/SSIS SCHOOL/SATYAM-SCHOOL/.claude/skills/*/SKILL.md')",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/login --max-time 5)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/super-admin --max-time 5)"
     ]
   }
 }

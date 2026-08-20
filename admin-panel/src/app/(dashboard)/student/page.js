@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import useStore from "@/lib/store";
+import AddStudentForm from "@/components/AddStudentForm";
 import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabase";
 import S3Image from "@/components/S3Image";
@@ -582,6 +583,7 @@ export default function StudentPage() {
   const [promoteModal, setPromoteModal]       = useState(null);
   const [deactivateModal, setDeactivateModal] = useState(null);
   const [readmitModal, setReadmitModal]       = useState(null);
+  const [showAddModal, setShowAddModal]       = useState(false);
 
 
   const togglePw = (enr) => setShowPasswords((p) => ({ ...p, [enr]: !p[enr] }));
@@ -817,6 +819,22 @@ export default function StudentPage() {
           onConfirm={() => handleReadmit(readmitModal)}
         />
       )}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-4 sm:my-8">
+            <AddStudentForm
+              variant="modal"
+              onCancel={() => setShowAddModal(false)}
+              onSaved={() => {
+                setShowAddModal(false);
+                if (selectedYearId) {
+                  fetchStudentsFromDB(selectedYearId).then((data) => setStudents(data));
+                }
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="space-y-5">
 
@@ -831,12 +849,13 @@ export default function StudentPage() {
               </span>
             </p>
           </div>
-          <Link
-            href="/student/add"
+          <button
+            type="button"
+            onClick={() => setShowAddModal(true)}
             className="inline-flex items-center gap-2 bg-school-navy hover:bg-school-navy-dark text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm self-start sm:self-auto"
           >
             <Plus className="w-4 h-4" /> Add New Student
-          </Link>
+          </button>
         </div>
 
         {/* ── Promotion Period Banner ── */}
