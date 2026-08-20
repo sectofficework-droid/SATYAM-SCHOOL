@@ -84,33 +84,41 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Updated 2026-08-20: a real, shipped fix — first production code change
-since the 2026-08-18 REQ-SEC-001 revert.** Found and fixed an authentication
-bypass: the admin panel's sidebar Logout button (`Sidebar.jsx`, separate from
-the header's logout icon) never actually called `supabase.auth.signOut()` or
-cleared the persisted session — it only navigated to `/login` visually, so
-the still-valid session let a user straight back into the dashboard by
-editing the URL afterward. Fixed across `Sidebar.jsx`, `AuthGuard.jsx`,
-`Header.jsx`, `set-password/page.js` (resilient sign-out, instant redirect,
-closed a Back-button/bfcache hole, fixed the sidebar always showing a
-placeholder name). Verified live via `claude-in-chrome` browser automation
-against `localhost:3000` before shipping — not just read the code. Committed
-(`010d986`), pushed to `origin/debiprasad`, merged into `main` at the user's
-explicit request (merge commit `9a2cfb3`, no conflicts), pushed to
-`origin/main`. Full detail: `ai-context\SESSION-2026-08-20-1.md`.
+**Updated 2026-08-21: two shipped changes, `debiprasad` only — not yet
+merged to `main`.**
+1. **Add Student form extraction** — the ~1,400-line Add Student form moved
+   out of `student/add/page.js` into a shared `components/AddStudentForm.js`
+   (`variant="page"` | `"modal"`). Student list now opens Add Student as a
+   modal in-place; `/student/add` still works standalone. Verified live for
+   both entry points via `claude-in-chrome`.
+2. **Permanent student delete (new feature)** — `studentService.js`'s
+   `deleteStudentPermanently()` + a "Permanently Delete" button/confirm-modal
+   in Super Admin → Update Student, gated to `senior_admin`/`management`
+   (`normal_admin` already can't reach `/super-admin`). Requires typing the
+   exact enrollment number to confirm. Clears `student_promotions`,
+   `transfer_certificates`, `fee_payments` first (their FKs to
+   `students(id)` don't cascade), then deletes `students` (cascades the
+   rest). Verified live — deleted two test students created during (1)'s
+   verification, confirmed count back to the real 48-student baseline.
 
-Treated as a routine/small fix (missing calls in an existing working
-pattern, not a new design) per the 2026-08-18 workflow policy below — no
-written plan was drafted first, but it was verified live before being
-shipped.
+Also this session: a "Vercel seems stale" report turned out to be the user
+checking the wrong URL (no actual issue — but see Next step, the underlying
+question of which branch Production builds from is still unconfirmed); a
+read-only repo-wide secrets scan found nothing leaked (one hardcoded
+Supabase key in `mobile-app/lib/app_bootstrap.dart` confirmed to be the
+intentionally-public anon key, not a real secret).
+
+Full detail: `ai-context\SESSION-2026-08-21-1.md`.
+
+Git state: both commits (`cd5d755`, `10c3395`) are on `debiprasad` and
+pushed to `origin/debiprasad`. **`main` is untouched this session** —
+`origin/main` still at `9a2cfb3` (last session's merge), 3 commits behind
+`debiprasad`. Currently checked out: `debiprasad`, clean except the
+recurring, pre-existing, uncommitted local change to
+`.claude/settings.local.json`.
 
 REQ-SEC-001/002/003/004 (below) are unaffected by this session — still
 exactly as they were.
-
-Git state: fix committed and pushed on both `debiprasad` and `main`.
-Currently checked out: `debiprasad`, clean except a pre-existing, unrelated,
-uncommitted local change to `.claude/settings.local.json` (never part of any
-commit this session).
 
 ## Continuity folder — no git-ignore exception needed (RULEBOOK.md §0.8/§0.9)
 History: on 2026-08-19, `ai-context\`/`work-log\` were first tracked via a
@@ -231,61 +239,47 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-Session `governance\ai-context\SESSION-2026-08-20-1.md` — found, root-caused
-(via live `claude-in-chrome` reproduction, not just code reading), fixed, and
-shipped a real authentication bypass: the admin panel's sidebar Logout button
-never actually signed out. Fixed across 4 files (`Sidebar.jsx`,
-`AuthGuard.jsx`, `Header.jsx`, `set-password/page.js`), also fixed an
-unrelated adjacent bug (sidebar showing a placeholder name instead of the
-real user). Committed, pushed to `origin/debiprasad`, merged into `main`,
-pushed to `origin/main` — all at explicit user request, each step. Also:
-`Scratch\SATYAM-SCHOOL\SSIS-AIO.bat`'s website launcher now auto-opens the
-browser once the dev server is ready (git-ignored, not part of the commit).
+Session `governance\ai-context\SESSION-2026-08-21-1.md` — finished + verified
+live an in-progress refactor (Add Student form extracted into a shared
+`AddStudentForm.js`, used as both the standalone page and a modal from the
+Student list); built, shipped, and live-verified a new permanent-delete
+feature for students, gated to `senior_admin`/`management`; a "Vercel seems
+stale" report resolved as the user checking the wrong URL (no real issue);
+a read-only secrets scan across the repo found nothing leaked. Committed as
+two commits (`cd5d755`, `10c3395`), pushed to `origin/debiprasad` — **not**
+merged into `main` this session (contrast with 2026-08-20, which did merge).
+
+Prior checkpoint: `governance\ai-context\SESSION-2026-08-20-1.md` — found,
+root-caused (via live `claude-in-chrome` reproduction, not just code
+reading), fixed, and shipped a real authentication bypass: the admin
+panel's sidebar Logout button never actually signed out. Fixed across 4
+files, merged into `main` (`9a2cfb3`) at explicit user request.
 
 Prior checkpoint: `governance\ai-context\SESSION-2026-08-19-2.md` — read-only
 secrets-hygiene check: confirmed `NEXT_PUBLIC_SUPABASE_ANON_KEY` is
-intentionally public (RLS is what actually protects data, not this key);
-confirmed `admin-panel\.env.local` is `git check-ignore`-clean and has
-never appeared in git history. No files changed.
+intentionally public; confirmed `admin-panel\.env.local` has never appeared
+in git history. No files changed.
 
-Prior checkpoint: `governance\ai-context\SESSION-2026-08-19-1.md` (11 parts,
-complete) — the day's work, end to end: `start-website.bat` restored to
-ROOT; `RULEBOOK.md` created (merge of both master prompt files +
-enforcement/activation layer); the whole continuity record — `RULEBOOK.md`,
-this file, `ai-context\`, `work-log\`, `planning\`, `documentation\`
-(incl. `PROJECT_CONTEXT.md`) — consolidated out of `Scratch\` into the
-`governance\` folder at ROOT, each move preceded by a secret scan (found
-and redacted one real exposure: a live default-password value that had
-been duplicated into 3 docs); `refdocs\` consolidated into `Scratch\` so
-one `.gitignore` rule covers everything local-only; and, per explicit user
-decision ("i want this new structure for every project onward"), the
-`governance\` pattern was baked into PART I §B itself — both the master
-template (`Scratch\AI PROJECT PROMPT PRODUCTION GRADE.md`) and
-`RULEBOOK.md` were updated together and re-verified identical, `AGENTS.md`
-resynced to match. Two follow-up audits (universality check, structure
-consistency check) both passed clean. No production code touched at any
-point today.
-
-Prior checkpoint (archived, retention cap — §D): `ai-context\archive\SESSION-2026-08-18-1.md` Part 11 (complete,
-both halves) — code bug review (separate from the security audit) done for
-both `admin-panel/` and `mobile-app/`. **9 findings total**
-(REQ-BUG-001..009) recorded in `planning\TODO.md` "Functional bugs
-(non-security)" section: 2 CRITICAL (admin-panel: fee-total calculated two
-conflicting ways across pages; mobile-app: Monthly Test marks re-save can
-silently fail and lose the whole batch — missing `onConflict` on
-`saveMarksBatch`), 5 MODERATE, 2 MINOR/PLAUSIBLE. Nothing fixed — pure
-review, all recorded for prioritization.
+Prior checkpoints (archived, retention cap — §D):
+`ai-context\archive\SESSION-2026-08-19-1.md` (11 parts — the `governance\`
+folder structure itself was created this session) and
+`ai-context\archive\SESSION-2026-08-18-1.md` (code bug review, 9 findings
+recorded as REQ-BUG-001..009 in `planning\TODO.md`, nothing fixed).
 
 ## Next step
-1. Waiting on the user to write/approve a proper plan for REQ-SEC-001 before
+1. **Confirm which branch Vercel's Production environment builds from**
+   (dashboard → Project → Settings → Git, not a local CLI-token search).
+   If it's `main`-only, this session's two commits need an explicit "merge
+   it into main" ask before they reach Production — same pattern as
+   2026-08-20's fix.
+2. Waiting on the user to write/approve a proper plan for REQ-SEC-001 before
    any more code — no SQL file exists right now, nothing is pending a DB run.
    Once a plan exists and is approved ("code it"), implement + re-verify from
    scratch rather than reusing the reverted attempt from memory.
-2. REQ-SEC-002/003/004 unchanged — still each needs its own decision from
+3. REQ-SEC-002/003/004 unchanged — still each needs its own decision from
    the user before any work starts on them.
-3. User needs to prioritize REQ-BUG-001..009 — none fixed yet, all just
+4. User needs to prioritize REQ-BUG-001..009 — none fixed yet, all just
    recorded, including which (if any) should jump ahead of the REQ-SEC
    items.
-4. The 2026-08-20 logout fix was verified against `localhost:3000` only —
-   not yet independently re-checked against the live Vercel Production URL
-   after the merge to `main`.
+5. The 2026-08-20 logout fix still hasn't been independently re-checked
+   against the live Vercel Production URL (carried over, still open).
