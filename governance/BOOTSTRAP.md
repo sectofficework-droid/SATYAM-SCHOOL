@@ -58,7 +58,7 @@ you tell me otherwise.
 | Locked rule | Reality | Where |
 |---|---|---|
 | TypeScript | JavaScript only, no TypeScript | `admin-panel/` entire codebase |
-| RLS mandatory | RLS **disabled** on every new mobile-app table (`student_attendance`, `homework`, `exams`, `exam_marks`, etc.) | `mobile-app/SUPABASE_APP_AUTH.sql` |
+| RLS mandatory | RLS **disabled** on every new mobile-app table (`student_attendance`, `homework`, `exams`, `exam_marks`, etc.) — and, **live-confirmed 2026-08-21**, `students`/`employees`/`admin_users` are ALSO fully readable by a completely unauthenticated client (public anon key, no session) despite `SUPABASE_SETUP.sql`'s narrower `auth.uid()`-based policies existing on paper | `mobile-app/SUPABASE_APP_AUTH.sql`; live test detail in `planning\SECURITY-THREAT-MODEL.md` F2 |
 | "DO NOT... use public S3 buckets" | Mobile app's photo bucket is public-read, plain `Image.network`, no presigning | `mobile-app/lib/common/widgets/s3_image.dart`, `documentation\PROJECT_CONTEXT.md:67` |
 | `users` table with `password_hash` | `app_password` stored as **plaintext TEXT**, same hardcoded default value for every account (redacted from every doc, tracked or not — the exact value only exists in `mobile-app/SUPABASE_APP_AUTH.sql` itself, which is production code, already in git history independent of this doc set), compared with `=` | `mobile-app/SUPABASE_APP_AUTH.sql` |
 | Firebase Cloud Messaging | Not implemented — in-app notifications only | `documentation\PROJECT_CONTEXT.md:69` |
@@ -102,13 +102,22 @@ merged to `main`.**
    verification, confirmed count back to the real 48-student baseline.
 
 Also this session: a "Vercel seems stale" report turned out to be the user
-checking the wrong URL (no actual issue — but see Next step, the underlying
-question of which branch Production builds from is still unconfirmed); a
-read-only repo-wide secrets scan found nothing leaked (one hardcoded
-Supabase key in `mobile-app/lib/app_bootstrap.dart` confirmed to be the
-intentionally-public anon key, not a real secret).
+checking the wrong URL (no actual issue — resolved: user confirmed they use
+`debiprasad`'s Preview deployment day-to-day, merge-to-`main` only on
+explicit ask, not needed every session); a read-only repo-wide secrets scan
+found nothing leaked in tracked files (one hardcoded Supabase key in
+`mobile-app/lib/app_bootstrap.dart` confirmed to be the intentionally-public
+anon key, not a real secret) — **but a separate, live (not file-based) RLS
+check requested right after that found `students`/`employees`/`admin_users`
+are all fully readable with zero authentication**, confirming REQ-SEC-001
+and expanding REQ-SEC-002's scope beyond the ~25 mobile-app tables
+previously counted. See "Architecture drift" table above and
+`planning\TODO.md` REQ-SEC-001/002 for detail — nothing fixed, read-only
+finding, awaiting the user's decision same as the rest of the CRITICAL
+backlog.
 
-Full detail: `ai-context\SESSION-2026-08-21-1.md`.
+Full detail: `ai-context\SESSION-2026-08-21-1.md`,
+`ai-context\SESSION-2026-08-21-2.md` (RLS finding).
 
 Git state: both commits (`cd5d755`, `10c3395`) are on `debiprasad` and
 pushed to `origin/debiprasad`. **`main` is untouched this session** —
@@ -239,15 +248,26 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-Session `governance\ai-context\SESSION-2026-08-21-1.md` — finished + verified
-live an in-progress refactor (Add Student form extracted into a shared
-`AddStudentForm.js`, used as both the standalone page and a modal from the
-Student list); built, shipped, and live-verified a new permanent-delete
-feature for students, gated to `senior_admin`/`management`; a "Vercel seems
-stale" report resolved as the user checking the wrong URL (no real issue);
-a read-only secrets scan across the repo found nothing leaked. Committed as
-two commits (`cd5d755`, `10c3395`), pushed to `origin/debiprasad` — **not**
-merged into `main` this session (contrast with 2026-08-20, which did merge).
+Session `governance\ai-context\SESSION-2026-08-21-2.md` — user asked to
+"check RLS on students and employees tables." Ran a live, unauthenticated
+`select()` (public anon key, no session) against `students`, `employees`,
+and (added) `admin_users` — **all three returned full rows to a completely
+anonymous client**, including plaintext `app_password`. Live-confirms
+REQ-SEC-001 and expands REQ-SEC-002's known scope beyond the ~25
+mobile-app-only tables previously counted. Recorded in `planning\TODO.md`
+and `planning\SECURITY-THREAT-MODEL.md` F2 per §J14 ("found it → record it,
+don't silently fix, don't expand scope") — **nothing fixed, nothing
+touched**; nothing about the live app/database changed because of this
+session, only the written record.
+
+Prior checkpoint: `governance\ai-context\SESSION-2026-08-21-1.md` — finished
++ verified live an in-progress refactor (Add Student form extracted into a
+shared `AddStudentForm.js`, used as both the standalone page and a modal
+from the Student list); built, shipped, and live-verified a new
+permanent-delete feature for students, gated to `senior_admin`/
+`management`. Committed as two commits (`cd5d755`, `10c3395`), pushed to
+`origin/debiprasad` — not merged into `main` (confirmed not needed — see
+Next step history, now resolved).
 
 Prior checkpoint: `governance\ai-context\SESSION-2026-08-20-1.md` — found,
 root-caused (via live `claude-in-chrome` reproduction, not just code
@@ -255,33 +275,31 @@ reading), fixed, and shipped a real authentication bypass: the admin
 panel's sidebar Logout button never actually signed out. Fixed across 4
 files, merged into `main` (`9a2cfb3`) at explicit user request.
 
-Prior checkpoint: `governance\ai-context\SESSION-2026-08-19-2.md` — read-only
-secrets-hygiene check: confirmed `NEXT_PUBLIC_SUPABASE_ANON_KEY` is
-intentionally public; confirmed `admin-panel\.env.local` has never appeared
-in git history. No files changed.
-
 Prior checkpoints (archived, retention cap — §D):
-`ai-context\archive\SESSION-2026-08-19-1.md` (11 parts — the `governance\`
-folder structure itself was created this session) and
-`ai-context\archive\SESSION-2026-08-18-1.md` (code bug review, 9 findings
-recorded as REQ-BUG-001..009 in `planning\TODO.md`, nothing fixed).
+`ai-context\archive\SESSION-2026-08-19-2.md` (read-only secrets-hygiene
+check — anon key confirmed intentionally public, `.env.local` confirmed
+clean) and `ai-context\archive\SESSION-2026-08-19-1.md` (11 parts — the
+`governance\` folder structure itself was created this session).
 
 ## Next step
-1. ~~Confirm which branch Vercel's Production environment builds from~~ —
-   resolved same session: user confirmed they check/use the `debiprasad`
-   **Preview** deployment day-to-day, not Production, so pushing to
-   `debiprasad` is sufficient on its own — merging into `main` is NOT
-   required after every change, only when the user separately asks for it
-   (e.g. to actually promote to Production). Don't re-raise this as an open
-   question in future sessions.
+1. **REQ-SEC-001/002 now live-confirmed, not just theoretical** — `students`/
+   `employees`/`admin_users` are readable by anyone with the public anon
+   key, no login needed. This is the top item: get the user to either (a)
+   run `mobile-app/SUPABASE_SECURITY_AUDIT.sql` in the Supabase SQL Editor
+   and share the result (tells us exactly which policies/grants are live —
+   can't get this from files alone), or (b) go straight to approving a
+   written plan for locking these three tables down specifically. Per this
+   project's own rule (and the REQ-SEC-001 revert precedent), do NOT write
+   or apply any RLS/grant changes without a plan approved first.
 2. Waiting on the user to write/approve a proper plan for REQ-SEC-001 before
    any more code — no SQL file exists right now, nothing is pending a DB run.
    Once a plan exists and is approved ("code it"), implement + re-verify from
    scratch rather than reusing the reverted attempt from memory.
-3. REQ-SEC-002/003/004 unchanged — still each needs its own decision from
-   the user before any work starts on them.
+3. REQ-SEC-003/004 unchanged — still each needs its own decision from the
+   user before any work starts on them.
 4. User needs to prioritize REQ-BUG-001..009 — none fixed yet, all just
    recorded, including which (if any) should jump ahead of the REQ-SEC
    items.
 5. The 2026-08-20 logout fix still hasn't been independently re-checked
-   against the live Vercel Production URL (carried over, still open).
+   against the live Vercel Production URL (carried over, still open —
+   lower priority than item 1 above).

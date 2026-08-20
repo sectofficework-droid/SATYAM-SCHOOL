@@ -64,6 +64,30 @@
   `planning\TODO.md` REQ-SEC-001 for the full note.
 
 ### F2 — `anon`-role over-exposure (RLS disabled + broad grants + no rate limit)
+- **CORRECTED SCOPE AGAIN (2026-08-21) — `students`/`employees`/
+  `admin_users` confirmed exposed too, not just the ~25 mobile-app tables
+  below.** These three are core tables (`schema.sql`/dashboard-created, not
+  `mobile-app/SUPABASE_*.sql`), so they weren't caught by the 2026-08-18
+  grep pass — but they have the identical live symptom. Tested directly:
+  an `@supabase/supabase-js` client using only the public anon key, no
+  session at all, ran `select()` against all three and got full rows back
+  — `students` (48/48, including plaintext `app_password` — see F1),
+  `employees` (27/27, same), `admin_users` (4/4, names + roles). `mobile-app/
+  SUPABASE_SETUP.sql` layers narrower `auth.uid() = app_user_id` "own
+  profile" `SELECT` policies onto `students`/`employees`, but since mobile
+  auth never produces a real Supabase Auth session (custom RPC login
+  instead — see F1/PROJECT_CONTEXT.md), those alone would deny everyone,
+  not allow everyone — the observed wide-open result means either RLS is
+  disabled on these two specifically, or an older, broader permissive
+  policy (predating this repo's SQL-file history — never captured in any
+  tracked migration) is still active and OR-ing in full access. Which one
+  it is can't be determined by reading files; needs
+  `mobile-app/SUPABASE_SECURITY_AUDIT.sql` actually run in the Supabase SQL
+  Editor (query 1 + query 3 in that file answer this exactly) — no
+  DB-credential/service-role access exists in this repo/session to run it
+  directly, and none was sought out (would be exactly the kind of
+  credential-hunting this repo's own sessions have correctly declined to do
+  without being asked).
 - **CORRECTED SCOPE (2026-08-18, follow-up pass):** the original evidence
   below undercounted this. `client.from(...)` calls in
   `mobile-app/lib/core/services/supabase_service.dart` hit **~30 tables
