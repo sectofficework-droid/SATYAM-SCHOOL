@@ -84,27 +84,33 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Updated 2026-08-18 (same day, 3rd pass): REVERTED — production code is
-back to its original state.** A same-day attempt at REQ-SEC-001 (hash
-`app_password`, remove the plaintext display, add a Reset-Password flow)
-was implemented in `admin-panel/src/lib/employeeService.js` and
-`admin-panel/src/app/(dashboard)/employee/page.js`, then the user said
-"revert back to previous as original we will plan first then execute" — the
-fix had gone straight from finding to code without a written plan, which
-breaks AGENTS.md §A.1 ("Plan first, code last"). Both files restored via
-`git restore` (confirmed clean against the last commit). The draft
-`mobile-app/SUPABASE_PASSWORD_SECURITY.sql` was deleted — it was never
-applied to the database (no direct DB connection was ever available this
-session), so there was nothing to undo there.
+**Updated 2026-08-20: a real, shipped fix — first production code change
+since the 2026-08-18 REQ-SEC-001 revert.** Found and fixed an authentication
+bypass: the admin panel's sidebar Logout button (`Sidebar.jsx`, separate from
+the header's logout icon) never actually called `supabase.auth.signOut()` or
+cleared the persisted session — it only navigated to `/login` visually, so
+the still-valid session let a user straight back into the dashboard by
+editing the URL afterward. Fixed across `Sidebar.jsx`, `AuthGuard.jsx`,
+`Header.jsx`, `set-password/page.js` (resilient sign-out, instant redirect,
+closed a Back-button/bfcache hole, fixed the sidebar always showing a
+placeholder name). Verified live via `claude-in-chrome` browser automation
+against `localhost:3000` before shipping — not just read the code. Committed
+(`010d986`), pushed to `origin/debiprasad`, merged into `main` at the user's
+explicit request (merge commit `9a2cfb3`, no conflicts), pushed to
+`origin/main`. Full detail: `ai-context\SESSION-2026-08-20-1.md`.
 
-**Net effect: nothing about the live app or database has changed all
-session.** REQ-SEC-001/002/003/004 are exactly as they were when the audit
-first found them — no better, no worse. `planning\TODO.md` and
-`planning\SECURITY-THREAT-MODEL.md` keep the useful findings from the
-reverted attempt (reset-not-view is the right shape; no mobile rebuild
-needed for hashing) as input for a proper plan, not as "done" work.
+Treated as a routine/small fix (missing calls in an existing working
+pattern, not a new design) per the 2026-08-18 workflow policy below — no
+written plan was drafted first, but it was verified live before being
+shipped.
 
-Git state: everything untracked, nothing staged, **not committed** (§A.9).
+REQ-SEC-001/002/003/004 (below) are unaffected by this session — still
+exactly as they were.
+
+Git state: fix committed and pushed on both `debiprasad` and `main`.
+Currently checked out: `debiprasad`, clean except a pre-existing, unrelated,
+uncommitted local change to `.claude/settings.local.json` (never part of any
+commit this session).
 
 ## Continuity folder — no git-ignore exception needed (RULEBOOK.md §0.8/§0.9)
 History: on 2026-08-19, `ai-context\`/`work-log\` were first tracked via a
@@ -225,7 +231,18 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-Session `governance\ai-context\SESSION-2026-08-19-2.md` — read-only
+Session `governance\ai-context\SESSION-2026-08-20-1.md` — found, root-caused
+(via live `claude-in-chrome` reproduction, not just code reading), fixed, and
+shipped a real authentication bypass: the admin panel's sidebar Logout button
+never actually signed out. Fixed across 4 files (`Sidebar.jsx`,
+`AuthGuard.jsx`, `Header.jsx`, `set-password/page.js`), also fixed an
+unrelated adjacent bug (sidebar showing a placeholder name instead of the
+real user). Committed, pushed to `origin/debiprasad`, merged into `main`,
+pushed to `origin/main` — all at explicit user request, each step. Also:
+`Scratch\SATYAM-SCHOOL\SSIS-AIO.bat`'s website launcher now auto-opens the
+browser once the dev server is ready (git-ignored, not part of the commit).
+
+Prior checkpoint: `governance\ai-context\SESSION-2026-08-19-2.md` — read-only
 secrets-hygiene check: confirmed `NEXT_PUBLIC_SUPABASE_ANON_KEY` is
 intentionally public (RLS is what actually protects data, not this key);
 confirmed `admin-panel\.env.local` is `git check-ignore`-clean and has
@@ -249,7 +266,7 @@ resynced to match. Two follow-up audits (universality check, structure
 consistency check) both passed clean. No production code touched at any
 point today.
 
-Prior checkpoint: `ai-context\SESSION-2026-08-18-1.md` Part 11 (complete,
+Prior checkpoint (archived, retention cap — §D): `ai-context\archive\SESSION-2026-08-18-1.md` Part 11 (complete,
 both halves) — code bug review (separate from the security audit) done for
 both `admin-panel/` and `mobile-app/`. **9 findings total**
 (REQ-BUG-001..009) recorded in `planning\TODO.md` "Functional bugs
@@ -269,3 +286,6 @@ review, all recorded for prioritization.
 3. User needs to prioritize REQ-BUG-001..009 — none fixed yet, all just
    recorded, including which (if any) should jump ahead of the REQ-SEC
    items.
+4. The 2026-08-20 logout fix was verified against `localhost:3000` only —
+   not yet independently re-checked against the live Vercel Production URL
+   after the merge to `main`.
