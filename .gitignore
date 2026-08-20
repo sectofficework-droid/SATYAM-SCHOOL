@@ -1,0 +1,30 @@
+# Root .gitignore — SATYAM-SCHOOL
+# Sub-projects (admin-panel/, mobile-app/) keep their own .gitignore for
+# stack-specific build output; this file covers the repo root only.
+
+# AI prep workspace — never production, never shipped (AI PROJECT PROMPT §A.2/§B).
+# Planning drafts, coding stubs, debugging notes, suggestions, documentation
+# drafts, reusable prompt templates, launcher .bat scripts, and local
+# reference material (dashboard screenshots, planning PDFs, source images,
+# under Scratch/refdocs/) all stay local-only, untracked — one single rule
+# covers all of it. The continuity files (rule book, current-state
+# snapshot, session/work logs, specs) live outside this folder entirely —
+# see /governance/ (tracked normally, no exception needed here;
+# RULEBOOK.md §0.8/§0.9).
+/Scratch/
+
+# Real secrets/env files — never tracked, at root or nested
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/

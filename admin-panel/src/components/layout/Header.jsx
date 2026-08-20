@@ -49,9 +49,16 @@ export default function Header() {
   const page = pageTitles[pathname] || pageTitles["/dashboard"];
 
   async function handleLogout() {
-    await supabase.auth.signOut();
+    // Local sign-out/redirect must happen even if the network call to
+    // revoke the session server-side fails - otherwise a flaky request
+    // leaves the still-valid token sitting in localStorage and the user
+    // never actually gets logged out.
+    try { await supabase.auth.signOut(); } catch {}
     clearAuthUser();
-    router.replace("/login");
+    // Full navigation, not router.replace() - instant since /login is
+    // statically servable with no server round-trip, and it fully tears
+    // down JS state so nothing can linger from the signed-out session.
+    window.location.replace("/login");
   }
 
   function switchOrg(org) {

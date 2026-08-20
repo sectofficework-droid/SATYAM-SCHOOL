@@ -71,7 +71,7 @@ export default function SetPasswordPage() {
       .single();
 
     if (profileError || !profile) {
-      await supabase.auth.signOut();
+      try { await supabase.auth.signOut(); } catch {}
       setError("Password saved, but your account is not yet in the system. Ask the administrator to add your profile, then log in normally.");
       setLoading(false);
       return;
