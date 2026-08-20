@@ -11,7 +11,7 @@ import {
   isNonEmpty, isPastOrTodayDate, isValidUploadFile,
 } from "@/lib/validators";
 import { getActiveClasses, getClassesWithSections } from "@/lib/settingsService";
-import { getEmployees, addEmployee, updateEmployee } from "@/lib/employeeService";
+import { getEmployees, addEmployee, updateEmployee, resetEmployeePassword } from "@/lib/employeeService";
 import { uploadFileToS3, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile, formatFileSize } from "@/lib/fileCompression";
 import S3Image from "@/components/S3Image";
@@ -19,8 +19,8 @@ import DateInputDMY from "@/components/DateInputDMY";
 import {
   Users, Plus, Search, X, Phone, Mail, MapPin,
   Calendar, GraduationCap, Briefcase, Pencil,
-  User, FileText, Check, Eye, EyeOff, BookOpen,
-  ChevronRight, ChevronLeft, Shield, Upload, Lock, Copy,
+  User, FileText, Check, Eye, BookOpen,
+  ChevronRight, ChevronLeft, Shield, Upload, Lock,
   ClipboardList, IndianRupee, AlertCircle, Download,
   CheckCircle2, TrendingDown, FileSpreadsheet,
   CalendarCheck, ShieldAlert, ListChecks, Trash2,
@@ -142,43 +142,71 @@ function InfoRow({ label, value, icon: Icon }) {
   );
 }
 
-// Teacher app login password - masked by default (same show/hide pattern as
-// the login form), with a copy button so the value never has to be read
-// character-by-character over a phone call.
-function PasswordRow({ value }) {
-  const [visible, setVisible] = useState(false);
-  const [copied, setCopied]   = useState(false);
+// Teacher app login password - hashed server-side (pgcrypto), so there's no
+// value to view/copy anymore, only reset. See
+// mobile-app/SUPABASE_HASH_APP_PASSWORD.sql.
+function PasswordRow({ employeeId, onReset }) {
+  const [editing, setEditing]       = useState(false);
+  const [pw, setPw]                 = useState("");
+  const [confirmPw, setConfirmPw]   = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError]           = useState("");
+  const [justReset, setJustReset]   = useState(false);
 
-  function handleCopy() {
-    if (!value) return;
-    navigator.clipboard?.writeText(value).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
+  const canSubmit = pw.length >= 6 && pw === confirmPw;
+
+  async function handleSubmit() {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      await onReset(pw);
+      setEditing(false);
+      setPw(""); setConfirmPw("");
+      setJustReset(true);
+      setTimeout(() => setJustReset(false), 2000);
+    } catch (err) {
+      setError(err?.message || "Failed to reset password.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
     <div className="flex items-start gap-2.5">
       <Lock className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 mt-0.5" />
-      <div>
-        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Teacher App Password</p>
-        {value ? (
-          <div className="flex items-center gap-1.5">
-            <p className="text-sm text-gray-800 font-medium font-mono">
-              {visible ? value : "•".repeat(Math.max(value.length, 6))}
-            </p>
-            <button type="button" onClick={() => setVisible(v => !v)}
-              className="p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600" title={visible ? "Hide" : "Show"}>
-              {visible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Reset Password</p>
+        {!editing ? (
+          <div className="flex items-center gap-2">
+            <p className="text-sm text-gray-800 font-medium font-mono">••••••••</p>
+            <button type="button" onClick={() => setEditing(true)}
+              className="text-xs font-semibold text-school-navy hover:underline">
+              Reset
             </button>
-            <button type="button" onClick={handleCopy}
-              className="p-1 rounded-md hover:bg-gray-100 text-gray-400 hover:text-gray-600" title="Copy">
-              <Copy className="w-3.5 h-3.5" />
-            </button>
-            {copied && <span className="text-[10px] font-semibold text-green-600">Copied</span>}
+            {justReset && <span className="text-[10px] font-semibold text-green-600">Reset ✓</span>}
           </div>
         ) : (
-          <p className="text-sm text-gray-800 font-medium">—</p>
+          <div className="space-y-1.5 mt-1 max-w-[220px]">
+            <input type="text" value={pw} onChange={(e) => setPw(e.target.value)}
+              placeholder="New password (min 6 chars)"
+              className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-school-navy/30" />
+            <input type="text" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)}
+              placeholder="Confirm"
+              className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-2 focus:ring-school-navy/30" />
+            {error && <p className="text-[10px] text-red-500">{error}</p>}
+            <div className="flex gap-2">
+              <button type="button" onClick={handleSubmit} disabled={!canSubmit || submitting}
+                className="text-xs font-bold px-2.5 py-1 rounded-lg bg-school-navy text-white disabled:opacity-40 disabled:cursor-not-allowed">
+                {submitting ? "Saving..." : "Save"}
+              </button>
+              <button type="button"
+                onClick={() => { setEditing(false); setPw(""); setConfirmPw(""); setError(""); }}
+                className="text-xs font-semibold px-2.5 py-1 rounded-lg text-gray-500 hover:bg-gray-100">
+                Cancel
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -275,7 +303,7 @@ function ViewEmployeeModal({ emp, onClose }) {
             <div className="grid grid-cols-2 gap-4">
               <InfoRow label="Employment Type" value={emp.employmentType} icon={Briefcase} />
               <InfoRow label="Status"          value={emp.status}         icon={Shield}    />
-              <PasswordRow value={emp.appPassword} />
+              <PasswordRow employeeId={emp.id} onReset={(pw) => resetEmployeePassword(emp.id, pw)} />
             </div>
           </div>
 

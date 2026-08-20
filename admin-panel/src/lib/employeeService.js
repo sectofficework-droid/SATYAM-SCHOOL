@@ -79,3 +79,14 @@ export async function updateEmployee(id, emp) {
     .eq("id", id);
   if (error) throw error;
 }
+
+// Hashes server-side via the admin_reset_employee_password RPC (pgcrypto) -
+// the browser never computes or sees the hash, only the plaintext the admin
+// just typed.
+export async function resetEmployeePassword(id, newPassword) {
+  const { error } = await supabase.rpc("admin_reset_employee_password", {
+    p_employee_id: id,
+    p_new_password: newPassword,
+  });
+  if (error) throw error;
+}

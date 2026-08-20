@@ -13,14 +13,15 @@ import {
   deactivateStudent as svcDeactivate,
   readmitStudent as svcReadmit,
   promoteStudent as svcPromote,
+  resetStudentPassword as svcResetPassword,
 } from "@/lib/studentService";
 import { getActiveClasses } from "@/lib/settingsService";
 import { getFeeStructure } from "@/lib/feesService";
 import {
   Plus, Search, GraduationCap, Phone, Calendar, Edit, Trash2,
-  LogOut, Eye, EyeOff, User, ChevronDown, ArrowUpCircle,
+  LogOut, Eye, User, ChevronDown, ArrowUpCircle,
   CheckCircle2, X, AlertTriangle, Package, FileText,
-  IndianRupee, Check, ArrowLeft, Download, RotateCcw,
+  IndianRupee, Check, ArrowLeft, Download, RotateCcw, Lock,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { fmtDMY } from "@/lib/utils";
@@ -180,6 +181,85 @@ function DeactivateModal({ student, onClose, onConfirm }) {
               className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-red-600 hover:bg-red-700"
             >
               Confirm Deactivate
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Reset app password modal ───────────────────────────────────
+// Passwords are hashed (pgcrypto) — there's no value to "view" anymore, only
+// reset. See mobile-app/SUPABASE_HASH_APP_PASSWORD.sql.
+function ResetPasswordModal({ student, onClose, onConfirm }) {
+  const [pw, setPw]           = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError]     = useState("");
+
+  const canSubmit = pw.length >= 6 && pw === confirmPw;
+
+  async function handleSubmit() {
+    if (!canSubmit) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      await onConfirm(pw);
+    } catch (err) {
+      setError(err?.message || "Failed to reset password.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="bg-gradient-to-r from-school-navy to-school-navy-dark px-5 py-4 flex items-center justify-between">
+          <p className="text-white font-bold flex items-center gap-2"><Lock className="w-4 h-4" />Reset App Password</p>
+          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-gray-600">
+            Set a new mobile app password for <span className="font-bold text-gray-900">{student.name}</span>. They'll need to use this new password next time they log in.
+          </p>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">New Password</label>
+            <input
+              type="text"
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              placeholder="At least 6 characters"
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy/30 focus:border-school-navy"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Confirm Password</label>
+            <input
+              type="text"
+              value={confirmPw}
+              onChange={(e) => setConfirmPw(e.target.value)}
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy/30 focus:border-school-navy"
+            />
+            {confirmPw && pw !== confirmPw && (
+              <p className="text-xs text-red-500 mt-1">Passwords don't match.</p>
+            )}
+          </div>
+          {error && <p className="text-xs text-red-500">{error}</p>}
+          <div className="flex gap-3 pt-1">
+            <button onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={!canSubmit || submitting}
+              className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-school-navy hover:bg-school-navy-dark"
+            >
+              {submitting ? "Resetting..." : "Reset Password"}
             </button>
           </div>
         </div>
@@ -573,7 +653,6 @@ export default function StudentPage() {
   const [docFilter, setDocFilter]         = useState("All");
   const [showLeft, setShowLeft]           = useState(false);
   const [govtIdFilter, setGovtIdFilter]   = useState([]);
-  const [showPasswords, setShowPasswords] = useState({});
   const [students, setStudents]               = useState([]);
   const [loading, setLoading]                 = useState(true);
   const [loadError, setLoadError]             = useState(null);
@@ -583,10 +662,8 @@ export default function StudentPage() {
   const [promoteModal, setPromoteModal]       = useState(null);
   const [deactivateModal, setDeactivateModal] = useState(null);
   const [readmitModal, setReadmitModal]       = useState(null);
+  const [resetPwModal, setResetPwModal]       = useState(null);
   const [showAddModal, setShowAddModal]       = useState(false);
-
-
-  const togglePw = (enr) => setShowPasswords((p) => ({ ...p, [enr]: !p[enr] }));
 
   // Load academic years + active classes on mount
   useEffect(() => {
@@ -669,6 +746,11 @@ export default function StudentPage() {
     } catch (err) {
       alert("Could not deactivate student: " + err.message);
     }
+  };
+
+  const handleResetPassword = async (student, newPassword) => {
+    await svcResetPassword(student._studentId, newPassword);
+    setResetPwModal(null);
   };
 
   const handleReadmit = async (student) => {
@@ -810,6 +892,13 @@ export default function StudentPage() {
           student={deactivateModal}
           onClose={() => setDeactivateModal(null)}
           onConfirm={(data) => handleDeactivate(deactivateModal, data)}
+        />
+      )}
+      {resetPwModal && (
+        <ResetPasswordModal
+          student={resetPwModal}
+          onClose={() => setResetPwModal(null)}
+          onConfirm={(newPassword) => handleResetPassword(resetPwModal, newPassword)}
         />
       )}
       {readmitModal && (
@@ -1060,7 +1149,6 @@ export default function StudentPage() {
           <div className="space-y-4">
             {filtered.map((student, idx) => {
               const a             = ACCENTS[idx % ACCENTS.length];
-              const pwVisible     = showPasswords[student.enrollment] || false;
               const isPromoted      = !!student.promotedTo;
               const isLeftOrInactive = !isPromoted && (student.status === "Left" || student.status === "Inactive");
               const feeTotal        = feesMap[student.std] ?? CLASS_FEES[student.std] ?? 0;
@@ -1267,22 +1355,17 @@ export default function StudentPage() {
                       <IdRow label="PEN No" value={student.pen}    />
                       <IdRow label="APAAR"  value={student.apaar}  />
 
-                      {/* Password — single clickable pill */}
+                      {/* Password — hashed server-side, nothing to view, only reset */}
                       <div>
                         <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider leading-none mb-1.5">
-                          App Password
+                          Reset Password
                         </p>
                         <button
-                          onClick={() => togglePw(student.enrollment)}
+                          onClick={() => setResetPwModal(student)}
                           className="inline-flex items-center gap-2 bg-white/80 hover:bg-white border border-white/60 hover:border-gray-200 rounded-lg px-2.5 py-1.5 transition-all shadow-sm"
                         >
-                          <span className="text-[13px] font-bold text-gray-800 font-mono">
-                            {pwVisible ? student.password : "••••••••"}
-                          </span>
-                          {pwVisible
-                            ? <EyeOff className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
-                            : <Eye    className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
-                          }
+                          <span className="text-[13px] font-bold text-gray-800 font-mono">••••••••</span>
+                          <Lock className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
                         </button>
                       </div>
                     </div>

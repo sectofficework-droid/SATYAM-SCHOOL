@@ -67,10 +67,12 @@ class _StudentHomeState extends State<StudentHome> {
         ? await SupabaseService.fetchExams(className: className)
         : <Map<String, dynamic>>[];
     final officialExams = await SupabaseService.fetchOfficialExams();
+    final alerts = await SupabaseService.fetchStudentAlerts(studentId);
     final birthday = birthdayNoticeItem(profile['dob'] as String?);
 
     final combined = [
       ...notices,
+      ...alerts.map(alertAsNoticeItem),
       ...monthlyTestReminders(classExams),
       ...officialExamReminders(officialExams),
       if (birthday != null) birthday,

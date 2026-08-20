@@ -727,6 +727,17 @@ export async function readmitStudent(studentId, enrollmentId) {
   if (stuErr) throw stuErr;
 }
 
+// Hashes server-side via the admin_reset_student_password RPC (pgcrypto) -
+// the browser never computes or sees the hash, only the plaintext the admin
+// just typed. See mobile-app/SUPABASE_HASH_APP_PASSWORD.sql.
+export async function resetStudentPassword(studentId, newPassword) {
+  const { error } = await supabase.rpc("admin_reset_student_password", {
+    p_student_id: studentId,
+    p_new_password: newPassword,
+  });
+  if (error) throw error;
+}
+
 // ── Permanently Delete Student ────────────────────────────────────────────────
 // Irreversible. Most student-linked tables (enrollments, documents, siblings,
 // previous-school, attendance, exam marks) cascade automatically off

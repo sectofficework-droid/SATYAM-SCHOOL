@@ -47,6 +47,20 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  // Per-student equivalent of fetchTeacherAlerts above (student_alerts table -
+  // SUPABASE_HASH_APP_PASSWORD.sql). Currently only populated by
+  // admin_reset_student_password, but not tied to that specifically - any
+  // future targeted admin->student message can use the same table/row shape.
+  static Future<List<Map<String, dynamic>>> fetchStudentAlerts(String studentId) async {
+    final res = await client
+        .from('student_alerts')
+        .select()
+        .eq('student_id', studentId)
+        .order('created_at', ascending: false)
+        .limit(50);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
   static Future<List<Map<String, dynamic>>> fetchMyEditRequests(String teacherId) async {
     final res = await client
         .from('attendance_edit_requests')

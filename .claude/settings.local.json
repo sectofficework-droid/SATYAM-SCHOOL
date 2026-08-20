@@ -73,7 +73,23 @@
       "Bash(git *)",
       "Bash(grep -Hm1 ^description: '/d/Project/SSIS SCHOOL/SATYAM-SCHOOL/.claude/skills/*/SKILL.md')",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/login --max-time 5)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/super-admin --max-time 5)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/super-admin --max-time 5)",
+      "Bash(vercel --version)",
+      "Bash([ -f \"$MEMDIR/MEMORY.md\" ])",
+      "Bash(node \"C:/Users/bkdeb/AppData/Local/Temp/claude/D--Project-SSIS-SCHOOL-SATYAM-SCHOOL/f46df11b-1375-44d7-857c-0446b88d89c3/scratchpad/rls_check.mjs\")",
+      "Bash(node _rls_check_tmp.mjs)",
+      "Bash(node --env-file=.env.local -e \"console.log\\(JSON.stringify\\(process.env.NEXT_PUBLIC_SUPABASE_URL\\)\\)\")",
+      "Bash(node --env-file=.env.local _rls_check_tmp.mjs)",
+      "Bash(curl -s -o /dev/null -w \"student page: %{http_code}\\\\n\" http://localhost:3000/student --max-time 8)",
+      "Bash(curl -s -o /dev/null -w \"employee page: %{http_code}\\\\n\" http://localhost:3000/employee --max-time 8)",
+      "Bash(flutter analyze *)",
+      "Bash(jobs -l)",
+      "Bash(flutter build *)",
+      "Bash(flutter doctor *)",
+      "Bash(python -m http.server 8765)",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 8765 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess\" 2>/dev/null)",
+      "Bash(powershell -Command \"Stop-Process -Id 22908 -Force\" 2>&1)",
+      "PowerShell(winget install *)"
     ]
   }
 }
