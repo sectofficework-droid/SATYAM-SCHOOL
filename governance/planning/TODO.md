@@ -46,8 +46,27 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
 ---
 
 ## 🛑 CRITICAL — needs an explicit decision before any fix is attempted
-- [ ] **REQ-SEC-001 — Plaintext `app_password`. REVERTED 2026-08-18 — back to
-      PLANNING, not yet approved for coding. LIVE-CONFIRMED 2026-08-21.**
+- [x] **REQ-SEC-001 — Plaintext `app_password`. FIXED AND SHIPPED 2026-08-21.**
+      Written up as a real plan this time (see below for the reverted
+      2026-08-18 attempt this superseded), approved via "code", implemented,
+      and the migration (`mobile-app/SUPABASE_HASH_APP_PASSWORD.sql`) was
+      run directly against production via the Supabase SQL Editor (browser
+      session, user already logged in) — verified after: all 75 rows
+      (48 students + 27 employees) backed up to
+      `_app_password_backup_20260821` and re-hashed to bcrypt (`$2a$...`,
+      60 chars), all 4 new/changed functions confirmed present
+      (`teacher_login`, `student_login`, `admin_reset_student_password`,
+      `admin_reset_employee_password`). Admin panel's password
+      view/copy replaced with Reset Password (both `student/page.js` and
+      `employee/page.js`), hashed server-side via the two new RPCs — no
+      hash ever computed in the browser. Bundled in: a password-reset
+      in-app notice, new for students (`student_alerts` table, mirrors the
+      pre-existing `teacher_alerts`) — required a Dart change + a rebuilt
+      student debug APK (built successfully this session, sent to the
+      user for device install; not yet installed/visually confirmed as of
+      this entry). Teacher side needed no rebuild. Full detail:
+      `governance/ai-context/SESSION-2026-08-21-3.md`.
+      **Original 2026-08-18 revert, kept for history:**
       Verified live via an unauthenticated `@supabase/supabase-js` client
       (public anon key, no session — same access any site visitor has):
       `students`/`employees` returned full rows including plaintext

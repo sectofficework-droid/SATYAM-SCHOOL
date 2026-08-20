@@ -79,12 +79,13 @@ This is recorded as fact, not fixed. Full detail + risk in
 | Supabase project | `hxkowdaugkkumvzyfsai.supabase.co` |
 | Git remote | `https://github.com/sectofficework-droid/SATYAM-SCHOOL.git`, branch `debiprasad` tracking `origin/debiprasad` |
 | Hosting | Vercel (admin-panel, confirmed Production deployments in `Scratch/refdocs/vercel production.png`) |
+| Android SDK | **New 2026-08-21** — was entirely absent before this session (`flutter doctor` showed no SDK at all). Installed via `winget install Google.AndroidCLI` (Google's official lightweight CLI, not full Android Studio) at `C:\Users\bkdeb\AppData\Local\Android\Sdk`; `android sdk install` used to pull `platform-tools`, `platforms/android-35`+`36`, `build-tools/35.0.0`+`36.1.0`, `cmdline-tools/latest`, and `ndk/28.2.13676358` (the exact version this project's Gradle build requested). `flutter doctor`'s Android toolchain check still shows `[!]`/license-status-unknown even though the license file's hash matches the correct standard value and a real debug APK build succeeds — cosmetic doctor-check gap with this newer tool, not an actual blocker (see SESSION-2026-08-21-3.md if this resurfaces). |
 
 Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Updated 2026-08-21: two shipped changes, `debiprasad` only — not yet
+**Updated 2026-08-21: three shipped changes, `debiprasad` only — not yet
 merged to `main`.**
 1. **Add Student form extraction** — the ~1,400-line Add Student form moved
    out of `student/add/page.js` into a shared `components/AddStudentForm.js`
@@ -101,33 +102,49 @@ merged to `main`.**
    rest). Verified live — deleted two test students created during (1)'s
    verification, confirmed count back to the real 48-student baseline.
 
+3. **REQ-SEC-001 fixed and shipped** — `students`/`employees.app_password`
+   hashed with bcrypt (`mobile-app/SUPABASE_HASH_APP_PASSWORD.sql`,
+   **applied directly to production** via the Supabase SQL Editor this
+   session, not just written). Verified after: 75/75 rows backed up +
+   re-hashed, all 4 RPCs confirmed present. Admin panel's password
+   view/copy replaced with a Reset Password action for both students and
+   employees, hashed server-side via two new admin-only RPCs. Bundled: a
+   new per-student in-app notice mechanism (`student_alerts`, mirrors the
+   pre-existing `teacher_alerts`) so a password reset produces a
+   "Password Reset" popup in the mobile app — teacher side needed no
+   rebuild (already polled `teacher_alerts`); student side needed a Dart
+   change + rebuild, done — a debug APK was built successfully this
+   session and handed to the user for device install, **not yet installed
+   or visually confirmed** as of this snapshot. Along the way, the Android
+   SDK toolchain was installed on this machine (previously entirely
+   absent) — see Environment table below.
+
 Also this session: a "Vercel seems stale" report turned out to be the user
 checking the wrong URL (no actual issue — resolved: user confirmed they use
 `debiprasad`'s Preview deployment day-to-day, merge-to-`main` only on
 explicit ask, not needed every session); a read-only repo-wide secrets scan
 found nothing leaked in tracked files (one hardcoded Supabase key in
 `mobile-app/lib/app_bootstrap.dart` confirmed to be the intentionally-public
-anon key, not a real secret) — **but a separate, live (not file-based) RLS
+anon key, not a real secret) — but a separate, live (not file-based) RLS
 check requested right after that found `students`/`employees`/`admin_users`
-are all fully readable with zero authentication**, confirming REQ-SEC-001
-and expanding REQ-SEC-002's scope beyond the ~25 mobile-app tables
-previously counted. See "Architecture drift" table above and
-`planning\TODO.md` REQ-SEC-001/002 for detail — nothing fixed, read-only
-finding, awaiting the user's decision same as the rest of the CRITICAL
-backlog.
+were all fully readable with zero authentication (item 3 above fixes the
+`app_password` exposure specifically; the broader RLS/anon-grant picture,
+REQ-SEC-002, is still open).
 
 Full detail: `ai-context\SESSION-2026-08-21-1.md`,
-`ai-context\SESSION-2026-08-21-2.md` (RLS finding).
+`ai-context\SESSION-2026-08-21-2.md` (RLS finding),
+`ai-context\SESSION-2026-08-21-3.md` (REQ-SEC-001 fix).
 
-Git state: both commits (`cd5d755`, `10c3395`) are on `debiprasad` and
-pushed to `origin/debiprasad`. **`main` is untouched this session** —
-`origin/main` still at `9a2cfb3` (last session's merge), 3 commits behind
-`debiprasad`. Currently checked out: `debiprasad`, clean except the
-recurring, pre-existing, uncommitted local change to
+Git state: `cd5d755`/`10c3395` (items 1-2) and `bc74ac0` (item 3, this
+delta) are all on `debiprasad`. **`bc74ac0` is committed but not yet
+pushed** — push after this BOOTSTRAP/log update, same as the pattern for
+every commit this session. `main` is untouched this session — `origin/main`
+still at `9a2cfb3` (2026-08-20's merge). Currently checked out: `debiprasad`,
+clean except the recurring, pre-existing, uncommitted local change to
 `.claude/settings.local.json`.
 
-REQ-SEC-001/002/003/004 (below) are unaffected by this session — still
-exactly as they were.
+REQ-SEC-001 is now fixed (see item 3). REQ-SEC-002/003/004 (below) are
+unaffected — still exactly as they were.
 
 ## Continuity folder — no git-ignore exception needed (RULEBOOK.md §0.8/§0.9)
 History: on 2026-08-19, `ai-context\`/`work-log\` were first tracked via a
@@ -248,58 +265,58 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-Session `governance\ai-context\SESSION-2026-08-21-2.md` — user asked to
-"check RLS on students and employees tables." Ran a live, unauthenticated
-`select()` (public anon key, no session) against `students`, `employees`,
-and (added) `admin_users` — **all three returned full rows to a completely
-anonymous client**, including plaintext `app_password`. Live-confirms
-REQ-SEC-001 and expands REQ-SEC-002's known scope beyond the ~25
-mobile-app-only tables previously counted. Recorded in `planning\TODO.md`
-and `planning\SECURITY-THREAT-MODEL.md` F2 per §J14 ("found it → record it,
-don't silently fix, don't expand scope") — **nothing fixed, nothing
-touched**; nothing about the live app/database changed because of this
-session, only the written record.
+Session `governance\ai-context\SESSION-2026-08-21-3.md` — fixed and shipped
+REQ-SEC-001 (plaintext `app_password`): wrote a real plan this time
+(superseding the 2026-08-18 reverted attempt), got explicit "code" approval,
+implemented, and **ran the migration directly against production** via the
+Supabase SQL Editor (user's own logged-in browser session) — verified after,
+not just assumed. Also installed the Android SDK toolchain on this machine
+(previously entirely absent) to build and hand off a real debug APK for the
+paired student-side in-app notification feature. Committed (`bc74ac0`) —
+not yet pushed as of this checkpoint (push happens right after this log
+update, same pattern as every commit this session).
+
+Prior checkpoint: `governance\ai-context\SESSION-2026-08-21-2.md` — user
+asked to "check RLS on students and employees tables." Live-confirmed
+`students`/`employees`/`admin_users` all fully readable by a completely
+anonymous client. Read-only finding, recorded per §J14 — nothing fixed at
+the time (fixed in the very next checkpoint, above).
 
 Prior checkpoint: `governance\ai-context\SESSION-2026-08-21-1.md` — finished
 + verified live an in-progress refactor (Add Student form extracted into a
-shared `AddStudentForm.js`, used as both the standalone page and a modal
-from the Student list); built, shipped, and live-verified a new
-permanent-delete feature for students, gated to `senior_admin`/
-`management`. Committed as two commits (`cd5d755`, `10c3395`), pushed to
-`origin/debiprasad` — not merged into `main` (confirmed not needed — see
-Next step history, now resolved).
-
-Prior checkpoint: `governance\ai-context\SESSION-2026-08-20-1.md` — found,
-root-caused (via live `claude-in-chrome` reproduction, not just code
-reading), fixed, and shipped a real authentication bypass: the admin
-panel's sidebar Logout button never actually signed out. Fixed across 4
-files, merged into `main` (`9a2cfb3`) at explicit user request.
+shared `AddStudentForm.js`); built, shipped, and live-verified a new
+permanent-delete feature for students. Committed as two commits (`cd5d755`,
+`10c3395`), pushed to `origin/debiprasad` — not merged into `main`
+(confirmed not needed most sessions — see prior Next-step history).
 
 Prior checkpoints (archived, retention cap — §D):
+`ai-context\archive\SESSION-2026-08-20-1.md` (found, root-caused, fixed, and
+shipped a real authentication bypass — sidebar Logout never actually signed
+out — merged to `main` at `9a2cfb3`) and
 `ai-context\archive\SESSION-2026-08-19-2.md` (read-only secrets-hygiene
-check — anon key confirmed intentionally public, `.env.local` confirmed
-clean) and `ai-context\archive\SESSION-2026-08-19-1.md` (11 parts — the
-`governance\` folder structure itself was created this session).
+check).
 
 ## Next step
-1. **REQ-SEC-001/002 now live-confirmed, not just theoretical** — `students`/
-   `employees`/`admin_users` are readable by anyone with the public anon
-   key, no login needed. This is the top item: get the user to either (a)
-   run `mobile-app/SUPABASE_SECURITY_AUDIT.sql` in the Supabase SQL Editor
-   and share the result (tells us exactly which policies/grants are live —
-   can't get this from files alone), or (b) go straight to approving a
-   written plan for locking these three tables down specifically. Per this
-   project's own rule (and the REQ-SEC-001 revert precedent), do NOT write
-   or apply any RLS/grant changes without a plan approved first.
-2. Waiting on the user to write/approve a proper plan for REQ-SEC-001 before
-   any more code — no SQL file exists right now, nothing is pending a DB run.
-   Once a plan exists and is approved ("code it"), implement + re-verify from
-   scratch rather than reusing the reverted attempt from memory.
-3. REQ-SEC-003/004 unchanged — still each needs its own decision from the
+1. **Push `bc74ac0`** to `origin/debiprasad` right after this BOOTSTRAP/log
+   update commits — don't leave it local-only.
+2. **Install the handed-off debug APK on an actual device and verify the
+   password-reset popup live** — reset a test student's password from the
+   admin panel, open the app, confirm the "Password Reset" notice appears
+   via the existing on-open popup system. Not yet done as of this
+   checkpoint — the APK was built and verified to compile/run (web-target
+   smoke test), but the actual popup UX has not been visually confirmed on
+   a real device/emulator.
+3. Once confirmed, `DROP TABLE _app_password_backup_20260821;` in Supabase
+   (holds the pre-migration plaintext values — cleanup step noted in the
+   migration file itself, not yet run since verification isn't complete).
+4. REQ-SEC-002 (broader anon/RLS over-exposure — `students`/`employees`/
+   `admin_users` plus the ~25 mobile-app tables) is still open — this
+   session only fixed the `app_password` piece of it (REQ-SEC-001). Needs
+   its own plan/decision same as before.
+5. REQ-SEC-003/004 unchanged — still each needs its own decision from the
    user before any work starts on them.
-4. User needs to prioritize REQ-BUG-001..009 — none fixed yet, all just
-   recorded, including which (if any) should jump ahead of the REQ-SEC
-   items.
-5. The 2026-08-20 logout fix still hasn't been independently re-checked
-   against the live Vercel Production URL (carried over, still open —
-   lower priority than item 1 above).
+6. User needs to prioritize REQ-BUG-001..009 — none fixed yet, all just
+   recorded.
+7. The 2026-08-20 logout fix still hasn't been independently re-checked
+   against the live Vercel Production URL (carried over, still open, low
+   priority).
