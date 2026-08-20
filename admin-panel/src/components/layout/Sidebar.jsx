@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import useStore from "@/lib/store";
+import supabase from "@/lib/supabase";
 
 // orgs: which org(s) this item applies to - Phase 1 of SEF only has
 // Dashboard/Student/Fees/Setting built, so everything else stays
@@ -68,12 +69,25 @@ const ORG_BRANDING = {
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { sidebarOpen, closeSidebar, user, activeOrg } = useStore();
+  const { sidebarOpen, closeSidebar, authUser: user, clearAuthUser, activeOrg } = useStore();
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
     closeSidebar();
   }, [pathname]);
+
+  async function handleLogout() {
+    // Local sign-out/redirect must happen even if the network call to
+    // revoke the session server-side fails - otherwise a flaky request
+    // leaves the still-valid token sitting in localStorage and the user
+    // never actually gets logged out.
+    try { await supabase.auth.signOut(); } catch {}
+    clearAuthUser();
+    // Full navigation, not client-side routing - instant since /login is
+    // statically servable with no server round-trip, and it fully tears
+    // down JS state so nothing can linger from the signed-out session.
+    window.location.replace("/login");
+  }
 
   const brand = ORG_BRANDING[activeOrg];
   const BrandIcon = brand.icon;
@@ -169,7 +183,7 @@ export default function Sidebar() {
             <button
               className="text-white/40 hover:text-red-400 transition-colors p-1"
               title="Logout"
-              onClick={() => window.location.href = "/login"}
+              onClick={handleLogout}
             >
               <LogOut className="w-3.5 h-3.5" />
             </button>

@@ -1,26 +1,32 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabase";
 import useStore from "@/lib/store";
 import { IdleTimerContext } from "@/lib/idleTimerContext";
 
 const IDLE_LIMIT_SECONDS = 15 * 60;
 
+// A full browser navigation, not router.replace() - instant since /login is
+// statically servable with no server round-trip, and it fully tears down JS
+// state so nothing can linger from the signed-out session.
+function goToLogin() {
+  window.location.replace("/login");
+}
+
 export default function AuthGuard({ children }) {
-  const router = useRouter();
   const authUser = useStore((s) => s.authUser);
   const setAuthUser = useStore((s) => s.setAuthUser);
   const clearAuthUser = useStore((s) => s.clearAuthUser);
   const [checking, setChecking] = useState(true);
+  const [revalidating, setRevalidating] = useState(false);
   const [idleSecondsLeft, setIdleSecondsLeft] = useState(IDLE_LIMIT_SECONDS);
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) {
         clearAuthUser();
-        router.replace("/login");
+        goToLogin();
         return;
       }
 
@@ -32,9 +38,9 @@ export default function AuthGuard({ children }) {
           .single();
 
         if (!profile) {
-          await supabase.auth.signOut();
+          try { await supabase.auth.signOut(); } catch {}
           clearAuthUser();
-          router.replace("/login");
+          goToLogin();
           return;
         }
         setAuthUser({ id: session.user.id, email: session.user.email, ...profile });
@@ -45,12 +51,37 @@ export default function AuthGuard({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_OUT") {
         clearAuthUser();
-        router.replace("/login");
+        goToLogin();
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // Guards against the browser restoring a protected page from
+  // back/forward cache (e.g. hitting Back, or re-entering a URL that
+  // matches a bfcached entry) after sign-out - a bfcache restore revives
+  // the page's old React state without re-running mount effects, so
+  // without this it would show the stale logged-in view. Content is hidden
+  // synchronously the instant a restore is detected (not just after the
+  // session check resolves), otherwise the stale page still flashes on
+  // screen before the redirect kicks in.
+  useEffect(() => {
+    const handlePageShow = (event) => {
+      if (!event.persisted) return;
+      setRevalidating(true);
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (!session) {
+          clearAuthUser();
+          goToLogin();
+          return;
+        }
+        setRevalidating(false);
+      });
+    };
+    window.addEventListener("pageshow", handlePageShow);
+    return () => window.removeEventListener("pageshow", handlePageShow);
+  }, [clearAuthUser]);
 
   // Auto-logout after 15 minutes with no activity anywhere on the page. Any
   // activity resets the idle clock, so the timer only ever counts down while
@@ -74,9 +105,9 @@ export default function AuthGuard({ children }) {
       setIdleSecondsLeft(secondsLeft);
       if (secondsLeft <= 0) {
         clearInterval(interval);
-        await supabase.auth.signOut();
+        try { await supabase.auth.signOut(); } catch {}
         clearAuthUser();
-        router.replace("/login");
+        goToLogin();
       }
     }, 1000);
 
@@ -85,7 +116,12 @@ export default function AuthGuard({ children }) {
       window.removeEventListener("scroll", markActivity, { capture: true });
       clearInterval(interval);
     };
-  }, [authUser, clearAuthUser, router]);
+  }, [authUser, clearAuthUser]);
+
+  // Blank, not the loading spinner - this only fires for a background
+  // bfcache re-check, and showing "Loading..." right before booting
+  // someone out to /login reads as if it's logging them in.
+  if (revalidating) return null;
 
   if (checking && !authUser) {
     return (
