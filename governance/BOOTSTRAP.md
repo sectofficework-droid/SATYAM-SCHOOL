@@ -267,11 +267,13 @@ folder structure itself was created this session) and
 recorded as REQ-BUG-001..009 in `planning\TODO.md`, nothing fixed).
 
 ## Next step
-1. **Confirm which branch Vercel's Production environment builds from**
-   (dashboard → Project → Settings → Git, not a local CLI-token search).
-   If it's `main`-only, this session's two commits need an explicit "merge
-   it into main" ask before they reach Production — same pattern as
-   2026-08-20's fix.
+1. ~~Confirm which branch Vercel's Production environment builds from~~ —
+   resolved same session: user confirmed they check/use the `debiprasad`
+   **Preview** deployment day-to-day, not Production, so pushing to
+   `debiprasad` is sufficient on its own — merging into `main` is NOT
+   required after every change, only when the user separately asks for it
+   (e.g. to actually promote to Production). Don't re-raise this as an open
+   question in future sessions.
 2. Waiting on the user to write/approve a proper plan for REQ-SEC-001 before
    any more code — no SQL file exists right now, nothing is pending a DB run.
    Once a plan exists and is approved ("code it"), implement + re-verify from
