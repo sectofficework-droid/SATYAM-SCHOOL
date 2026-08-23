@@ -62,7 +62,9 @@
       "Bash(node -e ' *)",
       "Bash(rm -f .env.production.check)",
       "Bash(awk -F'=' '/^NEXT_PUBLIC_SUPABASE_URL=/{print \"URL line length\\(bytes\\):\", length\\($0\\); print \"value part length:\", length\\($0\\)-length\\($1\\)-1}' .env.local)",
-      "Bash(awk -F'=' '/^NEXT_PUBLIC_SUPABASE_ANON_KEY=/{print \"KEY line length\\(bytes\\):\", length\\($0\\); print \"value part length:\", length\\($0\\)-length\\($1\\)-1}' .env.local)"
+      "Bash(awk -F'=' '/^NEXT_PUBLIC_SUPABASE_ANON_KEY=/{print \"KEY line length\\(bytes\\):\", length\\($0\\); print \"value part length:\", length\\($0\\)-length\\($1\\)-1}' .env.local)",
+      "Bash(git merge *)",
+      "Bash(git commit *)"
     ]
   }
 }
