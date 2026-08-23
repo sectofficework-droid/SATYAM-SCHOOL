@@ -58,3 +58,34 @@ List<String> teacherSubjectsForClass(Map profile, String className) {
   }
   return subjects.toList()..sort();
 }
+
+// Every (class, subject) pair a teacher is actually allocated, flattened out
+// of subject_mappings - e.g. a teacher mapped to EVS for 5th and Math for
+// 1st yields [('5th','EVS'), ('1st','Math')]. Used to offer a single "class -
+// subject" picker instead of two separate dropdowns, for teachers who do
+// have mappings configured. Empty for the (still common) teacher with no
+// subject_mappings set up at all - callers should fall back to the plain
+// class/subject pickers in that case.
+List<({String className, String subject})> teacherClassSubjectPairs(Map profile) {
+  final seen = <String>{};
+  final pairs = <({String className, String subject})>[];
+  final mappings = profile['subject_mappings'];
+  if (mappings is List) {
+    for (final m in mappings) {
+      if (m is! Map) continue;
+      final subject = m['subject'];
+      final classes = m['classes'];
+      if (subject is! String || subject.isEmpty || classes is! List) continue;
+      for (final c in classes) {
+        if (c is! String || c.isEmpty) continue;
+        final key = '$c|$subject';
+        if (seen.add(key)) pairs.add((className: c, subject: subject));
+      }
+    }
+  }
+  pairs.sort((a, b) {
+    final byClass = allSchoolClasses.indexOf(a.className).compareTo(allSchoolClasses.indexOf(b.className));
+    return byClass != 0 ? byClass : a.subject.compareTo(b.subject);
+  });
+  return pairs;
+}

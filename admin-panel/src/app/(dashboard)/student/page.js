@@ -910,7 +910,7 @@ export default function StudentPage() {
       )}
       {showAddModal && (
         <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-4 sm:my-8">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-6xl my-4 sm:my-8">
             <AddStudentForm
               variant="modal"
               onCancel={() => setShowAddModal(false)}

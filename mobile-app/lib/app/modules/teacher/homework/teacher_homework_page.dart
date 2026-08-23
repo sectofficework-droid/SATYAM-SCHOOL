@@ -75,20 +75,36 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
 
   void _showAddSheet() {
     final descCtrl    = TextEditingController();
-    final subjectCtrl = TextEditingController();
     DateTime? dueDate;
     final profile    = AuthService.to.profile.value ?? {};
     final myClasses  = teacherClasses(profile);
+    // A teacher with actual subject_mappings gets a single "Class - Subject"
+    // picker limited to what they're really allocated (e.g. "5th - EVS",
+    // "1st - Math"), instead of picking class and subject separately from
+    // every school subject. Most teachers have no mappings configured yet
+    // though, so they fall back to the old two-dropdown pickers.
+    final classSubjectPairs = teacherClassSubjectPairs(profile);
+
     String? selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
         ? profile['class_name'] as String
         : (myClasses.isNotEmpty ? myClasses.first : allSchoolClasses.first);
+    String? selectedSubject;
+    String? selectedPairKey = classSubjectPairs.isNotEmpty
+        ? '${classSubjectPairs.first.className}|${classSubjectPairs.first.subject}'
+        : null;
+    if (classSubjectPairs.isNotEmpty) {
+      selectedClass   = classSubjectPairs.first.className;
+      selectedSubject = classSubjectPairs.first.subject;
+    }
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => Padding(
+        builder: (ctx, setS) {
+        final subjectOptions = teacherSubjectsForClass(profile, selectedClass!);
+        return Padding(
           padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(
             decoration: const BoxDecoration(
@@ -121,17 +137,40 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                   IconButton(icon: const Icon(Icons.close_rounded, color: AppColors.textHint), onPressed: () => Navigator.pop(ctx)),
                 ]),
                 const SizedBox(height: 20),
-                DropdownButtonFormField<String>(
-                  value: selectedClass,
-                  decoration: const InputDecoration(labelText: 'Class', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
-                  items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                  onChanged: (v) => setS(() => selectedClass = v),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: subjectCtrl,
-                  decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
-                ),
+                if (classSubjectPairs.isNotEmpty) ...[
+                  DropdownButtonFormField<String>(
+                    value: selectedPairKey,
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Class & Subject', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
+                    items: classSubjectPairs.map((p) => DropdownMenuItem(
+                      value: '${p.className}|${p.subject}',
+                      child: Text('${p.className} - ${p.subject}', overflow: TextOverflow.ellipsis),
+                    )).toList(),
+                    onChanged: (v) => setS(() {
+                      selectedPairKey = v;
+                      final p = classSubjectPairs.firstWhere((p) => '${p.className}|${p.subject}' == v);
+                      selectedClass   = p.className;
+                      selectedSubject = p.subject;
+                    }),
+                  ),
+                ] else ...[
+                  DropdownButtonFormField<String>(
+                    value: selectedClass,
+                    decoration: const InputDecoration(labelText: 'Class', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
+                    items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                    onChanged: (v) => setS(() { selectedClass = v; selectedSubject = null; }),
+                  ),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<String>(
+                    value: selectedSubject,
+                    isExpanded: true,
+                    hint: const Text('Select', style: TextStyle(fontSize: 13)),
+                    decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
+                    items: (subjectOptions.isNotEmpty ? subjectOptions : schoolSubjects)
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
+                    onChanged: (v) => setS(() => selectedSubject = v),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 TextField(
                   controller: descCtrl,
@@ -172,16 +211,16 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                 const SizedBox(height: 20),
                 GestureDetector(
                   onTap: () async {
-                    if (descCtrl.text.isEmpty || dueDate == null || selectedClass == null) {
+                    if (descCtrl.text.isEmpty || dueDate == null || selectedClass == null || selectedSubject == null) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-                        content: Text('Please select a class and fill description and due date'),
+                        content: Text('Please select a class, subject and fill description and due date'),
                         behavior: SnackBarBehavior.floating,
                       ));
                       return;
                     }
                     await SupabaseService.createHomework({
                       'class':       selectedClass,
-                      'subject':     subjectCtrl.text.trim(),
+                      'subject':     selectedSubject,
                       'description': descCtrl.text.trim(),
                       'due_date':    DateFormat('yyyy-MM-dd').format(dueDate!),
                       'created_by':  profile['id'],
@@ -206,7 +245,8 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
               ],
             ),
           ),
-        ),
+        );
+        },
       ),
     );
   }

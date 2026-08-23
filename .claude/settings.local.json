@@ -89,7 +89,29 @@
       "Bash(python -m http.server 8765)",
       "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 8765 -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess\" 2>/dev/null)",
       "Bash(powershell -Command \"Stop-Process -Id 22908 -Force\" 2>&1)",
-      "PowerShell(winget install *)"
+      "PowerShell(winget install *)",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess\" 2>&1)",
+      "Bash(powershell -Command \"try { Get-NetTCPConnection -LocalPort 3000 -ErrorAction Stop; Write-Output 'STILL LISTENING' } catch { Write-Output 'PORT FREE' }\" 2>&1)",
+      "Bash(C:/Users/bkdeb/AppData/Local/Android/Sdk/platform-tools/adb.exe connect *)",
+      "Bash(C:/Users/bkdeb/AppData/Local/Android/Sdk/platform-tools/adb.exe devices *)",
+      "Bash($SDK/platform-tools/adb.exe *)",
+      "Bash(grep -iv \"^\\\\s*$\")",
+      "Bash(python3 -c ' *)",
+      "Bash(command -v adb)",
+      "Bash(adb devices *)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(Get-Process *)",
+      "PowerShell(cd \"D:\\\\Project\\\\SSIS SCHOOL\\\\SATYAM-SCHOOL\\\\mobile-app\"; while \\(Get-Job | Where-Object {$_.State -eq 'Running'}\\) { Start-Sleep 5 }; .\\\\build_and_install.ps1 -Flavor student)",
+      "PowerShell(cd \"D:\\\\Project\\\\SSIS SCHOOL\\\\SATYAM-SCHOOL\\\\mobile-app\"; & \"$env:LOCALAPPDATA\\\\Android\\\\Sdk\\\\platform-tools\\\\adb.exe\" install -r \"build/app/outputs/flutter-apk/app-student-debug.apk\")",
+      "Bash(netstat -ano)",
+      "Bash(node -e \"console.log\\(require.resolve\\('@supabase/supabase-js'\\)\\)\")",
+      "Bash(node -e \"console.log\\(require.resolve\\('dotenv'\\)\\)\")",
+      "Bash(node scripts/create-test-admin-accounts.mjs)",
+      "Bash(rm scripts/create-test-admin-accounts.mjs)",
+      "Bash(rmdir scripts *)",
+      "Bash(disown)",
+      "Bash(curl *)",
+      "PowerShell(& \"D:\\\\Project\\\\SSIS SCHOOL\\\\SATYAM-SCHOOL\\\\mobile-app\\\\build_and_install.ps1\" -Flavor teacher)"
     ]
   }
 }

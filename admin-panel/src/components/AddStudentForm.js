@@ -562,7 +562,7 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
   const isModal = variant === "modal";
 
   return (
-    <div className={isModal ? "flex flex-col max-h-[92vh]" : "max-w-4xl mx-auto space-y-6 pb-10"}>
+    <div className={isModal ? "flex flex-col max-h-[92vh]" : "max-w-6xl mx-auto space-y-6 pb-10"}>
 
       {/* ── Header ── */}
       {isModal ? (
@@ -609,7 +609,7 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
         {/* ══ SECTION 1: Admission Details ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <SectionHeader number="1" title="Admission Details" />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
 
             {/* Session — read-only */}
             <div>
@@ -764,7 +764,7 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
         {/* ══ SECTION 4: Class Details ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <SectionHeader number="4" title="Class Details" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
               <FieldLabel required>Current Standard</FieldLabel>
               <SelectField value={form.std} onChange={handleStdChange} required>
@@ -812,7 +812,7 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
             </div>
           </div>
           {form.std && (
-            <div className="mt-3 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 max-w-lg">
+            <div className="mt-3 flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
               <GraduationCap className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
               <p className="text-xs text-blue-700 font-medium">
                 Current class: <b>{form.std}</b> · Admission class: <b>{form.admissionClass || form.std}</b>
@@ -824,7 +824,7 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
         {/* ══ SECTION 5: Personal Information ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <SectionHeader number="5" title="Personal Information" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
             <div>
               <FieldLabel required>First Name</FieldLabel>
@@ -1018,7 +1018,7 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
         {/* ══ SECTION 6: Address & Contact ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <SectionHeader number="6" title="Address & Contact Details" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 
             <div>
               <FieldLabel required>Room No / Plot No</FieldLabel>
@@ -1048,7 +1048,7 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
               <FieldError>{errors.pinCode}</FieldError>
             </div>
 
-            <div className="sm:col-span-2">
+            <div className="sm:col-span-2 lg:col-span-3">
               <FieldLabel required>Full Address</FieldLabel>
               <textarea
                 placeholder="Society / Area / Landmark / City / PIN Code"
@@ -1077,7 +1077,7 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
         {/* ══ SECTION 7: Birth Details ══ */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
           <SectionHeader number="7" title="Birth Details" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <div>
               <FieldLabel required>Birth City</FieldLabel>
               <Input placeholder="e.g. Surat" value={form.birthCity} onChange={set("birthCity")} required />
@@ -1155,8 +1155,8 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
 
             {hasPrevSchool && (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="sm:col-span-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="sm:col-span-2 lg:col-span-3">
                     <FieldLabel>Previous School Name</FieldLabel>
                     <Input placeholder="Name of the last school attended" value={form.lastSchoolName} onChange={set("lastSchoolName")} />
                   </div>
