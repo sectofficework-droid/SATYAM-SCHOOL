@@ -133,13 +133,6 @@ const SUBJECTS_TT = [
   "Activity & Play","Free Period","Odia - MIL","G.K.",
 ];
 
-const TEACHERS_TT = [
-  "Pami Pradhan","Rashmita Patra","Priti Singh","Janki Das",
-  "Shivani Pradhan","Smurti Panda","Manisha Biswal","Parvati Polai",
-  "Sita Gouda","Kabita Panigrahi","Barsha Pradhan","Liza Patra",
-  "Laxmi Behera","Pragyan Panda","Priyanka Bisoyi","Priyanka Padhi",
-];
-
 const TEACHER_PALETTE = [
   { bg:"bg-amber-100",   text:"text-amber-900",   border:"border-amber-300"   },
   { bg:"bg-blue-100",    text:"text-blue-900",    border:"border-blue-300"    },
@@ -166,10 +159,23 @@ const TEACHER_RGB_PALETTE = [
   [237,233,254],[209,250,229],[253,224,255],[224,242,254],
 ];
 
+// Deterministic color per teacher name, independent of any fixed roster -
+// the Timetable used to pick a color by indexOf() into a hardcoded 16-name
+// list (TEACHERS_TT), which also silently meant that same fixed list was
+// the ONLY set of teachers selectable in the Teacher dropdown at all - any
+// teacher hired since, or any teacher whose name wasn't in that exact list,
+// simply couldn't be assigned to a period. Teachers/subjects now come from
+// the DB (getTeachingEmployees/getAllClassSubjects); this hash keeps colors
+// stable and collision-spread for an arbitrary, growing name list.
+function hashIndex(str, mod) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  return h % mod;
+}
+
 function getTeacherColor(teacher) {
   if (!teacher) return null;
-  const idx = TEACHERS_TT.indexOf(teacher);
-  return TEACHER_PALETTE[(idx >= 0 ? idx : 0) % TEACHER_PALETTE.length];
+  return TEACHER_PALETTE[hashIndex(teacher, TEACHER_PALETTE.length)];
 }
 
 function shortName(name) {
@@ -1554,6 +1560,16 @@ function TimetableTab() {
   const [periodsSaved,     setPeriodsSaved]     = useState(false);
   const [activeGroup,      setActiveGroup]      = useState(DAY_GROUPS[0]);
 
+  // Teacher and Subject options for the cell editor - previously hardcoded
+  // 16-name/20-subject lists (TEACHERS_TT/SUBJECTS_TT), so any teacher hired
+  // since, or any subject not in that exact list, simply had no option to
+  // pick from. Teachers now come live from Employees; subjects are scoped
+  // per-class from the "Subjects" tab's class_subjects table (same source
+  // SubjectsTab writes to), falling back to the generic SUBJECTS_TT starter
+  // list for a class that hasn't been configured there yet.
+  const [teacherList,      setTeacherList]      = useState([]); // [{id, name}]
+  const [classSubjectsMap, setClassSubjectsMap]  = useState({}); // store-format class name -> [subjects]
+
   useEffect(() => {
     getPeriodDefs()
       .then(defs => {
@@ -1568,6 +1584,20 @@ function TimetableTab() {
       .then(data => setTtActiveClasses(data.filter(c => c.is_active).map(c => dbToStore(c.name))))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    getTeachingEmployees().then(setTeacherList).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    getAllClassSubjects().then(dbMap => {
+      const storeMap = {};
+      Object.entries(dbMap).forEach(([dbName, subjects]) => { storeMap[dbToStore(dbName)] = subjects; });
+      setClassSubjectsMap(storeMap);
+    }).catch(() => {});
+  }, []);
+
+  const teacherNames = teacherList.map(t => t.name);
 
   useEffect(() => {
     supabase.from("academic_years").select("label, is_current").order("label").then(({ data }) => {
@@ -1754,8 +1784,8 @@ function TimetableTab() {
           if (!cls) return;
           const cell = getSlot(group, slot.id, cls);
           if (cell?.teacher) {
-            const tidx = TEACHERS_TT.indexOf(cell.teacher);
-            if (tidx >= 0) { data.cell.styles.fillColor = TEACHER_RGB_PALETTE[tidx % TEACHER_RGB_PALETTE.length]; data.cell.styles.textColor = [40,40,40]; }
+            data.cell.styles.fillColor = TEACHER_RGB_PALETTE[hashIndex(cell.teacher, TEACHER_RGB_PALETTE.length)];
+            data.cell.styles.textColor = [40,40,40];
           }
         },
         margin: { left:30, right:30 },
@@ -2035,13 +2065,13 @@ function TimetableTab() {
                                     onChange={e => setSlotVal(group, slot.id, cls, "subject", e.target.value)}
                                     className="w-full text-[11px] border border-gray-200 rounded-lg px-1.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-school-navy cursor-pointer bg-white">
                                     <option value="">— Subject —</option>
-                                    {SUBJECTS_TT.map(s => <option key={s}>{s}</option>)}
+                                    {(classSubjectsMap[cls]?.length ? classSubjectsMap[cls] : SUBJECTS_TT).map(s => <option key={s}>{s}</option>)}
                                   </select>
                                   <select value={cell.teacher}
                                     onChange={e => setSlotVal(group, slot.id, cls, "teacher", e.target.value)}
                                     className="w-full text-[11px] border border-gray-200 rounded-lg px-1.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-school-navy cursor-pointer bg-white">
                                     <option value="">— Teacher —</option>
-                                    {TEACHERS_TT.map(t => (
+                                    {teacherNames.map(t => (
                                       <option key={t} value={t} disabled={busy.has(t)}>
                                         {busy.has(t) ? `⚠ ${t} (busy)` : t}
                                       </option>
@@ -2092,8 +2122,8 @@ function TimetableTab() {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">Teacher Colour Legend</p>
         <div className="flex flex-wrap gap-1.5">
-          {TEACHERS_TT.map((t, i) => {
-            const c = TEACHER_PALETTE[i % TEACHER_PALETTE.length];
+          {teacherNames.map((t) => {
+            const c = getTeacherColor(t);
             return (
               <span key={t} className={`${c.bg} ${c.text} text-[11px] font-semibold px-2.5 py-1 rounded-full border ${c.border}`}>
                 {shortName(t)}
