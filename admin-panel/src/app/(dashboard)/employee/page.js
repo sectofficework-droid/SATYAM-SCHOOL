@@ -964,6 +964,25 @@ function EditEmployeeModal({ emp, onClose, onSave }) {
   const [saving,    setSaving]    = useState(false);
   const [err,       setErr]       = useState("");
 
+  // Subject & Classes Taught - previously only settable when an employee was
+  // first created (AddEmployeeModal's Academic tab); this modal had no way
+  // to add/change it afterward, which is what admins were hitting when they
+  // tried to "set the subject teacher" for an existing teacher.
+  const [mappings, setMappings] = useState(emp.subjectMappings || []);
+  const [classList, setClassList] = useState([]);
+  useEffect(() => { getActiveClasses().then(cls => setClassList(cls.map(c => c.name))).catch(() => {}); }, []);
+
+  const addMapping    = () => setMappings((prev) => [...prev, { subject: "", classes: [] }]);
+  const removeMapping = (i) => setMappings((prev) => prev.filter((_, idx) => idx !== i));
+  const updateSubject = (i, val) =>
+    setMappings((prev) => prev.map((m, idx) => idx === i ? { ...m, subject: val } : m));
+  const toggleClass = (i, cls) =>
+    setMappings((prev) => prev.map((m, idx) => {
+      if (idx !== i) return m;
+      const classes = m.classes.includes(cls) ? m.classes.filter((c) => c !== cls) : [...m.classes, cls];
+      return { ...m, classes };
+    }));
+
   const typeInitialized = useRef(false);
   useEffect(() => {
     if (!typeInitialized.current) { typeInitialized.current = true; return; }
@@ -975,7 +994,10 @@ function EditEmployeeModal({ emp, onClose, onSave }) {
     if (!desig)       { setErr("Designation is required."); return; }
     if (!dept)        { setErr("Department is required."); return; }
     setSaving(true); setErr("");
-    await onSave({ ...emp, name: name.trim(), phone, altPhone, email, type, designation: desig, department: dept, employmentType: empType, status });
+    await onSave({
+      ...emp, name: name.trim(), phone, altPhone, email, type, designation: desig, department: dept, employmentType: empType, status,
+      subjectMappings: type === "teaching" ? mappings.filter((m) => m.subject && m.classes.length > 0) : [],
+    });
     setSaving(false);
   }
 
@@ -1047,6 +1069,63 @@ function EditEmployeeModal({ emp, onClose, onSave }) {
               </select>
             </div>
           </div>
+
+          {type === "teaching" && (
+            <div className="pt-1 border-t border-gray-100">
+              <div className="flex items-center justify-between mb-2 mt-4">
+                <label className="text-xs font-semibold text-gray-600">
+                  Subject &amp; Classes Taught
+                </label>
+                <button onClick={addMapping}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-600 text-xs font-semibold rounded-lg hover:bg-blue-100 transition-colors">
+                  <Plus className="w-3 h-3" /> Add Subject
+                </button>
+              </div>
+
+              {mappings.length === 0 && (
+                <div className="text-center py-5 border border-dashed border-gray-200 rounded-xl text-xs text-gray-400">
+                  No subjects added yet. Click &ldquo;Add Subject&rdquo; above.
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {mappings.map((m, i) => (
+                  <div key={i} className="border border-gray-200 rounded-xl p-3.5 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <select value={m.subject} onChange={(e) => updateSubject(i, e.target.value)}
+                        className={`flex-1 ${baseSel}`}>
+                        <option value="">Select Subject...</option>
+                        {SUBJECTS_LIST
+                          .filter((s) => !mappings.some((mm, ii) => ii !== i && mm.subject === s))
+                          .map((s) => <option key={s}>{s}</option>)
+                        }
+                      </select>
+                      <button onClick={() => removeMapping(i)}
+                        className="p-1.5 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 mb-1.5">Teaches this subject in:</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {classList.map((c) => (
+                          <button key={c} onClick={() => toggleClass(i, c)}
+                            className={`px-2 py-0.5 rounded-lg text-xs font-semibold border transition-colors ${
+                              m.classes.includes(c)
+                                ? "bg-school-navy text-white border-school-navy"
+                                : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+                            }`}>
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {err && <p className="text-xs text-red-500">{err}</p>}
         </div>
         <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
