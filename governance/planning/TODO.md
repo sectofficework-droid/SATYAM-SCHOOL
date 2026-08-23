@@ -46,8 +46,34 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
 ---
 
 ## 🛑 CRITICAL — needs an explicit decision before any fix is attempted
-- [ ] **REQ-SEC-001 — Plaintext `app_password`. REVERTED 2026-08-18 — back to
-      PLANNING, not yet approved for coding.**
+- [x] **REQ-SEC-001 — Plaintext `app_password`. FIXED AND SHIPPED 2026-08-21.**
+      Written up as a real plan this time (see below for the reverted
+      2026-08-18 attempt this superseded), approved via "code", implemented,
+      and the migration (`mobile-app/SUPABASE_HASH_APP_PASSWORD.sql`) was
+      run directly against production via the Supabase SQL Editor (browser
+      session, user already logged in) — verified after: all 75 rows
+      (48 students + 27 employees) backed up to
+      `_app_password_backup_20260821` and re-hashed to bcrypt (`$2a$...`,
+      60 chars), all 4 new/changed functions confirmed present
+      (`teacher_login`, `student_login`, `admin_reset_student_password`,
+      `admin_reset_employee_password`). Admin panel's password
+      view/copy replaced with Reset Password (both `student/page.js` and
+      `employee/page.js`), hashed server-side via the two new RPCs — no
+      hash ever computed in the browser. Bundled in: a password-reset
+      in-app notice, new for students (`student_alerts` table, mirrors the
+      pre-existing `teacher_alerts`) — required a Dart change + a rebuilt
+      student debug APK (built successfully this session, sent to the
+      user for device install; not yet installed/visually confirmed as of
+      this entry). Teacher side needed no rebuild. Full detail:
+      `governance/ai-context/SESSION-2026-08-21-3.md`.
+      **Original 2026-08-18 revert, kept for history:**
+      Verified live via an unauthenticated `@supabase/supabase-js` client
+      (public anon key, no session — same access any site visitor has):
+      `students`/`employees` returned full rows including plaintext
+      `app_password` for every row (48/48 students, 27/27 employees), zero
+      auth required. Not theoretical — currently exploitable exactly as
+      described below. See REQ-SEC-002 for the RLS-side root cause this
+      also confirmed.
       A same-day attempt at this (hash the password, remove the admin-panel
       display, add a Reset-Password action) was implemented, then reverted
       at the user's request ("revert back to previous as original we will
@@ -75,20 +101,44 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       **Deferred, not fixed:** REQ-SEC-004 below still needs an app rebuild
       to fix properly — separate from this item either way.
 - [ ] **REQ-SEC-002 — `anon`-role over-exposure (scope corrected, larger
-      than first scoped).** Not just 4-5 tables — full grep of every
-      `mobile-app/SUPABASE_*.sql` file shows **~25 tables** with full or
-      partial `anon` grants and 17 with RLS explicitly disabled, matching
-      the fact that `supabase_service.dart` queries ~30 tables directly with
-      no RPC wrapper. Includes DELETE rights on `question_bank`/
-      `question_papers` (pre-exam content) and `official_exam_marks`. See
-      `planning\SECURITY-THREAT-MODEL.md` F2 for the full table/RPC list.
-      No rate limiting anywhere in the codebase (verified: zero
-      `rate.?limit|throttle` matches outside `package-lock.json`/docs). The
-      hardcoded anon key in `mobile-app/lib/app_bootstrap.dart:10-11` is
-      trivially extractable from any installed APK. Decision needed:
-      re-enable RLS with real per-user/per-class policies, move sensitive
-      RPCs behind real Supabase Auth sessions, and/or add rate limiting at
-      the Supabase/Edge layer. Also a MAJOR change — reopens DESIGN FIXED.
+      than first scoped; `students`/`employees`/`admin_users` LIVE-CONFIRMED
+      2026-08-21 as part of this — see below).** Not just 4-5 tables — full
+      grep of every `mobile-app/SUPABASE_*.sql` file shows **~25 tables**
+      with full or partial `anon` grants and 17 with RLS explicitly
+      disabled, matching the fact that `supabase_service.dart` queries ~30
+      tables directly with no RPC wrapper. Includes DELETE rights on
+      `question_bank`/`question_papers` (pre-exam content) and
+      `official_exam_marks`. See `planning\SECURITY-THREAT-MODEL.md` F2 for
+      the full table/RPC list. No rate limiting anywhere in the codebase
+      (verified: zero `rate.?limit|throttle` matches outside
+      `package-lock.json`/docs). The hardcoded anon key in `mobile-app/
+      lib/app_bootstrap.dart:10-11` is trivially extractable from any
+      installed APK.
+      **2026-08-21 live test (this session)** — ran an actual
+      unauthenticated `select` (public anon key, no session) against
+      `students`, `employees`, and, newly, `admin_users` (not previously
+      called out — it's created directly in Supabase, no `CREATE TABLE` in
+      any tracked file, so it wasn't caught by the `mobile-app/SUPABASE_*`
+      grep that scoped the ~25 figure above). **All three returned full
+      rows to a completely anonymous client** — `admin_panel`'s own core
+      tables are exposed the same way the ~25 mobile-app tables already
+      were, not just those. `mobile-app/SUPABASE_SETUP.sql` defines
+      narrower `auth.uid() = app_user_id`-style "own profile" policies on
+      `students`/`employees`, but since mobile auth never creates a real
+      Supabase Auth session (custom RPC login instead, per
+      `governance\documentation\PROJECT_CONTEXT.md`), those alone would
+      block everyone, not open access to everyone — the fact that access
+      is instead wide open means either RLS is disabled on these tables, or
+      an older, broader permissive policy is still active underneath.
+      Couldn't determine which without running
+      `mobile-app/SUPABASE_SECURITY_AUDIT.sql` in the Supabase SQL Editor
+      (already written for exactly this — needs the user to run it there
+      and share the result; no DB-credential/service-role access exists in
+      this repo/session to run it directly).
+      Decision needed: re-enable RLS with real per-user/per-class policies,
+      move sensitive RPCs behind real Supabase Auth sessions, and/or add
+      rate limiting at the Supabase/Edge layer. Also a MAJOR change —
+      reopens DESIGN FIXED.
 - [ ] **REQ-SEC-004 — `teacher_update_profile` has zero identity check.
       Checked 2026-08-18: NOT fixable without an app rebuild, so deferred
       out of Stage 1.** Unlike `teacher_change_password` (which verifies

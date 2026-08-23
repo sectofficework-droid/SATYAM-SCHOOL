@@ -17,7 +17,7 @@ import {
   isValidName, isValidPhone, isValidEmail, isValidAadhar, isValidPincode,
   isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
-import { getStudents, getClasses, addStudent as dbAddStudent, updateStudent as dbUpdateStudent, bagItemAllowedForClass } from "@/lib/studentService";
+import { getStudents, getClasses, addStudent as dbAddStudent, updateStudent as dbUpdateStudent, deleteStudentPermanently, bagItemAllowedForClass } from "@/lib/studentService";
 import { getCurrentYearClassFees } from "@/lib/settingsService";
 import { DEFAULT_DOCS } from "@/lib/constants";
 import { uploadFileToS3, getS3ViewUrl, slugify, fileExt } from "@/lib/s3Upload";
@@ -515,12 +515,20 @@ function validateStudentForm(form) {
 }
 
 function SingleStudentTool({ students, onStudentUpdated }) {
+  const authUser  = useStore(s => s.authUser);
+  const canDelete = authUser && authUser.role !== "normal_admin"; // senior_admin & management only
+
   const [selClass, setSelClass] = useState("");
   const [search,   setSearch]   = useState("");
   const [selected, setSelected] = useState(null);
   const [form,     setForm]     = useState({});
   const [saved,    setSaved]    = useState(false);
   const [errors,   setErrors]   = useState({});
+
+  const [deleteModal,       setDeleteModal]       = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting,          setDeleting]          = useState(false);
+  const [deleteError,       setDeleteError]       = useState("");
 
   const [photo,        setPhoto]        = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
@@ -541,11 +549,30 @@ function SingleStudentTool({ students, onStudentUpdated }) {
   }
   function selectStudent(st) {
     setSelected(st); setForm({...st}); setSaved(false); setErrors({}); resetMedia();
+    setDeleteModal(false); setDeleteConfirmText(""); setDeleteError("");
     if (st.photo) {
       getS3ViewUrl(st.photo).then(url => { if (url) setPhotoPreview(url); }).catch(() => {});
     }
   }
   function goBack()           { setSelected(null); resetMedia(); }
+
+  async function handleDelete() {
+    if (deleteConfirmText.trim() !== selected.enrollNo) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteStudentPermanently(selected._studentId);
+      setDeleteModal(false);
+      const deletedId = selected._studentId;
+      setSelected(null);
+      resetMedia();
+      if (onStudentUpdated) onStudentUpdated(deletedId, null);
+    } catch (err) {
+      setDeleteError("Failed to delete: " + (err?.message || "Unknown error"));
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   async function handleSave() {
     const errs = validateStudentForm(form);
@@ -805,10 +832,55 @@ function SingleStudentTool({ students, onStudentUpdated }) {
         </div>
       </div>
 
-      <div className="mt-6 flex gap-3">
+      <div className="mt-6 flex items-center gap-3">
         <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-school-navy text-white px-6 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-60"><Save className="w-4 h-4"/>{saving ? "Saving..." : "Save Changes"}</button>
         <button onClick={() => { setForm({...selected}); setErrors({}); resetMedia(); }} className="flex items-center gap-2 border border-gray-200 text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold"><RefreshCw className="w-4 h-4"/>Reset</button>
+        {canDelete && (
+          <button onClick={() => { setDeleteModal(true); setDeleteConfirmText(""); setDeleteError(""); }} className="ml-auto flex items-center gap-2 border border-red-200 text-red-600 px-6 py-2.5 rounded-lg text-sm font-semibold hover:bg-red-50"><Trash2 className="w-4 h-4"/>Permanently Delete</button>
+        )}
       </div>
+
+      {deleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+                <Trash2 className="w-5 h-5 text-red-600" />
+              </div>
+              <h3 className="text-base font-bold text-gray-900">Permanently Delete Student</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-1">
+              This will permanently erase <span className="font-semibold">{selected.name}</span> ({selected.enrollNo}) — enrollment, fee payments, documents, attendance, exam marks, and TC records. This cannot be undone.
+            </p>
+            <p className="text-sm text-gray-500 mb-4">
+              If you just want to remove them from active lists, use <span className="font-medium">Deactivate</span> instead — it's reversible.
+            </p>
+            <label className="block text-xs font-semibold text-gray-500 mb-1.5">
+              Type the enrollment number <span className="font-mono text-gray-800">{selected.enrollNo}</span> to confirm
+            </label>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={e => setDeleteConfirmText(e.target.value)}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 mb-1"
+              placeholder={selected.enrollNo}
+            />
+            {deleteError && <p className="text-[11px] text-red-500 mb-2">{deleteError}</p>}
+            <div className="flex gap-3 mt-4">
+              <button
+                onClick={handleDelete}
+                disabled={deleting || deleteConfirmText.trim() !== selected.enrollNo}
+                className="flex-1 flex items-center justify-center gap-2 bg-red-600 text-white px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-red-700"
+              >
+                <Trash2 className="w-4 h-4" />{deleting ? "Deleting..." : "Delete Permanently"}
+              </button>
+              <button onClick={() => setDeleteModal(false)} disabled={deleting} className="flex-1 border border-gray-200 text-gray-600 px-4 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-60">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

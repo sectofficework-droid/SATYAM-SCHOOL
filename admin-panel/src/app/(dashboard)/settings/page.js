@@ -1531,7 +1531,13 @@ function TimetableTab() {
   // school-wide config.
   const [periodDefs,       setPeriodDefsLocal]  = useState(null);
   const [periodDefsLoading,setPeriodDefsLoading]= useState(true);
-  const ttActiveClasses = useStore(s => s.activeClasses);
+  // Fetched directly from the classes table rather than the Zustand
+  // "activeClasses" store, which is only populated once the Classes &
+  // Sections tab has actually been mounted this session — its hardcoded
+  // fallback is also missing 10th/11th Commerce/12th Commerce, so on a
+  // fresh browser that opened Settings straight to Timetable, those
+  // classes' columns/boxes would silently never appear.
+  const [ttActiveClasses,  setTtActiveClasses]  = useState([]);
   const backupRef       = useRef(null);
   const periodsBackup   = useRef(null);
 
@@ -1555,6 +1561,12 @@ function TimetableTab() {
         setPeriodsForm(JSON.parse(JSON.stringify(defs || DEF_PERIOD_DEFS)));
       })
       .finally(() => setPeriodDefsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    getClassesWithSections()
+      .then(data => setTtActiveClasses(data.filter(c => c.is_active).map(c => dbToStore(c.name))))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
