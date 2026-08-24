@@ -208,11 +208,37 @@ export function mapToStudent(enrollment) {
     lastExamGiven:      s.student_previous_school?.last_exam_given ? "Yes" : "No",
     prevPercentage:     s.student_previous_school?.percentage || "",
 
-    // Siblings (if loaded)
+    // Siblings (if loaded) — studentId is only set for rows an admin has
+    // actually linked to a real enrolled student (see searchStudentsForSibling);
+    // older/free-text-only rows leave it null and just display as before.
     siblings: s.student_siblings
-      ? s.student_siblings.map(sib => ({ id: sib.id, name: sib.sibling_name, cls: sib.sibling_class }))
+      ? s.student_siblings.map(sib => ({ id: sib.id, name: sib.sibling_name, cls: sib.sibling_class, studentId: sib.sibling_student_id || null }))
       : [],
   };
+}
+
+// Live search for the Add/Edit Student "Sibling at This School" picker —
+// real enrolled students in the given class (current academic year),
+// replacing what used to be a hardcoded name list (siblingsByClass in
+// AddStudentForm.js) with no link to an actual student_id at all.
+export async function searchStudentsForSibling(className, excludeStudentId = null) {
+  if (!className) return [];
+  const [year, { data: classRow, error: classErr }] = await Promise.all([
+    getCurrentAcademicYear(),
+    supabase.from("classes").select("id").eq("name", className).single(),
+  ]);
+  if (classErr || !classRow) return [];
+
+  const { data, error } = await supabase
+    .from("student_enrollments")
+    .select("student:students(id, first_name, last_name)")
+    .eq("academic_year_id", year.id)
+    .eq("class_id", classRow.id);
+  if (error) throw error;
+  return (data || [])
+    .filter(r => r.student && (!excludeStudentId || r.student.id !== excludeStudentId))
+    .map(r => ({ studentId: r.student.id, name: `${r.student.first_name} ${r.student.last_name}`.trim() }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ── Academic Year ─────────────────────────────────────────────────────────────
@@ -365,7 +391,7 @@ export async function getStudentByEnrollment(enrollmentNo) {
           school_name, grno, class, medium, place,
           attendance_days, last_exam_given, percentage
         ),
-        student_siblings(id, sibling_name, sibling_class),
+        student_siblings(id, sibling_name, sibling_class, sibling_student_id),
         student_documents(
           id, status, file_url, uploaded_at, reason,
           document_types(id, name)
@@ -565,13 +591,17 @@ export async function addStudent(formData) {
     });
   }
 
-  // 8. Insert siblings
+  // 8. Insert siblings — sibling_student_id links to a real enrolled
+  // student (picked live via searchStudentsForSibling), which is what
+  // makes this sibling switchable in the student app; null if the picker
+  // wasn't used (e.g. sibling not actually in this school).
   if (formData.siblings?.length > 0) {
     await supabase.from("student_siblings").insert(
       formData.siblings.map(sib => ({
-        student_id:    student.id,
-        sibling_name:  sib.name,
-        sibling_class: sib.cls || null,
+        student_id:         student.id,
+        sibling_name:       sib.name,
+        sibling_class:      sib.cls || null,
+        sibling_student_id: sib.studentId || null,
       }))
     );
   }
@@ -682,9 +712,10 @@ export async function updateStudent(studentId, formData) {
     if (formData.siblings?.length > 0) {
       await supabase.from("student_siblings").insert(
         formData.siblings.map(sib => ({
-          student_id:    studentId,
-          sibling_name:  sib.name,
-          sibling_class: sib.cls,
+          student_id:         studentId,
+          sibling_name:       sib.name,
+          sibling_class:      sib.cls,
+          sibling_student_id: sib.studentId || null,
         }))
       );
     }

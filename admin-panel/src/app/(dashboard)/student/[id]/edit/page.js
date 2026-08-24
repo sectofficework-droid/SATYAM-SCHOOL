@@ -10,7 +10,7 @@ import {
   isValidName, isValidPhone, isValidPincode, isValidAadhar,
   isValidPercentage, isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
-import { getStudentByEnrollment, updateStudent as svcUpdate } from "@/lib/studentService";
+import { getStudentByEnrollment, updateStudent as svcUpdate, searchStudentsForSibling } from "@/lib/studentService";
 import { fmtDMY } from "@/lib/utils";
 import { getActiveClasses } from "@/lib/settingsService";
 import { uploadFileToS3, getS3ViewUrl, slugify, fileExt } from "@/lib/s3Upload";
@@ -108,6 +108,7 @@ function mapToEditForm(student) {
       id: sib.id || Date.now(),
       name: sib.name || "",
       cls: sib.cls || "",
+      studentId: sib.studentId || "",
     })) || [],
     uploadedDocs,
     photo: student.photo || null,
@@ -218,15 +219,41 @@ function EditForm({ existing, id, router }) {
   const [hasPrevSchool, setHasPrevSchool] = useState(!!(existing.lastSchoolName));
   const [hasSibling, setHasSibling] = useState(existing.hasSibling);
   const [siblings, setSiblings]     = useState(
-    existing.siblings?.length ? existing.siblings : [{ id: 1, cls: "", name: "" }]
+    existing.siblings?.length ? existing.siblings.map(s => ({ ...s, studentId: s.studentId || "" })) : [{ id: 1, cls: "", name: "", studentId: "" }]
   );
+  // Real enrolled students in the picked class, per sibling row - same
+  // live picker as AddStudentForm.js. Pre-fetched on mount for any row
+  // that already has a class (so its already-linked sibling shows up as a
+  // selected option, not a blank one).
+  const [siblingOptionsByRow, setSiblingOptionsByRow] = useState({});
 
-  const addSibling    = () => setSiblings((p) => [...p, { id: Date.now(), cls: "", name: "" }]);
-  const removeSibling = (id) => setSiblings((p) => p.filter((s) => s.id !== id));
-  const updateSibling = (id, field, val) =>
-    setSiblings((p) =>
-      p.map((s) => s.id === id ? { ...s, [field]: val, ...(field === "cls" ? { name: "" } : {}) } : s)
-    );
+  useEffect(() => {
+    siblings.forEach(sib => {
+      if (sib.cls) searchStudentsForSibling(sib.cls).then(opts => {
+        setSiblingOptionsByRow(p => ({ ...p, [sib.id]: opts }));
+      }).catch(() => {});
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const addSibling    = () => setSiblings((p) => [...p, { id: Date.now(), cls: "", name: "", studentId: "" }]);
+  const removeSibling = (id) => {
+    setSiblings((p) => p.filter((s) => s.id !== id));
+    setSiblingOptionsByRow((p) => { const n = { ...p }; delete n[id]; return n; });
+  };
+  const updateSiblingClass = (id, cls) => {
+    setSiblings((p) => p.map((s) => s.id === id ? { ...s, cls, name: "", studentId: "" } : s));
+    setSiblingOptionsByRow((p) => ({ ...p, [id]: [] }));
+    if (cls) {
+      searchStudentsForSibling(cls).then((opts) => {
+        setSiblingOptionsByRow((p) => ({ ...p, [id]: opts }));
+      }).catch(() => {});
+    }
+  };
+  const selectSiblingStudent = (id, studentId) => {
+    const picked = (siblingOptionsByRow[id] || []).find((o) => o.studentId === studentId);
+    setSiblings((p) => p.map((s) => s.id === id ? { ...s, studentId, name: picked?.name || "" } : s));
+  };
   const [hasAadhar, setHasAadhar]               = useState(existing.hasAadhar);
   const [lastExamGiven, setLastExamGiven]       = useState(existing.lastExamGiven === "Yes");
   const [fatherAadharDisplay, setFatherAadharDisplay] = useState(existing.fatherAadhar || "");
@@ -498,6 +525,11 @@ function EditForm({ existing, id, router }) {
         prevAttendanceDays: form.prevAttendanceDays,
         lastExamGiven:      lastExamGiven ? "Yes" : "No",
         prevPercentage:     form.prevPercentage,
+        // Was previously omitted entirely, so editing an existing student's
+        // sibling link (the common case - both students already enrolled)
+        // silently never saved anything: updateStudent() only touches
+        // student_siblings when this key is present at all.
+        siblings: hasSibling ? siblings.filter(s => s.name) : [],
       });
 
       // Save document statuses to DB
@@ -641,7 +673,7 @@ function EditForm({ existing, id, router }) {
             <FieldLabel>Does this student have a sibling already studying here?</FieldLabel>
             <YesNoToggle
               value={hasSibling}
-              onChange={(val) => { setHasSibling(val); setSiblings([{ id: 1, cls: "", name: "" }]); }}
+              onChange={(val) => { setHasSibling(val); setSiblings([{ id: 1, cls: "", name: "", studentId: "" }]); }}
             />
           </div>
           {hasSibling && (
@@ -667,7 +699,7 @@ function EditForm({ existing, id, router }) {
                       <FieldLabel required>Sibling&apos;s Class</FieldLabel>
                       <SelectField
                         value={sib.cls}
-                        onChange={(e) => updateSibling(sib.id, "cls", e.target.value)}
+                        onChange={(e) => updateSiblingClass(sib.id, e.target.value)}
                         required
                       >
                         <option value="">Select Class</option>
@@ -676,14 +708,19 @@ function EditForm({ existing, id, router }) {
                     </div>
                     <div>
                       <FieldLabel required>Sibling&apos;s Name</FieldLabel>
-                      <input
-                        type="text"
-                        value={sib.name}
-                        onChange={(e) => updateSibling(sib.id, "name", e.target.value)}
-                        placeholder="Enter sibling's full name"
+                      <SelectField
+                        value={sib.studentId}
+                        onChange={(e) => selectSiblingStudent(sib.id, e.target.value)}
+                        disabled={!sib.cls}
                         required
-                        className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
-                      />
+                      >
+                        <option value="">
+                          {!sib.cls ? "Select class first" : (siblingOptionsByRow[sib.id]?.length ? "Select Student" : "No students found in this class")}
+                        </option>
+                        {(siblingOptionsByRow[sib.id] || []).map((o) => (
+                          <option key={o.studentId} value={o.studentId}>{o.name}</option>
+                        ))}
+                      </SelectField>
                     </div>
                   </div>
                 </div>

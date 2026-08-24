@@ -253,14 +253,102 @@ class _StudentBottomNav extends StatelessWidget {
 
 // ── Student Dashboard ─────────────────────────────────────────────────────────
 
-class _StudentDashboard extends StatelessWidget {
+class _StudentDashboard extends StatefulWidget {
   const _StudentDashboard();
+  @override
+  State<_StudentDashboard> createState() => _StudentDashboardState();
+}
+
+class _StudentDashboardState extends State<_StudentDashboard> {
+  // Guards against double-taps firing overlapping switch requests while the
+  // RPC round-trip for the first tap is still in flight.
+  String? _switchingId;
 
   String get _greeting {
     final h = DateTime.now().hour;
     if (h < 12) return 'Good Morning';
     if (h < 17) return 'Good Afternoon';
     return 'Good Evening';
+  }
+
+  Future<void> _switchTo(String targetId) async {
+    if (_switchingId != null) return;
+    setState(() => _switchingId = targetId);
+    final err = await AuthService.to.switchToSibling(targetId);
+    if (!mounted) return;
+    if (err != null) {
+      setState(() => _switchingId = null);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err), behavior: SnackBarBehavior.floating));
+      return;
+    }
+    // Full reset, not a partial rebuild - StudentHome's tabs each load their
+    // own data once in initState, so switching while parked on e.g. Fees
+    // wouldn't otherwise refresh that tab, and could leave the previous
+    // sibling's data on screen after switching. This guarantees every tab
+    // re-reads the newly active profile from scratch.
+    Get.offAllNamed(Routes.studentHome);
+  }
+
+  // Sibling switcher row - only rendered once there's actually something to
+  // switch to, wrapped in Obx since linkedSiblings is populated
+  // asynchronously (fetched at login/session-restore time, may resolve
+  // after this dashboard has already first rendered).
+  Widget _buildSiblingSwitcher() => Obx(() {
+    final siblings = AuthService.to.linkedSiblings;
+    if (siblings.isEmpty) return const SizedBox.shrink();
+    final profile = AuthService.to.profile.value ?? {};
+    final myId = profile['id'] as String?;
+    final myName = profile['first_name'] as String? ?? 'Me';
+    final myPhoto = profile['photo_url'] as String?;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: SizedBox(
+        height: 78,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.zero,
+          children: [
+            _siblingChip(id: myId ?? '', name: myName, photoKey: myPhoto, active: true, onTap: null),
+            for (final s in siblings)
+              _siblingChip(
+                id: s['id'] as String? ?? '',
+                name: s['first_name'] as String? ?? 'Sibling',
+                photoKey: s['photo_url'] as String?,
+                active: false,
+                onTap: () => _switchTo(s['id'] as String),
+              ),
+          ],
+        ),
+      ),
+    );
+  });
+
+  Widget _siblingChip({required String id, required String name, String? photoKey, required bool active, VoidCallback? onTap}) {
+    final busy = _switchingId == id;
+    return GestureDetector(
+      onTap: busy ? null : onTap,
+      child: Container(
+        width: 62,
+        margin: const EdgeInsets.only(right: 12),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Stack(alignment: Alignment.center, children: [
+            Container(
+              width: 52, height: 52,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: active ? AppColors.navy : AppColors.border, width: active ? 2.5 : 1.5),
+              ),
+              child: ClipOval(child: StudentProfilePage.buildAvatar(photoKey, name, 24)),
+            ),
+            if (busy) const SizedBox(width: 52, height: 52, child: CircularProgressIndicator(strokeWidth: 2.5, color: AppColors.navy)),
+          ]),
+          const SizedBox(height: 4),
+          Text(active ? 'You' : name, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, fontWeight: active ? FontWeight.w700 : FontWeight.w500, color: active ? AppColors.navy : AppColors.textLight)),
+        ]),
+      ),
+    );
   }
 
   @override
@@ -276,6 +364,7 @@ class _StudentDashboard extends StatelessWidget {
     return SingleChildScrollView(
       padding: const EdgeInsets.only(top: 16, left: 16, right: 16, bottom: 96),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _buildSiblingSwitcher(),
         // Greeting banner
         TweenAnimationBuilder<double>(
           tween: Tween(begin: 0.0, end: 1.0),
