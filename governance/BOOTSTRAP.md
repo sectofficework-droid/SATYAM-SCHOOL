@@ -85,8 +85,32 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Updated 2026-08-21: three shipped changes, `debiprasad` only — not yet
-merged to `main`.**
+**Updated 2026-08-24 — see `ai-context\SESSION-2026-08-24-1.md` for full
+detail. Flagged gap: `debiprasad` has since been merged to `main` (commit
+`2fc2570`) and the repo now works directly on `main` — but four feature
+commits between 2026-08-21 and 2026-08-24 (`886c6a3`, `f87a2ce`, `7c96bad`,
+`c0e11c1`, `d2f409c`) shipped with no governance log entry at all. Not
+backfilled this session (out of scope for what was asked) — the "three
+shipped changes" section immediately below is the last state this file
+actually attests to; treat everything after it as real but undocumented
+until a future session reconstructs it from `git log`.**
+
+**2026-08-24 addition — bulk student import (commit `7bd8cef`, on `main`,
+pushed):** new Student-module "Import Basic Details" tool (insert-only, 8
+fields, auto enrollment no) and new Super Admin "Replace Full Details" tool
+(matches by enrollment no, overwrites via `updateStudent()`). New
+`students.data_status` column ('Complete'/'Incomplete') drives a filter
+chip + badge on the student list. **Migration
+`mobile-app/SUPABASE_STUDENT_BASIC_IMPORT.sql` has NOT been run against
+production yet** — feature is shipped in code but non-functional until the
+user runs it. Verified: dev server compiled `/student` and `/super-admin`
+clean, no errors. Not verified: an actual import run, or mobile login for a
+basic-imported student (both need the migration first, then a manual
+pass — see SESSION-2026-08-24-1.md's Next steps).
+
+**Updated 2026-08-21 (last fully-attested state before the gap above):
+three shipped changes, `debiprasad` only — not yet merged to `main` (now
+merged, see gap note above).**
 1. **Add Student form extraction** — the ~1,400-line Add Student form moved
    out of `student/add/page.js` into a shared `components/AddStudentForm.js`
    (`variant="page"` | `"modal"`). Student list now opens Add Student as a
@@ -265,7 +289,14 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-Session `governance\ai-context\SESSION-2026-08-21-3.md` — fixed and shipped
+Session `governance\ai-context\SESSION-2026-08-24-1.md` — shipped the bulk
+student import feature (Basic Details import + Replace Full Details
+import + Complete/Incomplete tracking), committed `7bd8cef`, pushed to
+`origin\main`. Flagged (not fixed) a 3-day governance gap — see "Code
+status" above. Migration not yet run against production; functional
+verification still pending the user.
+
+Prior checkpoint: `governance\ai-context\SESSION-2026-08-21-3.md` — fixed and shipped
 REQ-SEC-001 (plaintext `app_password`): wrote a real plan this time
 (superseding the 2026-08-18 reverted attempt), got explicit "code" approval,
 implemented, and **ran the migration directly against production** via the
@@ -297,8 +328,18 @@ out — merged to `main` at `9a2cfb3`) and
 check).
 
 ## Next step
-1. **Push `bc74ac0`** to `origin/debiprasad` right after this BOOTSTRAP/log
-   update commits — don't leave it local-only.
+**2026-08-24, current:**
+0. **Run `mobile-app/SUPABASE_STUDENT_BASIC_IMPORT.sql` against production
+   Supabase** — the new bulk-import feature is non-functional without it.
+0a. Manually verify the import flow end-to-end (both tools, badge/filter,
+    bogus-enrollment-no error path, mobile login) — see
+    `SESSION-2026-08-24-1.md`.
+0b. Decide whether/when to backfill the governance gap flagged above
+    (four undocumented feature commits, 2026-08-21 → 2026-08-24).
+
+**Carried over from 2026-08-21 (unchanged, not re-verified this session):**
+1. `bc74ac0` — since pushed and `debiprasad` merged to `main` per the gap
+   note above; no longer an open action.
 2. **Install the handed-off debug APK on an actual device and verify the
    password-reset popup live** — reset a test student's password from the
    admin panel, open the app, confirm the "Password Reset" notice appears
