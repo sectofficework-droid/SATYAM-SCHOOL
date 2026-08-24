@@ -1,0 +1,11 @@
+-- Bulk Student Import: Basic Details (Student module) + Full Details Replace (Super Admin)
+--
+-- Tracks whether a student record has only the basic bulk-import fields
+-- (Class, Name, Father/Mother Name, DOB, Mobile 1/2, Address) or a complete
+-- profile, so the admin panel can filter/badge "Incomplete" students until
+-- their full details are imported (matched by enrollment no).
+--
+-- Defaults to 'Complete' so every existing student and every existing
+-- insert path (the ordinary Add Student form, the existing Super Admin
+-- Excel import) is unaffected.
+ALTER TABLE students ADD COLUMN IF NOT EXISTS data_status TEXT NOT NULL DEFAULT 'Complete';

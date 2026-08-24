@@ -17,7 +17,8 @@ import {
   isValidName, isValidPhone, isValidEmail, isValidAadhar, isValidPincode,
   isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
-import { getStudents, getClasses, addStudent as dbAddStudent, updateStudent as dbUpdateStudent, deleteStudentPermanently, bagItemAllowedForClass } from "@/lib/studentService";
+import { getStudents, getClasses, getStudentByEnrollment, addStudent as dbAddStudent, updateStudent as dbUpdateStudent, deleteStudentPermanently, bagItemAllowedForClass } from "@/lib/studentService";
+import { normalizeDate, normalizeAgainstList } from "@/lib/importUtils";
 import { getCurrentYearClassFees } from "@/lib/settingsService";
 import { DEFAULT_DOCS } from "@/lib/constants";
 import { uploadFileToS3, getS3ViewUrl, slugify, fileExt } from "@/lib/s3Upload";
@@ -40,14 +41,6 @@ const CLASSES = [
 ];
 const GENDERS   = ["Male","Female","Other"];
 
-// Excel entries commonly vary in case/spacing ("SR KG", "1ST", "MALE").
-// Match loosely against the canonical lists above, then return the canonical form.
-function normalizeAgainstList(raw, list) {
-  if (!raw) return raw;
-  const key = raw.trim().toUpperCase().replace(/\./g, " ").replace(/\s+/g, " ");
-  const match = list.find(c => c.toUpperCase().replace(/\./g, " ").replace(/\s+/g, " ") === key);
-  return match || raw;
-}
 const RELIGIONS = ["Hindu","Muslim","Christian","Jain","Sikh","Buddhist","Parsi","Other"];
 const CASTES    = ["General","OBC","SC","ST","EWS","SEBC","Other"];
 const MEDIUMS   = ["English","Gujarati","Hindi","Odia","Other"];
@@ -123,51 +116,6 @@ const DATE_IMPORT_KEYS = new Set(["joinDate", "dob", "birthCertRegDate"]);
 // "242215015482420000" — and there is no way to recover the true digits
 // from the file after that; the fix is to re-enter the value as Text.
 const LONG_ID_KEYS = new Set(["udise", "pen", "apaar", "aadharNo", "fatherAadhar", "motherAadhar"]);
-
-// Converts any common date format to YYYY-MM-DD for the database.
-// Handles: JS Date objects, DD/MM/YYYY, DD-MM-YYYY, DD.MM.YYYY, Excel serials, YYYY-MM-DD (passthrough).
-// Returns null (never a garbage string) when the value can't be parsed, so a bad
-// cell shows up as a missing date instead of silently corrupting the database.
-function normalizeDate(val) {
-  if (!val) return null;
-  // JS Date object (from XLSX cellDates:true). SheetJS constructs these so
-  // that LOCAL getters recover the calendar date that was actually in the
-  // cell — the object's UTC representation is intentionally offset by the
-  // machine's timezone. Since this app is used from browsers in India, local
-  // getters give the correct date; UTC getters would be off by a day.
-  if (val instanceof Date) {
-    if (isNaN(val.getTime())) return null;
-    const y = val.getFullYear();
-    const m = String(val.getMonth() + 1).padStart(2, "0");
-    const d = String(val.getDate()).padStart(2, "0");
-    return `${y}-${m}-${d}`;
-  }
-  const s = String(val).replace(/\s+/g, " ").trim();
-  if (!s) return null;
-  // Already ISO
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  // DD/MM/YYYY, DD-MM-YYYY or DD.MM.YYYY (India standard, day first) - date
-  // columns are kept as plain Text in the import template (see the
-  // sheet-formatting comment below) specifically so this is the only thing
-  // that ever decides what the date means, instead of Excel's own
-  // locale-dependent guess.
-  const dmyMatch = s.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})$/);
-  if (dmyMatch) {
-    const [, d, m, y] = dmyMatch;
-    const dd = d.padStart(2, "0"), mm = m.padStart(2, "0");
-    if (Number(mm) < 1 || Number(mm) > 12 || Number(dd) < 1 || Number(dd) > 31) return null;
-    return `${y}-${mm}-${dd}`;
-  }
-  // Excel serial number
-  const serial = Number(s);
-  if (!isNaN(serial) && serial > 1000) {
-    const date = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
-    if (!isNaN(date.getTime())) {
-      return `${date.getUTCFullYear()}-${String(date.getUTCMonth()+1).padStart(2,"0")}-${String(date.getUTCDate()).padStart(2,"0")}`;
-    }
-  }
-  return null;
-}
 
 const EXAMPLE_ROW = [
   // Admission Info
@@ -2848,6 +2796,355 @@ function ImportStudentsPanel({ onImportDone }) {
   );
 }
 
+// Enrollment No leads the Replace Full Details template - the column this
+// tool matches against an existing student by, so it's required and kept
+// Text-formatted like the other long-ID columns (it's a zero-padded string
+// like "0007"; as a Number cell Excel would strip the leading zero).
+const REPLACE_FIELDS       = [{ key:"enrollmentNo", label:"Enrollment No", required:true }, ...IMPORT_FIELDS];
+const REPLACE_EXAMPLE_ROW  = ["0001", ...EXAMPLE_ROW];
+const REPLACE_LONG_ID_KEYS = new Set([...LONG_ID_KEYS, "enrollmentNo"]);
+
+// Same shape as ImportStudentsPanel above, but looks each row up by
+// Enrollment No and overwrites (updateStudent) the matched student instead
+// of inserting a new one - this is the "replace basic import data with
+// full details, matched by enrollment no" tool. Note: like updateStudent()
+// itself, this never changes which class/section a student is enrolled in
+// - only roll no / join date (via enrollmentId) and all personal/contact/ID
+// fields are touched; Class/Section columns are still validated (must
+// resolve to a real class) for consistency with the shared template shape.
+function FullDetailsReplaceImportPanel({ onImportDone }) {
+  const fileRef = useRef(null);
+  const [step,      setStep]      = useState("idle");
+  const [parsed,    setParsed]    = useState([]);
+  const [rowErrors, setRowErrors] = useState([]);
+  const [importing, setImporting] = useState(false);
+  const [importLog, setImportLog] = useState([]);
+
+  function downloadTemplate() {
+    const headerRow = REPLACE_FIELDS.map(f => f.label);
+    const reqRow     = REPLACE_FIELDS.map(f => f.required ? "Required *" : "Optional");
+    const ws = XLSX.utils.aoa_to_sheet([headerRow, reqRow, REPLACE_EXAMPLE_ROW]);
+
+    const TOTAL_ROWS = 1000;
+    REPLACE_FIELDS.forEach((f, colIdx) => {
+      if (!REPLACE_LONG_ID_KEYS.has(f.key) && !DATE_IMPORT_KEYS.has(f.key)) return;
+      for (let r = 2; r < TOTAL_ROWS; r++) {
+        const addr = XLSX.utils.encode_cell({ r, c: colIdx });
+        if (ws[addr]) ws[addr].z = "@";
+        else ws[addr] = { t: "s", v: "", z: "@" };
+      }
+    });
+    ws["!ref"]  = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: TOTAL_ROWS - 1, c: REPLACE_FIELDS.length - 1 } });
+    ws["!cols"] = REPLACE_FIELDS.map(() => ({ wch: 18 }));
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Students");
+    XLSX.writeFile(wb, "Student_Full_Details_Replace_Template.xlsx");
+  }
+
+  function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb   = XLSX.read(evt.target.result, { type:"binary", cellDates:true });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:"" });
+        if (rows.length < 3) { alert("File has no data rows. Please use the downloaded template."); return; }
+        const headerRow = rows[0];
+        const colMap = {};
+        const stripHint = (label) => String(label).replace(/\s*\([^)]*\)\s*$/, "").trim();
+        REPLACE_FIELDS.forEach(f => {
+          const idx = headerRow.findIndex(h => stripHint(h) === stripHint(f.label));
+          if (idx >= 0) colMap[f.key] = idx;
+        });
+        const dataRows = rows.slice(2);
+        const result = [];
+        const errs   = [];
+        dataRows.forEach((row, i) => {
+          if (row.every(c => !c)) return;
+          const s = { _row: i + 3, _errors: [] };
+          REPLACE_FIELDS.forEach(f => {
+            const raw = colMap[f.key] !== undefined ? (row[colMap[f.key]] ?? "") : "";
+            if (DATE_IMPORT_KEYS.has(f.key)) {
+              s[f.key]              = raw ? (normalizeDate(raw) || "") : "";
+              s["_raw_" + f.key]    = raw instanceof Date ? raw.toDateString() : String(raw).trim();
+            } else {
+              s[f.key] = raw instanceof Date ? normalizeDate(raw) || "" : String(raw).trim();
+            }
+            if (REPLACE_LONG_ID_KEYS.has(f.key) && typeof raw === "number") {
+              const digits = String(Math.trunc(Math.abs(raw))).length;
+              if (digits >= 4) {
+                s._errors.push(
+                  `${f.label} "${s[f.key]}" was stored as a Number in Excel and may have lost precision ` +
+                  `(long ID / enrollment numbers must be entered as Text) — re-enter this cell as Text and verify the value`
+                );
+              }
+            }
+          });
+          if (s.cls)      s.cls      = normalizeAgainstList(s.cls, CLASSES);
+          if (s.gender)   s.gender   = normalizeAgainstList(s.gender, GENDERS);
+          if (s.admissionClass) s.admissionClass = normalizeAgainstList(s.admissionClass, CLASSES);
+          if (s.religion) s.religion = normalizeAgainstList(s.religion, RELIGIONS);
+          if (s.caste)    s.caste    = normalizeAgainstList(s.caste, CASTES);
+          if (s.lastSchoolMedium) s.lastSchoolMedium = normalizeAgainstList(s.lastSchoolMedium, MEDIUMS);
+
+          if (!s.enrollmentNo) s._errors.push("Enrollment No missing");
+          if (!s.firstName) s._errors.push("First Name missing");
+          if (!s.cls)       s._errors.push("Class missing");
+          if (s.cls && !CLASSES.includes(s.cls)) s._errors.push('Unknown class "' + s.cls + '"');
+          if (s.gender && !GENDERS.includes(s.gender)) s._errors.push('Invalid gender "' + s.gender + '"');
+          if (!s.dob && s._raw_dob) s._errors.push(`Date of Birth "${s._raw_dob}" is not a valid date — use DD-MM-YYYY`);
+          if (!s.dob && !s._raw_dob) s._errors.push("Date of Birth missing");
+          result.push(s);
+          if (s._errors.length) errs.push("Row " + s._row + ": " + s._errors.join(", "));
+        });
+        setParsed(result);
+        setRowErrors(errs);
+        setStep("preview");
+      } catch { alert("Could not read the file. Please use the downloaded template (.xlsx)."); }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
+  }
+
+  async function confirmImport() {
+    const valid = parsed.filter(s => s._errors.length === 0);
+    setImporting(true);
+    setImportLog([]);
+    const log = [];
+    for (const s of valid) {
+      const label = `#${s.enrollmentNo} - ${s.firstName} ${s.lastName}`;
+      try {
+        const existing = await getStudentByEnrollment(s.enrollmentNo);
+        const payload = {
+          std:               s.cls,
+          admissionClass:    s.admissionClass || s.cls,
+          section:           s.section || "A",
+          rollNo:            s.rollNo ? Number(s.rollNo) : undefined,
+          enrollmentId:      existing._enrollmentId,
+          firstName:         s.firstName,
+          lastName:          s.lastName,
+          fatherName:        s.fatherName || "",
+          motherName:        s.motherName || "",
+          gender:            s.gender,
+          dob:               s.dob || null,
+          placeOfBirth:      composePlaceOfBirth(s.birthCity, s.birthDistrict, s.birthState),
+          birthState:        s.birthState || "",
+          birthDistrict:     s.birthDistrict || "",
+          birthCity:         s.birthCity || "",
+          birthVillage:      s.birthVillage || "",
+          motherTongue:      s.motherTongue || "",
+          religion:          s.religion || "",
+          caste:             s.caste || "General",
+          subCaste:          s.subCaste || "",
+          height:            s.height || null,
+          weight:            s.weight || null,
+          grNo:              s.grNo || "",
+          mobile:            s.mobile1 || "",
+          mobile2:           s.mobile2 || "",
+          roomPlotNo:        s.roomPlotNo || "",
+          society:           s.society || "",
+          landmark:          s.landmark || "",
+          area:              s.area || "",
+          pinCode:           s.pinCode || "",
+          address:           s.address || [s.roomPlotNo, s.society, s.landmark, s.area, "SURAT", "GUJARAT", s.pinCode].filter(Boolean).join(", "),
+          aadhar:            s.aadharNo || "",
+          aadharName:        s.aadharName || "",
+          fatherAadhar:      s.fatherAadhar?.replace(/\s/g, "") || null,
+          fatherAadharName:  s.fatherAadharName || null,
+          motherAadhar:      s.motherAadhar?.replace(/\s/g, "") || null,
+          motherAadharName:  s.motherAadharName || null,
+          birthCertRegNo:    s.birthCertRegNo || null,
+          birthCertRegDate:  s.birthCertRegDate || null,
+          udise:             s.udise || "",
+          pen:               s.pen || "",
+          apaar:             s.apaar || "",
+          joinDate:          s.joinDate || undefined,
+          lastSchoolName:    s.lastSchoolName || "",
+          lastSchoolClass:   s.lastSchoolClass || "",
+          lastSchoolGrNo:    s.lastSchoolGrNo || "",
+          lastSchoolMedium:  s.lastSchoolMedium || "",
+          lastSchoolPlace:   s.lastSchoolPlace || "",
+          prevAttendanceDays: s.prevAttendanceDays || "",
+          lastExamGiven:     s.lastExamGiven || "No",
+          prevPercentage:    s.prevPercentage || "",
+        };
+        await dbUpdateStudent(existing._studentId, payload);
+        log.push({ name: label, ok: true });
+      } catch(err) {
+        const notFound = err?.code === "PGRST116" || /no rows|not found/i.test(err?.message || "");
+        log.push({ name: label, ok: false, err: notFound ? "Enrollment No not found" : (err?.message || "Error") });
+      }
+      setImportLog([...log]);
+    }
+    setImporting(false);
+    setStep("done");
+    if (onImportDone) onImportDone();
+  }
+
+  function reset() { setParsed([]); setRowErrors([]); setStep("idle"); setImportLog([]); }
+
+  const valid   = parsed.filter(s => s._errors.length === 0);
+  const invalid = parsed.filter(s => s._errors.length  >  0);
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-start gap-2.5">
+        <AlertCircle className="w-4 h-4 text-amber-600 mt-0.5 flex-shrink-0"/>
+        <p className="text-xs text-amber-700">
+          This overwrites the matched student's personal, contact and ID details with whatever is in the sheet - it does not add a new student.
+          Each row must have a valid <span className="font-semibold">Enrollment No</span> that already exists (e.g. from a Basic Details import).
+        </p>
+      </div>
+
+      {step === "idle" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0">
+                <Download className="w-5 h-5 text-white"/>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-blue-900">Step 1 — Download Template</p>
+                <p className="text-xs text-blue-600 mt-0.5">Get the Excel sheet with all student columns + Enrollment No</p>
+              </div>
+            </div>
+            <ul className="text-xs text-blue-700 space-y-1 pl-1">
+              {[`Contains all student fields (${REPLACE_FIELDS.length} columns)`,"Row 2 shows which fields are required","Row 3 shows example data — replace with real data","Enrollment No must match an existing student"].map(t => (
+                <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0"/>{t}</li>
+              ))}
+            </ul>
+            <button onClick={downloadTemplate}
+              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
+              <Download className="w-4 h-4"/> Download Template (.xlsx)
+            </button>
+          </div>
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-5 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-green-600 flex items-center justify-center flex-shrink-0">
+                <Upload className="w-5 h-5 text-white"/>
+              </div>
+              <div>
+                <p className="text-sm font-bold text-green-900">Step 2 — Upload Filled File</p>
+                <p className="text-xs text-green-600 mt-0.5">Upload the template after filling in full student data</p>
+              </div>
+            </div>
+            <ul className="text-xs text-green-700 space-y-1 pl-1">
+              {["Use only the downloaded template","Keep column headers exactly as is","One student per row starting from Row 3","Supports .xlsx and .xls files"].map(t => (
+                <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0"/>{t}</li>
+              ))}
+            </ul>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile}/>
+            <button onClick={() => fileRef.current?.click()}
+              className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
+              <Upload className="w-4 h-4"/> Select Excel File
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === "preview" && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-3 py-1.5 rounded-xl text-sm font-semibold">
+              <CheckCircle2 className="w-4 h-4"/> {valid.length} valid row{valid.length !== 1 ? "s" : ""}
+            </div>
+            {invalid.length > 0 && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-1.5 rounded-xl text-sm font-semibold">
+                <AlertCircle className="w-4 h-4"/> {invalid.length} row{invalid.length !== 1 ? "s" : ""} with errors
+              </div>
+            )}
+            <span className="text-xs text-gray-400">{parsed.length} total rows parsed</span>
+          </div>
+          {rowErrors.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-1 max-h-36 overflow-y-auto">
+              <p className="text-xs font-bold text-red-700 mb-2 uppercase tracking-wide">Errors — these rows will be skipped</p>
+              {rowErrors.map((e, i) => (
+                <p key={i} className="text-xs text-red-600 flex items-start gap-1.5">
+                  <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0"/> {e}
+                </p>
+              ))}
+            </div>
+          )}
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <p className="text-sm font-bold text-gray-700">Preview — First 10 valid rows</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-school-navy text-white">
+                    {["#","Enroll No","Name","DOB","Class","Father","Mobile"].map(h => (
+                      <th key={h} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {valid.slice(0,10).map((s, i) => (
+                    <tr key={i} className={"border-b border-gray-50 " + (i % 2 === 0 ? "bg-white" : "bg-gray-50/40")}>
+                      <td className="px-3 py-2 text-gray-400">{s._row}</td>
+                      <td className="px-3 py-2 font-mono font-semibold text-yellow-700">#{s.enrollmentNo}</td>
+                      <td className="px-3 py-2 font-semibold text-gray-800">{s.firstName} {s.lastName}</td>
+                      <td className="px-3 py-2 font-semibold text-orange-600 whitespace-nowrap">{fmtDMY(s.dob)}</td>
+                      <td className="px-3 py-2 text-school-navy font-semibold">{s.cls}</td>
+                      <td className="px-3 py-2 text-gray-600">{s.fatherName || "—"}</td>
+                      <td className="px-3 py-2 text-gray-600">{s.mobile1 || "—"}</td>
+                    </tr>
+                  ))}
+                  {valid.length > 10 && (
+                    <tr><td colSpan={7} className="px-3 py-2 text-center text-xs text-gray-400">... and {valid.length - 10} more rows</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={reset}
+              className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+              ← Back
+            </button>
+            <button
+              onClick={confirmImport}
+              disabled={valid.length === 0 || importing}
+              className="flex items-center gap-2 px-6 py-2.5 bg-school-navy text-white rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors shadow-sm disabled:opacity-50">
+              {importing
+                ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"/> Replacing {importLog.length}/{valid.length}...</>
+                : <><RefreshCw className="w-4 h-4"/> Replace {valid.length} Student{valid.length !== 1 ? "s" : ""}</>
+              }
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === "done" && (
+        <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+          <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center">
+            <CheckCircle2 className="w-8 h-8 text-green-600"/>
+          </div>
+          <p className="text-xl font-bold text-gray-800">Replace Complete!</p>
+          <p className="text-sm text-gray-500">
+            <span className="font-bold text-green-700">{importLog.filter(l=>l.ok).length} students</span> updated with full details.
+            {importLog.filter(l=>!l.ok).length > 0 && <><br/><span className="text-red-500">{importLog.filter(l=>!l.ok).length} failed</span> — check errors below.</>}
+          </p>
+          {importLog.filter(l=>!l.ok).length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 w-full max-w-md text-left space-y-1 max-h-40 overflow-y-auto">
+              {importLog.filter(l=>!l.ok).map((l,i)=>(
+                <p key={i} className="text-xs text-red-600">{l.name}: {l.err}</p>
+              ))}
+            </div>
+          )}
+          <button onClick={reset}
+            className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-school-navy text-white rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors">
+            <RefreshCw className="w-4 h-4"/> Replace More Students
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SuperAdminPage() {
   const authUser = useStore(s => s.authUser);
   const [activeTab,      setActiveTab]      = useState("single");
@@ -2923,6 +3220,7 @@ export default function SuperAdminPage() {
               {key:"bulk",    label:"Bulk Edit (Spreadsheet)", icon:Users},
               {key:"pending", label:"Pending IDs",             icon:Filter},
               {key:"import",  label:"Import Students",         icon:Upload},
+              {key:"fullimport", label:"Replace Full Details", icon:RefreshCw},
             ].map(t=>{
               const Icon=t.icon; const isA=activeTab===t.key;
               return <button key={t.key} onClick={()=>setActiveTab(t.key)} className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all ${isA?"bg-school-navy text-white shadow-md":"text-gray-600 hover:bg-gray-100"}`}><Icon className="w-4 h-4"/>{t.label}</button>;
@@ -2934,6 +3232,7 @@ export default function SuperAdminPage() {
             {!dataLoading && activeTab==="bulk"    && <SpreadsheetEditor students={dbStudents} title="Bulk Edit Students" onSaved={() => loadData()}/>}
             {!dataLoading && activeTab==="pending" && <PendingDetailsPanel students={dbStudents}/>}
             {activeTab==="import"  && <ImportStudentsPanel onImportDone={loadData}/>}
+            {activeTab==="fullimport"  && <FullDetailsReplaceImportPanel onImportDone={loadData}/>}
           </div>
         </>
       )}
@@ -2985,6 +3284,7 @@ export default function SuperAdminPage() {
                     {key:"single",      label:"Single Student Update",icon:GraduationCap},
                     {key:"pending",     label:"Pending IDs",          icon:Filter},
                     {key:"import",      label:"Import Students",       icon:Upload},
+                    {key:"fullimport",  label:"Replace Full Details",  icon:RefreshCw},
                   ].map(t=>{
                     const Icon=t.icon; const isA=studentsSubTab===t.key;
                     return <button key={t.key} onClick={()=>setStudentsSubTab(t.key)} className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-semibold border-2 transition-all ${isA?"bg-blue-600 text-white border-blue-600 shadow":"border-gray-200 text-gray-600 hover:border-blue-400 bg-white"}`}><Icon className="w-3.5 h-3.5"/>{t.label}</button>;
@@ -2995,6 +3295,7 @@ export default function SuperAdminPage() {
                 {!dataLoading && studentsSubTab==="single"      && <SingleStudentTool students={dbStudents} onStudentUpdated={() => loadData()}/>}
                 {!dataLoading && studentsSubTab==="pending"     && <PendingDetailsPanel students={dbStudents}/>}
                 {studentsSubTab==="import"      && <ImportStudentsPanel onImportDone={loadData}/>}
+                {studentsSubTab==="fullimport"  && <FullDetailsReplaceImportPanel onImportDone={loadData}/>}
               </>
             )}
             {mgmtTab==="fees"      && <FeesPanel fees={dbFees}/>}

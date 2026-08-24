@@ -133,6 +133,10 @@ export function mapToStudent(enrollment) {
     deactivateReason: enrollment.deactivate_reason || "",
     deactivateDate:   enrollment.deactivate_date || "",
 
+    // Complete/Incomplete - set to "Incomplete" only by the Basic Details
+    // import; flips back to "Complete" the moment updateStudent() runs.
+    dataStatus:     s.data_status || "Complete",
+
     // TC uploaded check (for students who came from another school)
     tcUploaded: s.student_documents
       ? s.student_documents.some(d =>
@@ -341,7 +345,7 @@ export async function getStudents(yearId = null) {
       deactivate_reason, deactivate_date,
       student:students(
         id, first_name, last_name, photo_url, grno,
-        dob, gender, mobile1, mobile2, status,
+        dob, gender, mobile1, mobile2, status, data_status,
         religion, caste, mother_tongue, sub_caste, height_cm, weight_kg,
         place_of_birth, birth_state, birth_district, birth_city, birth_village,
         father_name, mother_name,
@@ -380,7 +384,7 @@ export async function getStudentByEnrollment(enrollmentNo) {
         id, first_name, last_name, photo_url, grno,
         dob, gender, place_of_birth, birth_state, birth_district, birth_city, birth_village, mobile1, mobile2,
         religion, caste, sub_caste, mother_tongue,
-        height_cm, weight_kg, status,
+        height_cm, weight_kg, status, data_status,
         father_name, mother_name,
         room_plot_no, society, landmark, area, pincode, address,
         aadhar, aadhar_name,
@@ -530,6 +534,7 @@ export async function addStudent(formData) {
       birth_cert_reg_no:   formData.birthCertRegNo || null,
       birth_cert_reg_date: formData.birthCertRegDate || null,
       status:              "Active",
+      data_status:         formData.dataStatus || "Complete",
     })
     .select()
     .single();
@@ -671,6 +676,11 @@ export async function updateStudent(studentId, formData) {
       birth_cert_reg_no:   formData.birthCertRegNo || null,
       birth_cert_reg_date: formData.birthCertRegDate || null,
       updated_at:          new Date().toISOString(),
+      // Any caller of updateStudent() is submitting the full-details form
+      // shape (ordinary Edit Student page, or the Replace Full Details
+      // import) - so a save through either path clears the Incomplete
+      // badge set by the Basic Details import, not just the dedicated tool.
+      data_status:         "Complete",
     })
     .eq("id", studentId);
   if (error) throw error;
