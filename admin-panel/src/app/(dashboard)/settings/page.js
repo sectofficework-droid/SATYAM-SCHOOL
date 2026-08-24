@@ -133,49 +133,23 @@ const SUBJECTS_TT = [
   "Activity & Play","Free Period","Odia - MIL","G.K.",
 ];
 
-const TEACHER_PALETTE = [
-  { bg:"bg-amber-100",   text:"text-amber-900",   border:"border-amber-300"   },
-  { bg:"bg-blue-100",    text:"text-blue-900",    border:"border-blue-300"    },
-  { bg:"bg-green-100",   text:"text-green-900",   border:"border-green-300"   },
-  { bg:"bg-purple-100",  text:"text-purple-900",  border:"border-purple-300"  },
-  { bg:"bg-pink-100",    text:"text-pink-900",    border:"border-pink-300"    },
-  { bg:"bg-indigo-100",  text:"text-indigo-900",  border:"border-indigo-300"  },
-  { bg:"bg-teal-100",    text:"text-teal-900",    border:"border-teal-300"    },
-  { bg:"bg-orange-100",  text:"text-orange-900",  border:"border-orange-300"  },
-  { bg:"bg-red-100",     text:"text-red-900",     border:"border-red-300"     },
-  { bg:"bg-cyan-100",    text:"text-cyan-900",    border:"border-cyan-300"    },
-  { bg:"bg-lime-100",    text:"text-lime-900",    border:"border-lime-300"    },
-  { bg:"bg-rose-100",    text:"text-rose-900",    border:"border-rose-300"    },
-  { bg:"bg-violet-100",  text:"text-violet-900",  border:"border-violet-300"  },
-  { bg:"bg-emerald-100", text:"text-emerald-900", border:"border-emerald-300" },
-  { bg:"bg-fuchsia-100", text:"text-fuchsia-900", border:"border-fuchsia-300" },
-  { bg:"bg-sky-100",     text:"text-sky-900",     border:"border-sky-300"     },
-];
-
-const TEACHER_RGB_PALETTE = [
-  [254,243,199],[219,234,254],[220,252,231],[243,232,255],
-  [252,231,243],[224,231,255],[204,251,241],[255,237,213],
-  [254,226,226],[207,250,254],[236,252,203],[255,228,230],
-  [237,233,254],[209,250,229],[253,224,255],[224,242,254],
-];
-
-// Deterministic color per teacher name, independent of any fixed roster -
-// the Timetable used to pick a color by indexOf() into a hardcoded 16-name
-// list (TEACHERS_TT), which also silently meant that same fixed list was
-// the ONLY set of teachers selectable in the Teacher dropdown at all - any
-// teacher hired since, or any teacher whose name wasn't in that exact list,
-// simply couldn't be assigned to a period. Teachers/subjects now come from
-// the DB (getTeachingEmployees/getAllClassSubjects); this hash keeps colors
-// stable and collision-spread for an arbitrary, growing name list.
-function hashIndex(str, mod) {
-  let h = 0;
-  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
-  return h % mod;
-}
-
-function getTeacherColor(teacher) {
-  if (!teacher) return null;
-  return TEACHER_PALETTE[hashIndex(teacher, TEACHER_PALETTE.length)];
+// Teacher colors used to come from a fixed 16-swatch palette picked by
+// hashing the name mod 16 (hashIndex) - collision-spread, but with more
+// than a handful of teachers (this school has 50+ staff) two teachers
+// landing on the same swatch was inevitable, not just possible. Colors are
+// now generated per teacher from their position in the live roster
+// (already alphabetical - getTeachingEmployees orders by name), spacing
+// hues evenly around the full 360° wheel for however many teachers
+// actually exist, so every currently-active teacher gets a genuinely
+// distinct color instead of sharing a swatch. Built once via useMemo in
+// TimetableTab as `teacherColorMap` (name -> {bg, text, border, rgb}); see
+// its definition for how index/total become a hue.
+function hslToRgb(h, s, l) {
+  s /= 100; l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(255 * f(0)), Math.round(255 * f(8)), Math.round(255 * f(4))];
 }
 
 function shortName(name) {
@@ -1599,6 +1573,23 @@ function TimetableTab() {
 
   const teacherNames = teacherList.map(t => t.name);
 
+  // One evenly-spaced hue per teacher, indexed by their position in the
+  // (already name-sorted) roster - see hslToRgb's comment above for why.
+  const teacherColorMap = useMemo(() => {
+    const map = {};
+    const total = teacherList.length;
+    teacherList.forEach((t, i) => {
+      const hue = Math.round((360 * i) / Math.max(total, 1));
+      map[t.name] = {
+        bg:     `hsl(${hue}, 68%, 93%)`,
+        text:   `hsl(${hue}, 55%, 30%)`,
+        border: `hsl(${hue}, 55%, 78%)`,
+        rgb:    hslToRgb(hue, 68, 93),
+      };
+    });
+    return map;
+  }, [teacherList]);
+
   useEffect(() => {
     supabase.from("academic_years").select("label, is_current").order("label").then(({ data }) => {
       const years = (data || []).map(y => y.label).filter(Boolean);
@@ -1783,8 +1774,8 @@ function TimetableTab() {
           const cls = activeColClasses[data.column.index - 1];
           if (!cls) return;
           const cell = getSlot(group, slot.id, cls);
-          if (cell?.teacher) {
-            data.cell.styles.fillColor = TEACHER_RGB_PALETTE[hashIndex(cell.teacher, TEACHER_RGB_PALETTE.length)];
+          if (cell?.teacher && teacherColorMap[cell.teacher]) {
+            data.cell.styles.fillColor = teacherColorMap[cell.teacher].rgb;
             data.cell.styles.textColor = [40,40,40];
           }
         },
@@ -2054,7 +2045,7 @@ function TimetableTab() {
                           const cell   = getSlot(group, slot.id, cls);
                           const active = isCellActive(group, slot.id, cls);
                           const busy   = active ? getBusyTeachers(group, slot.id, cls) : new Set();
-                          const tColor = getTeacherColor(cell.teacher);
+                          const tColor = cell.teacher ? teacherColorMap[cell.teacher] : null;
                           const filled = cell.subject || cell.teacher;
 
                           return (
@@ -2087,17 +2078,18 @@ function TimetableTab() {
                                   onClick={() => editMode && setActiveCell({ group, slotId:slot.id, cls })}
                                   className={`rounded-lg px-1.5 py-1.5 transition-all ${editMode ? "cursor-pointer" : ""} ${
                                     filled
-                                      ? `${tColor?.bg||"bg-gray-100"} border ${tColor?.border||"border-gray-200"} ${editMode ? "hover:opacity-75 hover:ring-2 hover:ring-school-navy/30" : ""}`
+                                      ? `border ${editMode ? "hover:opacity-75 hover:ring-2 hover:ring-school-navy/30" : ""}`
                                       : editMode
                                         ? "min-h-[44px] border-2 border-dashed border-gray-200 hover:border-school-navy/50 hover:bg-school-navy/5 flex items-center justify-center"
                                         : "min-h-[44px]"
                                   }`}
+                                  style={filled ? { backgroundColor: tColor?.bg || "#f3f4f6", borderColor: tColor?.border || "#e5e7eb" } : undefined}
                                 >
                                   {filled ? (
                                     <>
-                                      <p className={`text-[11px] font-bold leading-tight ${tColor?.text||"text-gray-800"} truncate`}>{cell.subject}</p>
+                                      <p className="text-[11px] font-bold leading-tight truncate" style={{ color: tColor?.text || "#1f2937" }}>{cell.subject}</p>
                                       {cell.teacher && (
-                                        <p className={`text-[10px] mt-0.5 leading-tight ${tColor?.text||"text-gray-500"} opacity-80 truncate`}>{shortName(cell.teacher)}</p>
+                                        <p className="text-[10px] mt-0.5 leading-tight opacity-80 truncate" style={{ color: tColor?.text || "#6b7280" }}>{shortName(cell.teacher)}</p>
                                       )}
                                     </>
                                   ) : editMode ? (
@@ -2123,9 +2115,10 @@ function TimetableTab() {
         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">Teacher Colour Legend</p>
         <div className="flex flex-wrap gap-1.5">
           {teacherNames.map((t) => {
-            const c = getTeacherColor(t);
+            const c = teacherColorMap[t];
             return (
-              <span key={t} className={`${c.bg} ${c.text} text-[11px] font-semibold px-2.5 py-1 rounded-full border ${c.border}`}>
+              <span key={t} className="text-[11px] font-semibold px-2.5 py-1 rounded-full border"
+                style={{ backgroundColor: c?.bg, color: c?.text, borderColor: c?.border }}>
                 {shortName(t)}
               </span>
             );
