@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../../core/theme/app_theme.dart';
 import 's3_image.dart';
 
@@ -23,12 +24,9 @@ class BirthdaysView extends StatefulWidget {
 typedef _DateGroup = MapEntry<String, List<Map<String, dynamic>>>;
 
 class _BirthdaysViewState extends State<BirthdaysView> {
-  final ScrollController _scrollController = ScrollController();
+  final ItemScrollController _itemScrollController = ItemScrollController();
   final TextEditingController _searchCtrl = TextEditingController();
-  final Map<String, GlobalKey> _groupKeys = {};
   String _query = '';
-
-  GlobalKey _keyFor(String dateKey) => _groupKeys.putIfAbsent(dateKey, () => GlobalKey());
 
   @override
   void initState() {
@@ -38,7 +36,6 @@ class _BirthdaysViewState extends State<BirthdaysView> {
 
   @override
   void dispose() {
-    _scrollController.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -106,32 +103,35 @@ class _BirthdaysViewState extends State<BirthdaysView> {
     return entries;
   }
 
-  // Two-phase: fixed header/tile heights below are only estimates (real
-  // names/subtitles wrap to different heights, fonts scale per device), so
-  // a single jump computed from them alone used to land a few days off from
-  // today - a coarse jump gets the target group built by ListView.builder's
-  // lazy list, then Scrollable.ensureVisible snaps to its real measured
-  // position for the actual precise landing spot.
+  // ScrollablePositionedList.scrollTo works by index, not by a hand-guessed
+  // pixel offset - it measures/corrects internally as items are laid out, so
+  // it lands exactly on today's group regardless of how tall any given
+  // name/subtitle actually renders (a fixed-height-guess approach here
+  // previously drifted a few days off once real row heights varied).
   Future<void> _scrollToToday() async {
-    if (!_scrollController.hasClients || _query.isNotEmpty) return;
+    if (_query.isNotEmpty) return;
     final groups = _groupedSorted;
     if (groups.isEmpty) return;
     final todayOrdinal = _academicOrdinal(DateTime.now());
-    const headerHeight = 46.0;
-    const tileHeight = 78.0;
-    double offset = 0;
-    String targetKey = groups.last.key;
-    for (final g in groups) {
-      if (_academicOrdinal(_keyToDate(g.key)) >= todayOrdinal) { targetKey = g.key; break; }
-      offset += headerHeight + g.value.length * tileHeight;
+    int targetIndex = groups.length - 1;
+    for (int i = 0; i < groups.length; i++) {
+      if (_academicOrdinal(_keyToDate(groups[i].key)) >= todayOrdinal) { targetIndex = i; break; }
     }
-    _scrollController.jumpTo(offset.clamp(0, _scrollController.position.maxScrollExtent));
+    if (targetIndex == 0) return;
 
-    await Future.delayed(const Duration(milliseconds: 60));
-    if (!mounted) return;
-    final ctx = _groupKeys[targetKey]?.currentContext;
-    if (ctx != null && ctx.mounted) {
-      await Scrollable.ensureVisible(ctx, alignment: 0, duration: const Duration(milliseconds: 350), curve: Curves.easeOut);
+    // The controller attaches once the Scrollable itself has laid out -
+    // that normally happens by the first post-frame callback, but retry a
+    // few times just in case this runs a beat earlier.
+    for (int attempt = 0; attempt < 5; attempt++) {
+      if (_itemScrollController.isAttached) {
+        await _itemScrollController.scrollTo(
+          index: targetIndex, alignment: 0,
+          duration: const Duration(milliseconds: 350), curve: Curves.easeOut,
+        );
+        return;
+      }
+      await Future.delayed(const Duration(milliseconds: 50));
+      if (!mounted) return;
     }
   }
 
@@ -145,8 +145,8 @@ class _BirthdaysViewState extends State<BirthdaysView> {
       Expanded(
         child: groups.isEmpty
             ? _emptyState()
-            : ListView.builder(
-                controller: _scrollController,
+            : ScrollablePositionedList.builder(
+                itemScrollController: _itemScrollController,
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
                 itemCount: groups.length,
                 itemBuilder: (_, i) => _buildGroup(groups[i], isToday: groups[i].key == todayKey),
@@ -182,7 +182,6 @@ class _BirthdaysViewState extends State<BirthdaysView> {
     final color = isToday ? AppColors.amber : AppColors.navy;
     final label = isToday ? 'Today · ${DateFormat('d MMMM').format(date)}' : DateFormat('d MMMM').format(date);
     return Padding(
-      key: _keyFor(group.key),
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
