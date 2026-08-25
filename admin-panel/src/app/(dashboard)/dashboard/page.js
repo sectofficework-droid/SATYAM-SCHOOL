@@ -182,7 +182,10 @@ export default function DashboardPage() {
     getDashboardTasks().then(setDbPinnedTasks).catch(() => {});
     getInventoryAlerts().then(setDbInventoryAlerts).catch(() => {});
     getRecentActivities().then(setDbRecentActivities).catch(() => {});
-    getTodaysBirthdays().then(setDbBirthdays).catch(() => {});
+    // On failure, resolve to "nobody today" rather than leaving rows===undefined
+    // forever - BirthdayCard shows "Loading…" for exactly that undefined state,
+    // so a swallowed error here previously meant the card never left "Loading…".
+    getTodaysBirthdays().then(setDbBirthdays).catch(() => setDbBirthdays({ students: [], staff: [] }));
   }, []);
 
   // Re-fetched whenever the date picker changes, same as the fee/expense
