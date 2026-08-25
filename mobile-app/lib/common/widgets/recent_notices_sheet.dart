@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/notice_types.dart';
 import '../../core/utils/recent_notices.dart';
+import 'notice_detail_dialog.dart';
 
 // Simple swipeable notification panel - notices from the last 24 hours only,
 // swipe left or right to dismiss one. Shown both on app open (once per day,
@@ -113,7 +114,12 @@ class _RecentNoticesSheetState extends State<_RecentNoticesSheet> {
                     final light  = noticeTypeLight(type);
                     final dateStr = (n['posted_date'] ?? n['created_at']) as String?;
                     final date   = dateStr != null ? DateTime.tryParse(dateStr) : null;
-                    final tappable = (n['_isTask'] == true || n['_isAlert'] == true || n['_isExam'] == true) && widget.onItemTap != null;
+                    // Exam reminders navigate to the Marks tab (handled by the
+                    // caller's onItemTap); everything else - plain notices,
+                    // alerts, birthdays - opens its full, untruncated text
+                    // here instead, since the 2-line preview below cuts most
+                    // messages off with no other way to read the rest.
+                    final navigates = n['_isExam'] == true && widget.onItemTap != null;
                     return Dismissible(
                       key: ValueKey(n['id'] ?? '${n['title']}_$i'),
                       direction: DismissDirection.horizontal,
@@ -121,7 +127,9 @@ class _RecentNoticesSheetState extends State<_RecentNoticesSheet> {
                       background: _swipeBg(Alignment.centerLeft),
                       secondaryBackground: _swipeBg(Alignment.centerRight),
                       child: GestureDetector(
-                        onTap: tappable ? () { Navigator.pop(context); widget.onItemTap!(n); } : null,
+                        onTap: navigates
+                            ? () { Navigator.pop(context); widget.onItemTap!(n); }
+                            : () => showNoticeDetailDialog(context, n),
                         child: Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
@@ -155,7 +163,7 @@ class _RecentNoticesSheetState extends State<_RecentNoticesSheet> {
                                   style: const TextStyle(fontSize: 12, color: AppColors.textLight, height: 1.3)),
                               ],
                             ])),
-                            if (tappable) const Padding(
+                            const Padding(
                               padding: EdgeInsets.only(left: 4, top: 5),
                               child: Icon(Icons.chevron_right_rounded, color: AppColors.textHint, size: 18),
                             ),
