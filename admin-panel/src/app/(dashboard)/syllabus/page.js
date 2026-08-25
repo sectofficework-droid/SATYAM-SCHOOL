@@ -12,9 +12,9 @@ import {
   addChapters, updateChapterStatus, deleteChapter,
   addSubtopics, updateSubtopicStatus, deleteSubtopic,
   getPendingSyllabusEditRequests, approveSyllabusEditRequest, rejectSyllabusEditRequest,
-  computeTeacherGrowth, computeClassGrowth,
+  computeTeacherGrowth, computeClassGrowth, getSubjectTeacherFromTimetable,
 } from "@/lib/syllabusService";
-import { normalizeAgainstList } from "@/lib/importUtils";
+import { getCurrentAcademicYear } from "@/lib/studentService";
 import ThresholdSlider from "@/components/ThresholdSlider";
 
 const inp = "border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-school-navy w-full";
@@ -430,18 +430,18 @@ function GrowthPanel({ label, rows, color }) {
 }
 
 // ── Import - bulk-add chapters from an Excel sheet, chapter-wise only (no
-// subtopics - those stay a manual, per-chapter add in Browse & Edit). Same
-// template/parse/preview/confirm shape as the Student/Super Admin import
-// tools, but a single bulk addChapters() call instead of a sequential loop -
-// unlike enrollment numbers, nothing here depends on a live-incrementing
-// counter, so there's no race to serialize against.
+// subtopics - those stay a manual, per-chapter add in Browse & Edit). Class
+// and Subject are picked once up front (not per-row in the sheet), and the
+// subject teacher auto-fills from Settings → Timetable for that class+
+// subject instead of being typed per row - the sheet itself only ever needs
+// Chapter No + Chapter Name. A single bulk addChapters() call, not a
+// sequential loop - unlike enrollment numbers, nothing here depends on a
+// live-incrementing counter, so there's no race to serialize against.
 const IMPORT_FIELDS = [
-  { key: "cls",     label: "Class",   required: true },
-  { key: "subject", label: "Subject", required: true },
-  { key: "chapter", label: "Chapter", required: true },
-  { key: "teacher", label: "Teacher", required: true },
+  { key: "chapterNo",   label: "Chapter No",   required: true },
+  { key: "chapterName", label: "Chapter Name", required: true },
 ];
-const EXAMPLE_ROW = ["5th", "Mathematics", "Fractions", "Rajesh Patel"];
+const EXAMPLE_ROW = ["1", "Fractions"];
 
 function ImportTab() {
   const fileRef = useRef(null);
@@ -449,8 +449,20 @@ function ImportTab() {
   const [subjectsMap, setSubjectsMap] = useState({});
   const [teachers, setTeachers]       = useState([]);
   const [allSyllabus, setAllSyllabus] = useState([]);
+  const [yearLabel, setYearLabel]     = useState(null);
   const [ready, setReady]             = useState(false);
-  const [step, setStep]           = useState("idle");
+
+  const [step, setStep] = useState("setup"); // 'setup' | 'idle' | 'preview' | 'done'
+
+  // Setup - class/subject picked once; teacher auto-detected from the
+  // Timetable for that pair, editable in case the timetable isn't set up
+  // for it yet (or is wrong).
+  const [impClass, setImpClass]     = useState("");
+  const [impSubject, setImpSubject] = useState("");
+  const [teacherLookup, setTeacherLookup]     = useState("idle"); // 'idle' | 'loading' | 'done'
+  const [autoTeacherName, setAutoTeacherName] = useState(null);
+  const [impTeacherId, setImpTeacherId]       = useState("");
+
   const [parsed, setParsed]       = useState([]);
   const [rowErrors, setRowErrors] = useState([]);
   const [importing, setImporting] = useState(false);
@@ -458,15 +470,40 @@ function ImportTab() {
   const [importedCount, setImportedCount] = useState(0);
 
   useEffect(() => {
-    Promise.all([getClassesWithSections(), getAllClassSubjects(), getTeachingStaff(), getAllSyllabus()])
-      .then(([classes, subjMap, staff, syllabus]) => {
-        setClassNames(classes.filter(c => c.is_active).map(c => c.name));
+    Promise.all([getClassesWithSections(), getAllClassSubjects(), getTeachingStaff(), getAllSyllabus(), getCurrentAcademicYear()])
+      .then(([classes, subjMap, staff, syllabus, year]) => {
+        const active = classes.filter(c => c.is_active).map(c => c.name);
+        setClassNames(active);
         setSubjectsMap(subjMap);
         setTeachers(staff);
         setAllSyllabus(syllabus);
+        setYearLabel(year?.label || null);
+        setImpClass(prev => prev || active[0] || "");
       })
       .finally(() => setReady(true));
   }, []);
+
+  const subjectsForImpClass = subjectsMap[impClass] || [];
+  useEffect(() => {
+    if (subjectsForImpClass.length && !subjectsForImpClass.includes(impSubject)) setImpSubject(subjectsForImpClass[0]);
+  }, [impClass, subjectsForImpClass, impSubject]);
+
+  // Re-detect the subject teacher every time class or subject changes.
+  useEffect(() => {
+    if (!impClass || !impSubject || !yearLabel) return;
+    let cancelled = false;
+    setTeacherLookup("loading");
+    getSubjectTeacherFromTimetable(yearLabel, impClass, impSubject)
+      .then(name => {
+        if (cancelled) return;
+        setAutoTeacherName(name);
+        const match = teachers.find(t => t.name === name);
+        setImpTeacherId(match?.id || "");
+        setTeacherLookup("done");
+      })
+      .catch(() => { if (!cancelled) { setAutoTeacherName(null); setImpTeacherId(""); setTeacherLookup("done"); } });
+    return () => { cancelled = true; };
+  }, [impClass, impSubject, yearLabel, teachers]);
 
   function downloadTemplate() {
     const headerRow = IMPORT_FIELDS.map(f => f.label);
@@ -475,7 +512,7 @@ function ImportTab() {
     ws["!cols"] = IMPORT_FIELDS.map(() => ({ wch: 22 }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Syllabus");
-    XLSX.writeFile(wb, "Syllabus_Import_Template.xlsx");
+    XLSX.writeFile(wb, `Syllabus_Import_${impClass}_${impSubject}.xlsx`.replace(/\s+/g, "_"));
   }
 
   function handleFile(e) {
@@ -505,25 +542,11 @@ function ImportTab() {
             const raw = colMap[f.key] !== undefined ? (row[colMap[f.key]] ?? "") : "";
             s[f.key] = String(raw).trim();
           });
-          s.cls     = normalizeAgainstList(s.cls, classNames);
-          s.teacher = normalizeAgainstList(s.teacher, teachers.map(t => t.name));
 
-          if (!s.cls) s._errors.push("Class missing");
-          else if (!classNames.includes(s.cls)) s._errors.push(`Unknown class "${s.cls}"`);
+          if (!s.chapterNo) s._errors.push("Chapter No missing");
+          else if (!Number.isFinite(Number(s.chapterNo))) s._errors.push(`Chapter No "${s.chapterNo}" is not a number`);
 
-          const subjectsForClass = subjectsMap[s.cls] || [];
-          if (!s.subject) s._errors.push("Subject missing");
-          else if (s.cls && classNames.includes(s.cls)) {
-            s.subject = normalizeAgainstList(s.subject, subjectsForClass);
-            if (!subjectsForClass.includes(s.subject)) s._errors.push(`"${s.subject}" is not a configured subject for ${s.cls}`);
-          }
-
-          if (!s.chapter) s._errors.push("Chapter missing");
-
-          const teacherRow = teachers.find(t => t.name === s.teacher);
-          if (!s.teacher) s._errors.push("Teacher missing");
-          else if (!teacherRow) s._errors.push(`Unknown teacher "${s.teacher}"`);
-          else s._teacherId = teacherRow.id;
+          if (!s.chapterName) s._errors.push("Chapter Name missing");
 
           result.push(s);
           if (s._errors.length) errs.push(`Row ${s._row}: ${s._errors.join(", ")}`);
@@ -538,29 +561,25 @@ function ImportTab() {
   }
 
   async function confirmImport() {
-    const valid = parsed.filter(s => s._errors.length === 0);
+    const valid = parsed.filter(s => s._errors.length === 0)
+      .slice().sort((a, b) => Number(a.chapterNo) - Number(b.chapterNo));
     setImporting(true);
     setImportError(null);
     try {
-      // Chapters already on file per class+subject, so imported rows append
-      // after them (sort_order) instead of colliding back at 0 - same
-      // per-group counting the manual "Add Chapters" box already relies on,
-      // just computed across however many groups a single sheet spans.
-      const existingCounts = {};
-      allSyllabus.forEach(c => {
-        const key = `${c.class}|${c.subject}`;
-        existingCounts[key] = (existingCounts[key] || 0) + 1;
-      });
-      const rows = valid.map(s => {
-        const key = `${s.cls}|${s.subject}`;
-        const sortOrder = existingCounts[key] || 0;
-        existingCounts[key] = sortOrder + 1;
-        return {
-          class: s.cls, subject: s.subject, chapter: s.chapter,
-          status: "Not Started", teacher_id: s._teacherId, sort_order: sortOrder,
-        };
-      });
+      // Chapters already on file for this class+subject, so imported rows
+      // append after them (sort_order) instead of colliding back at 0 -
+      // same per-group counting the manual "Add Chapters" box relies on.
+      const key = `${impClass}|${impSubject}`;
+      let sortOrder = allSyllabus.filter(c => `${c.class}|${c.subject}` === key).length;
+      const rows = valid.map(s => ({
+        class: impClass, subject: impSubject, chapter: s.chapterName,
+        status: "Not Started", teacher_id: impTeacherId, sort_order: sortOrder++,
+      }));
       await addChapters(rows);
+      // Keep the local count in sync so importing again right away (same or
+      // a different class+subject) computes sort_order against what was
+      // just added, not a stale pre-import snapshot.
+      setAllSyllabus(prev => [...prev, ...rows]);
       setImportedCount(rows.length);
       setStep("done");
     } catch (err) {
@@ -570,63 +589,127 @@ function ImportTab() {
     }
   }
 
-  function reset() { setParsed([]); setRowErrors([]); setStep("idle"); setImportError(null); setImportedCount(0); }
+  function resetFile() { setParsed([]); setRowErrors([]); setStep("idle"); setImportError(null); setImportedCount(0); }
+  function backToSetup() { resetFile(); setStep("setup"); }
 
   const valid   = parsed.filter(s => s._errors.length === 0);
   const invalid = parsed.filter(s => s._errors.length  >  0);
 
   if (!ready) return <LoadingBlock />;
 
+  const teacherName = teachers.find(t => t.id === impTeacherId)?.name || "";
+  const contextBar = (
+    <div className="flex flex-wrap items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-xs">
+      <span className="font-semibold text-school-navy">{impClass}</span>
+      <span className="text-gray-300">·</span>
+      <span className="font-semibold text-gray-700">{impSubject}</span>
+      <span className="text-gray-300">·</span>
+      <span className="text-gray-500">Teacher: <span className="font-semibold text-gray-700">{teacherName || "—"}</span></span>
+      <button onClick={backToSetup} className="ml-auto text-school-navy font-semibold hover:underline">Change</button>
+    </div>
+  );
+
   return (
     <div className="space-y-5">
-      {step === "idle" && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0">
-                <Download className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-blue-900">Step 1 — Download Template</p>
-                <p className="text-xs text-blue-600 mt-0.5">Class, Subject, Chapter, Teacher — chapter-wise only, no subtopics</p>
-              </div>
-            </div>
-            <ul className="text-xs text-blue-700 space-y-1 pl-1">
-              {["Row 2 shows which fields are required", "Row 3 shows example data — replace with real data", "One chapter per row"].map(t => (
-                <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0" />{t}</li>
-              ))}
-            </ul>
-            <button onClick={downloadTemplate}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
-              <Download className="w-4 h-4" /> Download Template (.xlsx)
-            </button>
+      {step === "setup" && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4 max-w-lg">
+          <div>
+            <p className="text-sm font-bold text-gray-700">1. Choose Class &amp; Subject</p>
+            <p className="text-xs text-gray-400 mt-0.5">Applies to every chapter in the sheet you upload next.</p>
           </div>
-          <div className="bg-green-50 border border-green-200 rounded-2xl p-5 space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-green-600 flex items-center justify-center flex-shrink-0">
-                <Upload className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-green-900">Step 2 — Upload Filled File</p>
-                <p className="text-xs text-green-600 mt-0.5">Upload the template after filling in chapters</p>
-              </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Class</label>
+              <select className={sel} value={impClass} onChange={e => setImpClass(e.target.value)}>
+                {classNames.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
             </div>
-            <ul className="text-xs text-green-700 space-y-1 pl-1">
-              {["Use only the downloaded template", "Teacher must match an existing teaching staff name", "Supports .xlsx and .xls files"].map(t => (
-                <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0" />{t}</li>
-              ))}
-            </ul>
-            <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
-            <button onClick={() => fileRef.current?.click()}
-              className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
-              <Upload className="w-4 h-4" /> Select Excel File
-            </button>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Subject</label>
+              <select className={sel} value={impSubject} onChange={e => setImpSubject(e.target.value)} disabled={!subjectsForImpClass.length}>
+                {subjectsForImpClass.length === 0
+                  ? <option value="">No subjects configured</option>
+                  : subjectsForImpClass.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-3.5">
+            <p className="text-xs font-semibold text-gray-500 mb-1.5">Subject Teacher</p>
+            {teacherLookup === "loading" ? (
+              <p className="text-xs text-gray-400">Checking the Timetable…</p>
+            ) : autoTeacherName ? (
+              <p className="text-xs text-green-700 flex items-center gap-1.5"><Check className="w-3.5 h-3.5" /> Auto-detected from Timetable: <span className="font-semibold">{autoTeacherName}</span></p>
+            ) : (
+              <p className="text-xs text-amber-700 flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" /> No teacher found in the Timetable for this class + subject — pick one below.</p>
+            )}
+            <select className={sel + " mt-2"} value={impTeacherId} onChange={e => setImpTeacherId(e.target.value)}>
+              <option value="">Select teacher…</option>
+              {teachers.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </div>
+
+          <button
+            onClick={() => setStep("idle")}
+            disabled={!impClass || !impSubject || !impTeacherId}
+            className="w-full flex items-center justify-center gap-2 bg-school-navy text-white py-2.5 rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors shadow-sm disabled:opacity-50">
+            Continue
+          </button>
+        </div>
+      )}
+
+      {step === "idle" && (
+        <div className="space-y-4">
+          {contextBar}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0">
+                  <Download className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-blue-900">Step 1 — Download Template</p>
+                  <p className="text-xs text-blue-600 mt-0.5">Just Chapter No + Chapter Name — chapter-wise only, no subtopics</p>
+                </div>
+              </div>
+              <ul className="text-xs text-blue-700 space-y-1 pl-1">
+                {["Row 2 shows which fields are required", "Row 3 shows example data — replace with real data", "One chapter per row"].map(t => (
+                  <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0" />{t}</li>
+                ))}
+              </ul>
+              <button onClick={downloadTemplate}
+                className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
+                <Download className="w-4 h-4" /> Download Template (.xlsx)
+              </button>
+            </div>
+            <div className="bg-green-50 border border-green-200 rounded-2xl p-5 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-green-600 flex items-center justify-center flex-shrink-0">
+                  <Upload className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-green-900">Step 2 — Upload Filled File</p>
+                  <p className="text-xs text-green-600 mt-0.5">Upload the template after filling in chapters</p>
+                </div>
+              </div>
+              <ul className="text-xs text-green-700 space-y-1 pl-1">
+                {["Use only the downloaded template", "Chapter No decides the order", "Supports .xlsx and .xls files"].map(t => (
+                  <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0" />{t}</li>
+                ))}
+              </ul>
+              <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
+              <button onClick={() => fileRef.current?.click()}
+                className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
+                <Upload className="w-4 h-4" /> Select Excel File
+              </button>
+            </div>
           </div>
         </div>
       )}
 
       {step === "preview" && (
         <div className="space-y-4">
+          {contextBar}
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-3 py-1.5 rounded-xl text-sm font-semibold">
               <CheckCircle2 className="w-4 h-4" /> {valid.length} valid chapter{valid.length !== 1 ? "s" : ""}
@@ -650,29 +733,27 @@ function ImportTab() {
           )}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-              <p className="text-sm font-bold text-gray-700">Preview — First 10 valid rows</p>
+              <p className="text-sm font-bold text-gray-700">Preview — First 10 valid rows, in Chapter No order</p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="bg-school-navy text-white">
-                    {["#", "Class", "Subject", "Chapter", "Teacher"].map(h => (
+                    {["#", "Chapter No", "Chapter Name"].map(h => (
                       <th key={h} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {valid.slice(0, 10).map((s, i) => (
+                  {valid.slice().sort((a, b) => Number(a.chapterNo) - Number(b.chapterNo)).slice(0, 10).map((s, i) => (
                     <tr key={i} className={"border-b border-gray-50 " + (i % 2 === 0 ? "bg-white" : "bg-gray-50/40")}>
                       <td className="px-3 py-2 text-gray-400">{s._row}</td>
-                      <td className="px-3 py-2 text-school-navy font-semibold">{s.cls}</td>
-                      <td className="px-3 py-2 text-gray-700">{s.subject}</td>
-                      <td className="px-3 py-2 font-semibold text-gray-800">{s.chapter}</td>
-                      <td className="px-3 py-2 text-gray-600">{s.teacher}</td>
+                      <td className="px-3 py-2 text-school-navy font-semibold">{s.chapterNo}</td>
+                      <td className="px-3 py-2 font-semibold text-gray-800">{s.chapterName}</td>
                     </tr>
                   ))}
                   {valid.length > 10 && (
-                    <tr><td colSpan={5} className="px-3 py-2 text-center text-xs text-gray-400">... and {valid.length - 10} more chapters</td></tr>
+                    <tr><td colSpan={3} className="px-3 py-2 text-center text-xs text-gray-400">... and {valid.length - 10} more chapters</td></tr>
                   )}
                 </tbody>
               </table>
@@ -684,7 +765,7 @@ function ImportTab() {
             </div>
           )}
           <div className="flex gap-3">
-            <button onClick={reset}
+            <button onClick={resetFile}
               className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
               ← Back
             </button>
@@ -708,12 +789,18 @@ function ImportTab() {
           </div>
           <p className="text-xl font-bold text-gray-800">Import Complete!</p>
           <p className="text-sm text-gray-500">
-            <span className="font-bold text-green-700">{importedCount} chapter{importedCount !== 1 ? "s" : ""}</span> added successfully.
+            <span className="font-bold text-green-700">{importedCount} chapter{importedCount !== 1 ? "s" : ""}</span> added to {impClass} · {impSubject}.
           </p>
-          <button onClick={reset}
-            className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-school-navy text-white rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors">
-            <Upload className="w-4 h-4" /> Import More Chapters
-          </button>
+          <div className="flex gap-3">
+            <button onClick={resetFile}
+              className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-school-navy text-white rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors">
+              <Upload className="w-4 h-4" /> Import More for {impSubject}
+            </button>
+            <button onClick={backToSetup}
+              className="mt-2 flex items-center gap-2 px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+              Change Class / Subject
+            </button>
+          </div>
         </div>
       )}
     </div>
