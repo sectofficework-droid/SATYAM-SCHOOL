@@ -43,12 +43,10 @@ class _TimetableViewState extends State<TimetableView> {
   @override
   void initState() {
     super.initState();
-    // Defaults to tomorrow's schedule, not today's - most useful when
-    // checking in the evening to prepare for the next school day. If
-    // tomorrow is Sunday (no school), roll forward to Monday instead of a
-    // blank day.
-    final tomorrowIndex = DateTime.now().add(const Duration(days: 1)).weekday; // Mon=1 .. Sun=7
-    _selectedWeekday = (tomorrowIndex >= 1 && tomorrowIndex <= 6) ? _weekdays[tomorrowIndex - 1] : _weekdays.first;
+    // Defaults to today's schedule. If today is Sunday (no school), roll
+    // forward to Monday instead of a blank day.
+    final todayIndex = DateTime.now().weekday; // Mon=1 .. Sun=7
+    _selectedWeekday = (todayIndex >= 1 && todayIndex <= 6) ? _weekdays[todayIndex - 1] : _weekdays.first;
   }
 
   @override
