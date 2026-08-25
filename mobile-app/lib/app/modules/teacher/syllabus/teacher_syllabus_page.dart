@@ -528,6 +528,8 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     List<({int? no, String name, String? error})>? parsedRows;
     String? fileError;
     bool picking = false;
+    bool importing = false;
+    String? importError;
 
     showModalBottomSheet(
       context: context,
@@ -587,19 +589,34 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
           }
 
           Future<void> confirmImport() async {
-            final valid = validRows.toList()..sort((a, b) => a.no!.compareTo(b.no!));
-            final key = '$selectedClass|$selectedSubject';
-            var sortOrder = _mineChapters.where((c) => '${c['class']}|${c['subject']}' == key).length;
-            await SupabaseService.createSyllabusChapters(valid.map((r) => {
-              'teacher_id': profile['id'],
-              'class':      selectedClass,
-              'subject':    selectedSubject,
-              'chapter':    r.name,
-              'status':     'Not Started',
-              'sort_order': sortOrder++,
-            }).toList());
-            if (mounted) Navigator.pop(ctx);
-            _load();
+            setS(() { importing = true; importError = null; });
+            try {
+              final valid = validRows.toList()..sort((a, b) => a.no!.compareTo(b.no!));
+              final key = '$selectedClass|$selectedSubject';
+              var sortOrder = _mineChapters.where((c) => '${c['class']}|${c['subject']}' == key).length;
+              await SupabaseService.createSyllabusChapters(valid.map((r) => {
+                'teacher_id': profile['id'],
+                'class':      selectedClass,
+                'subject':    selectedSubject,
+                'chapter':    r.name,
+                'status':     'Not Started',
+                'sort_order': sortOrder++,
+              }).toList());
+              if (mounted) Navigator.pop(ctx);
+              _load();
+            } catch (e) {
+              // Most likely cause: a stale cached login session whose
+              // teacher_id no longer matches a real employees row (e.g. the
+              // account was deleted/recreated since last login) - surfaced
+              // as a foreign-key error from Supabase. Whatever the cause,
+              // this must never fail silently - previously an uncaught
+              // exception here just crashed to the console with the sheet
+              // looking like it did nothing.
+              final msg = e.toString().contains('foreign key')
+                  ? 'Your login session looks out of date - please log out and log back in, then try again.'
+                  : 'Import failed: $e';
+              setS(() { importError = msg; importing = false; });
+            }
           }
 
           return Padding(
@@ -712,9 +729,17 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                       ),
                     ),
                   ],
+                  if (importError != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: AppColors.redLight, borderRadius: BorderRadius.circular(10)),
+                      child: Text(importError!, style: const TextStyle(color: AppColors.red, fontSize: 12, fontWeight: FontWeight.w600)),
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   GestureDetector(
-                    onTap: (validRows.isEmpty || blocked) ? null : confirmImport,
+                    onTap: (validRows.isEmpty || blocked || importing) ? null : confirmImport,
                     child: Opacity(
                       opacity: (validRows.isEmpty || blocked) ? .5 : 1,
                       child: Container(
@@ -724,12 +749,14 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                           borderRadius: BorderRadius.circular(14),
                           boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
                         ),
-                        child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(Icons.upload_rounded, color: Colors.white, size: 20),
-                          const SizedBox(width: 8),
-                          Text('Import ${validRows.length} Chapter${validRows.length == 1 ? '' : 's'}',
-                            style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
-                        ])),
+                        child: Center(child: importing
+                            ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Row(mainAxisSize: MainAxisSize.min, children: [
+                                const Icon(Icons.upload_rounded, color: Colors.white, size: 20),
+                                const SizedBox(width: 8),
+                                Text('Import ${validRows.length} Chapter${validRows.length == 1 ? '' : 's'}',
+                                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
+                              ])),
                       ),
                     ),
                   ),
