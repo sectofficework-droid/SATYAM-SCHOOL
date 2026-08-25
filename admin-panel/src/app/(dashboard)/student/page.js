@@ -5,6 +5,7 @@ import Link from "next/link";
 import useStore from "@/lib/store";
 import AddStudentForm from "@/components/AddStudentForm";
 import BasicDetailsImportModal from "@/components/BasicDetailsImportModal";
+import EditSiblingsModal from "@/components/EditSiblingsModal";
 import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabase";
 import S3Image from "@/components/S3Image";
@@ -22,7 +23,7 @@ import {
   Plus, Search, GraduationCap, Phone, Calendar, Edit, Trash2,
   LogOut, Eye, User, ChevronDown, ArrowUpCircle,
   CheckCircle2, X, AlertTriangle, Package, FileText,
-  IndianRupee, Check, ArrowLeft, Download, RotateCcw, Lock, Upload,
+  IndianRupee, Check, ArrowLeft, Download, RotateCcw, Lock, Upload, Users,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { fmtDMY } from "@/lib/utils";
@@ -666,6 +667,7 @@ export default function StudentPage() {
   const [resetPwModal, setResetPwModal]       = useState(null);
   const [showAddModal, setShowAddModal]       = useState(false);
   const [showBasicImportModal, setShowBasicImportModal] = useState(false);
+  const [siblingsModal, setSiblingsModal]     = useState(null);
   const [detailsFilter, setDetailsFilter]     = useState("All");
 
   // Load academic years + active classes on mount
@@ -933,6 +935,18 @@ export default function StudentPage() {
         <BasicDetailsImportModal
           onClose={() => setShowBasicImportModal(false)}
           onImported={() => {
+            if (selectedYearId) {
+              fetchStudentsFromDB(selectedYearId).then((data) => setStudents(data));
+            }
+          }}
+        />
+      )}
+
+      {siblingsModal && (
+        <EditSiblingsModal
+          student={siblingsModal}
+          onClose={() => setSiblingsModal(null)}
+          onSaved={() => {
             if (selectedYearId) {
               fetchStudentsFromDB(selectedYearId).then((data) => setStudents(data));
             }
@@ -1329,6 +1343,10 @@ export default function StudentPage() {
                               <Eye className="w-3.5 h-3.5 flex-shrink-0"/> View
                             </Link>
                           </div>
+                          <button onClick={() => setSiblingsModal(student)}
+                            className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-100">
+                            <Users className="w-3.5 h-3.5 flex-shrink-0"/> Update Sibling
+                          </button>
                           <button disabled
                             className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200">
                             <RotateCcw className="w-3.5 h-3.5 flex-shrink-0"/> Readmission
@@ -1631,6 +1649,12 @@ export default function StudentPage() {
                             >
                               <Eye className="w-4 h-4 flex-shrink-0" /> View
                             </Link>
+                            <button
+                              onClick={() => setSiblingsModal(student)}
+                              className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-100 transition-colors"
+                            >
+                              <Users className="w-4 h-4 flex-shrink-0" /> Update Sibling
+                            </button>
                             <button
                               onClick={() => setDeactivateModal(student)}
                               className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-100 transition-colors"

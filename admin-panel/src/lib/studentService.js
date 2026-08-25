@@ -732,6 +732,29 @@ export async function updateStudent(studentId, formData) {
   }
 }
 
+// ── Update Siblings Only ─────────────────────────────────────────────────────
+// Standalone sibling-link save, separate from updateStudent() above - the
+// full Edit Student form has native `required` fields (Religion, Address,
+// Mobile 1, Aadhar, etc.) all over it, so a basic-import "Incomplete"
+// student (only 8 fields on file) can't submit that form at all until every
+// other required field is filled in too, even to just link a sibling.
+// Touches only student_siblings - never data_status - since linking a
+// sibling isn't part of what "Incomplete" tracks.
+export async function updateStudentSiblings(studentId, siblings) {
+  await supabase.from("student_siblings").delete().eq("student_id", studentId);
+  if (siblings?.length > 0) {
+    const { error } = await supabase.from("student_siblings").insert(
+      siblings.map(sib => ({
+        student_id:         studentId,
+        sibling_name:       sib.name,
+        sibling_class:      sib.cls,
+        sibling_student_id: sib.studentId || null,
+      }))
+    );
+    if (error) throw error;
+  }
+}
+
 // ── Deactivate Student ────────────────────────────────────────────────────────
 
 export async function deactivateStudent(studentId, enrollmentId, reason, date) {
