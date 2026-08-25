@@ -395,7 +395,7 @@ export async function getStudentByEnrollment(enrollmentNo) {
           school_name, grno, class, medium, place,
           attendance_days, last_exam_given, percentage
         ),
-        student_siblings(id, sibling_name, sibling_class, sibling_student_id),
+        student_siblings!student_siblings_student_id_fkey(id, sibling_name, sibling_class, sibling_student_id),
         student_documents(
           id, status, file_url, uploaded_at, reason,
           document_types(id, name)
