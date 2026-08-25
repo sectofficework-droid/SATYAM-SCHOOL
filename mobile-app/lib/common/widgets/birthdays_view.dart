@@ -25,7 +25,10 @@ typedef _DateGroup = MapEntry<String, List<Map<String, dynamic>>>;
 class _BirthdaysViewState extends State<BirthdaysView> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchCtrl = TextEditingController();
+  final Map<String, GlobalKey> _groupKeys = {};
   String _query = '';
+
+  GlobalKey _keyFor(String dateKey) => _groupKeys.putIfAbsent(dateKey, () => GlobalKey());
 
   @override
   void initState() {
@@ -103,7 +106,13 @@ class _BirthdaysViewState extends State<BirthdaysView> {
     return entries;
   }
 
-  void _scrollToToday() {
+  // Two-phase: fixed header/tile heights below are only estimates (real
+  // names/subtitles wrap to different heights, fonts scale per device), so
+  // a single jump computed from them alone used to land a few days off from
+  // today - a coarse jump gets the target group built by ListView.builder's
+  // lazy list, then Scrollable.ensureVisible snaps to its real measured
+  // position for the actual precise landing spot.
+  Future<void> _scrollToToday() async {
     if (!_scrollController.hasClients || _query.isNotEmpty) return;
     final groups = _groupedSorted;
     if (groups.isEmpty) return;
@@ -111,15 +120,19 @@ class _BirthdaysViewState extends State<BirthdaysView> {
     const headerHeight = 46.0;
     const tileHeight = 78.0;
     double offset = 0;
+    String targetKey = groups.last.key;
     for (final g in groups) {
-      if (_academicOrdinal(_keyToDate(g.key)) >= todayOrdinal) break;
+      if (_academicOrdinal(_keyToDate(g.key)) >= todayOrdinal) { targetKey = g.key; break; }
       offset += headerHeight + g.value.length * tileHeight;
     }
-    _scrollController.animateTo(
-      offset.clamp(0, _scrollController.position.maxScrollExtent),
-      duration: const Duration(milliseconds: 450),
-      curve: Curves.easeOut,
-    );
+    _scrollController.jumpTo(offset.clamp(0, _scrollController.position.maxScrollExtent));
+
+    await Future.delayed(const Duration(milliseconds: 60));
+    if (!mounted) return;
+    final ctx = _groupKeys[targetKey]?.currentContext;
+    if (ctx != null && ctx.mounted) {
+      await Scrollable.ensureVisible(ctx, alignment: 0, duration: const Duration(milliseconds: 350), curve: Curves.easeOut);
+    }
   }
 
   @override
@@ -169,6 +182,7 @@ class _BirthdaysViewState extends State<BirthdaysView> {
     final color = isToday ? AppColors.amber : AppColors.navy;
     final label = isToday ? 'Today · ${DateFormat('d MMMM').format(date)}' : DateFormat('d MMMM').format(date);
     return Padding(
+      key: _keyFor(group.key),
       padding: const EdgeInsets.only(bottom: 10),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
