@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   BookOpen, ShieldAlert, TrendingUp, ChevronDown, ChevronUp,
-  Plus, Trash2, X as XIcon, Lock,
+  Plus, Trash2, X as XIcon, Lock, Upload, Download, Check, AlertCircle, CheckCircle2,
 } from "lucide-react";
+import * as XLSX from "xlsx";
 import { getClassesWithSections, getAllClassSubjects } from "@/lib/settingsService";
 import {
   getAllSyllabus, getSubtopicsForChapters, getTeachingStaff,
@@ -13,6 +14,7 @@ import {
   getPendingSyllabusEditRequests, approveSyllabusEditRequest, rejectSyllabusEditRequest,
   computeTeacherGrowth, computeClassGrowth,
 } from "@/lib/syllabusService";
+import { normalizeAgainstList } from "@/lib/importUtils";
 import ThresholdSlider from "@/components/ThresholdSlider";
 
 const inp = "border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-school-navy w-full";
@@ -44,7 +46,7 @@ function LoadingBlock() {
 }
 
 export default function SyllabusPage() {
-  const [tab, setTab] = useState("browse"); // 'browse' | 'requests' | 'growth'
+  const [tab, setTab] = useState("browse"); // 'browse' | 'requests' | 'growth' | 'import'
   const [pendingCount, setPendingCount] = useState(0);
 
   const refreshPendingCount = useCallback(() => {
@@ -65,11 +67,13 @@ export default function SyllabusPage() {
         <TabButton active={tab === "browse"} onClick={() => setTab("browse")} icon={BookOpen} label="Browse & Edit" />
         <TabButton active={tab === "requests"} onClick={() => setTab("requests")} icon={ShieldAlert} label="Edit Requests" badge={pendingCount} />
         <TabButton active={tab === "growth"} onClick={() => setTab("growth")} icon={TrendingUp} label="Growth Analytics" />
+        <TabButton active={tab === "import"} onClick={() => setTab("import")} icon={Upload} label="Import" />
       </div>
 
       {tab === "browse" && <BrowseEditTab />}
       {tab === "requests" && <EditRequestsTab onChange={refreshPendingCount} />}
       {tab === "growth" && <GrowthAnalyticsTab />}
+      {tab === "import" && <ImportTab />}
     </div>
   );
 }
@@ -419,6 +423,297 @@ function GrowthPanel({ label, rows, color }) {
               <span className="font-semibold text-gray-800 flex-shrink-0 ml-2">{r.pct.toFixed(0)}%</span>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Import - bulk-add chapters from an Excel sheet, chapter-wise only (no
+// subtopics - those stay a manual, per-chapter add in Browse & Edit). Same
+// template/parse/preview/confirm shape as the Student/Super Admin import
+// tools, but a single bulk addChapters() call instead of a sequential loop -
+// unlike enrollment numbers, nothing here depends on a live-incrementing
+// counter, so there's no race to serialize against.
+const IMPORT_FIELDS = [
+  { key: "cls",     label: "Class",   required: true },
+  { key: "subject", label: "Subject", required: true },
+  { key: "chapter", label: "Chapter", required: true },
+  { key: "teacher", label: "Teacher", required: true },
+];
+const EXAMPLE_ROW = ["5th", "Mathematics", "Fractions", "Rajesh Patel"];
+
+function ImportTab() {
+  const fileRef = useRef(null);
+  const [classNames, setClassNames]   = useState([]);
+  const [subjectsMap, setSubjectsMap] = useState({});
+  const [teachers, setTeachers]       = useState([]);
+  const [allSyllabus, setAllSyllabus] = useState([]);
+  const [ready, setReady]             = useState(false);
+  const [step, setStep]           = useState("idle");
+  const [parsed, setParsed]       = useState([]);
+  const [rowErrors, setRowErrors] = useState([]);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState(null);
+  const [importedCount, setImportedCount] = useState(0);
+
+  useEffect(() => {
+    Promise.all([getClassesWithSections(), getAllClassSubjects(), getTeachingStaff(), getAllSyllabus()])
+      .then(([classes, subjMap, staff, syllabus]) => {
+        setClassNames(classes.filter(c => c.is_active).map(c => c.name));
+        setSubjectsMap(subjMap);
+        setTeachers(staff);
+        setAllSyllabus(syllabus);
+      })
+      .finally(() => setReady(true));
+  }, []);
+
+  function downloadTemplate() {
+    const headerRow = IMPORT_FIELDS.map(f => f.label);
+    const reqRow     = IMPORT_FIELDS.map(f => f.required ? "Required *" : "Optional");
+    const ws = XLSX.utils.aoa_to_sheet([headerRow, reqRow, EXAMPLE_ROW]);
+    ws["!cols"] = IMPORT_FIELDS.map(() => ({ wch: 22 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Syllabus");
+    XLSX.writeFile(wb, "Syllabus_Import_Template.xlsx");
+  }
+
+  function handleFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const wb   = XLSX.read(evt.target.result, { type: "binary" });
+        const ws   = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        if (rows.length < 3) { alert("File has no data rows. Please use the downloaded template."); return; }
+        const headerRow = rows[0];
+        const colMap = {};
+        const stripHint = (label) => String(label).replace(/\s*\([^)]*\)\s*$/, "").trim();
+        IMPORT_FIELDS.forEach(f => {
+          const idx = headerRow.findIndex(h => stripHint(h) === stripHint(f.label));
+          if (idx >= 0) colMap[f.key] = idx;
+        });
+        const dataRows = rows.slice(2);
+        const result = [];
+        const errs   = [];
+        dataRows.forEach((row, i) => {
+          if (row.every(c => !c)) return;
+          const s = { _row: i + 3, _errors: [] };
+          IMPORT_FIELDS.forEach(f => {
+            const raw = colMap[f.key] !== undefined ? (row[colMap[f.key]] ?? "") : "";
+            s[f.key] = String(raw).trim();
+          });
+          s.cls     = normalizeAgainstList(s.cls, classNames);
+          s.teacher = normalizeAgainstList(s.teacher, teachers.map(t => t.name));
+
+          if (!s.cls) s._errors.push("Class missing");
+          else if (!classNames.includes(s.cls)) s._errors.push(`Unknown class "${s.cls}"`);
+
+          const subjectsForClass = subjectsMap[s.cls] || [];
+          if (!s.subject) s._errors.push("Subject missing");
+          else if (s.cls && classNames.includes(s.cls)) {
+            s.subject = normalizeAgainstList(s.subject, subjectsForClass);
+            if (!subjectsForClass.includes(s.subject)) s._errors.push(`"${s.subject}" is not a configured subject for ${s.cls}`);
+          }
+
+          if (!s.chapter) s._errors.push("Chapter missing");
+
+          const teacherRow = teachers.find(t => t.name === s.teacher);
+          if (!s.teacher) s._errors.push("Teacher missing");
+          else if (!teacherRow) s._errors.push(`Unknown teacher "${s.teacher}"`);
+          else s._teacherId = teacherRow.id;
+
+          result.push(s);
+          if (s._errors.length) errs.push(`Row ${s._row}: ${s._errors.join(", ")}`);
+        });
+        setParsed(result);
+        setRowErrors(errs);
+        setStep("preview");
+      } catch { alert("Could not read the file. Please use the downloaded template (.xlsx)."); }
+    };
+    reader.readAsBinaryString(file);
+    e.target.value = "";
+  }
+
+  async function confirmImport() {
+    const valid = parsed.filter(s => s._errors.length === 0);
+    setImporting(true);
+    setImportError(null);
+    try {
+      // Chapters already on file per class+subject, so imported rows append
+      // after them (sort_order) instead of colliding back at 0 - same
+      // per-group counting the manual "Add Chapters" box already relies on,
+      // just computed across however many groups a single sheet spans.
+      const existingCounts = {};
+      allSyllabus.forEach(c => {
+        const key = `${c.class}|${c.subject}`;
+        existingCounts[key] = (existingCounts[key] || 0) + 1;
+      });
+      const rows = valid.map(s => {
+        const key = `${s.cls}|${s.subject}`;
+        const sortOrder = existingCounts[key] || 0;
+        existingCounts[key] = sortOrder + 1;
+        return {
+          class: s.cls, subject: s.subject, chapter: s.chapter,
+          status: "Not Started", teacher_id: s._teacherId, sort_order: sortOrder,
+        };
+      });
+      await addChapters(rows);
+      setImportedCount(rows.length);
+      setStep("done");
+    } catch (err) {
+      setImportError(err.message || "Import failed.");
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  function reset() { setParsed([]); setRowErrors([]); setStep("idle"); setImportError(null); setImportedCount(0); }
+
+  const valid   = parsed.filter(s => s._errors.length === 0);
+  const invalid = parsed.filter(s => s._errors.length  >  0);
+
+  if (!ready) return <LoadingBlock />;
+
+  return (
+    <div className="space-y-5">
+      {step === "idle" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center flex-shrink-0">
+                <Download className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-blue-900">Step 1 — Download Template</p>
+                <p className="text-xs text-blue-600 mt-0.5">Class, Subject, Chapter, Teacher — chapter-wise only, no subtopics</p>
+              </div>
+            </div>
+            <ul className="text-xs text-blue-700 space-y-1 pl-1">
+              {["Row 2 shows which fields are required", "Row 3 shows example data — replace with real data", "One chapter per row"].map(t => (
+                <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0" />{t}</li>
+              ))}
+            </ul>
+            <button onClick={downloadTemplate}
+              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
+              <Download className="w-4 h-4" /> Download Template (.xlsx)
+            </button>
+          </div>
+          <div className="bg-green-50 border border-green-200 rounded-2xl p-5 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-green-600 flex items-center justify-center flex-shrink-0">
+                <Upload className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-green-900">Step 2 — Upload Filled File</p>
+                <p className="text-xs text-green-600 mt-0.5">Upload the template after filling in chapters</p>
+              </div>
+            </div>
+            <ul className="text-xs text-green-700 space-y-1 pl-1">
+              {["Use only the downloaded template", "Teacher must match an existing teaching staff name", "Supports .xlsx and .xls files"].map(t => (
+                <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0" />{t}</li>
+              ))}
+            </ul>
+            <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleFile} />
+            <button onClick={() => fileRef.current?.click()}
+              className="w-full flex items-center justify-center gap-2 bg-green-600 hover:bg-green-700 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
+              <Upload className="w-4 h-4" /> Select Excel File
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === "preview" && (
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 bg-green-50 border border-green-200 text-green-700 px-3 py-1.5 rounded-xl text-sm font-semibold">
+              <CheckCircle2 className="w-4 h-4" /> {valid.length} valid chapter{valid.length !== 1 ? "s" : ""}
+            </div>
+            {invalid.length > 0 && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-1.5 rounded-xl text-sm font-semibold">
+                <AlertCircle className="w-4 h-4" /> {invalid.length} row{invalid.length !== 1 ? "s" : ""} with errors
+              </div>
+            )}
+            <span className="text-xs text-gray-400">{parsed.length} total rows parsed</span>
+          </div>
+          {rowErrors.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 space-y-1 max-h-36 overflow-y-auto">
+              <p className="text-xs font-bold text-red-700 mb-2 uppercase tracking-wide">Errors — these rows will be skipped</p>
+              {rowErrors.map((e, i) => (
+                <p key={i} className="text-xs text-red-600 flex items-start gap-1.5">
+                  <AlertCircle className="w-3 h-3 mt-0.5 flex-shrink-0" /> {e}
+                </p>
+              ))}
+            </div>
+          )}
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+              <p className="text-sm font-bold text-gray-700">Preview — First 10 valid rows</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-school-navy text-white">
+                    {["#", "Class", "Subject", "Chapter", "Teacher"].map(h => (
+                      <th key={h} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {valid.slice(0, 10).map((s, i) => (
+                    <tr key={i} className={"border-b border-gray-50 " + (i % 2 === 0 ? "bg-white" : "bg-gray-50/40")}>
+                      <td className="px-3 py-2 text-gray-400">{s._row}</td>
+                      <td className="px-3 py-2 text-school-navy font-semibold">{s.cls}</td>
+                      <td className="px-3 py-2 text-gray-700">{s.subject}</td>
+                      <td className="px-3 py-2 font-semibold text-gray-800">{s.chapter}</td>
+                      <td className="px-3 py-2 text-gray-600">{s.teacher}</td>
+                    </tr>
+                  ))}
+                  {valid.length > 10 && (
+                    <tr><td colSpan={5} className="px-3 py-2 text-center text-xs text-gray-400">... and {valid.length - 10} more chapters</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          {importError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <p className="text-sm text-red-600">{importError}</p>
+            </div>
+          )}
+          <div className="flex gap-3">
+            <button onClick={reset}
+              className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
+              ← Back
+            </button>
+            <button
+              onClick={confirmImport}
+              disabled={valid.length === 0 || importing}
+              className="flex items-center gap-2 px-6 py-2.5 bg-school-navy text-white rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors shadow-sm disabled:opacity-50">
+              {importing
+                ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Importing...</>
+                : <><Upload className="w-4 h-4" /> Import {valid.length} Chapter{valid.length !== 1 ? "s" : ""}</>
+              }
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === "done" && (
+        <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+          <div className="w-16 h-16 bg-green-100 rounded-2xl flex items-center justify-center">
+            <CheckCircle2 className="w-8 h-8 text-green-600" />
+          </div>
+          <p className="text-xl font-bold text-gray-800">Import Complete!</p>
+          <p className="text-sm text-gray-500">
+            <span className="font-bold text-green-700">{importedCount} chapter{importedCount !== 1 ? "s" : ""}</span> added successfully.
+          </p>
+          <button onClick={reset}
+            className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-school-navy text-white rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors">
+            <Upload className="w-4 h-4" /> Import More Chapters
+          </button>
         </div>
       )}
     </div>
