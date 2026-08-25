@@ -1,10 +1,12 @@
 import 'dart:async';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/utils/teacher_classes.dart';
+import '../../../../core/utils/xlsx_reader.dart';
 
 const _statuses = ['Not Started', 'In Progress', 'Completed'];
 const _editWindow = Duration(hours: 24);
@@ -511,6 +513,225 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     );
   }
 
+  // Excel import - Class/Subject picked once (unlike the sheet itself, which
+  // only ever needs Chapter No + Chapter Name), teacher_id is always this
+  // teacher, and the file's own header row (row 1) is never read as data.
+  void _showImportSheet() {
+    final profile   = AuthService.to.profile.value ?? {};
+    final myClasses = teacherClasses(profile);
+    String selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
+        ? profile['class_name'] as String
+        : (myClasses.isNotEmpty ? myClasses.first : allSchoolClasses.first);
+    String? selectedSubject;
+
+    List<({int? no, String name, String? error})>? parsedRows;
+    String? fileError;
+    bool picking = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) {
+          final subjectOptions = teacherSubjectsForClass(profile, selectedClass);
+          final sectionState = selectedSubject != null ? _sectionState(selectedClass, selectedSubject!) : null;
+          final blocked = sectionState != null && sectionState.locked && sectionState.approvedWindow == null;
+          final validRows = (parsedRows ?? const []).where((r) => r.error == null).toList();
+
+          Future<void> pickFile() async {
+            setS(() { fileError = null; parsedRows = null; picking = true; });
+            try {
+              final result = await FilePicker.pickFiles(
+                type: FileType.custom, allowedExtensions: ['xlsx'], withData: true,
+              );
+              final files = result?.files ?? const [];
+              final bytes = files.isNotEmpty ? files.first.bytes : null;
+              if (bytes == null) { setS(() => picking = false); return; }
+
+              final rows = readXlsxFirstSheet(bytes);
+              if (rows.length < 2) {
+                setS(() { fileError = 'File has no data rows below the header.'; picking = false; });
+                return;
+              }
+              final out = <({int? no, String name, String? error})>[];
+              for (final r in rows.skip(1)) {
+                if (r.every((c) => c.trim().isEmpty)) continue;
+                final noStr = r.isNotEmpty ? r[0].trim() : '';
+                final name  = r.length > 1 ? r[1].trim() : '';
+                final no = num.tryParse(noStr)?.toInt();
+                String? error;
+                if (noStr.isEmpty) {
+                  error = 'Chapter No missing';
+                } else if (no == null) {
+                  error = 'Chapter No "$noStr" is not a number';
+                } else if (name.isEmpty) {
+                  error = 'Chapter Name missing';
+                }
+                out.add((no: no, name: name, error: error));
+              }
+              setS(() { parsedRows = out; picking = false; });
+            } catch (_) {
+              setS(() { fileError = 'Could not read that file. Only .xlsx is supported.'; picking = false; });
+            }
+          }
+
+          Future<void> confirmImport() async {
+            final valid = validRows.toList()..sort((a, b) => a.no!.compareTo(b.no!));
+            final key = '$selectedClass|$selectedSubject';
+            var sortOrder = _mineChapters.where((c) => '${c['class']}|${c['subject']}' == key).length;
+            await SupabaseService.createSyllabusChapters(valid.map((r) => {
+              'teacher_id': profile['id'],
+              'class':      selectedClass,
+              'subject':    selectedSubject,
+              'chapter':    r.name,
+              'status':     'Not Started',
+              'sort_order': sortOrder++,
+            }).toList());
+            if (mounted) Navigator.pop(ctx);
+            _load();
+          }
+
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: Container(
+              decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(child: Container(
+                    width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+                  )),
+                  Row(children: [
+                    Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(colors: [AppColors.blue, AppColors.blue.withOpacity(.6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.upload_file_rounded, color: Colors.white, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Import Syllabus', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text)),
+                      Text('Excel file: Chapter No, Chapter Name — row 1 is skipped', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
+                    ])),
+                    IconButton(icon: const Icon(Icons.close_rounded, color: AppColors.textHint), onPressed: () => Navigator.pop(ctx)),
+                  ]),
+                  const SizedBox(height: 20),
+                  DropdownButtonFormField<String>(
+                    value: selectedClass,
+                    decoration: const InputDecoration(labelText: 'Class', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
+                    items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                    onChanged: (v) => setS(() { selectedClass = v!; selectedSubject = null; parsedRows = null; }),
+                  ),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<String>(
+                    value: selectedSubject,
+                    isExpanded: true,
+                    hint: const Text('Select', style: TextStyle(fontSize: 13)),
+                    decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
+                    items: (subjectOptions.isNotEmpty ? subjectOptions : schoolSubjects)
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
+                    onChanged: (v) => setS(() { selectedSubject = v; parsedRows = null; }),
+                  ),
+                  if (blocked) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: AppColors.redLight, borderRadius: BorderRadius.circular(10)),
+                      child: const Text(
+                        'This subject\'s syllabus is locked. Open it below and use Request Edit instead.',
+                        style: TextStyle(color: AppColors.red, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: (selectedSubject == null || blocked || picking) ? null : pickFile,
+                    child: Opacity(
+                      opacity: (selectedSubject == null || blocked) ? .5 : 1,
+                      child: Container(
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: AppColors.blueLight,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.blue.withOpacity(.3)),
+                        ),
+                        child: Center(child: picking
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.blue))
+                            : Row(mainAxisSize: MainAxisSize.min, children: [
+                                const Icon(Icons.description_outlined, color: AppColors.blue, size: 18),
+                                const SizedBox(width: 8),
+                                Text(parsedRows == null ? 'Select Excel File (.xlsx)' : 'Choose a different file',
+                                  style: const TextStyle(color: AppColors.blue, fontWeight: FontWeight.w700)),
+                              ])),
+                      ),
+                    ),
+                  ),
+                  if (fileError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(fileError!, style: const TextStyle(color: AppColors.red, fontSize: 12)),
+                  ],
+                  if (parsedRows != null) ...[
+                    const SizedBox(height: 12),
+                    Row(children: [
+                      Text('${validRows.length} chapter${validRows.length == 1 ? '' : 's'} found',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.green)),
+                      if (parsedRows!.length > validRows.length) ...[
+                        const SizedBox(width: 8),
+                        Text('${parsedRows!.length - validRows.length} skipped (errors)',
+                          style: const TextStyle(fontSize: 12, color: AppColors.red)),
+                      ],
+                    ]),
+                    const SizedBox(height: 6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 160),
+                      child: SingleChildScrollView(
+                        child: Column(children: parsedRows!.map((r) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          child: Row(children: [
+                            SizedBox(width: 28, child: Text(r.no?.toString() ?? '?', style: const TextStyle(fontSize: 12, color: AppColors.textHint))),
+                            Expanded(child: Text(r.error ?? r.name,
+                              style: TextStyle(fontSize: 12.5, color: r.error != null ? AppColors.red : AppColors.text))),
+                          ]),
+                        )).toList()),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: (validRows.isEmpty || blocked) ? null : confirmImport,
+                    child: Opacity(
+                      opacity: (validRows.isEmpty || blocked) ? .5 : 1,
+                      child: Container(
+                        height: 52,
+                        decoration: BoxDecoration(
+                          gradient: AppColors.navyGradient,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                        ),
+                        child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.upload_rounded, color: Colors.white, size: 20),
+                          const SizedBox(width: 8),
+                          Text('Import ${validRows.length} Chapter${validRows.length == 1 ? '' : 's'}',
+                            style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
+                        ])),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget body;
@@ -524,11 +745,27 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
       ]);
     }
 
-    final fab = FloatingActionButton.extended(
-      onPressed: _showAddChapterSheet,
-      backgroundColor: AppColors.navy,
-      icon: const Icon(Icons.add, color: Colors.white),
-      label: const Text('Add Chapters', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+    final fab = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        FloatingActionButton.extended(
+          heroTag: 'syllabus_import_fab',
+          onPressed: _showImportSheet,
+          backgroundColor: Colors.white,
+          foregroundColor: AppColors.navy,
+          icon: const Icon(Icons.upload_file_rounded, color: AppColors.navy),
+          label: const Text('Import', style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w700)),
+        ),
+        const SizedBox(height: 10),
+        FloatingActionButton.extended(
+          heroTag: 'syllabus_add_fab',
+          onPressed: _showAddChapterSheet,
+          backgroundColor: AppColors.navy,
+          icon: const Icon(Icons.add, color: Colors.white),
+          label: const Text('Add Chapters', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        ),
+      ],
     );
 
     if (widget.embedded) {

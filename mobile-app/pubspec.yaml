@@ -43,6 +43,9 @@ dependencies:
   google_mlkit_face_detection: ^0.14.0
   tflite_flutter: ^0.12.1
   image: ^4.9.1
+  file_picker: ^11.0.3
+  archive: ^4.0.9
+  xml: ^7.0.1
 
 dev_dependencies:
   flutter_test:
