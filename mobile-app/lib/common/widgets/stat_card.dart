@@ -101,28 +101,39 @@ class _StatCardState extends State<StatCard> {
                       // keeps every card in a row the same visible size.
                       child: SizedBox(
                         width: double.infinity,
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Container(
-                              width: 46, height: 46,
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(color: widget.color.withOpacity(.30), blurRadius: 8, offset: const Offset(0, 3)),
-                                ],
-                              ),
-                              child: Icon(widget.icon, color: widget.color, size: 27),
+                        // FittedBox+scaleDown, same technique the non-centered
+                        // branch below already uses - a plain Column here
+                        // overflowed by a pixel or two whenever the grid gave
+                        // this card slightly less height than the icon+label's
+                        // natural size needed (varies by platform/DPI), instead
+                        // of shrinking to fit like everything else on this card.
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Container(
+                                  width: 46, height: 46,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(color: widget.color.withOpacity(.30), blurRadius: 8, offset: const Offset(0, 3)),
+                                    ],
+                                  ),
+                                  child: Icon(widget.icon, color: widget.color, size: 27),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(widget.label,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.text)),
+                              ],
                             ),
-                            const SizedBox(height: 8),
-                            Text(widget.label,
-                              textAlign: TextAlign.center,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.text)),
-                          ],
+                          ),
                         ),
                       ),
                     )
