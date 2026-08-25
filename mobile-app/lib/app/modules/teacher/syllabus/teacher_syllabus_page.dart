@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
@@ -546,8 +547,17 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                 type: FileType.custom, allowedExtensions: ['xlsx'], withData: true,
               );
               final files = result?.files ?? const [];
-              final bytes = files.isNotEmpty ? files.first.bytes : null;
-              if (bytes == null) { setS(() => picking = false); return; }
+              if (files.isEmpty) { setS(() => picking = false); return; } // user cancelled the dialog
+
+              final picked = files.first;
+              // withData isn't always honoured on desktop - fall back to
+              // reading the path directly rather than silently doing
+              // nothing when .bytes comes back null.
+              final bytes = picked.bytes ?? (picked.path != null ? await File(picked.path!).readAsBytes() : null);
+              if (bytes == null) {
+                setS(() { fileError = 'Could not read the selected file. Please try again.'; picking = false; });
+                return;
+              }
 
               final rows = readXlsxFirstSheet(bytes);
               if (rows.length < 2) {
