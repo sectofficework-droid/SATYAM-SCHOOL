@@ -24,6 +24,36 @@ Color _statusBg(String status) => switch (status) {
   _             => AppColors.border,
 };
 
+// Small radial "% complete" ring used on each subject card - a plain
+// CircularProgressIndicator with the percentage centered on top of it.
+class _CircularProgress extends StatelessWidget {
+  final double percent; // 0-100
+  final Color color;
+  final double size;
+  const _CircularProgress({required this.percent, required this.color, this.size = 60});
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: size,
+    height: size,
+    child: Stack(alignment: Alignment.center, children: [
+      SizedBox(
+        width: size,
+        height: size,
+        child: CircularProgressIndicator(
+          value: (percent / 100).clamp(0, 1),
+          strokeWidth: 6,
+          backgroundColor: AppColors.border,
+          valueColor: AlwaysStoppedAnimation<Color>(color),
+          strokeCap: StrokeCap.round,
+        ),
+      ),
+      Text('${percent.toStringAsFixed(0)}%',
+        style: TextStyle(fontSize: size * 0.24, fontWeight: FontWeight.w800, color: color)),
+    ]),
+  );
+}
+
 class TeacherSyllabusPage extends StatefulWidget {
   final bool embedded;
   const TeacherSyllabusPage({super.key, this.embedded = false});
@@ -50,6 +80,12 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
 
   // 0 = Mine, 1 = Class Overview
   int _scope = 0;
+
+  // null = showing the subject grid; set = drilled into that group's own
+  // chapter list. Keyed the same way _grouped() keys its map ("Class ·
+  // Subject" for Mine, just "Subject" for Class Overview, since that's
+  // already scoped to one class).
+  String? _selectedGroupKey;
 
   final Set<String> _expanded = {}; // chapter ids currently showing subtopics
 
@@ -777,8 +813,11 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     } else {
       body = Column(children: [
         if (_isClassTeacher) _buildScopeTabBar(),
-        _buildGrowthChips(),
-        Expanded(child: _scope == 0 ? _buildMineList() : _buildClassList()),
+        Expanded(
+          child: _selectedGroupKey == null
+              ? (_scope == 0 ? _buildMineGrid() : _buildClassGrid())
+              : _buildGroupDetail(),
+        ),
       ]);
     }
 
@@ -836,7 +875,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
   Widget _scopeTabButton(String label, int index) {
     final active = _scope == index;
     return GestureDetector(
-      onTap: () => setState(() => _scope = index),
+      onTap: () => setState(() { _scope = index; _selectedGroupKey = null; }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(vertical: 9),
@@ -851,70 +890,14 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     );
   }
 
-  // ── Growth chips ────────────────────────────────────────────────────────
+  // ── Subject grid (top level) ────────────────────────────────────────────
+  // Each subject is one tile: a circular progress ring + name + chapter
+  // count. Tapping drills into that subject's own chapter list - the flat
+  // combined chapter list (with a separate row of tiny growth chips above
+  // it) this replaced made it hard to see at a glance which subjects still
+  // needed work without scrolling past every chapter first.
 
-  Widget _buildGrowthChips() {
-    if (_loading) return const SizedBox.shrink();
-    final chips = <Widget>[];
-    if (_scope == 0) {
-      if (_mineChapters.isEmpty) return const SizedBox.shrink();
-      chips.add(_growthChip('Overall', _leafCounts(_mineChapters), highlight: true));
-      final groups = _grouped(_mineChapters, includeClass: true).entries.toList()..sort((a, b) => a.key.compareTo(b.key));
-      chips.addAll(groups.map((e) => _growthChip(e.key, _leafCounts(e.value))));
-    } else {
-      if (_classChapters.isEmpty) return const SizedBox.shrink();
-      chips.add(_growthChip('Class Overall', _leafCounts(_classChapters), highlight: true));
-      final groups = _grouped(_classChapters, includeClass: false).entries.toList()..sort((a, b) => a.key.compareTo(b.key));
-      chips.addAll(groups.map((e) => _growthChip(e.key, _leafCounts(e.value))));
-    }
-    return SizedBox(
-      height: 70,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-        itemCount: chips.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, i) => chips[i],
-      ),
-    );
-  }
-
-  Widget _growthChip(String label, ({int total, int completed}) counts, {bool highlight = false}) {
-    final pct = counts.total == 0 ? 0.0 : counts.completed / counts.total * 100;
-    final color = pct >= 75 ? AppColors.green : pct >= 40 ? AppColors.amber : AppColors.red;
-    return Container(
-      width: 108,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: highlight ? AppColors.navy : AppColors.card,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: AppShadows.card,
-        border: highlight ? null : Border.all(color: AppColors.border),
-      ),
-      // FittedBox+scaleDown, same fix as StatCard's centered layout - a
-      // plain Column here overflowed by 1-3px against this chip's fixed
-      // 70px row height depending on the device's text-rendering metrics.
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.centerLeft,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('${pct.toStringAsFixed(0)}%',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: highlight ? Colors.white : color)),
-            const SizedBox(height: 2),
-            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: highlight ? Colors.white70 : AppColors.textLight)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Mine tab ─────────────────────────────────────────────────────────────
-
-  Widget _buildMineList() {
+  Widget _buildMineGrid() {
     final grouped = _grouped(_mineChapters, includeClass: true);
     if (grouped.isEmpty) {
       return _emptyState(
@@ -926,24 +909,156 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     return RefreshIndicator(
       color: AppColors.navy,
       onRefresh: _load,
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: GridView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1,
+        ),
         itemCount: sections.length,
         itemBuilder: (_, i) {
-          final chapters   = sections[i].value;
-          final className  = chapters.first['class'] as String? ?? '';
-          final subject    = chapters.first['subject'] as String? ?? '';
-          final state      = _sectionState(className, subject);
-          final editable   = !state.locked || state.approvedWindow != null;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 18),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              _sectionHeader(className, subject, state),
-              const SizedBox(height: 8),
-              ...chapters.map((c) => _chapterTile(c, owned: true, editable: editable)),
-            ]),
+          final key       = sections[i].key;
+          final chapters  = sections[i].value;
+          final className = chapters.first['class'] as String? ?? '';
+          final subject   = chapters.first['subject'] as String? ?? '';
+          final state     = _sectionState(className, subject);
+          return _subjectCard(
+            title: subject,
+            subtitle: className,
+            counts: _leafCounts(chapters),
+            chapterCount: chapters.length,
+            locked: state.locked,
+            onTap: () => setState(() => _selectedGroupKey = key),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildClassGrid() {
+    final grouped = _grouped(_classChapters, includeClass: false);
+    if (grouped.isEmpty) {
+      return _emptyState(title: 'No Syllabus Yet', subtitle: 'No chapters have been added for your class yet.');
+    }
+    final sections = grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+    return RefreshIndicator(
+      color: AppColors.navy,
+      onRefresh: _load,
+      child: GridView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1,
+        ),
+        itemCount: sections.length,
+        itemBuilder: (_, i) => _subjectCard(
+          title: sections[i].key,
+          counts: _leafCounts(sections[i].value),
+          chapterCount: sections[i].value.length,
+          onTap: () => setState(() => _selectedGroupKey = sections[i].key),
+        ),
+      ),
+    );
+  }
+
+  Widget _subjectCard({
+    required String title,
+    String? subtitle,
+    required ({int total, int completed}) counts,
+    required int chapterCount,
+    bool locked = false,
+    required VoidCallback onTap,
+  }) {
+    final pct   = counts.total == 0 ? 0.0 : counts.completed / counts.total * 100;
+    final color = pct >= 75 ? AppColors.green : pct >= 40 ? AppColors.amber : AppColors.red;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: AppShadows.card,
+          border: Border.all(color: AppColors.border),
+        ),
+        // FittedBox+scaleDown - same overflow lesson as StatCard/growth chip:
+        // a fixed-aspect grid cell can be a pixel or two shorter than this
+        // content's natural size depending on text-rendering metrics.
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _CircularProgress(percent: pct, color: color, size: 60),
+              const SizedBox(height: 8),
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                if (locked) const Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.lock_outline_rounded, size: 12, color: AppColors.textHint)),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 130),
+                  child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.text)),
+                ),
+              ]),
+              if (subtitle != null && subtitle.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: AppColors.textLight)),
+              ],
+              const SizedBox(height: 2),
+              Text('$chapterCount chapter${chapterCount == 1 ? '' : 's'}',
+                style: const TextStyle(fontSize: 10.5, color: AppColors.textHint)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Chapter detail (drilled into one subject) ───────────────────────────
+
+  Widget _buildGroupDetail() {
+    final key         = _selectedGroupKey!;
+    final isClassScope = _scope == 1;
+    final grouped = _grouped(isClassScope ? _classChapters : _mineChapters, includeClass: !isClassScope);
+    final chapters = grouped[key];
+    if (chapters == null || chapters.isEmpty) {
+      // The group disappeared from under us (e.g. its last chapter was just
+      // deleted) - bounce back to the grid instead of showing a dead end.
+      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _selectedGroupKey = null); });
+      return const SizedBox.shrink();
+    }
+    final className = isClassScope ? (AuthService.to.profile.value?['class_name'] as String? ?? '') : (chapters.first['class'] as String? ?? '');
+    final subject   = isClassScope ? key : (chapters.first['subject'] as String? ?? '');
+    final state     = _sectionState(className, subject);
+    final editableMine = !state.locked || state.approvedWindow != null;
+
+    return RefreshIndicator(
+      color: AppColors.navy,
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+        children: [
+          Row(children: [
+            GestureDetector(
+              onTap: () => setState(() => _selectedGroupKey = null),
+              child: Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.border)),
+                child: const Icon(Icons.arrow_back_rounded, size: 18, color: AppColors.navy),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: isClassScope
+                  ? Text(subject, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.navy))
+                  : _sectionHeader(className, subject, state),
+            ),
+          ]),
+          const SizedBox(height: 14),
+          ...chapters.map((c) {
+            final owned    = isClassScope ? c['teacher_id'] == _employeeId : true;
+            final editable = isClassScope ? (owned && c['locked'] != true) : editableMine;
+            return _chapterTile(c, owned: owned, editable: editable);
+          }),
+        ],
       ),
     );
   }
@@ -995,46 +1110,6 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
       ]),
     ),
   );
-
-  // ── Class Overview tab ──────────────────────────────────────────────────
-
-  Widget _buildClassList() {
-    final grouped = _grouped(_classChapters, includeClass: false);
-    if (grouped.isEmpty) {
-      return _emptyState(title: 'No Syllabus Yet', subtitle: 'No chapters have been added for your class yet.');
-    }
-    final sections = grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
-    return RefreshIndicator(
-      color: AppColors.navy,
-      onRefresh: _load,
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        itemCount: sections.length,
-        itemBuilder: (_, i) {
-          final section  = sections[i];
-          final chapters = section.value;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8, left: 2),
-                child: Text(section.key, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.navy)),
-              ),
-              ...chapters.map((c) {
-                final owned = c['teacher_id'] == _employeeId;
-                // Only this exact chapter row's own lock flag - Class
-                // Overview doesn't show the full request/window workflow
-                // (that lives in the Mine tab); a locked+owned chapter here
-                // just can't be deleted or grown new subtopics.
-                final editable = owned && c['locked'] != true;
-                return _chapterTile(c, owned: owned, editable: editable);
-              }),
-            ]),
-          );
-        },
-      ),
-    );
-  }
 
   // ── Shared chapter/subtopic tile ────────────────────────────────────────
 
