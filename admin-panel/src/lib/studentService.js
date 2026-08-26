@@ -755,6 +755,38 @@ export async function updateStudentSiblings(studentId, siblings) {
   }
 }
 
+// ── Update Basic Details ──────────────────────────────────────────────────────
+// Same "don't touch the full form" reasoning as updateStudentSiblings above,
+// widened to cover the handful of fields a Basic Details import actually
+// collects (name, parents, DOB, mobile, address) plus photo and siblings -
+// everything the Update Basic Details modal in the Student module edits in
+// one save. Deliberately does NOT set data_status: "Complete" the way
+// updateStudent() does - this only ever touches a subset of the full-details
+// form, so the record should keep showing "Incomplete" (if it was) until
+// Super Admin > Replace Full Details actually backfills the rest.
+export async function updateStudentBasicDetails(studentId, data) {
+  const { error } = await supabase
+    .from("students")
+    .update({
+      first_name:  data.firstName,
+      last_name:   data.lastName || "",
+      father_name: data.fatherName || null,
+      mother_name: data.motherName || null,
+      dob:         data.dob || null,
+      mobile1:     data.mobile || null,
+      mobile2:     data.mobile2 || null,
+      address:     data.address || null,
+      photo_url:   data.photo,
+      updated_at:  new Date().toISOString(),
+    })
+    .eq("id", studentId);
+  if (error) throw error;
+
+  if (data.siblings !== undefined) {
+    await updateStudentSiblings(studentId, data.siblings);
+  }
+}
+
 // ── Deactivate Student ────────────────────────────────────────────────────────
 
 export async function deactivateStudent(studentId, enrollmentId, reason, date) {
