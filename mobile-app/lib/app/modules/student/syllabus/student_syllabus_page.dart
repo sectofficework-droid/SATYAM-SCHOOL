@@ -96,6 +96,16 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
     return 'Not Started';
   }
 
+  // Whole-chapter completion (not leaf units) - "X/Y chapters", distinct
+  // from the ring's percent which is leaf-based (see _leafCounts).
+  ({int total, int completed}) _chapterProgress(List<Map<String, dynamic>> chapters) {
+    int completed = 0;
+    for (final c in chapters) {
+      if (_statusFor(c) == 'Completed') completed++;
+    }
+    return (total: chapters.length, completed: completed);
+  }
+
   // A "leaf unit" is a subtopic if the chapter has any, else the chapter
   // itself - same growth-counting rule as the teacher app.
   ({int total, int completed}) _leafCounts(List<Map<String, dynamic>> chapters) {
@@ -160,6 +170,7 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
           final subject  = sections[i].key;
           final chapters = sections[i].value;
           final counts   = _leafCounts(chapters);
+          final progress = _chapterProgress(chapters);
           final pct      = counts.total == 0 ? 0.0 : counts.completed / counts.total * 100;
           final color    = pct >= 75 ? AppColors.green : pct >= 40 ? AppColors.amber : AppColors.red;
           return GestureDetector(
@@ -185,7 +196,7 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
                         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.text)),
                     ),
                     const SizedBox(height: 2),
-                    Text('${chapters.length} chapter${chapters.length == 1 ? '' : 's'}',
+                    Text('${progress.completed}/${progress.total} chapters',
                       style: const TextStyle(fontSize: 10.5, color: AppColors.textHint)),
                   ],
                 ),
@@ -227,9 +238,38 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
             Expanded(child: Text(subject, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.navy))),
           ]),
           const SizedBox(height: 14),
+          _progressSummary(_leafCounts(chapters), _chapterProgress(chapters)),
+          const SizedBox(height: 14),
           ...chapters.asMap().entries.map((e) => _chapterTile(e.value, number: e.key + 1)),
         ],
       ),
+    );
+  }
+
+  // The same completeness ring shown on the subject card, repeated at the
+  // top of the drilled-in chapter list.
+  Widget _progressSummary(({int total, int completed}) leafCounts, ({int total, int completed}) chapterProgress) {
+    final pct   = leafCounts.total == 0 ? 0.0 : leafCounts.completed / leafCounts.total * 100;
+    final color = pct >= 75 ? AppColors.green : pct >= 40 ? AppColors.amber : AppColors.red;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.card,
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(children: [
+        _CircularProgress(percent: pct, color: color, size: 56),
+        const SizedBox(width: 14),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${chapterProgress.completed}/${chapterProgress.total} chapters completed',
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.text)),
+          const SizedBox(height: 2),
+          Text('${pct.toStringAsFixed(0)}% of the syllabus covered',
+            style: const TextStyle(fontSize: 11.5, color: AppColors.textLight)),
+        ])),
+      ]),
     );
   }
 

@@ -175,6 +175,20 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     return 'Not Started';
   }
 
+  // Whole-chapter completion (not leaf units) - "X/Y chapters" as shown on
+  // the subject card and detail header, distinct from the ring's percent
+  // (which is leaf-based, see _leafCounts) since a chapter only counts here
+  // once every one of its subtopics is Completed.
+  ({int total, int completed}) _chapterProgress(List<Map<String, dynamic>> chapters) {
+    int completed = 0;
+    for (final c in chapters) {
+      final subs = _subtopicsByChapter[c['id']] ?? const [];
+      final status = _derivedStatus(subs) ?? ((c['status'] ?? 'Not Started') as String);
+      if (status == 'Completed') completed++;
+    }
+    return (total: chapters.length, completed: completed);
+  }
+
   // A "leaf unit" is a subtopic if the chapter has any, else the chapter
   // itself - so a 3-subtopic chapter counts as 3 units toward growth, not 1.
   ({int total, int completed}) _leafCounts(List<Map<String, dynamic>> chapters) {
@@ -925,7 +939,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
             title: subject,
             subtitle: className,
             counts: _leafCounts(chapters),
-            chapterCount: chapters.length,
+            chapterProgress: _chapterProgress(chapters),
             locked: state.locked,
             onTap: () => setState(() => _selectedGroupKey = key),
           );
@@ -952,7 +966,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
         itemBuilder: (_, i) => _subjectCard(
           title: sections[i].key,
           counts: _leafCounts(sections[i].value),
-          chapterCount: sections[i].value.length,
+          chapterProgress: _chapterProgress(sections[i].value),
           onTap: () => setState(() => _selectedGroupKey = sections[i].key),
         ),
       ),
@@ -963,7 +977,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     required String title,
     String? subtitle,
     required ({int total, int completed}) counts,
-    required int chapterCount,
+    required ({int total, int completed}) chapterProgress,
     bool locked = false,
     required VoidCallback onTap,
   }) {
@@ -1003,7 +1017,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                   style: const TextStyle(fontSize: 11, color: AppColors.textLight)),
               ],
               const SizedBox(height: 2),
-              Text('$chapterCount chapter${chapterCount == 1 ? '' : 's'}',
+              Text('${chapterProgress.completed}/${chapterProgress.total} chapters',
                 style: const TextStyle(fontSize: 10.5, color: AppColors.textHint)),
             ],
           ),
@@ -1053,6 +1067,8 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
             ),
           ]),
           const SizedBox(height: 14),
+          _progressSummary(_leafCounts(chapters), _chapterProgress(chapters)),
+          const SizedBox(height: 14),
           ...chapters.asMap().entries.map((e) {
             final c        = e.value;
             final owned    = isClassScope ? c['teacher_id'] == _employeeId : true;
@@ -1061,6 +1077,35 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
           }),
         ],
       ),
+    );
+  }
+
+  // The same completeness ring shown on the subject card, repeated at the
+  // top of the drilled-in chapter list - so the graph isn't only visible
+  // from the outside, and the "X/Y chapters" figure is right above the
+  // chapters it's summarizing.
+  Widget _progressSummary(({int total, int completed}) leafCounts, ({int total, int completed}) chapterProgress) {
+    final pct   = leafCounts.total == 0 ? 0.0 : leafCounts.completed / leafCounts.total * 100;
+    final color = pct >= 75 ? AppColors.green : pct >= 40 ? AppColors.amber : AppColors.red;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.card,
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(children: [
+        _CircularProgress(percent: pct, color: color, size: 56),
+        const SizedBox(width: 14),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${chapterProgress.completed}/${chapterProgress.total} chapters completed',
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.text)),
+          const SizedBox(height: 2),
+          Text('${pct.toStringAsFixed(0)}% of the syllabus covered',
+            style: const TextStyle(fontSize: 11.5, color: AppColors.textLight)),
+        ])),
+      ]),
     );
   }
 
