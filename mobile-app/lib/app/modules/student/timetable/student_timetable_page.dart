@@ -15,7 +15,8 @@ class StudentTimetablePage extends StatefulWidget {
 
 class _StudentTimetablePageState extends State<StudentTimetablePage> {
   Map<String, dynamic>? _periodDefs;
-  Map<String, Map<String, dynamic>> _rowsByGroupSlot = {};
+  Map<String, dynamic>? _dayGroupWeekdays;
+  Map<String, List<Map<String, dynamic>>> _rowsByGroupSlot = {};
   bool _loading = true;
 
   @override
@@ -28,15 +29,21 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> {
 
     final year = await SupabaseService.fetchCurrentAcademicYearLabel();
     final defs = await SupabaseService.fetchPeriodDefs();
+    final weekdaysMap = await SupabaseService.fetchDayGroupWeekdays();
     final rows = (year != null && className.isNotEmpty)
         ? await SupabaseService.fetchTimetableForClass(year, className)
         : <Map<String, dynamic>>[];
 
-    final map = <String, Map<String, dynamic>>{};
+    final map = <String, List<Map<String, dynamic>>>{};
     for (final r in rows) {
-      map['${r['day_group']}|${r['slot_id']}'] = r;
+      map.putIfAbsent('${r['day_group']}|${r['slot_id']}', () => []).add(r);
     }
-    if (mounted) setState(() { _periodDefs = defs; _rowsByGroupSlot = map; _loading = false; });
+    if (mounted) setState(() {
+      _periodDefs = defs;
+      _dayGroupWeekdays = weekdaysMap;
+      _rowsByGroupSlot = map;
+      _loading = false;
+    });
   }
 
   @override
@@ -45,10 +52,17 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> {
         ? const Center(child: CircularProgressIndicator(color: AppColors.navy))
         : TimetableView(
             periodDefs: _periodDefs,
+            dayGroupWeekdays: _dayGroupWeekdays,
             rowsByGroupSlot: _rowsByGroupSlot,
-            // Teacher name intentionally not shown to students here.
-            buildFilled: (row) => Text((row['subject'] ?? '').toString().isEmpty ? 'Free Period' : row['subject'],
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.text)),
+            // Teacher name intentionally not shown to students here. A
+            // student's own class only ever has one row per slot (merging
+            // combines classes for a teacher's view, it doesn't split a
+            // class's own single row), so this only ever uses rows.first.
+            buildFilled: (rows) {
+              final row = rows.first;
+              return Text((row['subject'] ?? '').toString().isEmpty ? 'Free Period' : row['subject'],
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.text));
+            },
             buildEmpty: () => const Text('Free Period', style: TextStyle(fontSize: 13, color: AppColors.textHint, fontStyle: FontStyle.italic)),
           );
 

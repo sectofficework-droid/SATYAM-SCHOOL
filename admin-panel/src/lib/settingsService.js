@@ -55,6 +55,28 @@ export async function savePeriodDefs(defs) {
   if (error) throw error;
 }
 
+// { groupName: [weekday, ...] } - which weekdays use which day group's
+// periods. Mirrors getPeriodDefs/savePeriodDefs exactly; see
+// mobile-app/SUPABASE_TIMETABLE_CUSTOMIZE_MERGE.sql for why this exists as
+// its own column rather than being inferred from the group's name.
+export async function getDayGroupWeekdays() {
+  const { data, error } = await supabase
+    .from("school_profile")
+    .select("day_group_weekdays")
+    .limit(1)
+    .single();
+  if (error) throw error;
+  return data?.day_group_weekdays || null;
+}
+
+export async function saveDayGroupWeekdays(map) {
+  const { error } = await supabase
+    .from("school_profile")
+    .update({ day_group_weekdays: map, updated_at: new Date().toISOString() })
+    .not("id", "is", null);
+  if (error) throw error;
+}
+
 // ── Help Desk — Admin Numbers (Student app) ──────────────────────
 export async function getHelpDeskAdminNumbers() {
   const { data, error } = await supabase

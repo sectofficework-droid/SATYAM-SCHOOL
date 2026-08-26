@@ -4,30 +4,55 @@ import '../../core/theme/app_theme.dart';
 const List<String> _weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const List<String> _weekdayShort = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-// The admin panel's Timetable tab only defines 3 independent schedules
-// (Mon–Wed / Thu–Fri / Saturday all share the same slots within themselves),
-// not one per weekday - this maps the weekday the user picks down to
-// whichever of those 3 day-groups actually holds its period definitions.
-const Map<String, String> _weekdayToGroup = {
+// Used only when the admin panel's day_group_weekdays hasn't been set yet
+// (a school that's never touched the new "customize day groups" UI) - matches
+// the old hardcoded 3-group Mon–Sat split exactly, so nothing changes for
+// anyone until that UI is actually used.
+const Map<String, String> _defaultWeekdayToGroup = {
   'Monday': 'Mon – Wed', 'Tuesday': 'Mon – Wed', 'Wednesday': 'Mon – Wed',
   'Thursday': 'Thu – Fri', 'Friday': 'Thu – Fri',
   'Saturday': 'Saturday',
 };
 
+// Inverts { groupName: [weekday, ...] } into { weekday: groupName }, falling
+// back to the old hardcoded mapping for any weekday the fetched map doesn't
+// cover (partially-customized or not-yet-customized data).
+Map<String, String> _buildWeekdayToGroup(Map<String, dynamic>? dayGroupWeekdays) {
+  final map = <String, String>{..._defaultWeekdayToGroup};
+  if (dayGroupWeekdays != null) {
+    dayGroupWeekdays.forEach((group, days) {
+      if (days is List) {
+        for (final d in days) {
+          if (d is String) map[d] = group;
+        }
+      }
+    });
+  }
+  return map;
+}
+
 // Shared Timetable viewer for both apps - same weekday picker and period
 // list, but what a period shows (subject+teacher for a student, class+
 // subject for a teacher) is entirely up to the caller via buildFilled/
 // buildEmpty, since that's the one thing that differs between them.
+//
+// rowsByGroupSlot maps to a LIST, not a single row: Merge Classes (admin
+// panel) lets one teacher legitimately hold two timetables rows for the
+// same group+slot (one per merged class) - a single-row map would silently
+// drop one of them. buildFilled gets the full list; a student's own class
+// is still just a length-1 list in practice, a merged teacher's isn't.
 class TimetableView extends StatefulWidget {
   final Map<String, dynamic>? periodDefs;
-  // Keyed "$dayGroup|$slotId" -> that slot's row (subject/teacher/class_name/...).
-  final Map<String, Map<String, dynamic>> rowsByGroupSlot;
-  final Widget Function(Map<String, dynamic> row) buildFilled;
+  final Map<String, dynamic>? dayGroupWeekdays;
+  // Keyed "$dayGroup|$slotId" -> every row for that slot (normally one).
+  final Map<String, List<Map<String, dynamic>>> rowsByGroupSlot;
+  final Widget Function(List<Map<String, dynamic>> rows) buildFilled;
   final Widget Function() buildEmpty;
 
   const TimetableView({
     super.key,
     required this.periodDefs,
+    this.dayGroupWeekdays,
     required this.rowsByGroupSlot,
     required this.buildFilled,
     required this.buildEmpty,
@@ -51,7 +76,8 @@ class _TimetableViewState extends State<TimetableView> {
 
   @override
   Widget build(BuildContext context) {
-    final group = _weekdayToGroup[_selectedWeekday]!;
+    final weekdayToGroup = _buildWeekdayToGroup(widget.dayGroupWeekdays);
+    final group = weekdayToGroup[_selectedWeekday] ?? _defaultWeekdayToGroup[_selectedWeekday]!;
     final slots = List<Map<String, dynamic>>.from(widget.periodDefs?[group] ?? const []);
 
     return Column(children: [
@@ -129,7 +155,7 @@ class _TimetableViewState extends State<TimetableView> {
       );
     }
 
-    final row = widget.rowsByGroupSlot['$group|${slot['id']}'];
+    final rows = widget.rowsByGroupSlot['$group|${slot['id']}'] ?? const [];
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
@@ -150,7 +176,7 @@ class _TimetableViewState extends State<TimetableView> {
           ]),
         ),
         const SizedBox(width: 12),
-        Expanded(child: row != null ? widget.buildFilled(row) : widget.buildEmpty()),
+        Expanded(child: rows.isNotEmpty ? widget.buildFilled(rows) : widget.buildEmpty()),
       ]),
     );
   }

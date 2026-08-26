@@ -598,6 +598,17 @@ class SupabaseService {
     return res?['period_defs'] as Map<String, dynamic>?;
   }
 
+  // { groupName: [weekday, ...] } - which weekdays use which day group's
+  // periods. Day groups are fully custom now (admin can add/rename/delete
+  // them in Settings → Timetable), so this replaces what used to be a
+  // hardcoded assumption in TimetableView (_weekdayToGroup) that the
+  // group's own name told you the weekdays. Null if never customized -
+  // callers fall back to the old hardcoded 3-group mapping in that case.
+  static Future<Map<String, dynamic>?> fetchDayGroupWeekdays() async {
+    final res = await client.from('school_profile').select('day_group_weekdays').maybeSingle();
+    return res?['day_group_weekdays'] as Map<String, dynamic>?;
+  }
+
   static Future<List<Map<String, dynamic>>> fetchTimetableForClass(String academicYear, String className) async {
     final ttClassName = _timetableClassNameOverrides[className] ?? className;
     final res = await client
