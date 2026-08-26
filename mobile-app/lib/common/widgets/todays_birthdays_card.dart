@@ -19,6 +19,7 @@ class _TodaysBirthdaysCardState extends State<TodaysBirthdaysCard> {
   List<Map<String, dynamic>> _students = const [];
   List<Map<String, dynamic>> _staff = const [];
   bool _loaded = false;
+  String? _error;
 
   @override
   void initState() {
@@ -30,14 +31,34 @@ class _TodaysBirthdaysCardState extends State<TodaysBirthdaysCard> {
         _staff = data['staff'] ?? const [];
         _loaded = true;
       });
-    }).catchError((_) {
-      if (mounted) setState(() => _loaded = true); // fail quiet - just don't show the card
+    }).catchError((e) {
+      // "Nobody's birthday today" and "the RPC failed" both used to render
+      // identically - nothing at all - which made a real backend error
+      // indistinguishable from the correct empty state. Now shows the
+      // actual error so this isn't invisible next time something breaks.
+      if (mounted) setState(() { _loaded = true; _error = e.toString(); });
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_loaded || (_students.isEmpty && _staff.isEmpty)) return const SizedBox.shrink();
+    if (!_loaded) return const SizedBox.shrink();
+    if (_error != null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: AppColors.redLight, borderRadius: BorderRadius.circular(14)),
+          child: Row(children: [
+            const Icon(Icons.error_outline_rounded, color: AppColors.red, size: 16),
+            const SizedBox(width: 8),
+            Expanded(child: Text("Couldn't load today's birthdays: $_error",
+              style: const TextStyle(fontSize: 11, color: AppColors.red))),
+          ]),
+        ),
+      );
+    }
+    if (_students.isEmpty && _staff.isEmpty) return const SizedBox.shrink();
     final people = [
       ..._students.map((s) => (
         name: '${s['first_name'] ?? ''} ${s['last_name'] ?? ''}'.trim(),
