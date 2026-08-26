@@ -2269,7 +2269,13 @@ function TimetableTab() {
                     const rowBg = idx % 2 === 0 ? "bg-white" : "bg-gray-50/40";
                     return (
                       <tr key={slot.id} className={`border-b border-gray-100 ${rowBg}`}>
-                        <td className={`px-3 py-2 border-r border-gray-200 text-center sticky left-0 z-10 ${rowBg}`}>
+                        {/* Sticky TIME column always fully opaque white - it
+                            used to reuse rowBg, which is semi-transparent on
+                            alternating rows (bg-gray-50/40), so scrolling the
+                            table horizontally let the subject/teacher cells
+                            underneath show through the sticky column instead
+                            of being hidden behind it. */}
+                        <td className="px-3 py-2 border-r border-gray-200 text-center sticky left-0 z-10 bg-white">
                           <p className="text-[10px] font-bold text-school-navy whitespace-nowrap">{fmtSlotTime(slot)}</p>
                         </td>
                         {activeColClasses.map(cls => {
