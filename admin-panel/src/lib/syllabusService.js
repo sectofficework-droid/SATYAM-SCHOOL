@@ -188,3 +188,34 @@ export function computeClassGrowth(allSyllabus, subtopicsByChapter) {
     ...leafCounts(chapters, subtopicsByChapter),
   })).sort((a, b) => b.pct - a.pct);
 }
+
+// One entry per subject, aggregating every class/teacher for that subject.
+export function computeSubjectGrowth(allSyllabus, subtopicsByChapter) {
+  const bySubject = groupBy(allSyllabus, c => c.subject);
+  return Object.entries(bySubject).map(([subject, chapters]) => ({
+    id: subject,
+    name: subject,
+    ...leafCounts(chapters, subtopicsByChapter),
+  })).sort((a, b) => b.pct - a.pct);
+}
+
+// School-wide leaf-unit counts by status (Not Started / In Progress /
+// Completed) - same "leaf = subtopic if the chapter has any, else the
+// chapter itself" rule leafCounts() uses above, just split by status
+// instead of collapsed into a single completed/total pair.
+export function computeStatusDistribution(allSyllabus, subtopicsByChapter) {
+  const counts = { "Not Started": 0, "In Progress": 0, "Completed": 0 };
+  allSyllabus.forEach(c => {
+    const subs = subtopicsByChapter[c.id] || [];
+    if (subs.length === 0) {
+      const status = c.status || "Not Started";
+      counts[status] = (counts[status] || 0) + 1;
+    } else {
+      subs.forEach(s => {
+        const status = s.status || "Not Started";
+        counts[status] = (counts[status] || 0) + 1;
+      });
+    }
+  });
+  return counts;
+}

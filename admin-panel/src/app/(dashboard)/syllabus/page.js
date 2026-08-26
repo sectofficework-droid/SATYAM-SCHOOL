@@ -6,13 +6,18 @@ import {
   Plus, Trash2, X as XIcon, Lock, Upload, Download, Check, AlertCircle, CheckCircle2,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import {
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, Legend, ResponsiveContainer,
+} from "recharts";
 import { getClassesWithSections, getAllClassSubjects } from "@/lib/settingsService";
 import {
   getAllSyllabus, getSubtopicsForChapters, getTeachingStaff,
   addChapters, updateChapterStatus, deleteChapter,
   addSubtopics, updateSubtopicStatus, deleteSubtopic,
   getPendingSyllabusEditRequests, approveSyllabusEditRequest, rejectSyllabusEditRequest,
-  computeTeacherGrowth, computeClassGrowth, getSubjectTeacherFromTimetable,
+  computeTeacherGrowth, computeClassGrowth, computeSubjectGrowth, computeStatusDistribution,
+  getSubjectTeacherFromTimetable,
 } from "@/lib/syllabusService";
 import { getCurrentAcademicYear } from "@/lib/studentService";
 import ThresholdSlider from "@/components/ThresholdSlider";
@@ -361,6 +366,23 @@ function EditRequestsTab({ onChange }) {
 
 // ── Growth Analytics - teacher-wise and class-wise, each with a draggable
 // threshold slider that splits the group live into below/above panels ──────
+const STATUS_COLORS = { "Not Started": "#9ca3af", "In Progress": "#f59e0b", "Completed": "#22c55e" };
+function pctColor(pct) { return pct >= 75 ? "#22c55e" : pct >= 40 ? "#f59e0b" : "#ef4444"; }
+
+function ChartTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl shadow-lg px-4 py-3 text-xs">
+      {label && <p className="font-semibold text-gray-700 mb-1">{label}</p>}
+      {payload.map((p, i) => (
+        <p key={i} style={{ color: p.color || p.payload?.fill }}>
+          {p.name}: <span className="font-bold">{p.value}{typeof p.value === "number" && p.unit ? p.unit : ""}</span>
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function GrowthAnalyticsTab() {
   const [allSyllabus, setAllSyllabus] = useState([]);
   const [subtopicsByChapter, setSubtopicsByChapter] = useState({});
@@ -381,13 +403,94 @@ function GrowthAnalyticsTab() {
 
   const teacherGrowth = useMemo(() => computeTeacherGrowth(allSyllabus, subtopicsByChapter), [allSyllabus, subtopicsByChapter]);
   const classGrowth   = useMemo(() => computeClassGrowth(allSyllabus, subtopicsByChapter), [allSyllabus, subtopicsByChapter]);
+  const subjectGrowth = useMemo(() => computeSubjectGrowth(allSyllabus, subtopicsByChapter), [allSyllabus, subtopicsByChapter]);
+  const statusDist    = useMemo(() => computeStatusDistribution(allSyllabus, subtopicsByChapter), [allSyllabus, subtopicsByChapter]);
+  const statusPieData = useMemo(
+    () => Object.entries(statusDist).map(([name, value]) => ({ name, value })).filter(d => d.value > 0),
+    [statusDist]
+  );
 
   if (loading) return <LoadingBlock />;
 
   return (
     <div className="flex flex-col gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <ChartCard title="Status Distribution" subtitle="Every chapter/subtopic school-wide, by status">
+          {statusPieData.length === 0 ? <EmptyChart /> : (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={statusPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={2}>
+                  {statusPieData.map((d) => <Cell key={d.name} fill={STATUS_COLORS[d.name]} />)}
+                </Pie>
+                <Tooltip content={<ChartTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          )}
+        </ChartCard>
+
+        <ChartCard title="Class-wise Completion" subtitle="% of leaf units (subtopic, else chapter) marked Completed">
+          <HorizontalBarChart data={classGrowth} />
+        </ChartCard>
+
+        <ChartCard title="Subject-wise Completion" subtitle="Aggregated across every class + teacher for that subject">
+          <HorizontalBarChart data={subjectGrowth} />
+        </ChartCard>
+
+        <ChartCard title="Teacher-wise Completion" subtitle="Aggregated across every class + subject that teacher owns" scrollable={teacherGrowth.length > 8}>
+          <HorizontalBarChart data={teacherGrowth} />
+        </ChartCard>
+      </div>
+
       <GrowthSection title="Teacher-wise Growth" noun="teachers" rows={teacherGrowth} threshold={teacherThreshold} onThreshold={setTeacherThreshold} />
       <GrowthSection title="Class-wise Growth" noun="classes" rows={classGrowth} threshold={classThreshold} onThreshold={setClassThreshold} />
+    </div>
+  );
+}
+
+// Fixed-height card shell for a chart. When `scrollable` is set (long
+// teacher lists), the chart itself grows taller than the card and scrolls
+// inside it instead of squeezing every bar unreadably thin.
+function ChartCard({ title, subtitle, scrollable, children }) {
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+      <h3 className="text-sm font-bold text-gray-700 mb-1">{title}</h3>
+      <p className="text-xs text-gray-400 mb-3">{subtitle}</p>
+      {scrollable ? (
+        <div className="overflow-y-auto" style={{ maxHeight: 280 }}>{children}</div>
+      ) : (
+        <div style={{ height: 280 }}>{children}</div>
+      )}
+    </div>
+  );
+}
+
+function EmptyChart() {
+  return <div className="h-full flex items-center justify-center text-xs text-gray-400">No data yet</div>;
+}
+
+// Horizontal % Complete bar chart, one row per entry - shared by Class-wise/
+// Subject-wise/Teacher-wise, since they're all the exact same shape (name +
+// pct). Height grows with row count (min 200px) so long lists (e.g. 50+
+// teachers) still read instead of compressing every bar to a sliver -
+// ChartCard scrolls the overflow when that pushes past its own max height.
+function HorizontalBarChart({ data: raw }) {
+  if (raw.length === 0) return <EmptyChart />;
+  const data = raw.map(d => ({ ...d, pct: Math.round(d.pct) }));
+  const height = Math.max(200, data.length * 34);
+  return (
+    <div style={{ height }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} layout="vertical" margin={{ left: 8, right: 24 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+          <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11, fill: "#6b7280" }} axisLine={false} tickLine={false} unit="%" />
+          <YAxis type="category" dataKey="name" width={110} tick={{ fontSize: 11, fill: "#374151" }} axisLine={false} tickLine={false} />
+          <Tooltip content={<ChartTooltip />} />
+          <Bar dataKey="pct" name="Complete" unit="%" radius={[0, 4, 4, 0]} maxBarSize={18}>
+            {data.map((d) => <Cell key={d.id} fill={pctColor(d.pct)} />)}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }
