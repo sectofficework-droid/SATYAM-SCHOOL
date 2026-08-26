@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   CalendarCheck, Search, Users, Check, X as XIcon, Clock,
   Save, History, GraduationCap, ChevronLeft, ChevronRight,
-  Pencil, Bell, Send, ShieldAlert,
+  Pencil, Bell, Send, ShieldAlert, CalendarOff, Flag, Palmtree,
+  Plus, Trash2, Sun,
 } from "lucide-react";
 import { getStudents } from "@/lib/studentService";
 import {
@@ -12,8 +13,19 @@ import {
   getAttendanceOverviewForDate, sendAttendanceReminder,
   getPendingEditRequests, approveEditRequest, rejectEditRequest,
 } from "@/lib/attendanceService";
+import { getCalendarEvents, addCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "@/lib/calendarService";
+import { isWorkingDay, nonWorkingReason } from "@/lib/attendanceRules";
+import { getActiveClasses } from "@/lib/settingsService";
+import { YEAR_PLAN_CATEGORIES } from "@/lib/yearPlanData";
 import S3Image from "@/components/S3Image";
 import DateInputDMY from "@/components/DateInputDMY";
+
+// The 3 Year Planning categories that actually affect whether attendance is
+// expected - Function/Celebration/PTM/Exam/Sunday-label don't gate anything,
+// so this tab (deliberately a focused list, not Year Planning's full grid)
+// only deals with these.
+const HOLIDAY_CATEGORIES = YEAR_PLAN_CATEGORIES.filter(c => ["holiday", "govt", "working_day"].includes(c.key));
+const HOLIDAY_CAT_ICONS = { govt: Flag, holiday: Palmtree, working_day: CalendarCheck };
 
 // Classes worth listing first if present, before falling back to whatever
 // else shows up in the real data - avoids hardcoding a class list that could
@@ -37,14 +49,23 @@ function fmtDateLabel(iso) {
 }
 
 export default function AttendancePage() {
-  const [tab, setTab] = useState("mark"); // 'mark' | 'overview' | 'requests'
+  const [tab, setTab] = useState("mark"); // 'mark' | 'overview' | 'requests' | 'holidays'
   const [pendingCount, setPendingCount] = useState(0);
+  // Shared across Mark/View, Overview and Holidays so all three agree on
+  // the same working-day rule without three separate fetches - reloaded
+  // whenever the Holidays tab changes something.
+  const [calendarEvents, setCalendarEvents] = useState([]);
 
   const refreshPendingCount = useCallback(() => {
     getPendingEditRequests().then(rows => setPendingCount(rows.length)).catch(() => {});
   }, []);
 
+  const refreshCalendarEvents = useCallback(() => {
+    getCalendarEvents().then(setCalendarEvents).catch(() => {});
+  }, []);
+
   useEffect(() => { refreshPendingCount(); }, [refreshPendingCount, tab]);
+  useEffect(() => { refreshCalendarEvents(); }, [refreshCalendarEvents]);
 
   return (
     <div className="flex flex-col gap-5 max-w-6xl mx-auto">
@@ -59,11 +80,13 @@ export default function AttendancePage() {
         <TabButton active={tab === "mark"} onClick={() => setTab("mark")} icon={CalendarCheck} label="Mark / View" />
         <TabButton active={tab === "overview"} onClick={() => setTab("overview")} icon={Users} label="Overview" />
         <TabButton active={tab === "requests"} onClick={() => setTab("requests")} icon={ShieldAlert} label="Edit Requests" badge={pendingCount} />
+        <TabButton active={tab === "holidays"} onClick={() => setTab("holidays")} icon={CalendarOff} label="Holidays" />
       </div>
 
-      {tab === "mark" && <MarkAttendanceTab />}
-      {tab === "overview" && <OverviewTab />}
+      {tab === "mark" && <MarkAttendanceTab calendarEvents={calendarEvents} />}
+      {tab === "overview" && <OverviewTab calendarEvents={calendarEvents} />}
       {tab === "requests" && <EditRequestsTab onChange={refreshPendingCount} />}
+      {tab === "holidays" && <HolidaysTab events={calendarEvents} onChange={refreshCalendarEvents} />}
     </div>
   );
 }
@@ -83,7 +106,7 @@ function TabButton({ active, onClick, icon: Icon, label, badge }) {
 }
 
 // ── Mark / View attendance for one class + date ────────────────────────────
-function MarkAttendanceTab() {
+function MarkAttendanceTab({ calendarEvents }) {
   const [students,   setStudents]   = useState([]);
   const [loading,     setLoading]   = useState(true);
   const [selectedClass, setSelectedClass] = useState("");
@@ -144,6 +167,9 @@ function MarkAttendanceTab() {
   }, [selectedClass, selectedDate, classStudents]);
 
   useEffect(() => { loadAttendance(); }, [loadAttendance]);
+
+  const working = isWorkingDay(selectedDate, calendarEvents, selectedClass);
+  const holidayReason = !working ? nonWorkingReason(selectedDate, calendarEvents, selectedClass) : null;
 
   const filtered = classStudents.filter(s => {
     if (!search) return true;
@@ -217,6 +243,13 @@ function MarkAttendanceTab() {
             <span className="text-xs text-gray-400 font-medium">% Present</span>
             <span className={`text-2xl font-bold ${percent >= 75 ? "text-green-600" : percent >= 50 ? "text-amber-600" : "text-red-600"}`}>{percent}%</span>
           </div>
+        </div>
+      )}
+
+      {!working && classStudents.length > 0 && !attLoading && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-700 text-sm px-4 py-2.5 rounded-xl flex items-center gap-2">
+          <Palmtree className="w-4 h-4 flex-shrink-0" />
+          Holiday for {selectedClass} on {fmtDateLabel(selectedDate)} — {holidayReason}. Attendance isn&apos;t expected, but you can still mark it below if needed.
         </div>
       )}
 
@@ -339,7 +372,7 @@ function MarkAttendanceTab() {
 }
 
 // ── Overview: which classes/sections have marked attendance today ─────────
-function OverviewTab() {
+function OverviewTab({ calendarEvents }) {
   const [date, setDate] = useState(todayStr);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -375,7 +408,8 @@ function OverviewTab() {
     }
   }
 
-  const notMarked = rows.filter(r => r.status !== "Marked").length;
+  const rowsWithHoliday = rows.map(r => ({ ...r, isHoliday: !isWorkingDay(date, calendarEvents, r.className) }));
+  const notMarked = rowsWithHoliday.filter(r => !r.isHoliday && r.status !== "Marked").length;
 
   return (
     <div className="flex flex-col gap-4">
@@ -407,8 +441,10 @@ function OverviewTab() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {rows.map(row => {
-                const badgeStyle = row.status === "Marked"
+              {rowsWithHoliday.map(row => {
+                const badgeStyle = row.isHoliday
+                  ? "bg-gray-100 text-gray-500 border-gray-200"
+                  : row.status === "Marked"
                   ? "bg-green-50 text-green-700 border-green-200"
                   : row.status === "Partial"
                   ? "bg-amber-50 text-amber-700 border-amber-200"
@@ -419,10 +455,10 @@ function OverviewTab() {
                     <td className="px-3 py-2.5 text-gray-600">{row.teacherName || <span className="text-gray-300">Not assigned</span>}</td>
                     <td className="px-3 py-2.5 text-gray-500">{row.markedCount}/{row.totalStudents}</td>
                     <td className="px-3 py-2.5">
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${badgeStyle}`}>{row.status}</span>
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${badgeStyle}`}>{row.isHoliday ? "Holiday" : row.status}</span>
                     </td>
                     <td className="px-3 py-2.5 text-right">
-                      {row.status !== "Marked" && (
+                      {!row.isHoliday && row.status !== "Marked" && (
                         sentFor === row.sectionId ? (
                           <span className="text-xs text-green-600 font-medium">Reminder sent</span>
                         ) : (
@@ -537,6 +573,225 @@ function EditRequestsTab({ onChange }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Holidays: which dates (and optionally which classes) skip attendance ──
+// Writes the same school_calendar_events rows Settings > Year Planning
+// manages - this is just a focused view/editor for the 3 categories that
+// actually gate attendance (Holiday/Govt Holiday/Working Day override),
+// with the per-class scoping Year Planning's own grid doesn't offer.
+function HolidaysTab({ events, onChange }) {
+  const [classNames, setClassNames] = useState([]);
+  const [modal, setModal]           = useState(null);
+  const [modalError, setModalError] = useState("");
+  const [saving, setSaving]         = useState(false);
+
+  useEffect(() => {
+    getActiveClasses().then(cls => setClassNames(cls.map(c => c.name))).catch(() => {});
+  }, []);
+
+  const holidayEvents = events
+    .filter(e => ["holiday", "govt", "working_day"].includes(e.category))
+    .slice()
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  function openAdd() {
+    setModal({ mode: "add", date: todayStr, category: "holiday", label: "", scope: "all", classes: [] });
+    setModalError("");
+  }
+  function openEdit(ev) {
+    setModal({
+      mode: "edit", id: ev.id, date: ev.date, category: ev.category, label: ev.label,
+      scope: ev.classes?.length ? "specific" : "all", classes: ev.classes || [],
+    });
+    setModalError("");
+  }
+  function closeModal() { setModal(null); setModalError(""); }
+
+  function toggleClass(name) {
+    setModal(m => ({
+      ...m,
+      classes: m.classes.includes(name) ? m.classes.filter(c => c !== name) : [...m.classes, name],
+    }));
+  }
+
+  async function saveModal() {
+    if (!modal.label.trim()) { setModalError("Please enter a title / reason."); return; }
+    if (modal.scope === "specific" && modal.classes.length === 0) {
+      setModalError("Select at least one class, or switch to All Classes.");
+      return;
+    }
+    const payload = {
+      date: modal.date, category: modal.category, label: modal.label.trim(),
+      classes: modal.scope === "specific" ? modal.classes : [],
+    };
+    setSaving(true);
+    try {
+      if (modal.mode === "add") await addCalendarEvent(payload);
+      else await updateCalendarEvent(modal.id, payload);
+      closeModal();
+      onChange();
+    } catch (e) {
+      setModalError("Failed to save: " + e.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeModal() {
+    setSaving(true);
+    try {
+      await deleteCalendarEvent(modal.id);
+      closeModal();
+      onChange();
+    } catch (e) {
+      setModalError("Failed to delete: " + e.message);
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="bg-blue-50 border border-blue-200 text-blue-700 text-sm px-4 py-3 rounded-xl flex items-start gap-2.5">
+        <Sun className="w-4 h-4 flex-shrink-0 mt-0.5" />
+        <span>
+          Sundays skip attendance by default for every class. Add a <span className="font-semibold">Working Day</span> entry
+          below to reopen a specific Sunday (for all classes, or only some), or a <span className="font-semibold">Holiday</span> /
+          <span className="font-semibold"> Govt Holiday</span> entry for any other closed day.
+        </span>
+      </div>
+
+      <div className="flex justify-end">
+        <button onClick={openAdd}
+          className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-school-navy text-white text-sm font-semibold hover:bg-school-navy/90 transition-colors shadow-sm">
+          <Plus className="w-4 h-4" /> Add Holiday / Working Day
+        </button>
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {holidayEvents.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-40 gap-2">
+            <CalendarOff className="w-10 h-10 text-gray-200" />
+            <p className="text-sm text-gray-400">No holidays or working-day overrides added yet</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-50">
+            {holidayEvents.map(ev => {
+              const cat = HOLIDAY_CATEGORIES.find(c => c.key === ev.category);
+              const Icon = HOLIDAY_CAT_ICONS[ev.category] || CalendarOff;
+              return (
+                <button key={ev.id} onClick={() => openEdit(ev)}
+                  className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${cat?.light || "bg-gray-50"}`}>
+                    <Icon className={`w-4 h-4 ${cat?.text || "text-gray-500"}`} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">{ev.label}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{fmtDateLabel(ev.date)} · {cat?.label || ev.category}</p>
+                  </div>
+                  <span className="text-xs font-medium text-gray-500 flex-shrink-0">
+                    {ev.classes?.length ? `${ev.classes.length} class${ev.classes.length === 1 ? "" : "es"}` : "All Classes"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {modal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={closeModal}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h4 className="text-base font-bold text-gray-800">{modal.mode === "add" ? "Add Holiday / Working Day" : "Edit Entry"}</h4>
+              <button onClick={closeModal} className="text-gray-400 hover:text-gray-600"><XIcon className="w-5 h-5" /></button>
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1.5 block">Date</label>
+              <DateInputDMY value={modal.date} onChange={e => setModal(m => ({ ...m, date: e.target.value }))}
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-school-navy w-full" />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1.5 block">Type</label>
+              <div className="flex flex-wrap gap-2">
+                {HOLIDAY_CATEGORIES.map(c => {
+                  const Icon = HOLIDAY_CAT_ICONS[c.key];
+                  const active = modal.category === c.key;
+                  return (
+                    <button key={c.key} onClick={() => setModal(m => ({ ...m, category: c.key }))}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+                        active ? `${c.chip} ${c.text} border-transparent` : "border-gray-200 text-gray-500 hover:border-gray-300"
+                      }`}>
+                      <Icon className="w-3.5 h-3.5" /> {c.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {modal.category === "working_day" && (
+                <p className="text-xs text-gray-400 mt-1.5">Reopens this date for attendance - overrides Sunday and any Holiday/Govt Holiday on the same date.</p>
+              )}
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1.5 block">Title / Reason</label>
+              <input
+                className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-school-navy w-full"
+                value={modal.label}
+                onChange={e => { setModal(m => ({ ...m, label: e.target.value })); setModalError(""); }}
+                placeholder="e.g. Diwali Vacation"
+                maxLength={60}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold text-gray-500 mb-1.5 block">Applies to</label>
+              <div className="flex gap-2 mb-2.5">
+                {[["all", "All Classes"], ["specific", "Specific Classes"]].map(([key, label]) => (
+                  <button key={key} type="button" onClick={() => setModal(m => ({ ...m, scope: key }))}
+                    className={`flex-1 py-2 rounded-xl text-sm font-semibold border transition-all ${
+                      modal.scope === key
+                        ? "bg-school-navy text-white border-school-navy shadow-sm"
+                        : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+                    }`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              {modal.scope === "specific" && (
+                <div className="grid grid-cols-3 gap-1.5 max-h-36 overflow-y-auto border border-gray-100 rounded-xl p-2">
+                  {classNames.map(name => (
+                    <label key={name} className="flex items-center gap-1.5 text-xs text-gray-600 px-1.5 py-1 rounded-lg hover:bg-gray-50 cursor-pointer">
+                      <input type="checkbox" checked={modal.classes.includes(name)} onChange={() => toggleClass(name)}
+                        className="rounded border-gray-300 text-school-navy focus:ring-school-navy/30" />
+                      {name}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {modalError && <p className="text-xs text-red-500">{modalError}</p>}
+
+            <div className="flex justify-between items-center pt-2">
+              {modal.mode === "edit" ? (
+                <button onClick={removeModal} disabled={saving} className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-red-500 hover:bg-red-50 transition-colors disabled:opacity-50">
+                  <Trash2 className="w-4 h-4" /> Delete
+                </button>
+              ) : <span />}
+              <div className="flex gap-2">
+                <button onClick={closeModal} disabled={saving} className="px-4 py-2 rounded-lg text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50">Cancel</button>
+                <button onClick={saveModal} disabled={saving} className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-school-navy text-white hover:bg-school-navy/90 transition-colors disabled:opacity-50">
+                  <Save className="w-4 h-4" /> {saving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

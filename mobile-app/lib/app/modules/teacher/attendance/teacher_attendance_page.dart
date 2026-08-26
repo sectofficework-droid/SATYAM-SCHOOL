@@ -30,11 +30,14 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
   int _remainingSeconds = 0;
   bool _requesting = false;
 
-  // Admin-managed working-day/holiday calendar (Year Planning) - a non-
-  // working date blocks marking entirely, see isWorkingDay().
+  // Admin-managed working-day/holiday calendar (Year Planning / Attendance >
+  // Holidays) - a non-working date blocks marking entirely, see
+  // isWorkingDay(). Scoped to this teacher's own class, since an entry can
+  // now target only specific classes (see SUPABASE_CALENDAR_CLASS_SCOPE.sql).
   List<Map<String, dynamic>> _calendarEvents = [];
-  bool get _isWorkingDayForDate => isWorkingDay(_date, _calendarEvents);
-  String get _nonWorkingReason => nonWorkingReason(_date, _calendarEvents);
+  String get _className => (AuthService.to.profile.value?['class_name'] as String?) ?? '';
+  bool get _isWorkingDayForDate => isWorkingDay(_date, _calendarEvents, _className);
+  String get _nonWorkingReason => nonWorkingReason(_date, _calendarEvents, _className);
 
   bool get _isLocked => _wasMarked && _approvedWindow == null;
 
