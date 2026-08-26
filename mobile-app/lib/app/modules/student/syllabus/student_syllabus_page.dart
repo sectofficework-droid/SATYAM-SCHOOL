@@ -16,9 +16,42 @@ Color _statusBg(String status) => switch (status) {
   _             => AppColors.border,
 };
 
-// Read-only: shows the syllabus chapters for the student's own class,
-// grouped by subject, with whatever status the teacher who owns each
-// chapter has set. Nothing here is editable from the student side.
+// Small radial "% complete" ring - same widget as the teacher app's subject
+// grid, kept as its own copy here since the two pages don't share a common
+// widgets file for this yet.
+class _CircularProgress extends StatelessWidget {
+  final double percent; // 0-100
+  final Color color;
+  final double size;
+  const _CircularProgress({required this.percent, required this.color, this.size = 60});
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: size,
+    height: size,
+    child: Stack(alignment: Alignment.center, children: [
+      SizedBox(
+        width: size,
+        height: size,
+        child: CircularProgressIndicator(
+          value: (percent / 100).clamp(0, 1),
+          strokeWidth: 6,
+          backgroundColor: AppColors.border,
+          valueColor: AlwaysStoppedAnimation<Color>(color),
+          strokeCap: StrokeCap.round,
+        ),
+      ),
+      Text('${percent.toStringAsFixed(0)}%',
+        style: TextStyle(fontSize: size * 0.24, fontWeight: FontWeight.w800, color: color)),
+    ]),
+  );
+}
+
+// Read-only: shows the syllabus chapters for the student's own class, one
+// subject card per subject (progress ring + chapter count, same layout as
+// the teacher app's own subject grid so the two feel consistent) - tapping
+// a subject drills into its numbered chapter list. Nothing here is editable
+// from the student side.
 class StudentSyllabusPage extends StatefulWidget {
   final bool embedded;
   const StudentSyllabusPage({super.key, this.embedded = false});
@@ -30,6 +63,9 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
   List<Map<String, dynamic>> _chapters = [];
   Map<String, List<Map<String, dynamic>>> _subtopicsByChapter = {};
   bool _loading = true;
+
+  // null = showing the subject grid; set = drilled into that subject's chapters.
+  String? _selectedSubject;
 
   @override
   void initState() { super.initState(); _load(); }
@@ -60,6 +96,23 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
     return 'Not Started';
   }
 
+  // A "leaf unit" is a subtopic if the chapter has any, else the chapter
+  // itself - same growth-counting rule as the teacher app.
+  ({int total, int completed}) _leafCounts(List<Map<String, dynamic>> chapters) {
+    int total = 0, completed = 0;
+    for (final c in chapters) {
+      final subs = _subtopicsByChapter[c['id']] ?? const [];
+      if (subs.isEmpty) {
+        total++;
+        if ((c['status'] ?? '') == 'Completed') completed++;
+      } else {
+        total += subs.length;
+        completed += subs.where((s) => (s['status'] ?? '') == 'Completed').length;
+      }
+    }
+    return (total: total, completed: completed);
+  }
+
   Map<String, List<Map<String, dynamic>>> get _grouped {
     final map = <String, List<Map<String, dynamic>>>{};
     for (final c in _chapters) {
@@ -71,11 +124,14 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
 
   @override
   Widget build(BuildContext context) {
-    final body = _loading
-        ? _buildShimmer()
-        : _chapters.isEmpty
-            ? _emptyState()
-            : _buildList();
+    Widget body;
+    if (_loading) {
+      body = _buildShimmer();
+    } else if (_chapters.isEmpty) {
+      body = _emptyState();
+    } else {
+      body = _selectedSubject == null ? _buildSubjectGrid() : _buildSubjectDetail();
+    }
 
     if (widget.embedded) return body;
     return Scaffold(
@@ -87,71 +143,143 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
     );
   }
 
-  Widget _buildList() {
+  // ── Subject grid (top level) ────────────────────────────────────────────
+
+  Widget _buildSubjectGrid() {
     final sections = _grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
     return RefreshIndicator(
       color: AppColors.navy,
       onRefresh: _load,
-      child: ListView.builder(
+      child: GridView.builder(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1,
+        ),
         itemCount: sections.length,
         itemBuilder: (_, i) {
-          final section  = sections[i];
-          final chapters = section.value;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8, left: 2),
-                child: Text(section.key, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.navy)),
+          final subject  = sections[i].key;
+          final chapters = sections[i].value;
+          final counts   = _leafCounts(chapters);
+          final pct      = counts.total == 0 ? 0.0 : counts.completed / counts.total * 100;
+          final color    = pct >= 75 ? AppColors.green : pct >= 40 ? AppColors.amber : AppColors.red;
+          return GestureDetector(
+            onTap: () => setState(() => _selectedSubject = subject),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.card,
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: AppShadows.card,
+                border: Border.all(color: AppColors.border),
               ),
-              ...chapters.map((c) {
-                final status = _statusFor(c);
-                final subtopics = _subtopicsByChapter[c['id']] ?? const [];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: AppColors.card,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: AppShadows.card,
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Row(children: [
-                      Expanded(child: Text(c['chapter'] ?? '',
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.text))),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(color: _statusBg(status), borderRadius: BorderRadius.circular(8)),
-                        child: Text(status, style: TextStyle(color: _statusColor(status), fontSize: 11, fontWeight: FontWeight.w700)),
-                      ),
-                    ]),
-                    if (subtopics.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      const Divider(height: 1, color: AppColors.border),
-                      const SizedBox(height: 8),
-                      ...subtopics.map((s) => Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Row(children: [
-                          const SizedBox(width: 6),
-                          Expanded(child: Text(s['name'] ?? '', style: const TextStyle(fontSize: 12.5, color: AppColors.textLight))),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(color: _statusBg(s['status'] ?? 'Not Started'), borderRadius: BorderRadius.circular(6)),
-                            child: Text(s['status'] ?? 'Not Started',
-                              style: TextStyle(color: _statusColor(s['status'] ?? 'Not Started'), fontSize: 10, fontWeight: FontWeight.w700)),
-                          ),
-                        ]),
-                      )),
-                    ],
-                  ]),
-                );
-              }),
-            ]),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _CircularProgress(percent: pct, color: color, size: 60),
+                    const SizedBox(height: 8),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 130),
+                      child: Text(subject, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.text)),
+                    ),
+                    const SizedBox(height: 2),
+                    Text('${chapters.length} chapter${chapters.length == 1 ? '' : 's'}',
+                      style: const TextStyle(fontSize: 10.5, color: AppColors.textHint)),
+                  ],
+                ),
+              ),
+            ),
           );
         },
       ),
+    );
+  }
+
+  // ── Chapter detail (drilled into one subject) ───────────────────────────
+
+  Widget _buildSubjectDetail() {
+    final subject  = _selectedSubject!;
+    final chapters = _grouped[subject];
+    if (chapters == null || chapters.isEmpty) {
+      // The subject disappeared from under us (e.g. its last chapter was
+      // removed) - bounce back to the grid instead of showing a dead end.
+      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _selectedSubject = null); });
+      return const SizedBox.shrink();
+    }
+    return RefreshIndicator(
+      color: AppColors.navy,
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+        children: [
+          Row(children: [
+            GestureDetector(
+              onTap: () => setState(() => _selectedSubject = null),
+              child: Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.border)),
+                child: const Icon(Icons.arrow_back_rounded, size: 18, color: AppColors.navy),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: Text(subject, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.navy))),
+          ]),
+          const SizedBox(height: 14),
+          ...chapters.asMap().entries.map((e) => _chapterTile(e.value, number: e.key + 1)),
+        ],
+      ),
+    );
+  }
+
+  Widget _chapterTile(Map<String, dynamic> chapter, {required int number}) {
+    final status    = _statusFor(chapter);
+    final subtopics = _subtopicsByChapter[chapter['id']] ?? const [];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: AppShadows.card,
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 22, height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: AppColors.navy.withOpacity(.08), shape: BoxShape.circle),
+            child: Text('$number', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.navy)),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Text(chapter['chapter'] ?? '',
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.text))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(color: _statusBg(status), borderRadius: BorderRadius.circular(8)),
+            child: Text(status, style: TextStyle(color: _statusColor(status), fontSize: 11, fontWeight: FontWeight.w700)),
+          ),
+        ]),
+        if (subtopics.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          const Divider(height: 1, color: AppColors.border),
+          const SizedBox(height: 8),
+          ...subtopics.map((s) => Padding(
+            padding: const EdgeInsets.only(bottom: 6, left: 32),
+            child: Row(children: [
+              Expanded(child: Text(s['name'] ?? '', style: const TextStyle(fontSize: 12.5, color: AppColors.textLight))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: _statusBg(s['status'] ?? 'Not Started'), borderRadius: BorderRadius.circular(6)),
+                child: Text(s['status'] ?? 'Not Started',
+                  style: TextStyle(color: _statusColor(s['status'] ?? 'Not Started'), fontSize: 10, fontWeight: FontWeight.w700)),
+              ),
+            ]),
+          )),
+        ],
+      ]),
     );
   }
 

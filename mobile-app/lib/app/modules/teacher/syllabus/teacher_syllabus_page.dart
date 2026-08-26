@@ -1053,10 +1053,11 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
             ),
           ]),
           const SizedBox(height: 14),
-          ...chapters.map((c) {
+          ...chapters.asMap().entries.map((e) {
+            final c        = e.value;
             final owned    = isClassScope ? c['teacher_id'] == _employeeId : true;
             final editable = isClassScope ? (owned && c['locked'] != true) : editableMine;
-            return _chapterTile(c, owned: owned, editable: editable);
+            return _chapterTile(c, number: e.key + 1, owned: owned, editable: editable);
           }),
         ],
       ),
@@ -1113,7 +1114,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
 
   // ── Shared chapter/subtopic tile ────────────────────────────────────────
 
-  Widget _chapterTile(Map<String, dynamic> chapter, {required bool owned, required bool editable}) {
+  Widget _chapterTile(Map<String, dynamic> chapter, {required int number, required bool owned, required bool editable}) {
     final id = chapter['id'] as String;
     final subtopics = _subtopicsByChapter[id] ?? const [];
     final derived = _derivedStatus(subtopics);
@@ -1135,6 +1136,13 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(children: [
+              Container(
+                width: 22, height: 22,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: AppColors.navy.withOpacity(.08), shape: BoxShape.circle),
+                child: Text('$number', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.navy)),
+              ),
+              const SizedBox(width: 10),
               if (locked) const Padding(padding: EdgeInsets.only(right: 6), child: Icon(Icons.lock_outline_rounded, size: 14, color: AppColors.textHint)),
               Expanded(child: Text(chapter['chapter'] ?? '',
                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.text))),
