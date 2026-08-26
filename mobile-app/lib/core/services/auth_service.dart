@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:get/get.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'supabase_service.dart';
+import '../app_config.dart';
 
 // kiosk: the standalone Attendance flavor - never persists a session (see
 // runSatyamApp/AppConfig), so AuthService's login/session methods below are
@@ -28,6 +29,24 @@ class AuthService extends GetxService {
     final roleStr     = await _storage.read(key: 'user_role');
     final profileJson = await _storage.read(key: 'user_profile');
     if (roleStr == null || profileJson == null) return;
+
+    // Each build is locked to one role (see AppConfig) - but on Windows
+    // desktop specifically, the teacher and student builds share the same
+    // flutter_secure_storage (same exe identity; unlike Android, which gets
+    // separate encrypted storage per flavor's applicationId for free), so
+    // logging into one flavor on a dev machine and then launching the other
+    // could otherwise silently restore the WRONG role's cached session -
+    // e.g. a teacher-locked build showing a student's profile data inside
+    // its own teacher-shaped Home screen. Never restore a session whose
+    // role doesn't match this build's locked role; just drop the stale
+    // cache instead, same as if nobody had ever logged in on this build.
+    final expectedRole = AppConfig.lockedRole == UserRole.teacher ? 'teacher' : 'student';
+    if (AppConfig.lockedRole != UserRole.kiosk && roleStr != expectedRole) {
+      await _storage.delete(key: 'user_role');
+      await _storage.delete(key: 'user_profile');
+      return;
+    }
+
     try {
       final p = jsonDecode(profileJson) as Map<String, dynamic>;
       profile.value    = p;
