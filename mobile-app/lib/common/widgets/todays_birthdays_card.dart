@@ -6,9 +6,10 @@ import 's3_image.dart';
 // Compact "today only" birthdays card for the Home dashboard - students and
 // staff whose birthday is today, school-wide (get_todays_birthdays RPC,
 // same one the admin dashboard's Birthdays cards use, so the two can never
-// drift). Renders nothing at all when there's nobody to show today, same
-// "hide entirely rather than an empty card" idiom already used for the
-// sibling switcher and notice popups on these dashboards.
+// drift). Always visible once loaded (unlike the sibling switcher/notice
+// popups elsewhere, which hide entirely when empty) - shows a "No birthdays
+// today" placeholder instead, so the module has a permanent, predictable
+// spot on the dashboard rather than disappearing on most days.
 class TodaysBirthdaysCard extends StatefulWidget {
   const TodaysBirthdaysCard({super.key});
   @override
@@ -58,7 +59,6 @@ class _TodaysBirthdaysCardState extends State<TodaysBirthdaysCard> {
         ),
       );
     }
-    if (_students.isEmpty && _staff.isEmpty) return const SizedBox.shrink();
     final people = [
       ..._students.map((s) => (
         name: '${s['first_name'] ?? ''} ${s['last_name'] ?? ''}'.trim(),
@@ -88,19 +88,28 @@ class _TodaysBirthdaysCardState extends State<TodaysBirthdaysCard> {
             const Text('🎂', style: TextStyle(fontSize: 18)),
             const SizedBox(width: 8),
             const Text("Today's Birthdays", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
-            const Spacer(),
-            Text('${people.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.pink)),
+            if (people.isNotEmpty) ...[
+              const Spacer(),
+              Text('${people.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.pink)),
+            ],
           ]),
           const SizedBox(height: 12),
-          SizedBox(
-            height: 82,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: people.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemBuilder: (_, i) => _personChip(people[i]),
+          if (people.isEmpty)
+            Row(children: [
+              Icon(Icons.cake_outlined, color: AppColors.pink.withOpacity(.5), size: 18),
+              const SizedBox(width: 8),
+              const Text('No birthdays today', style: TextStyle(fontSize: 12.5, color: AppColors.textLight)),
+            ])
+          else
+            SizedBox(
+              height: 82,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: people.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (_, i) => _personChip(people[i]),
+              ),
             ),
-          ),
         ]),
       ),
     );
