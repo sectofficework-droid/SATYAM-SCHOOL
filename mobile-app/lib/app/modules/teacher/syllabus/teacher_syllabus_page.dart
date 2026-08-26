@@ -891,13 +891,24 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
         boxShadow: AppShadows.card,
         border: highlight ? null : Border.all(color: AppColors.border),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-        Text('${pct.toStringAsFixed(0)}%',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: highlight ? Colors.white : color)),
-        const SizedBox(height: 2),
-        Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: highlight ? Colors.white70 : AppColors.textLight)),
-      ]),
+      // FittedBox+scaleDown, same fix as StatCard's centered layout - a
+      // plain Column here overflowed by 1-3px against this chip's fixed
+      // 70px row height depending on the device's text-rendering metrics.
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${pct.toStringAsFixed(0)}%',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: highlight ? Colors.white : color)),
+            const SizedBox(height: 2),
+            Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: highlight ? Colors.white70 : AppColors.textLight)),
+          ],
+        ),
+      ),
     );
   }
 
