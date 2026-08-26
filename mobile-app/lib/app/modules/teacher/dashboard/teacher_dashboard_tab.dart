@@ -5,6 +5,7 @@ import '../../../../core/services/auth_service.dart';
 import '../../../../app/routes/app_routes.dart';
 import '../../../../common/widgets/stat_card.dart';
 import '../../../../common/widgets/responsive_module_grid.dart';
+import '../../../../common/widgets/todays_birthdays_card.dart';
 
 class TeacherDashboardTab extends StatefulWidget {
   const TeacherDashboardTab({super.key});
@@ -67,6 +68,8 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
             )),
 
             const SizedBox(height: 20),
+
+            const TodaysBirthdaysCard(),
 
             // Modules header
             _AnimEntry(delay: 80, child: const Text('Overview',
@@ -137,12 +140,6 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                     color: AppColors.lime, bgColor: AppColors.limeLight,
                     centered: true,
                     onTap: () => Get.toNamed(Routes.teacherTimetable),
-                  )),
-                  _AnimEntry(delay: 790, child: StatCard(
-                    label: 'Birthdays', icon: Icons.cake_rounded,
-                    color: AppColors.pink, bgColor: AppColors.pinkLight,
-                    centered: true,
-                    onTap: () => Get.toNamed(Routes.teacherBirthdays),
                   )),
                   _AnimEntry(delay: 805, child: StatCard(
                     label: 'My Leave', icon: Icons.beach_access_rounded,

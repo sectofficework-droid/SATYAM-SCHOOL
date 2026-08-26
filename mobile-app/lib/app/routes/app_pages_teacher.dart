@@ -18,7 +18,6 @@ import '../modules/teacher/syllabus/teacher_syllabus_page.dart';
 import '../modules/teacher/query/teacher_query_page.dart';
 import '../modules/teacher/rules/teacher_rules_page.dart';
 import '../modules/teacher/timetable/teacher_timetable_page.dart';
-import '../modules/teacher/birthdays/teacher_birthdays_page.dart';
 import '../modules/teacher/leave/teacher_leave_page.dart';
 import '../modules/teacher/daily_tasks/teacher_daily_tasks_page.dart';
 import 'app_routes.dart';
@@ -50,7 +49,6 @@ class AppPagesTeacher {
     GetPage(name: Routes.teacherQuery,    page: () => const TeacherQueryPage()),
     GetPage(name: Routes.teacherRules,    page: () => const TeacherRulesPage()),
     GetPage(name: Routes.teacherTimetable, page: () => const TeacherTimetablePage()),
-    GetPage(name: Routes.teacherBirthdays, page: () => const TeacherBirthdaysPage()),
     GetPage(name: Routes.teacherLeave, page: () => const TeacherLeavePage()),
     GetPage(name: Routes.teacherDailyTasks, page: () => const TeacherDailyTasksPage()),
   ];

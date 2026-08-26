@@ -11,6 +11,7 @@ import '../../../../common/widgets/recent_notices_sheet.dart';
 import '../../../../common/widgets/birthday_celebration_overlay.dart';
 import '../../../../common/widgets/stat_card.dart';
 import '../../../../common/widgets/responsive_module_grid.dart';
+import '../../../../common/widgets/todays_birthdays_card.dart';
 import '../profile/student_profile_page.dart';
 import '../attendance/student_attendance_page.dart';
 import '../exams/student_exams_page.dart';
@@ -411,6 +412,8 @@ class _StudentDashboardState extends State<_StudentDashboard> {
         ),
 
         const SizedBox(height: 24),
+
+        const TodaysBirthdaysCard(),
 
         TweenAnimationBuilder<double>(
           tween: Tween(begin: 0.0, end: 1.0),
