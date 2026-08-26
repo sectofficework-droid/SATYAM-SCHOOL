@@ -258,7 +258,7 @@ class SupabaseService {
     var query = client.from('homework').select();
     if (className != null) query = query.eq('class', className);
     if (createdBy != null) query = query.eq('created_by', createdBy);
-    final res = await query.order('due_date');
+    final res = await query.order('due_date', ascending: true);
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -344,7 +344,7 @@ class SupabaseService {
   static Future<List<Map<String, dynamic>>> fetchOfficialExams({String? academicYearId}) async {
     var query = client.from('official_exams').select();
     if (academicYearId != null) query = query.eq('academic_year_id', academicYearId);
-    final res = await query.order('sort_order');
+    final res = await query.order('sort_order', ascending: true);
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -353,7 +353,7 @@ class SupabaseService {
         .from('class_subjects')
         .select('subject_name')
         .eq('class_name', className)
-        .order('sort_order');
+        .order('sort_order', ascending: true);
     return List<Map<String, dynamic>>.from(res).map((r) => r['subject_name'] as String).toList();
   }
 
@@ -431,7 +431,7 @@ class SupabaseService {
     var query = client.from('syllabus').select();
     if (className != null) query = query.eq('class', className);
     if (teacherId != null) query = query.eq('teacher_id', teacherId);
-    final res = await query.order('sort_order');
+    final res = await query.order('sort_order', ascending: true);
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -471,7 +471,7 @@ class SupabaseService {
   // instead of being cycled directly.
   static Future<List<Map<String, dynamic>>> fetchSubtopics(List<String> chapterIds) async {
     if (chapterIds.isEmpty) return [];
-    final res = await client.from('syllabus_subtopics').select().inFilter('chapter_id', chapterIds).order('sort_order');
+    final res = await client.from('syllabus_subtopics').select().inFilter('chapter_id', chapterIds).order('sort_order', ascending: true);
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -584,7 +584,7 @@ class SupabaseService {
   };
 
   static Future<String?> fetchCurrentAcademicYearLabel() async {
-    final res = await client.from('academic_years').select('label, is_current').order('label');
+    final res = await client.from('academic_years').select('label, is_current').order('label', ascending: true);
     final rows = List<Map<String, dynamic>>.from(res);
     if (rows.isEmpty) return null;
     final current = rows.where((r) => r['is_current'] == true).toList();
@@ -695,7 +695,7 @@ class SupabaseService {
         .from('daily_tasks')
         .select('id, title, description, target_type, daily_task_targets(employee_id)')
         .eq('active', true)
-        .order('created_at');
+        .order('created_at', ascending: true);
     final completionsRes = await client
         .from('daily_task_completions')
         .select('daily_task_id, completed_at')
@@ -809,7 +809,7 @@ class SupabaseService {
         .eq('class', className)
         .eq('subject', subject);
     if (chapter != null && chapter.isNotEmpty) query = query.eq('chapter', chapter);
-    final res = await query.order('created_at');
+    final res = await query.order('created_at', ascending: true);
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -852,7 +852,7 @@ class SupabaseService {
         .eq('class', className)
         .eq('subject', subject)
         .inFilter('chapter', chapters)
-        .order('created_at');
+        .order('created_at', ascending: true);
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -875,7 +875,7 @@ class SupabaseService {
     final res = await client.from('school_calendar_events').select()
         .gte('event_date', rangeStart.toIso8601String().split('T').first)
         .lte('event_date', rangeEnd.toIso8601String().split('T').first)
-        .order('event_date');
+        .order('event_date', ascending: true);
     return List<Map<String, dynamic>>.from(res);
   }
 }
