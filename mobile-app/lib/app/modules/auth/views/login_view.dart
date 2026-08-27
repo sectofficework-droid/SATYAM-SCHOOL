@@ -122,36 +122,52 @@ class _FormCard extends StatelessWidget {
             style: TextStyle(fontSize: 14, color: AppColors.textLight)),
           const SizedBox(height: 24),
 
-          TextFormField(
-            controller: controller.idCtrl,
-            textInputAction: TextInputAction.next,
-            keyboardType: TextInputType.text,
-            textCapitalization: TextCapitalization.characters,
-            decoration: InputDecoration(
-              labelText: controller.role == UserRole.teacher ? 'Employee Code' : 'Enrollment No.',
-              hintText: controller.role == UserRole.teacher ? 'e.g. EMP001' : 'e.g. 0001',
-              prefixIcon: const Icon(Icons.badge_outlined, color: AppColors.navy),
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          Obx(() => TextFormField(
-            controller: controller.passCtrl,
-            obscureText: !controller.showPass.value,
-            textInputAction: TextInputAction.done,
-            onFieldSubmitted: (_) => controller.login(),
-            decoration: InputDecoration(
-              labelText: 'Password',
-              prefixIcon: const Icon(Icons.lock_outline, color: AppColors.navy),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  controller.showPass.value ? Icons.visibility_off : Icons.visibility,
-                  color: AppColors.textHint,
+          Obx(() => controller.useAccessCode.value
+            ? TextFormField(
+                controller: controller.codeCtrl,
+                textInputAction: TextInputAction.done,
+                textCapitalization: TextCapitalization.characters,
+                onFieldSubmitted: (_) => controller.login(),
+                decoration: const InputDecoration(
+                  labelText: 'Admin Access Code',
+                  hintText: 'e.g. AB12CD34',
+                  prefixIcon: Icon(Icons.vpn_key_outlined, color: AppColors.navy),
                 ),
-                onPressed: () => controller.showPass.toggle(),
-              ),
-            ),
-          )),
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  TextFormField(
+                    controller: controller.idCtrl,
+                    textInputAction: TextInputAction.next,
+                    keyboardType: TextInputType.text,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: InputDecoration(
+                      labelText: controller.role == UserRole.teacher ? 'Employee Code' : 'Enrollment No.',
+                      hintText: controller.role == UserRole.teacher ? 'e.g. EMP001' : 'e.g. 0001',
+                      prefixIcon: const Icon(Icons.badge_outlined, color: AppColors.navy),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Obx(() => TextFormField(
+                    controller: controller.passCtrl,
+                    obscureText: !controller.showPass.value,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => controller.login(),
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: const Icon(Icons.lock_outline, color: AppColors.navy),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          controller.showPass.value ? Icons.visibility_off : Icons.visibility,
+                          color: AppColors.textHint,
+                        ),
+                        onPressed: () => controller.showPass.toggle(),
+                      ),
+                    ),
+                  )),
+                ],
+              )),
           const SizedBox(height: 14),
 
           Obx(() => controller.errorMsg.value.isEmpty
@@ -194,6 +210,16 @@ class _FormCard extends StatelessWidget {
               style: TextStyle(color: AppColors.textLight, fontSize: 12),
               textAlign: TextAlign.center,
             ),
+          ),
+          const SizedBox(height: 8),
+          Center(
+            child: Obx(() => TextButton(
+              onPressed: controller.toggleAccessCode,
+              child: Text(
+                controller.useAccessCode.value ? 'Back to normal sign in' : 'Have an Admin Access Code?',
+                style: const TextStyle(color: AppColors.textLight, fontSize: 12, fontWeight: FontWeight.w600),
+              ),
+            )),
           ),
           const SizedBox(height: 16),
           const Center(
