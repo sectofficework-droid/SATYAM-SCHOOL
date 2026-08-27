@@ -113,6 +113,48 @@ export async function sendAttendanceReminder(teacherId, className, sectionName, 
   if (error) throw error;
 }
 
+// One alert per row that still needs a reminder (status !== "Marked" and has
+// a class teacher to alert) - single bulk insert instead of N round trips.
+// Shared by the Overview tab's "Notify All" button and the daily cron job
+// (see app/api/cron/attendance-reminders), so both use the exact same
+// message shape and dedup rule.
+export async function sendBulkAttendanceReminders(rows, date) {
+  const targets = rows.filter(r => r.status !== "Marked" && r.teacherId);
+  if (!targets.length) return { sent: 0, skipped: 0 };
+
+  // Dedup: don't re-nag a teacher who was already reminded today for the
+  // same section (the manual button and the ~12:30pm cron could otherwise
+  // double up on the same day).
+  const teacherIds = [...new Set(targets.map(r => r.teacherId))];
+  const dayStart = `${date}T00:00:00`;
+  const dayEnd   = `${date}T23:59:59`;
+  const { data: existing, error: existingErr } = await supabase
+    .from("teacher_alerts")
+    .select("teacher_id, title")
+    .in("teacher_id", teacherIds)
+    .gte("created_at", dayStart)
+    .lte("created_at", dayEnd);
+  if (existingErr) throw existingErr;
+  const alreadySent = new Set((existing || []).map(e => `${e.teacher_id}|${e.title}`));
+
+  const rowsToInsert = [];
+  let skipped = 0;
+  for (const r of targets) {
+    const title = `Mark Attendance — ${r.className}${r.sectionName ? " - " + r.sectionName : ""}`;
+    if (alreadySent.has(`${r.teacherId}|${title}`)) { skipped++; continue; }
+    rowsToInsert.push({
+      teacher_id: r.teacherId,
+      title,
+      message: `Please mark attendance for ${r.className}${r.sectionName ? " - " + r.sectionName : ""} — it hasn't been submitted yet today.`,
+    });
+  }
+  if (rowsToInsert.length) {
+    const { error } = await supabase.from("teacher_alerts").insert(rowsToInsert);
+    if (error) throw error;
+  }
+  return { sent: rowsToInsert.length, skipped };
+}
+
 // ── Teacher edit requests ────────────────────────────────────────────────────
 
 export async function getPendingEditRequests() {

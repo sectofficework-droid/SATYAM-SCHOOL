@@ -10,7 +10,7 @@ import {
 import { getStudents } from "@/lib/studentService";
 import {
   getAttendanceForClassDate, saveAttendanceForClassDate, getStudentAttendanceHistory,
-  getAttendanceOverviewForDate, sendAttendanceReminder,
+  getAttendanceOverviewForDate, sendAttendanceReminder, sendBulkAttendanceReminders,
   getPendingEditRequests, approveEditRequest, rejectEditRequest,
 } from "@/lib/attendanceService";
 import { getCalendarEvents, addCalendarEvent, updateCalendarEvent, deleteCalendarEvent } from "@/lib/calendarService";
@@ -380,6 +380,8 @@ function OverviewTab({ calendarEvents }) {
   const [reminderMsg, setReminderMsg] = useState("");
   const [sending, setSending] = useState(false);
   const [sentFor, setSentFor] = useState(null); // sectionId a reminder was just sent for
+  const [notifyingAll, setNotifyingAll] = useState(false);
+  const [notifyAllResult, setNotifyAllResult] = useState(null); // {sent, skipped} or null
 
   const load = useCallback(() => {
     setLoading(true);
@@ -411,11 +413,39 @@ function OverviewTab({ calendarEvents }) {
   const rowsWithHoliday = rows.map(r => ({ ...r, isHoliday: !isWorkingDay(date, calendarEvents, r.className) }));
   const notMarked = rowsWithHoliday.filter(r => !r.isHoliday && r.status !== "Marked").length;
 
+  async function notifyAll() {
+    setNotifyingAll(true);
+    setNotifyAllResult(null);
+    try {
+      const targets = rowsWithHoliday.filter(r => !r.isHoliday);
+      const result = await sendBulkAttendanceReminders(targets, date);
+      setNotifyAllResult(result);
+      setTimeout(() => setNotifyAllResult(null), 4000);
+    } catch (e) {
+      alert("Failed to send reminders: " + e.message);
+    } finally {
+      setNotifyingAll(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col sm:flex-row gap-3 sm:items-center">
         <DateInputDMY value={date} onChange={e => setDate(e.target.value)} max={todayStr}
           className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-school-navy" />
+        {notMarked > 0 && (
+          notifyAllResult ? (
+            <span className="flex items-center gap-1.5 text-sm text-green-600 font-medium">
+              <Bell className="w-3.5 h-3.5" /> Sent to {notifyAllResult.sent} teacher{notifyAllResult.sent === 1 ? "" : "s"}
+              {notifyAllResult.skipped > 0 ? ` (${notifyAllResult.skipped} already reminded today)` : ""}
+            </span>
+          ) : (
+            <button onClick={notifyAll} disabled={notifyingAll || loading}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium bg-school-navy text-white hover:bg-school-navy/90 disabled:opacity-50">
+              <Bell className="w-4 h-4" />{notifyingAll ? "Sending..." : `Notify All Unmarked (${notMarked})`}
+            </button>
+          )
+        )}
         <span className="text-sm text-gray-500 ml-auto">
           {loading ? "Loading..." : notMarked === 0 ? "All sections marked" : `${notMarked} section${notMarked === 1 ? "" : "s"} not fully marked`}
         </span>
