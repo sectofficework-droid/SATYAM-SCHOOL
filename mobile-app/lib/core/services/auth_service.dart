@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:get/get.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'supabase_service.dart';
 import '../app_config.dart';
 
@@ -125,6 +126,35 @@ class AuthService extends GetxService {
       await _saveSession('student', p);
       await refreshLinkedSiblings();
       return null;
+    } catch (e) {
+      return _friendlyError(e.toString());
+    }
+  }
+
+  // Redeems a one-time admin-generated access code (see
+  // mobile-app/SUPABASE_IMPERSONATION.sql) and logs straight into that
+  // student's/teacher's account - no password needed. `role` is always
+  // AppConfig.lockedRole (this build's own fixed role, never user-typed),
+  // so a code generated for a student can't be redeemed inside the teacher
+  // app build or vice versa. Reuses _saveSession, so the resulting session
+  // is indistinguishable from a normal login.
+  Future<String?> loginWithAccessCode(String code, UserRole role) async {
+    try {
+      final result = await SupabaseService.client.rpc(
+        'redeem_impersonation_code',
+        params: {
+          'p_code': code.trim(),
+          'p_expected_role': role == UserRole.teacher ? 'teacher' : 'student',
+        },
+      );
+      if (result == null) return 'Invalid or expired code.';
+      final p = (result is Map) ? Map<String, dynamic>.from(result) : jsonDecode(result as String) as Map<String, dynamic>;
+      await _saveSession(role == UserRole.teacher ? 'teacher' : 'student', p);
+      return null;
+    } on PostgrestException catch (e) {
+      // The RPC's RAISE EXCEPTION text is already a human-readable message
+      // ("This code has expired.", "This code has already been used.", etc.)
+      return e.message;
     } catch (e) {
       return _friendlyError(e.toString());
     }
