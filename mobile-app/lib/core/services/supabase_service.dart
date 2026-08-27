@@ -139,6 +139,33 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  // Every other active teaching-staff member (excludes the given employeeId,
+  // the requester, since they can't cover their own leave) - lets the Leave
+  // page's "Managed By" picker offer a real name instead of free text.
+  static Future<List<Map<String, dynamic>>> fetchOtherTeachers(String excludeEmployeeId) async {
+    final res = await client
+        .from('employees')
+        .select('id, name')
+        .eq('type', 'teaching')
+        .eq('status', 'Active')
+        .neq('id', excludeEmployeeId)
+        .order('name');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  // Same "designation = Principal" lookup get_student_helpdesk_contacts uses
+  // for the Student app's Help Desk - direct select works fine for the
+  // teacher app too (name/phone aren't sensitive the way aadhar/address are).
+  static Future<Map<String, dynamic>?> fetchPrincipalContact() async {
+    final res = await client
+        .from('employees')
+        .select('name, phone')
+        .eq('designation', 'Principal')
+        .eq('status', 'Active')
+        .maybeSingle();
+    return res;
+  }
+
   // No limit, same reasoning as fetchStudentAttendance above - the Yearly
   // attendance view needs the whole academic year's records.
   static Future<List<Map<String, dynamic>>> fetchEmployeeAttendance(String employeeId) async {
