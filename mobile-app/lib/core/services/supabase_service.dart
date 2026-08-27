@@ -141,11 +141,13 @@ class SupabaseService {
 
   // Every other active teaching-staff member (excludes the given employeeId,
   // the requester, since they can't cover their own leave) - lets the Leave
-  // page's "Managed By" picker offer a real name instead of free text.
+  // page's "Managed By" picker offer a real name instead of free text. Phone
+  // is included so that same picker can WhatsApp the covering teacher
+  // directly, not just the Principal.
   static Future<List<Map<String, dynamic>>> fetchOtherTeachers(String excludeEmployeeId) async {
     final res = await client
         .from('employees')
-        .select('id, name')
+        .select('id, name, phone')
         .eq('type', 'teaching')
         .eq('status', 'Active')
         .neq('id', excludeEmployeeId)

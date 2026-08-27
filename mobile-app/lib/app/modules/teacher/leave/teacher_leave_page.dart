@@ -132,49 +132,63 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
                   const SizedBox(height: 20),
                   const Text('Managed By (optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
                   const SizedBox(height: 3),
-                  const Text("Who's covering your subjects while you're away - included in the WhatsApp message to Principal sir.",
+                  const Text("Who's covering your subjects while you're away - included in the WhatsApp message to Principal sir, and you can WhatsApp each covering teacher directly too.",
                     style: TextStyle(fontSize: 11.5, color: AppColors.textLight)),
                   const SizedBox(height: 10),
-                  ...managedRows.map((row) => Padding(
-                    padding: const EdgeInsets.only(bottom: 10),
-                    child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          value: row['pairKey'] as String?,
-                          isExpanded: true,
-                          hint: const Text('Subject', style: TextStyle(fontSize: 12)),
-                          decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12)),
-                          items: classSubjectPairs.map((p) => DropdownMenuItem(
-                            value: '${p.className}|${p.subject}',
-                            child: Text('${p.className} - ${p.subject}', style: const TextStyle(fontSize: 12.5), overflow: TextOverflow.ellipsis),
-                          )).toList(),
-                          onChanged: (v) => setS(() => row['pairKey'] = v),
+                  ...managedRows.map((row) {
+                    final ready = row['pairKey'] != null && row['teacherId'] != null;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: row['pairKey'] as String?,
+                            isExpanded: true,
+                            hint: const Text('Subject', style: TextStyle(fontSize: 12)),
+                            decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12)),
+                            items: classSubjectPairs.map((p) => DropdownMenuItem(
+                              value: '${p.className}|${p.subject}',
+                              child: Text('${p.className} - ${p.subject}', style: const TextStyle(fontSize: 12.5), overflow: TextOverflow.ellipsis),
+                            )).toList(),
+                            onChanged: (v) => setS(() => row['pairKey'] = v),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: DropdownButtonFormField<String>(
-                          value: row['teacherId'] as String?,
-                          isExpanded: true,
-                          hint: const Text('Teacher', style: TextStyle(fontSize: 12)),
-                          decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12)),
-                          items: otherTeachers.map((t) => DropdownMenuItem(
-                            value: t['id'] as String,
-                            child: Text((t['name'] ?? '').toString(), style: const TextStyle(fontSize: 12.5), overflow: TextOverflow.ellipsis),
-                          )).toList(),
-                          onChanged: (v) => setS(() {
-                            row['teacherId']   = v;
-                            row['teacherName'] = otherTeachers.firstWhere((t) => t['id'] == v)['name'];
-                          }),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            value: row['teacherId'] as String?,
+                            isExpanded: true,
+                            hint: const Text('Teacher', style: TextStyle(fontSize: 12)),
+                            decoration: const InputDecoration(isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 12)),
+                            items: otherTeachers.map((t) => DropdownMenuItem(
+                              value: t['id'] as String,
+                              child: Text((t['name'] ?? '').toString(), style: const TextStyle(fontSize: 12.5), overflow: TextOverflow.ellipsis),
+                            )).toList(),
+                            onChanged: (v) => setS(() {
+                              final picked = otherTeachers.firstWhere((t) => t['id'] == v);
+                              row['teacherId']    = v;
+                              row['teacherName']  = picked['name'];
+                              row['teacherPhone'] = picked['phone'];
+                            }),
+                          ),
                         ),
-                      ),
-                      if (managedRows.length > 1)
-                        IconButton(
-                          icon: const Icon(Icons.close_rounded, size: 18, color: AppColors.textHint),
-                          onPressed: () => setS(() => managedRows.remove(row)),
-                        ),
-                    ]),
-                  )),
+                        if (ready)
+                          IconButton(
+                            icon: const Icon(Icons.chat_rounded, size: 19, color: Color(0xFF25D366)),
+                            tooltip: 'WhatsApp ${row['teacherName']}',
+                            onPressed: () => _notifyCoveringTeacherWhatsApp(
+                              row: row, fromDate: fromDate, toDate: toDate,
+                              reason: reasonCtrl.text, teacherName: teacherName,
+                            ),
+                          ),
+                        if (managedRows.length > 1)
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 18, color: AppColors.textHint),
+                            onPressed: () => setS(() => managedRows.remove(row)),
+                          ),
+                      ]),
+                    );
+                  }),
                   GestureDetector(
                     onTap: () => setS(() => managedRows.add({'id': DateTime.now().millisecondsSinceEpoch, 'pairKey': null, 'teacherId': null, 'teacherName': null})),
                     child: const Padding(
@@ -283,10 +297,7 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
       return;
     }
 
-    final sameDay = fromDate.year == toDate.year && fromDate.month == toDate.month && fromDate.day == toDate.day;
-    final dateLabel = sameDay
-        ? DateFormat('d MMM yyyy').format(fromDate)
-        : '${DateFormat('d MMM').format(fromDate)} to ${DateFormat('d MMM yyyy').format(toDate)}';
+    final dateLabel = _dateRangeLabel(fromDate, toDate);
     final managed = managedRows.where((r) => r['pairKey'] != null && r['teacherId'] != null).toList();
 
     final message = StringBuffer()
@@ -304,9 +315,58 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
     message.writeln();
     message.write('Kindly approve. Thank you.');
 
-    final digits = phone.replaceAll(RegExp(r'\D'), '');
+    await _openWhatsApp(phone, message.toString());
+  }
+
+  // Same idea as _sendLeaveWhatsApp but a short, personal message straight
+  // to the one teacher covering this specific subject - not everyone
+  // reliably sees the Principal's forwarded message (or the app itself,
+  // since there's no real push notification yet), so this reaches their
+  // phone directly.
+  Future<void> _notifyCoveringTeacherWhatsApp({
+    required Map<String, dynamic> row,
+    required DateTime? fromDate,
+    required DateTime? toDate,
+    required String reason,
+    required String? teacherName,
+  }) async {
+    if (fromDate == null || toDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Please pick from and to dates'), behavior: SnackBarBehavior.floating));
+      return;
+    }
+    final phone = row['teacherPhone']?.toString().trim();
+    if (phone == null || phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text("${row['teacherName']}'s WhatsApp number isn't set up yet."), behavior: SnackBarBehavior.floating));
+      return;
+    }
+
+    final label = (row['pairKey'] as String).replaceAll('|', ' - ');
+    final message = StringBuffer()
+      ..writeln('Hi ${row['teacherName']},')
+      ..writeln()
+      ..writeln('${teacherName ?? 'I'} will be on leave from ${_dateRangeLabel(fromDate, toDate)}'
+          '${reason.trim().isNotEmpty ? ' (${reason.trim()})' : ''}.')
+      ..writeln()
+      ..writeln('Could you please manage *$label* during this time?')
+      ..writeln()
+      ..write('Thank you!');
+
+    await _openWhatsApp(phone, message.toString());
+  }
+
+  String _dateRangeLabel(DateTime fromDate, DateTime toDate) {
+    final sameDay = fromDate.year == toDate.year && fromDate.month == toDate.month && fromDate.day == toDate.day;
+    return sameDay
+        ? DateFormat('d MMM yyyy').format(fromDate)
+        : '${DateFormat('d MMM').format(fromDate)} to ${DateFormat('d MMM yyyy').format(toDate)}';
+  }
+
+  Future<void> _openWhatsApp(String rawPhone, String message) async {
+    final digits = rawPhone.replaceAll(RegExp(r'\D'), '');
     final waPhone = digits.length == 10 ? '91$digits' : digits; // bare 10-digit Indian numbers need a country code for wa.me
-    final url = Uri.parse('https://wa.me/$waPhone?text=${Uri.encodeComponent(message.toString())}');
+    final url = Uri.parse('https://wa.me/$waPhone?text=${Uri.encodeComponent(message)}');
     await launchUrl(url, mode: LaunchMode.externalApplication);
   }
 
