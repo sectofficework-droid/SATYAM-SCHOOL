@@ -85,8 +85,34 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Updated 2026-08-21: three shipped changes, `debiprasad` only — not yet
-merged to `main`.**
+**Updated 2026-08-28: new "Admin Access Code" impersonation module, shipped
+to BOTH `debiprasad` AND `main` (merged + pushed — reaches Production).**
+Full detail: `ai-context\SESSION-2026-08-28-1.md`, plain-English mirror
+`work-log\LOG-2026-08-28.md`. Summary:
+- Management/senior_admin can generate a one-time, 10-minute, single-use
+  code (student or employee detail view in the admin panel) that logs
+  straight into that person's mobile-app account — no password touched.
+  New tables `impersonation_codes`/`impersonation_audit_log` + 3 RPCs
+  (`mobile-app/SUPABASE_IMPERSONATION.sql`, applied to production via the
+  Supabase dashboard — same reason as always, DDL can't go through the
+  service-role key/PostgREST path, only DML can).
+- **Found and fixed a real privilege-escalation bug same session**: the
+  migration's internal helper functions had no auth check of their own and
+  were reachable by anyone holding just the public anon key (Postgres
+  grants EXECUTE to PUBLIC by default; the migration never revoked it).
+  Live-confirmed exploitable, then closed via
+  `mobile-app/SUPABASE_FIX_IMPERSONATION_GRANTS.sql` (also applied to
+  production, also verified closed afterward).
+- Also deleted the two standing QA test accounts (`ADMIN TESTSTUDENT`
+  enrollment `0049` / `ADMIN TESTSTAFF` `EMP030`) this session, at the
+  user's request — see `LOG-2026-08-28.md` §1. Those accounts no longer
+  exist.
+- **Not yet done**: the mobile-app login-screen change ("Have an Admin
+  Access Code?") has only been verified via direct RPC calls + static
+  analysis, not by actually running the app on a device/emulator.
+
+Earlier state (2026-08-21, `debiprasad` only at that time — now also on
+`main` via the 2026-08-28 merge above), unchanged since:
 1. **Add Student form extraction** — the ~1,400-line Add Student form moved
    out of `student/add/page.js` into a shared `components/AddStudentForm.js`
    (`variant="page"` | `"modal"`). Student list now opens Add Student as a
@@ -135,13 +161,19 @@ Full detail: `ai-context\SESSION-2026-08-21-1.md`,
 `ai-context\SESSION-2026-08-21-2.md` (RLS finding),
 `ai-context\SESSION-2026-08-21-3.md` (REQ-SEC-001 fix).
 
-Git state: `cd5d755`/`10c3395` (items 1-2) and `bc74ac0` (item 3, this
-delta) are all on `debiprasad`. **`bc74ac0` is committed but not yet
-pushed** — push after this BOOTSTRAP/log update, same as the pattern for
-every commit this session. `main` is untouched this session — `origin/main`
-still at `9a2cfb3` (2026-08-20's merge). Currently checked out: `debiprasad`,
-clean except the recurring, pre-existing, uncommitted local change to
-`.claude/settings.local.json`.
+Git state (2026-08-21 items, superseded by 2026-08-28 below): `cd5d755`/
+`10c3395` (items 1-2) and `bc74ac0` (item 3) — all landed and pushed since.
+
+**Current git state (2026-08-28):** `debiprasad` at `9441547` ("Add admin
+access-code module..."), pushed. `main` at `594f2b5` ("Merge branch
+'debiprasad': admin access-code module"), pushed — this is what reaches
+Production, and is the first merge-to-`main` since `9a2cfb3` (2026-08-20).
+Both branches in sync with their remotes. Currently checked out:
+`debiprasad`, clean except the recurring, pre-existing, uncommitted local
+change to `.claude/settings.local.json`, plus one disposable local git
+stash (`flutter pub get` lockfile churn from running `flutter analyze` on
+`main` mid-session) left in place rather than fighting a blocked
+`stash drop`.
 
 REQ-SEC-001 is now fixed (see item 3). REQ-SEC-002/003/004 (below) are
 unaffected — still exactly as they were.
@@ -265,16 +297,26 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-Session `governance\ai-context\SESSION-2026-08-21-3.md` — fixed and shipped
+Session `governance\ai-context\SESSION-2026-08-28-1.md` — built and shipped
+the "Admin Access Code" impersonation module (management/senior_admin can
+log into any student/teacher's mobile-app account without their password,
+via a one-time 10-minute code + full audit log), found and fixed a real
+privilege-escalation bug in it the same session (internal helper functions
+reachable by anyone via Postgres's default PUBLIC execute grant — closed
+via explicit REVOKEs), merged `debiprasad` into `main` and pushed both
+(first merge to `main` since 2026-08-20). Also deleted the two standing QA
+test accounts at the user's request. Not yet done: live device test of the
+new mobile-app login-screen UI.
+
+Prior checkpoint: `governance\ai-context\SESSION-2026-08-21-3.md` — fixed and shipped
 REQ-SEC-001 (plaintext `app_password`): wrote a real plan this time
 (superseding the 2026-08-18 reverted attempt), got explicit "code" approval,
 implemented, and **ran the migration directly against production** via the
 Supabase SQL Editor (user's own logged-in browser session) — verified after,
 not just assumed. Also installed the Android SDK toolchain on this machine
 (previously entirely absent) to build and hand off a real debug APK for the
-paired student-side in-app notification feature. Committed (`bc74ac0`) —
-not yet pushed as of this checkpoint (push happens right after this log
-update, same pattern as every commit this session).
+paired student-side in-app notification feature. Committed as `bc74ac0`,
+pushed since.
 
 Prior checkpoint: `governance\ai-context\SESSION-2026-08-21-2.md` — user
 asked to "check RLS on students and employees tables." Live-confirmed
@@ -282,23 +324,22 @@ asked to "check RLS on students and employees tables." Live-confirmed
 anonymous client. Read-only finding, recorded per §J14 — nothing fixed at
 the time (fixed in the very next checkpoint, above).
 
-Prior checkpoint: `governance\ai-context\SESSION-2026-08-21-1.md` — finished
-+ verified live an in-progress refactor (Add Student form extracted into a
-shared `AddStudentForm.js`); built, shipped, and live-verified a new
-permanent-delete feature for students. Committed as two commits (`cd5d755`,
-`10c3395`), pushed to `origin/debiprasad` — not merged into `main`
-(confirmed not needed most sessions — see prior Next-step history).
-
-Prior checkpoints (archived, retention cap — §D):
-`ai-context\archive\SESSION-2026-08-20-1.md` (found, root-caused, fixed, and
-shipped a real authentication bypass — sidebar Logout never actually signed
-out — merged to `main` at `9a2cfb3`) and
-`ai-context\archive\SESSION-2026-08-19-2.md` (read-only secrets-hygiene
+Prior checkpoints (archived, retention cap — §D, latest 3 non-archived
+above): `ai-context\archive\SESSION-2026-08-21-1.md` (finished + verified
+live an in-progress refactor — Add Student form extracted into a shared
+`AddStudentForm.js`; built, shipped, and live-verified a new permanent-delete
+feature for students; pushed to `origin/debiprasad`, later merged into
+`main` via the 2026-08-28 checkpoint above), `ai-context\archive\SESSION-2026-08-20-1.md`
+(found, root-caused, fixed, and shipped a real authentication bypass —
+sidebar Logout never actually signed out — merged to `main` at `9a2cfb3`),
+and `ai-context\archive\SESSION-2026-08-19-2.md` (read-only secrets-hygiene
 check).
 
 ## Next step
-1. **Push `bc74ac0`** to `origin/debiprasad` right after this BOOTSTRAP/log
-   update commits — don't leave it local-only.
+1. **Live-verify the new mobile-app login UI** — build+install a debug APK
+   and actually try "Have an Admin Access Code?" on a device/emulator; only
+   verified via direct RPC calls + static analysis so far (see
+   `SESSION-2026-08-28-1.md`).
 2. **Install the handed-off debug APK on an actual device and verify the
    password-reset popup live** — reset a test student's password from the
    admin panel, open the app, confirm the "Password Reset" notice appears
