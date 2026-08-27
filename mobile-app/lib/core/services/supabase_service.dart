@@ -323,8 +323,14 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  // Without onConflict, upsert() targets the table's primary key (id) - since
+  // these records never include one, every save silently INSERTED a fresh
+  // row instead of updating the existing mark, even though exam_marks has a
+  // real UNIQUE (exam_id, student_id) constraint. That's what made re-saving
+  // already-entered marks look broken - the edit never actually landed on
+  // the row being displayed, just piled up a duplicate underneath it.
   static Future<void> saveMarksBatch(List<Map<String, dynamic>> records) async {
-    await client.from('exam_marks').upsert(records);
+    await client.from('exam_marks').upsert(records, onConflict: 'exam_id,student_id');
   }
 
   // Same shape as fetchClassStudents, but looks a class up by name instead of
@@ -628,6 +634,26 @@ class SupabaseService {
         .eq('academic_year', academicYear)
         .eq('teacher', teacherName);
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  // Which subjects this teacher actually teaches, per class - derived from
+  // the real Timetable instead of profile['subject_mappings'] (see
+  // teacherSubjectsForClass in teacher_classes.dart), which most teachers
+  // never get configured at all. Homework/Marks Entry subject dropdowns use
+  // this so a teacher only sees subjects they're actually scheduled to
+  // teach for the selected class, not the entire school subject list.
+  static Future<Map<String, List<String>>> fetchTeacherSubjectsByClass(String academicYear, String teacherName) async {
+    final rows = await fetchTimetableForTeacher(academicYear, teacherName);
+    final reverseOverrides = {for (final e in _timetableClassNameOverrides.entries) e.value: e.key};
+    final map = <String, Set<String>>{};
+    for (final r in rows) {
+      final subject = r['subject'] as String?;
+      final ttClassName = r['class_name'] as String?;
+      if (subject == null || subject.isEmpty || ttClassName == null || ttClassName.isEmpty) continue;
+      final className = reverseOverrides[ttClassName] ?? ttClassName;
+      map.putIfAbsent(className, () => {}).add(subject);
+    }
+    return map.map((k, v) => MapEntry(k, v.toList()..sort()));
   }
 
   // Queries & Suggestions ────────────────────────────────────────────────────
