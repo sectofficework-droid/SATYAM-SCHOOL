@@ -5,7 +5,7 @@ import s3, { S3_BUCKET } from "@/lib/s3";
 function isAllowedKey(key) {
   return (
     typeof key === "string" &&
-    (key.startsWith("students/") || key.startsWith("employees/") || key.startsWith("gr-book/") || key.startsWith("sef-students/") || key.startsWith("sef-employees/"))
+    (key.startsWith("students/") || key.startsWith("employees/") || key.startsWith("gr-book/") || key.startsWith("sef-students/") || key.startsWith("sef-employees/") || key.startsWith("question-bank/"))
   );
 }
 

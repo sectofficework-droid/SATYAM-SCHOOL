@@ -477,19 +477,6 @@ class SupabaseService {
     await client.from('syllabus').insert(rows);
   }
 
-  // Distinct chapter names already added to the syllabus for a class+subject
-  // (by any teacher) - lets Question Bank offer the real curriculum chapter
-  // list instead of generic "Chapter 1..12" placeholders.
-  static Future<List<String>> fetchSyllabusChapterNames({
-    required String className, required String subject,
-  }) async {
-    final res = await client.from('syllabus').select('chapter')
-        .eq('class', className).eq('subject', subject);
-    final chapters = List<Map<String, dynamic>>.from(res).map((r) => r['chapter'] as String).toSet().toList();
-    chapters.sort();
-    return chapters;
-  }
-
   static Future<void> updateSyllabusStatus(String id, String status) async {
     await client.from('syllabus').update({
       'status': status,
@@ -870,77 +857,33 @@ class SupabaseService {
     return res == true;
   }
 
-  // Question Bank ─────────────────────────────────────────────────────────────
-  // Private per teacher (query always filters by teacher_id) - see
-  // SUPABASE_QUESTION_BANK.sql for why this isn't enforced via RLS.
+  // Question Bank module - Assignment / Exam Paper / Question Bank ─────────────
+  // All three sections are plain uploaded documents (teacher_documents,
+  // distinguished by `section`) rather than in-app question building - see
+  // SUPABASE_TEACHER_DOCUMENTS.sql. Private per teacher (query always filters
+  // by teacher_id), same as the old question_bank table this replaces.
 
-  static Future<List<Map<String, dynamic>>> fetchQuestions({
-    required String teacherId, required String className, required String subject, String? chapter,
+  static Future<List<String>> fetchAcademicYearLabels() async {
+    final res = await client.from('academic_years').select('label').order('label', ascending: true);
+    return List<Map<String, dynamic>>.from(res).map((r) => r['label'] as String).toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchTeacherDocuments({
+    required String teacherId, required String section,
   }) async {
-    var query = client.from('question_bank').select()
+    final res = await client.from('teacher_documents').select()
         .eq('teacher_id', teacherId)
-        .eq('class', className)
-        .eq('subject', subject);
-    if (chapter != null && chapter.isNotEmpty) query = query.eq('chapter', chapter);
-    final res = await query.order('created_at', ascending: true);
+        .eq('section', section)
+        .order('created_at', ascending: false);
     return List<Map<String, dynamic>>.from(res);
   }
 
-  // Distinct chapter names this teacher has already used for a class+subject,
-  // so the chapter picker can suggest existing ones instead of always
-  // retyping (and risking inconsistent spelling that would split one chapter
-  // into two).
-  static Future<List<String>> fetchQuestionChapters({
-    required String teacherId, required String className, required String subject,
-  }) async {
-    final res = await client.from('question_bank').select('chapter')
-        .eq('teacher_id', teacherId)
-        .eq('class', className)
-        .eq('subject', subject);
-    final chapters = List<Map<String, dynamic>>.from(res).map((r) => r['chapter'] as String).toSet().toList();
-    chapters.sort();
-    return chapters;
+  static Future<void> createTeacherDocument(Map<String, dynamic> data) async {
+    await client.from('teacher_documents').insert(data);
   }
 
-  static Future<void> createQuestion(Map<String, dynamic> data) async {
-    await client.from('question_bank').insert(data);
-  }
-
-  static Future<void> updateQuestion(String id, Map<String, dynamic> data) async {
-    await client.from('question_bank').update(data).eq('id', id);
-  }
-
-  static Future<void> deleteQuestion(String id) async {
-    await client.from('question_bank').delete().eq('id', id);
-  }
-
-  // Multi-chapter question fetch, used when picking questions for a paper
-  // (a paper can pull from more than one chapter at once).
-  static Future<List<Map<String, dynamic>>> fetchQuestionsForChapters({
-    required String teacherId, required String className, required String subject, required List<String> chapters,
-  }) async {
-    if (chapters.isEmpty) return [];
-    final res = await client.from('question_bank').select()
-        .eq('teacher_id', teacherId)
-        .eq('class', className)
-        .eq('subject', subject)
-        .inFilter('chapter', chapters)
-        .order('created_at', ascending: true);
-    return List<Map<String, dynamic>>.from(res);
-  }
-
-  // Question Papers (Exam / Assignment) ─────────────────────────────────────
-  static Future<Map<String, dynamic>> createQuestionPaper(Map<String, dynamic> data) async {
-    final res = await client.from('question_papers').insert(data).select().single();
-    return Map<String, dynamic>.from(res);
-  }
-
-  static Future<void> saveQuestionPaperItems(String paperId, List<String> questionIds) async {
-    if (questionIds.isEmpty) return;
-    final items = List.generate(questionIds.length, (i) => {
-      'paper_id': paperId, 'question_id': questionIds[i], 'order_index': i,
-    });
-    await client.from('question_paper_items').insert(items);
+  static Future<void> deleteTeacherDocument(String id) async {
+    await client.from('teacher_documents').delete().eq('id', id);
   }
 
   // School Calendar ──────────────────────────────────────────────────────────
