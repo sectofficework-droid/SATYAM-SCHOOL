@@ -39,8 +39,15 @@ function AuthCallbackInner() {
     const code       = searchParams.get("code");
     const token_hash = searchParams.get("token_hash");
     const type       = searchParams.get("type");
+    const authError  = searchParams.get("error_description") || searchParams.get("error");
 
-    if (code) {
+    if (authError) {
+      // searchParams.get() already decodes once — Supabase's error_description
+      // is plain text (e.g. "Email link is invalid or has expired"), not
+      // re-encoded, so decoding again here would risk a URIError on any
+      // literal '%' in the message.
+      goToLogin(authError);
+    } else if (code) {
       // PKCE flow — exchange code, Supabase will fire PASSWORD_RECOVERY event
       supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
         if (error) goToLogin("Link expired or already used. Request a new one from the login page.");
