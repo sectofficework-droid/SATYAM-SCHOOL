@@ -227,6 +227,33 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     _load();
   }
 
+  Future<void> _renameChapter(Map<String, dynamic> chapter) async {
+    final ctrl = TextEditingController(text: chapter['chapter'] as String? ?? '');
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Rename Chapter', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.text)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Save', style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (newName == null || newName.isEmpty || newName == chapter['chapter']) return;
+    setState(() => chapter['chapter'] = newName);
+    await SupabaseService.updateSyllabusChapterName(chapter['id'] as String, newName);
+  }
+
   Future<void> _deleteSubtopic(Map<String, dynamic> subtopic) async {
     await SupabaseService.deleteSubtopic(subtopic['id'] as String);
     _load();
@@ -414,6 +441,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
         ? profile['class_name'] as String
         : (myClasses.isNotEmpty ? myClasses.first : allSchoolClasses.first);
     String? selectedSubject;
+    bool replaceExisting = false;
 
     showModalBottomSheet(
       context: context,
@@ -424,6 +452,9 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
           final subjectOptions = teacherSubjectsForClass(profile, selectedClass);
           final sectionState = selectedSubject != null ? _sectionState(selectedClass, selectedSubject!) : null;
           final blocked = sectionState != null && sectionState.locked && sectionState.approvedWindow == null;
+          final existingChapters = selectedSubject != null
+              ? _mineChapters.where((c) => c['class'] == selectedClass && c['subject'] == selectedSubject).toList()
+              : const <Map<String, dynamic>>[];
           return Padding(
             padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
             child: Container(
@@ -475,8 +506,30 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                     // always a dropdown, never free text.
                     items: (subjectOptions.isNotEmpty ? subjectOptions : schoolSubjects)
                         .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
-                    onChanged: (v) => setS(() => selectedSubject = v),
+                    onChanged: (v) => setS(() { selectedSubject = v; replaceExisting = false; }),
                   ),
+                  if (existingChapters.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: AppColors.amberLight, borderRadius: BorderRadius.circular(10)),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('$selectedSubject already has ${existingChapters.length} chapter${existingChapters.length == 1 ? '' : 's'}.',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text)),
+                        const SizedBox(height: 6),
+                        GestureDetector(
+                          onTap: () => setS(() => replaceExisting = !replaceExisting),
+                          child: Row(children: [
+                            Icon(replaceExisting ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                              size: 18, color: replaceExisting ? AppColors.red : AppColors.textHint),
+                            const SizedBox(width: 6),
+                            const Expanded(child: Text('Replace existing chapters with these (instead of adding on top)',
+                              style: TextStyle(fontSize: 11.5, color: AppColors.textLight))),
+                          ]),
+                        ),
+                      ]),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   TextField(
                     controller: chapterCtrl,
@@ -528,12 +581,21 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                         ));
                         return;
                       }
+                      var sortOrder = 0;
+                      if (replaceExisting) {
+                        await SupabaseService.deleteSyllabusForSubject(
+                          teacherId: profile['id'] as String, className: selectedClass, subject: selectedSubject!.trim(),
+                        );
+                      } else {
+                        sortOrder = existingChapters.length;
+                      }
                       await SupabaseService.createSyllabusChapters(names.map((name) => {
                         'teacher_id': profile['id'],
                         'class':      selectedClass,
                         'subject':    selectedSubject!.trim(),
                         'chapter':    name,
                         'status':     'Not Started',
+                        'sort_order': sortOrder++,
                       }).toList());
                       if (mounted) Navigator.pop(ctx);
                       _load();
@@ -574,6 +636,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
         ? profile['class_name'] as String
         : (myClasses.isNotEmpty ? myClasses.first : allSchoolClasses.first);
     String? selectedSubject;
+    bool replaceExisting = false;
 
     List<({int? no, String name, String? error})>? parsedRows;
     String? fileError;
@@ -591,6 +654,9 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
           final sectionState = selectedSubject != null ? _sectionState(selectedClass, selectedSubject!) : null;
           final blocked = sectionState != null && sectionState.locked && sectionState.approvedWindow == null;
           final validRows = (parsedRows ?? const []).where((r) => r.error == null).toList();
+          final existingChapters = selectedSubject != null
+              ? _mineChapters.where((c) => c['class'] == selectedClass && c['subject'] == selectedSubject).toList()
+              : const <Map<String, dynamic>>[];
 
           Future<void> pickFile() async {
             setS(() { fileError = null; parsedRows = null; picking = true; });
@@ -642,8 +708,14 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
             setS(() { importing = true; importError = null; });
             try {
               final valid = validRows.toList()..sort((a, b) => a.no!.compareTo(b.no!));
-              final key = '$selectedClass|$selectedSubject';
-              var sortOrder = _mineChapters.where((c) => '${c['class']}|${c['subject']}' == key).length;
+              var sortOrder = 0;
+              if (replaceExisting) {
+                await SupabaseService.deleteSyllabusForSubject(
+                  teacherId: profile['id'] as String, className: selectedClass, subject: selectedSubject!,
+                );
+              } else {
+                sortOrder = existingChapters.length;
+              }
               await SupabaseService.createSyllabusChapters(valid.map((r) => {
                 'teacher_id': profile['id'],
                 'class':      selectedClass,
@@ -713,8 +785,30 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                     decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
                     items: (subjectOptions.isNotEmpty ? subjectOptions : schoolSubjects)
                         .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
-                    onChanged: (v) => setS(() { selectedSubject = v; parsedRows = null; }),
+                    onChanged: (v) => setS(() { selectedSubject = v; parsedRows = null; replaceExisting = false; }),
                   ),
+                  if (existingChapters.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: AppColors.amberLight, borderRadius: BorderRadius.circular(10)),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('$selectedSubject already has ${existingChapters.length} chapter${existingChapters.length == 1 ? '' : 's'}.',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text)),
+                        const SizedBox(height: 6),
+                        GestureDetector(
+                          onTap: () => setS(() => replaceExisting = !replaceExisting),
+                          child: Row(children: [
+                            Icon(replaceExisting ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                              size: 18, color: replaceExisting ? AppColors.red : AppColors.textHint),
+                            const SizedBox(width: 6),
+                            const Expanded(child: Text('Replace existing chapters with this file (instead of adding on top)',
+                              style: TextStyle(fontSize: 11.5, color: AppColors.textLight))),
+                          ]),
+                        ),
+                      ]),
+                    ),
+                  ],
                   if (blocked) ...[
                     const SizedBox(height: 10),
                     Container(
@@ -1073,7 +1167,8 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
             final c        = e.value;
             final owned    = isClassScope ? c['teacher_id'] == _employeeId : true;
             final editable = isClassScope ? (owned && c['locked'] != true) : editableMine;
-            return _chapterTile(c, number: e.key + 1, owned: owned, editable: editable);
+            return _chapterTile(c, number: e.key + 1, owned: owned, editable: editable,
+              className: isClassScope ? null : className, subject: isClassScope ? null : subject, state: isClassScope ? null : state);
           }),
         ],
       ),
@@ -1159,13 +1254,22 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
 
   // ── Shared chapter/subtopic tile ────────────────────────────────────────
 
-  Widget _chapterTile(Map<String, dynamic> chapter, {required int number, required bool owned, required bool editable}) {
+  Widget _chapterTile(Map<String, dynamic> chapter, {
+    required int number, required bool owned, required bool editable,
+    String? className, String? subject, _SectionState? state,
+  }) {
     final id = chapter['id'] as String;
     final subtopics = _subtopicsByChapter[id] ?? const [];
     final derived = _derivedStatus(subtopics);
     final status = derived ?? ((chapter['status'] ?? 'Not Started') as String);
     final isOpen = _expanded.contains(id);
     final locked = chapter['locked'] == true;
+    // Locked with no active approved-edit window - the ONLY reason the
+    // edit/delete icons below don't show. Surfaced here explicitly (not
+    // just the small lock glyph next to the title) since teachers kept
+    // reporting edit/delete as "not working" when the real cause was an
+    // earlier Lock tap they didn't realize blocks per-chapter changes.
+    final showLockedNotice = owned && locked && !editable && className != null && subject != null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1202,6 +1306,11 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
               if (owned && editable) ...[
                 const SizedBox(width: 8),
                 GestureDetector(
+                  onTap: () => _renameChapter(chapter),
+                  child: const Icon(Icons.edit_outlined, color: AppColors.textHint, size: 19),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
                   onTap: () => _deleteChapter(chapter),
                   child: const Icon(Icons.delete_outline_rounded, color: AppColors.textHint, size: 20),
                 ),
@@ -1209,6 +1318,26 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
               const SizedBox(width: 4),
               Icon(isOpen ? Icons.expand_less_rounded : Icons.expand_more_rounded, color: AppColors.textHint, size: 18),
             ]),
+          ),
+        ),
+        if (showLockedNotice) Padding(
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+          child: GestureDetector(
+            onTap: state?.pending != null ? null : () => _openRequestEditSheet(className, subject),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(8)),
+              child: Row(children: [
+                const Icon(Icons.lock_outline_rounded, size: 13, color: AppColors.textHint),
+                const SizedBox(width: 6),
+                Expanded(child: Text(
+                  state?.pending != null
+                      ? 'Locked - edit request pending admin approval'
+                      : 'Locked - tap to request an edit',
+                  style: const TextStyle(fontSize: 11, color: AppColors.textLight, fontWeight: FontWeight.w600),
+                )),
+              ]),
+            ),
           ),
         ),
         if (isOpen) Padding(

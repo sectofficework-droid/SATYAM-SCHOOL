@@ -501,6 +501,24 @@ class SupabaseService {
     await client.from('syllabus').delete().eq('id', id);
   }
 
+  static Future<void> updateSyllabusChapterName(String id, String chapter) async {
+    await client.from('syllabus').update({'chapter': chapter}).eq('id', id);
+  }
+
+  // Wipes every chapter (and via ON DELETE CASCADE, their subtopics) this
+  // teacher has for one class+subject - used by "Replace Existing" on Add
+  // Chapters/Import, so re-uploading a corrected sheet doesn't just append
+  // another full copy on top of what's already there.
+  static Future<void> deleteSyllabusForSubject({
+    required String teacherId, required String className, required String subject,
+  }) async {
+    await client.from('syllabus')
+        .delete()
+        .eq('teacher_id', teacherId)
+        .eq('class', className)
+        .eq('subject', subject);
+  }
+
   // Subtopics under a chapter - optional, own independent progress. A
   // chapter with subtopics has its own status derived app-side from these
   // instead of being cycled directly.
