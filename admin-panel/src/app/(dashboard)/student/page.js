@@ -17,6 +17,7 @@ import {
   promoteStudent as svcPromote,
   resetStudentPassword as svcResetPassword,
 } from "@/lib/studentService";
+import { createImpersonationCode } from "@/lib/impersonationService";
 import { getActiveClasses } from "@/lib/settingsService";
 import { getFeeStructure } from "@/lib/feesService";
 import {
@@ -24,6 +25,7 @@ import {
   LogOut, Eye, User, ChevronDown, ArrowUpCircle,
   CheckCircle2, X, AlertTriangle, Package, FileText,
   IndianRupee, Check, ArrowLeft, Download, RotateCcw, Lock, Upload, Users,
+  KeyRound, Copy,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { fmtDMY } from "@/lib/utils";
@@ -262,6 +264,82 @@ function ResetPasswordModal({ student, onClose, onConfirm }) {
               className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed bg-school-navy hover:bg-school-navy-dark"
             >
               {submitting ? "Resetting..." : "Reset Password"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Admin access-code modal ──────────────────────────────────────
+// Generates a one-time, 10-minute code that logs straight into this
+// student's mobile-app account (no password needed) - for QA/support.
+// See mobile-app/SUPABASE_IMPERSONATION.sql.
+function ImpersonationCodeModal({ student, onClose }) {
+  const [result, setResult] = useState(null);
+  const [error, setError]   = useState("");
+  const [secondsLeft, setSecondsLeft] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    createImpersonationCode("student", student._studentId)
+      .then((data) => { if (!cancelled) setResult(data); })
+      .catch((err) => { if (!cancelled) setError(err?.message || "Failed to generate code."); });
+    return () => { cancelled = true; };
+  }, [student._studentId]);
+
+  useEffect(() => {
+    if (!result?.expires_at) return;
+    const tick = () => {
+      const left = Math.max(0, Math.round((new Date(result.expires_at).getTime() - Date.now()) / 1000));
+      setSecondsLeft(left);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [result]);
+
+  const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
+  const ss = String(secondsLeft % 60).padStart(2, "0");
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="bg-gradient-to-r from-school-navy to-school-navy-dark px-5 py-4 flex items-center justify-between">
+          <p className="text-white font-bold flex items-center gap-2"><KeyRound className="w-4 h-4" />Admin Access Code</p>
+          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-5 space-y-4">
+          <p className="text-sm text-gray-600">
+            Log straight into <span className="font-bold text-gray-900">{student.name}</span>'s mobile app account, without their password. Enter this code on the app's login screen via "Have an Admin Access Code?".
+          </p>
+          {error && <p className="text-xs text-red-500">{error}</p>}
+          {!error && !result && (
+            <p className="text-sm text-gray-400">Generating code...</p>
+          )}
+          {result && (
+            <>
+              <div className="bg-gray-50 border border-gray-200 rounded-xl py-4 flex flex-col items-center gap-1">
+                <p className="text-2xl font-mono font-bold tracking-[0.2em] text-gray-900">{result.code}</p>
+                <p className={`text-xs font-semibold ${secondsLeft <= 60 ? "text-red-500" : "text-gray-400"}`}>
+                  {secondsLeft > 0 ? `Expires in ${mm}:${ss}` : "Expired"}
+                </p>
+              </div>
+              <button
+                onClick={() => navigator.clipboard?.writeText(result.code)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+              >
+                <Copy className="w-3.5 h-3.5" />Copy Code
+              </button>
+            </>
+          )}
+          <div className="pt-1">
+            <button onClick={onClose}
+              className="w-full py-2.5 rounded-xl text-sm font-bold text-white bg-school-navy hover:bg-school-navy-dark transition-all">
+              Done
             </button>
           </div>
         </div>
@@ -665,6 +743,9 @@ export default function StudentPage() {
   const [deactivateModal, setDeactivateModal] = useState(null);
   const [readmitModal, setReadmitModal]       = useState(null);
   const [resetPwModal, setResetPwModal]       = useState(null);
+  const [impersonateModal, setImpersonateModal] = useState(null);
+  const authUser = useStore(s => s.authUser);
+  const canImpersonate = authUser && authUser.role !== "normal_admin"; // senior_admin & management only
   const [showAddModal, setShowAddModal]       = useState(false);
   const [showBasicImportModal, setShowBasicImportModal] = useState(false);
   const [basicDetailsModal, setBasicDetailsModal]     = useState(null);
@@ -905,6 +986,12 @@ export default function StudentPage() {
           student={resetPwModal}
           onClose={() => setResetPwModal(null)}
           onConfirm={(newPassword) => handleResetPassword(resetPwModal, newPassword)}
+        />
+      )}
+      {impersonateModal && (
+        <ImpersonationCodeModal
+          student={impersonateModal}
+          onClose={() => setImpersonateModal(null)}
         />
       )}
       {readmitModal && (
@@ -1454,6 +1541,22 @@ export default function StudentPage() {
                           <Lock className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
                         </button>
                       </div>
+
+                      {/* Admin access code — full account access, no password needed. senior_admin & management only */}
+                      {canImpersonate && (
+                        <div>
+                          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider leading-none mb-1.5">
+                            Admin Access
+                          </p>
+                          <button
+                            onClick={() => setImpersonateModal(student)}
+                            className="inline-flex items-center gap-2 bg-white/80 hover:bg-white border border-white/60 hover:border-gray-200 rounded-lg px-2.5 py-1.5 transition-all shadow-sm"
+                          >
+                            <span className="text-[13px] font-bold text-gray-800">Generate Code</span>
+                            <KeyRound className="w-3.5 h-3.5 text-gray-500 flex-shrink-0" />
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* ── Column 4 (NEW): Alerts ── */}
