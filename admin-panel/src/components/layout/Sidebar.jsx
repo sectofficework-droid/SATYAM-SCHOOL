@@ -44,7 +44,7 @@ const navItems = [
   { href: "/queries",   label: "Queries & Suggestions",icon: MessageSquareText, orgs: ["school"] },
   { href: "/report", label: "Report", icon: BarChart3, orgs: ["school"] },
   { href: "/documents", label: "Documents", icon: FolderOpen, orgs: ["school"] },
-  { href: "/question-papers", label: "Question Papers", icon: FileText, orgs: ["school"] },
+  { href: "/question-papers", label: "Question Bank", icon: FileText, orgs: ["school"] },
   { href: "/tasks", label: "Task Management", icon: ClipboardList, orgs: ["school"] },
   { href: "/super-admin", label: "Super Admin", icon: ShieldCheck, orgs: ["school"] },
 
