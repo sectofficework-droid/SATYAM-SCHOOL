@@ -223,6 +223,25 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
   }
 
   Future<void> _deleteChapter(Map<String, dynamic> chapter) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Chapter?', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.text)),
+        content: Text(
+          '"${chapter['chapter']}" and any subtopics under it will be removed. This cannot be undone.',
+          style: const TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.4),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: AppColors.red, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
     await SupabaseService.deleteSyllabusChapter(chapter['id'] as String);
     _load();
   }
@@ -255,6 +274,23 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
   }
 
   Future<void> _deleteSubtopic(Map<String, dynamic> subtopic) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Subtopic?', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.text)),
+        content: Text('"${subtopic['name']}" will be removed. This cannot be undone.',
+          style: const TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.4)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: AppColors.red, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
     await SupabaseService.deleteSubtopic(subtopic['id'] as String);
     _load();
   }
@@ -433,23 +469,34 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     return map;
   }
 
-  void _showAddChapterSheet() {
+  Future<void> _showAddChapterSheet() async {
     final chapterCtrl = TextEditingController();
     final profile  = AuthService.to.profile.value ?? {};
     final myClasses = teacherClasses(profile);
+    final teacherName = profile['name'] as String?;
     String selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
         ? profile['class_name'] as String
         : (myClasses.isNotEmpty ? myClasses.first : allSchoolClasses.first);
     String? selectedSubject;
     bool replaceExisting = false;
 
+    // Real Timetable-derived subjects per class (same source Homework/Marks
+    // Entry/Question Bank already use) instead of profile['subject_mappings'],
+    // which most teachers never configure and was missing real assignments
+    // like a 2nd-class GK teacher not showing GK in this dropdown at all.
+    final academicYear = await SupabaseService.fetchCurrentAcademicYearLabel();
+    final classSubjects = (teacherName != null && academicYear != null)
+        ? await SupabaseService.fetchTeacherSubjectsByClass(academicYear, teacherName)
+        : <String, List<String>>{};
+
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
-          final subjectOptions = teacherSubjectsForClass(profile, selectedClass);
+          final subjectOptions = classSubjects[selectedClass] ?? const <String>[];
           final sectionState = selectedSubject != null ? _sectionState(selectedClass, selectedSubject!) : null;
           final blocked = sectionState != null && sectionState.locked && sectionState.approvedWindow == null;
           final existingChapters = selectedSubject != null
@@ -500,10 +547,10 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                     isExpanded: true,
                     hint: const Text('Select', style: TextStyle(fontSize: 13)),
                     decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
-                    // Prefer this teacher's own mapped subjects for the class
-                    // (most teachers have none set up - see teacherSubjectsForClass),
-                    // falling back to every school-wide subject so this is
-                    // always a dropdown, never free text.
+                    // Real Timetable subjects for the class, falling back to
+                    // every school-wide subject if this teacher has no
+                    // Timetable periods at all yet, so this is always a
+                    // dropdown, never free text.
                     items: (subjectOptions.isNotEmpty ? subjectOptions : schoolSubjects)
                         .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
                     onChanged: (v) => setS(() { selectedSubject = v; replaceExisting = false; }),
@@ -629,14 +676,20 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
   // Excel import - Class/Subject picked once (unlike the sheet itself, which
   // only ever needs Chapter No + Chapter Name), teacher_id is always this
   // teacher, and the file's own header row (row 1) is never read as data.
-  void _showImportSheet() {
+  Future<void> _showImportSheet() async {
     final profile   = AuthService.to.profile.value ?? {};
     final myClasses = teacherClasses(profile);
+    final teacherName = profile['name'] as String?;
     String selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
         ? profile['class_name'] as String
         : (myClasses.isNotEmpty ? myClasses.first : allSchoolClasses.first);
     String? selectedSubject;
     bool replaceExisting = false;
+
+    final academicYear = await SupabaseService.fetchCurrentAcademicYearLabel();
+    final classSubjects = (teacherName != null && academicYear != null)
+        ? await SupabaseService.fetchTeacherSubjectsByClass(academicYear, teacherName)
+        : <String, List<String>>{};
 
     List<({int? no, String name, String? error})>? parsedRows;
     String? fileError;
@@ -644,13 +697,14 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     bool importing = false;
     String? importError;
 
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
-          final subjectOptions = teacherSubjectsForClass(profile, selectedClass);
+          final subjectOptions = classSubjects[selectedClass] ?? const <String>[];
           final sectionState = selectedSubject != null ? _sectionState(selectedClass, selectedSubject!) : null;
           final blocked = sectionState != null && sectionState.locked && sectionState.approvedWindow == null;
           final validRows = (parsedRows ?? const []).where((r) => r.error == null).toList();
