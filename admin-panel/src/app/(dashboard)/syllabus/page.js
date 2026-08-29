@@ -429,11 +429,11 @@ function GrowthAnalyticsTab() {
           )}
         </ChartCard>
 
-        <ChartCard title="Class-wise Completion" subtitle="% of leaf units (subtopic, else chapter) marked Completed">
+        <ChartCard title="Class-wise Completion" subtitle="% of leaf units (subtopic, else chapter) marked Completed" scrollable={classGrowth.length > 8}>
           <HorizontalBarChart data={classGrowth} />
         </ChartCard>
 
-        <ChartCard title="Subject-wise Completion" subtitle="Aggregated across every class + teacher for that subject">
+        <ChartCard title="Subject-wise Completion" subtitle="Aggregated across every class + teacher for that subject" scrollable={subjectGrowth.length > 8}>
           <HorizontalBarChart data={subjectGrowth} />
         </ChartCard>
 
