@@ -294,14 +294,22 @@ above — none of these are fixed, all await your decision on priority.
       naively simpler "skip the whole effect after year init" fix would
       have let paid-off students linger in the count forever). `next lint`
       clean. Full detail: `governance/work-log/LOG-2026-09-04.md`.
-- [ ] **REQ-BUG-004 — PLAUSIBLE, not confirmed: possible race condition
-      switching class/date quickly on Mark Attendance.**
+- [x] **REQ-BUG-004 — PLAUSIBLE, not confirmed: possible race condition
+      switching class/date quickly on Mark Attendance. FIXED 2026-09-04.**
       `attendance\page.js:123-146` (`loadAttendance`) has no
       cancellation/request-id guard on its fetch — a stale in-flight
       request could resolve after a newer one and overwrite the displayed
       attendance with data for the wrong class/date, and a save right
       after could persist attendance against the wrong class. Not
       reproduced, but the missing guard is real.
+      **Fixed:** confirmed by reading the code (not by reproducing it live)
+      that this was a genuine gap, not just theoretical — `loadAttendance`
+      is re-triggered on every class/date change with no guard at all.
+      Added a `loadReqId` ref that increments per call; the response,
+      catch, and finally blocks all check it's still the latest request
+      before applying `statusMap`/`wasMarked`/`editMode`/`attLoading`,
+      discarding stale results instead. `next lint` clean. Full detail:
+      `governance/work-log/LOG-2026-09-04.md`.
 
 ### MINOR
 - [ ] **REQ-BUG-005 — Inventory report totals have no null-safety on

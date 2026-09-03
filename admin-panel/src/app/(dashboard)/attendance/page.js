@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import {
   CalendarCheck, Search, Users, Check, X as XIcon, Clock,
   Save, History, GraduationCap, ChevronLeft, ChevronRight,
@@ -96,6 +96,11 @@ function MarkAttendanceTab() {
   const [saved,        setSaved]      = useState(false);
   const [search,       setSearch]     = useState("");
   const [historyStudent, setHistoryStudent] = useState(null); // student object or null
+  // REQ-BUG-004: guards against a stale loadAttendance() response landing
+  // after a newer one, if class/date is switched again before the first
+  // request resolves - without this, the older response's rows could
+  // overwrite the already-loaded newer class/date's statusMap.
+  const loadReqId = useRef(0);
 
   useEffect(() => {
     setLoading(true);
@@ -122,9 +127,11 @@ function MarkAttendanceTab() {
 
   const loadAttendance = useCallback(async () => {
     if (!selectedClass || !selectedDate) return;
+    const reqId = ++loadReqId.current;
     setAttLoading(true);
     try {
       const rows = await getAttendanceForClassDate(selectedClass, selectedDate);
+      if (reqId !== loadReqId.current) return; // a newer request started - discard this stale result
       const map = {};
       for (const r of rows) map[r.student_id] = r.status;
       setWasMarked(rows.length > 0);
@@ -136,9 +143,9 @@ function MarkAttendanceTab() {
       for (const s of classStudents) if (!map[s._studentId]) map[s._studentId] = "P";
       setStatusMap(map);
     } catch {
-      setStatusMap({});
+      if (reqId === loadReqId.current) setStatusMap({});
     } finally {
-      setAttLoading(false);
+      if (reqId === loadReqId.current) setAttLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClass, selectedDate, classStudents]);
