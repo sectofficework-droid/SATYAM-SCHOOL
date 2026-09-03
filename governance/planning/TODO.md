@@ -205,9 +205,13 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       `/Scratch/` rule now covers it, no separate rule needed.
 
 ## MODERATE
-- [ ] **REQ-HYG-005 — `README.md` is corrupted/empty** (wrong encoding,
-      effectively blank). Real setup detail lives in `governance\documentation\PROJECT_CONTEXT.md`
+- [x] **REQ-HYG-005 — `README.md` is corrupted/empty. FIXED 2026-09-04.**
+      (wrong encoding, effectively blank). Real setup detail lives in `governance\documentation\PROJECT_CONTEXT.md`
       and now `documentation\SETUP-GUIDE.md` instead.
+      **Fixed:** replaced with a short, clean UTF-8 README (project
+      overview + links to `SETUP-GUIDE.md`/`PROJECT_CONTEXT.md`/`TODO.md`)
+      rather than re-authoring full setup instructions that already live
+      correctly in those files — avoids having two copies to keep in sync.
 - [ ] Schema drift: `users` vs `admin_users`, `timetable_period_definitions`/
       `timetable_entries` vs `timetables` — self-flagged in
       `governance\documentation\PROJECT_CONTEXT.md`, unresolved, not re-litigated here.
