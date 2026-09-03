@@ -79,6 +79,7 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       final svc = FaceRecognitionService.instance;
 
       final face = await svc.detectSingleFace(photo.path);
+      if (!mounted) return;
       if (face == null) {
         setState(() => _message = 'No face detected - please face the camera and try again.');
         return;
@@ -89,6 +90,7 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       }
 
       final embedding = await svc.getEmbedding(photo.path, face);
+      if (!mounted) return;
       if (embedding == null) {
         setState(() => _message = 'Could not read your face clearly - try again.');
         return;
@@ -109,6 +111,7 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       Timer(const Duration(seconds: 3), () { if (mounted) Get.until((r) => r.settings.name == Routes.kioskHome); });
     } catch (e, st) {
       debugPrint('Face enroll capture failed: $e\n$st');
+      if (!mounted) return;
       setState(() { _stage = _Stage.camera; _message = 'Error: $e'; });
     }
   }

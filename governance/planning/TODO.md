@@ -176,24 +176,34 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       pre-existing style infos). **Not yet visually tested on a real
       device** — same BlueStacks-not-running caveat as 2026-09-03's
       unrelated change. Full detail: `governance/work-log/LOG-2026-09-04.md`.
-- [ ] **REQ-SEC-003 — Public S3 bucket for mobile photos**, contradicting
+- [x] **REQ-SEC-003 — Public S3 bucket for mobile photos**, contradicting
       the original discovery doc's explicit "DO NOT use public S3 buckets"
       rule. `lib/common/widgets/s3_image.dart`. Decision needed: proxy
       through presigned URLs like the admin panel does, or accept the
       current public-bucket approach (it was chosen deliberately after a
       chain of CORS fixes, per `governance\documentation\PROJECT_CONTEXT.md:67` — may be an informed
       tradeoff, not an oversight; needs your call either way).
+      **Decided 2026-09-04: keep as-is.** User confirmed the public-bucket
+      approach should stand as the deliberate tradeoff it already was — no
+      code change. Closing this item on that decision, not on a fix.
 
 ## IMPORTANT
 - [ ] **REQ-HYG-001 — No automated tests for `admin-panel/`.** No `test`
       script, no test files. `mobile-app/test/widget_test.dart` is still
       Flutter's unmodified default counter test.
+      **2026-09-04: user chose to skip for now** — a real test suite is a
+      substantial separate undertaking, not something to slot into a
+      bug-fix session. Left open, not closed.
 - [ ] **REQ-HYG-002 — No CI pipeline.** No `.yml`/`.yaml` CI config anywhere
       in the repo; all verification is manual/local.
-- [ ] **REQ-HYG-003 — `schema_dump.json` tracked in git** at repo root,
-      contains a leftover API-error debug artifact, not source of truth for
-      anything. Candidate for deletion (needs your OK — §J4, even a small
-      delete gets a heads-up here since it's tracked history).
+      **2026-09-04: user chose to skip for now**, same reasoning as
+      REQ-HYG-001. Left open, not closed.
+- [x] **REQ-HYG-003 — `schema_dump.json` tracked in git. DELETED 2026-09-04**
+      (user confirmed OK) at repo root,
+      contained a leftover API-error debug artifact
+      (`{"message":"Invalid API key","hint":"Only the service_role API key
+      can be used for this endpoint."}`, 101 bytes) — not source of truth for
+      anything, nothing in the repo referenced it.
 - [x] **REQ-HYG-004 — No root `.gitignore`.** Fixed 2026-08-18 (scaffold
       reorganization, not production code) — root `.gitignore` now ignores
       `Scratch/`, real env-file patterns, and OS/editor junk. At the time,
@@ -400,20 +410,26 @@ above — none of these are fixed, all await your decision on priority.
       `governance/work-log/LOG-2026-09-04.md`.
 
 #### MINOR / PLAUSIBLE
-- [~] **REQ-BUG-009 — A few pages' async `_load()` methods are missing the
+- [x] **REQ-BUG-009 — A few pages' async `_load()` methods are missing the
       `if (!mounted) return;` guard before `setState`** after an `await`
       (e.g. `student_attendance_page.dart:25`, `student_marks_page.dart:52`)
       — most other pages in the codebase do include this guard. Could
       throw if the user navigates away mid-fetch; low real-world impact,
       just an inconsistency worth cleaning up.
-      **Fixed 2026-09-04 for the two named examples only** — both now use
-      `if (mounted) setState(...)`. Did **not** do a full-app audit: a
-      broader grep for the same `await` → `setState` shape turned up ~17
-      files, most of which are likely already guarded or false positives
-      from an imprecise pattern match, and auditing all of them individually
-      would be a much bigger task than this item's stated MINOR/"e.g."
-      scope. Treat this as partially closed — the same inconsistency
-      probably still exists elsewhere in the app.
+      **Fixed 2026-09-04, now fully audited.** First pass fixed just the two
+      named examples; a follow-up subagent then read all ~17 files the
+      broader grep had flagged, one by one, to separate real gaps from
+      false positives (most were already correctly guarded). Found and
+      fixed 7 more real gaps across 4 files:
+      `teacher_attendance_page.dart` (edit-request submit, both date-picker
+      `onTap` handlers), `student_notices_page.dart` (`_load()`),
+      `student_fees_page.dart` (`_load()`'s success and catch paths), and
+      `face_enroll_capture_page.dart`'s `_capture()` (5 setState calls
+      across face-detect/eyes-open/embedding/save steps, plus its catch
+      block — only the final save step had a guard before this). All now
+      use `if (mounted)`/`if (!mounted) return;`. `flutter analyze` on all
+      4 files: clean, no errors. Full detail:
+      `governance/work-log/LOG-2026-09-04.md`.
 
 **Reviewer also checked (no further issues found):** `auth_service.dart`,
 `face_recognition_service.dart` + the full attendance-kiosk capture→detect→
