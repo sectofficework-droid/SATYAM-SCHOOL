@@ -4,11 +4,31 @@
 -- emp_code/password auth, not Supabase Auth) can call them, same pattern as
 -- teacher_login/student_login.
 
-CREATE OR REPLACE FUNCTION teacher_update_profile(p_employee_id TEXT, p_name TEXT, p_phone TEXT, p_email TEXT)
+-- REQ-SEC-004 fix (2026-09-04): this RPC used to update any teacher's
+-- name/phone/email given just their UUID, no password - anyone who could
+-- guess/enumerate an employee id could silently edit their profile.
+-- p_password is now required and checked the same way teacher_change_password
+-- checks p_old_password. Callers on the old 4-arg signature will get a
+-- Postgres "function does not exist" error until the app is rebuilt - this
+-- is an intentional breaking change, not an oversight (see TODO.md
+-- REQ-SEC-004: a soft/optional password param would just make the check
+-- skippable, not actually fix anything).
+-- The old 4-arg overload must be dropped explicitly - CREATE OR REPLACE with
+-- a different parameter list creates a second overload rather than replacing
+-- it, which would silently leave the no-password version callable forever.
+DROP FUNCTION IF EXISTS teacher_update_profile(TEXT, TEXT, TEXT, TEXT);
+
+CREATE OR REPLACE FUNCTION teacher_update_profile(p_employee_id TEXT, p_name TEXT, p_phone TEXT, p_email TEXT, p_password TEXT)
 RETURNS JSON LANGUAGE plpgsql SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE v_row employees%ROWTYPE;
 BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM employees WHERE id = p_employee_id::UUID AND app_password = p_password
+  ) THEN
+    RETURN NULL;
+  END IF;
+
   UPDATE employees
   SET name  = p_name,
       phone = p_phone,
@@ -52,6 +72,6 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION teacher_update_profile(TEXT, TEXT, TEXT, TEXT) TO anon;
+GRANT EXECUTE ON FUNCTION teacher_update_profile(TEXT, TEXT, TEXT, TEXT, TEXT) TO anon;
 GRANT EXECUTE ON FUNCTION teacher_change_password(TEXT, TEXT, TEXT) TO anon;
 GRANT EXECUTE ON FUNCTION teacher_verify_password(TEXT, TEXT) TO anon;

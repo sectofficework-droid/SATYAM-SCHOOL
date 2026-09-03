@@ -755,11 +755,14 @@ class SupabaseService {
 
   // Teacher settings ──────────────────────────────────────────────────────────
 
+  // Returns null both when the employee id doesn't match a row and when
+  // p_password is wrong - callers should treat null as "check your password"
+  // since a bad employee id can't happen from the app's own logged-in state.
   static Future<Map<String, dynamic>?> updateTeacherProfile({
-    required String employeeId, required String name, required String phone, required String email,
+    required String employeeId, required String name, required String phone, required String email, required String password,
   }) async {
     final res = await client.rpc('teacher_update_profile', params: {
-      'p_employee_id': employeeId, 'p_name': name, 'p_phone': phone, 'p_email': email,
+      'p_employee_id': employeeId, 'p_name': name, 'p_phone': phone, 'p_email': email, 'p_password': password,
     });
     return res == null ? null : Map<String, dynamic>.from(res as Map);
   }

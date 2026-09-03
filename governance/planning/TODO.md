@@ -100,9 +100,20 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       attempt.
       **Deferred, not fixed:** REQ-SEC-004 below still needs an app rebuild
       to fix properly — separate from this item either way.
-- [ ] **REQ-SEC-002 — `anon`-role over-exposure (scope corrected, larger
+- [~] **REQ-SEC-002 — `anon`-role over-exposure (scope corrected, larger
       than first scoped; `students`/`employees`/`admin_users` LIVE-CONFIRMED
-      2026-08-21 as part of this — see below).** Not just 4-5 tables — full
+      2026-08-21 as part of this — see below).** **PARTIALLY FIXED
+      2026-09-04:** `students` and `admin_users` now have RLS enabled
+      (gated on a new `is_admin_user()` helper) and `anon`'s grants on both
+      were revoked — live-verified via unauthenticated REST calls, both now
+      return `42501 permission denied`. `employees` and the remaining ~22
+      tables from the figure below are **still fully anon-exposed,
+      unchanged**. `employees` specifically couldn't be locked down yet
+      because the mobile app reads/writes it directly with the anon key for
+      the teacher's own profile (no real session) — deferred to be fixed
+      together with REQ-SEC-004's RPC rework. Migration:
+      `mobile-app/SUPABASE_LOCK_STUDENTS_ADMIN_USERS.sql`. Full detail:
+      `governance/work-log/LOG-2026-09-04.md`. Not just 4-5 tables — full
       grep of every `mobile-app/SUPABASE_*.sql` file shows **~25 tables**
       with full or partial `anon` grants and 17 with RLS explicitly
       disabled, matching the fact that `supabase_service.dart` queries ~30
@@ -139,9 +150,9 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       move sensitive RPCs behind real Supabase Auth sessions, and/or add
       rate limiting at the Supabase/Edge layer. Also a MAJOR change —
       reopens DESIGN FIXED.
-- [ ] **REQ-SEC-004 — `teacher_update_profile` has zero identity check.
-      Checked 2026-08-18: NOT fixable without an app rebuild, so deferred
-      out of Stage 1.** Unlike `teacher_change_password` (which verifies
+- [x] **REQ-SEC-004 — `teacher_update_profile` has zero identity check.
+      FIXED 2026-09-04.** Checked 2026-08-18: NOT fixable without an app
+      rebuild, so deferred out of Stage 1. Unlike `teacher_change_password` (which verifies
       `app_password` first), this RPC updates any teacher's name/phone/email
       given just their UUID, no password. `mobile-app/
       SUPABASE_TEACHER_SETTINGS.sql:7-22`. Confirmed via
@@ -153,6 +164,18 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       Real fix needs the Settings screen to prompt for the current password
       before saving profile edits — an app UI change + rebuild, bundled with
       Stage 2/3.
+      **Fixed 2026-09-04:** `teacher_update_profile` now requires and
+      verifies `p_password` before applying any change (same check as
+      `teacher_change_password`) — the old no-password 4-arg overload was
+      explicitly dropped (not left callable alongside the new one), and
+      live-verified: the 4-arg call now errors `function does not exist`,
+      the 5-arg call with a wrong password returns `null`.
+      `teacher_profile_page.dart`'s Edit Profile sheet now has a required
+      "Current Password" field; `supabase_service.dart`'s
+      `updateTeacherProfile` takes `password`. `flutter analyze` clean (only
+      pre-existing style infos). **Not yet visually tested on a real
+      device** — same BlueStacks-not-running caveat as 2026-09-03's
+      unrelated change. Full detail: `governance/work-log/LOG-2026-09-04.md`.
 - [ ] **REQ-SEC-003 — Public S3 bucket for mobile photos**, contradicting
       the original discovery doc's explicit "DO NOT use public S3 buckets"
       rule. `lib/common/widgets/s3_image.dart`. Decision needed: proxy
