@@ -312,13 +312,16 @@ above — none of these are fixed, all await your decision on priority.
       `governance/work-log/LOG-2026-09-04.md`.
 
 ### MINOR
-- [ ] **REQ-BUG-005 — Inventory report totals have no null-safety on
-      `qty`.** `reportService.js:341-342` (`getInventoryForReport`) sums
+- [x] **REQ-BUG-005 — Inventory report totals have no null-safety on
+      `qty`. FIXED 2026-09-04.** `reportService.js:341-342` (`getInventoryForReport`) sums
       `b.qty`/`u.qty` with no `|| 0` fallback (unlike the equivalent sums
       in `inventoryService.js`/`dashboardService.js`) — a null quantity on
       any batch/usage row would turn that item's whole running total into
       `NaN`. Low likelihood if the DB column is NOT NULL, no defensive
       check either way.
+      **Fixed:** added `|| 0` to both reduces, matching
+      `dashboardService.js`'s already-correct equivalent exactly. `next
+      lint` clean.
 
 ### mobile-app findings (added 2026-08-18, same review pass)
 
@@ -393,12 +396,20 @@ above — none of these are fixed, all await your decision on priority.
       `governance/work-log/LOG-2026-09-04.md`.
 
 #### MINOR / PLAUSIBLE
-- [ ] **REQ-BUG-009 — A few pages' async `_load()` methods are missing the
+- [~] **REQ-BUG-009 — A few pages' async `_load()` methods are missing the
       `if (!mounted) return;` guard before `setState`** after an `await`
       (e.g. `student_attendance_page.dart:25`, `student_marks_page.dart:52`)
       — most other pages in the codebase do include this guard. Could
       throw if the user navigates away mid-fetch; low real-world impact,
       just an inconsistency worth cleaning up.
+      **Fixed 2026-09-04 for the two named examples only** — both now use
+      `if (mounted) setState(...)`. Did **not** do a full-app audit: a
+      broader grep for the same `await` → `setState` shape turned up ~17
+      files, most of which are likely already guarded or false positives
+      from an imprecise pattern match, and auditing all of them individually
+      would be a much bigger task than this item's stated MINOR/"e.g."
+      scope. Treat this as partially closed — the same inconsistency
+      probably still exists elsewhere in the app.
 
 **Reviewer also checked (no further issues found):** `auth_service.dart`,
 `face_recognition_service.dart` + the full attendance-kiosk capture→detect→

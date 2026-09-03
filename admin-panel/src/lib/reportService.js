@@ -344,8 +344,8 @@ export async function getInventoryForReport() {
   const rows = [];
 
   for (const item of (itemsRes.data || [])) {
-    const totalIn   = (item.inventory_batches || []).reduce((s, b) => s + b.qty, 0);
-    const totalUsed = (item.inventory_usages  || []).reduce((s, u) => s + u.qty, 0);
+    const totalIn   = (item.inventory_batches || []).reduce((s, b) => s + (b.qty || 0), 0);
+    const totalUsed = (item.inventory_usages  || []).reduce((s, u) => s + (u.qty || 0), 0);
     const avail     = totalIn - totalUsed;
     const stockStatus = avail <= 0 ? "Out of Stock" : avail <= item.low_stock_at ? "Low Stock" : "In Stock";
     rows.push({

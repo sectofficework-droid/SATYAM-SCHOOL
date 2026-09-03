@@ -49,7 +49,7 @@ class _StudentMarksPageState extends State<StudentMarksPage> {
         allMarks.add({...e, 'obtained': null});
       }
     }
-    setState(() { _exams = exams; _marks = allMarks; _loading = false; });
+    if (mounted) setState(() { _exams = exams; _marks = allMarks; _loading = false; });
   }
 
   @override
