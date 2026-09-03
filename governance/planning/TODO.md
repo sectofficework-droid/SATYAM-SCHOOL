@@ -219,9 +219,9 @@ Found by a full-file bug-hunting review, separate from the security audit
 above — none of these are fixed, all await your decision on priority.
 
 ### 🛑 CRITICAL
-- [ ] **REQ-BUG-001 — "Total Fees" is computed two different, conflicting
+- [x] **REQ-BUG-001 — "Total Fees" is computed two different, conflicting
       ways across the app, producing different numbers for the same
-      student on different pages.** Some pages read the fee amount stored
+      student on different pages. FIXED 2026-09-04.** Some pages read the fee amount stored
       on the student at admission time (`enrollment.fee_total`, a one-time
       snapshot) — `student\[id]\page.js:350`, `reportService.js:219`
       (`getFeesForReport`). Others re-read the *current* fee structure live
@@ -239,6 +239,23 @@ above — none of these are fixed, all await your decision on priority.
       and the Fee Report still correctly show ₹14,500. Real risk of
       wrong due-amounts, wrong payment caps, and actual over/under
       collection.
+      **Fixed 2026-09-04:** the four live-structure call sites (line numbers
+      above are stale — the actual current sites were found via grep, not
+      by trusting the old numbers) now prefer the `fee_total` snapshot,
+      falling back to the live structure only when no snapshot is recorded
+      (legacy rows — confirmed via direct query that most current-year
+      enrollments have `fee_total = 0`, i.e. never set, so this fallback is
+      still doing real work, not dead code):
+      `fees\page.js` `calcSummary()`, `student\page.js` (promotion pending-fee
+      check, list-row "Fee Summary" card ×2), `reportService.js`
+      `getFeesForSuperAdmin`. Left `student\page.js`'s promotion-time
+      `feeTotal` write (setting the *new* enrollment's snapshot for the next
+      class) untouched — that one correctly should read the live structure,
+      same as `AddStudentForm` does at admission. Confirmed via direct query
+      that no student's `fee_total` currently disagrees with the live
+      structure — this fix prevents the drift described above from ever
+      biting, it wasn't caught already happening. `next lint` on all three
+      files: clean. Full detail: `governance/work-log/LOG-2026-09-04.md`.
 
 ### ⚠️ MODERATE
 - [ ] **REQ-BUG-002 — Employee Report's "Teachers" summary count always
