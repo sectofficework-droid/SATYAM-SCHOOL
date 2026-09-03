@@ -376,8 +376,8 @@ above — none of these are fixed, all await your decision on priority.
       now compare against a `today` truncated to midnight before comparing
       (matching the same fix shape). `flutter analyze` on both files:
       clean. Full detail: `governance/work-log/LOG-2026-09-04.md`.
-- [ ] **REQ-BUG-008 — Un-marking a completed daily task can leave the
-      screen showing the wrong state if the request fails.**
+- [x] **REQ-BUG-008 — Un-marking a completed daily task can leave the
+      screen showing the wrong state if the request fails. FIXED 2026-09-04.**
       `teacher_daily_tasks_page.dart:33-54` optimistically sets
       `task['completedAt'] = null` immediately, then on failure tries to
       "roll back" by reading `task['completedAt']` — but that field was
@@ -386,6 +386,11 @@ above — none of these are fixed, all await your decision on priority.
       (e.g. a network blip), the UI shows the task as incomplete even
       though the server still has it marked done — until the page reloads,
       the on-screen state is simply wrong.
+      **Fixed:** `_toggle()` now captures `originalCompletedAt` (the actual
+      value, not a derived bool) before the optimistic `setState`, and rolls
+      back to that exact value on failure instead of reconstructing it from
+      the now-stale `wasDone` flag. `flutter analyze` clean. Full detail:
+      `governance/work-log/LOG-2026-09-04.md`.
 
 #### MINOR / PLAUSIBLE
 - [ ] **REQ-BUG-009 — A few pages' async `_load()` methods are missing the
