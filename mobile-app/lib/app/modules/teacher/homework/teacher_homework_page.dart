@@ -271,8 +271,15 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
           itemBuilder: (_, i) {
             final hw    = shownList[i];
             final due   = DateTime.tryParse(hw['due_date'] ?? '');
-            final overdue = due != null && due.isBefore(DateTime.now());
-            final urgent  = due != null && !overdue && due.difference(DateTime.now()).inDays <= 2;
+            // REQ-BUG-007: due is parsed at midnight, so comparing it
+            // against DateTime.now() (with time-of-day) marked today's own
+            // due date as overdue as soon as the clock passed midnight.
+            // Truncate "now" to date-only first, same fix as the student
+            // app's _isPastDue.
+            final today   = DateTime.now();
+            final todayDate = DateTime(today.year, today.month, today.day);
+            final overdue = due != null && due.isBefore(todayDate);
+            final urgent  = due != null && !overdue && due.difference(todayDate).inDays <= 2;
 
             return TweenAnimationBuilder<double>(
               tween: Tween(begin: 0.0, end: 1.0),

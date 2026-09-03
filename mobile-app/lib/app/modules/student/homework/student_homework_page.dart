@@ -70,7 +70,11 @@ class _StudentHomeworkPageState extends State<StudentHomeworkPage> {
                   itemBuilder: (_, i) {
                     final hw      = shownList[i];
                     final due     = DateTime.tryParse(hw['due_date'] ?? '');
-                    final overdue = due != null && due.isBefore(DateTime.now());
+                    // REQ-BUG-007: must match _isPastDue's date-only
+                    // comparison - comparing due (midnight) against
+                    // DateTime.now() (with time-of-day) marked today's own
+                    // due date as overdue from midnight onward.
+                    final overdue = _isPastDue(hw);
                     return Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(

@@ -355,8 +355,8 @@ above — none of these are fixed, all await your decision on priority.
       BlueStacks caveat). Full detail: `governance/work-log/LOG-2026-09-04.md`.
 
 #### ⚠️ MODERATE
-- [ ] **REQ-BUG-007 — Homework due today is wrongly shown as "Overdue" in
-      both the teacher and student apps**, from midnight onward on the due
+- [x] **REQ-BUG-007 — Homework due today is wrongly shown as "Overdue" in
+      both the teacher and student apps. FIXED 2026-09-04.**, from midnight onward on the due
       date itself. `teacher_homework_page.dart:234`,
       `student_homework_page.dart:73` compare the due date (parsed as
       midnight) directly against `DateTime.now()` (current time-of-day)
@@ -369,6 +369,13 @@ above — none of these are fixed, all await your decision on priority.
       (contradicts its own tab); in the teacher app it shows
       "Overdue · &lt;date&gt;" instead of "Due: &lt;date&gt;" and never gets the
       amber "urgent, ≤2 days" treatment.
+      **Fixed:** `student_homework_page.dart`'s itemBuilder now calls the
+      already-correct `_isPastDue(hw)` instead of its own separate,
+      time-of-day-sensitive check. `teacher_homework_page.dart` had no
+      existing date-only helper to reuse, so both `overdue` and `urgent`
+      now compare against a `today` truncated to midnight before comparing
+      (matching the same fix shape). `flutter analyze` on both files:
+      clean. Full detail: `governance/work-log/LOG-2026-09-04.md`.
 - [ ] **REQ-BUG-008 — Un-marking a completed daily task can leave the
       screen showing the wrong state if the request fails.**
       `teacher_daily_tasks_page.dart:33-54` optimistically sets
