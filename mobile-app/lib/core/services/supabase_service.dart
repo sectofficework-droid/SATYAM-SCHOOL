@@ -324,7 +324,7 @@ class SupabaseService {
   }
 
   static Future<void> saveMarksBatch(List<Map<String, dynamic>> records) async {
-    await client.from('exam_marks').upsert(records);
+    await client.from('exam_marks').upsert(records, onConflict: 'exam_id,student_id');
   }
 
   // Same shape as fetchClassStudents, but looks a class up by name instead of

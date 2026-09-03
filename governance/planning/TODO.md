@@ -278,8 +278,9 @@ above — none of these are fixed, all await your decision on priority.
 ### mobile-app findings (added 2026-08-18, same review pass)
 
 #### 🛑 CRITICAL
-- [ ] **REQ-BUG-006 — Re-saving Monthly Test marks fails and silently loses
-      the whole batch.** `mobile-app/lib/core/services/supabase_service.dart:312-314`
+- [x] **REQ-BUG-006 — Re-saving Monthly Test marks fails and silently loses
+      the whole batch. FIXED 2026-09-04.**
+      `mobile-app/lib/core/services/supabase_service.dart:312-314`
       (`saveMarksBatch`) calls `client.from('exam_marks').upsert(records)`
       with **no `onConflict`**, unlike every sibling batch-save
       (`saveOfficialMarksBatch`, `saveAttendanceBatch`,
@@ -298,6 +299,15 @@ above — none of these are fixed, all await your decision on priority.
       no explanation. This is a real, easily-hit data-loss bug (marks
       entry is re-visited constantly — corrections, late entries, absent
       students added later).
+      **Fixed 2026-09-04:** `saveMarksBatch` now passes
+      `onConflict: 'exam_id,student_id'` — confirmed against the live schema
+      that this exactly matches `exam_marks`'s unique constraint
+      (`exam_marks_exam_id_student_id_key`). Also added the missing
+      try/catch in `_saveMarks()` so a save failure (any cause, not just
+      this one) shows an error snackbar and resets the spinner instead of
+      hanging forever. Pure client-side fix, no migration needed.
+      `flutter analyze` clean. Not yet visually tested on a device (same
+      BlueStacks caveat). Full detail: `governance/work-log/LOG-2026-09-04.md`.
 
 #### ⚠️ MODERATE
 - [ ] **REQ-BUG-007 — Homework due today is wrongly shown as "Overdue" in
