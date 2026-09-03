@@ -258,13 +258,21 @@ above — none of these are fixed, all await your decision on priority.
       files: clean. Full detail: `governance/work-log/LOG-2026-09-04.md`.
 
 ### ⚠️ MODERATE
-- [ ] **REQ-BUG-002 — Employee Report's "Teachers" summary count always
-      shows 0.** `report\page.js:559` filters for `role === "Teacher"`, but
+- [x] **REQ-BUG-002 — Employee Report's "Teachers" summary count always
+      shows 0. FIXED 2026-09-04.** `report\page.js:559` filters for
+      `role === "Teacher"`, but
       `reportService.getEmployeesForReport()` returns `designation`/`type`
       values, and the real designation list
       (`employee\page.js:37-41 DESIGNATIONS.teaching`) never contains the
       literal string `"Teacher"` — only `"Class Teacher"`,
       `"Subject Teacher"`, `"HOD"`, `"PGT"`, `"TGT"`, `"PRT"`.
+      **Fixed:** changed the filter to `type === "teaching"` —
+      `getEmployeesForReport()` already returns `type` (no service change
+      needed), and it's the same field `syllabusService.js` already uses
+      elsewhere to find teachers. Confirmed live: 17 employees have
+      `type = 'teaching'` in production, so the tile was showing 0 instead
+      of 17. `next lint` clean. Full detail:
+      `governance/work-log/LOG-2026-09-04.md`.
 - [ ] **REQ-BUG-003 — Saving a fee payment silently resets the admin's
       manual "Send Reminder" checkbox selection.** `fees\page.js:494-500`'s
       effect re-initializes `selectedIncomplete` to "every student with

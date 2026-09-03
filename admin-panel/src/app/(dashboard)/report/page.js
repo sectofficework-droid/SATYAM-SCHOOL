@@ -556,7 +556,7 @@ const REPORT_CONFIGS = {
     getSummary(d) { return [
       {label:"Total Staff",  value:d.length,                                                    color:"purple"},
       {label:"Active",       value:d.filter(x=>x.status==="Active").length,                    color:"green" },
-      {label:"Teachers",     value:d.filter(x=>x.role==="Teacher").length,                     color:"blue"  },
+      {label:"Teachers",     value:d.filter(x=>x.type==="teaching").length,                    color:"blue"  },
       {label:"Total Salary", value:`Rs ${d.reduce((s,x)=>s+x.salary,0).toLocaleString("en-IN")}`,color:"amber" },
     ];},
   },
