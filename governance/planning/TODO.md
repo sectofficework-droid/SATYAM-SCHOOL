@@ -273,8 +273,9 @@ above — none of these are fixed, all await your decision on priority.
       `type = 'teaching'` in production, so the tile was showing 0 instead
       of 17. `next lint` clean. Full detail:
       `governance/work-log/LOG-2026-09-04.md`.
-- [ ] **REQ-BUG-003 — Saving a fee payment silently resets the admin's
-      manual "Send Reminder" checkbox selection.** `fees\page.js:494-500`'s
+- [x] **REQ-BUG-003 — Saving a fee payment silently resets the admin's
+      manual "Send Reminder" checkbox selection. FIXED 2026-09-04.**
+      `fees\page.js:494-500`'s
       effect re-initializes `selectedIncomplete` to "every student with
       pending fees" whenever `students` reloads — which happens after
       `handleSavePayment`/`handleSaveInventory` succeed
@@ -282,6 +283,17 @@ above — none of these are fixed, all await your decision on priority.
       some students (e.g. already contacted by phone) then records an
       unrelated payment, the selection silently resets with no warning —
       risk of sending reminders to people intentionally excluded.
+      **Fixed:** the effect now only does a full re-select on an actual
+      academic-year change (tracked via a `reminderInitYear` ref) — a
+      reload for any other reason (saving a payment/inventory) instead
+      prunes only students who are now fully paid out of the existing
+      selection, leaving any deliberate unchecks alone. Also had to make
+      sure this pruning doesn't leave stale entries inflating the "N
+      selected" count — confirmed the prune path removes newly-fully-paid
+      students from the Set rather than just skipping the reset (a
+      naively simpler "skip the whole effect after year init" fix would
+      have let paid-off students linger in the count forever). `next lint`
+      clean. Full detail: `governance/work-log/LOG-2026-09-04.md`.
 - [ ] **REQ-BUG-004 — PLAUSIBLE, not confirmed: possible race condition
       switching class/date quickly on Mark Attendance.**
       `attendance\page.js:123-146` (`loadAttendance`) has no
