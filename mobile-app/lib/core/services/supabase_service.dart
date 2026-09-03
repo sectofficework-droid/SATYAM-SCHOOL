@@ -786,6 +786,28 @@ class SupabaseService {
     return res == true;
   }
 
+  // Student settings ────────────────────────────────────────────────────────
+
+  static Future<bool> verifyStudentPassword({
+    required String studentId, required String password,
+  }) async {
+    final res = await client.rpc('student_verify_password', params: {
+      'p_student_id': studentId, 'p_password': password,
+    });
+    return res == true;
+  }
+
+  // Returns false when p_old_password didn't match - callers should surface
+  // that as a wrong-password error, not a generic failure.
+  static Future<bool> changeStudentPassword({
+    required String studentId, required String oldPassword, required String newPassword,
+  }) async {
+    final res = await client.rpc('student_change_password', params: {
+      'p_student_id': studentId, 'p_old_password': oldPassword, 'p_new_password': newPassword,
+    });
+    return res == true;
+  }
+
   // Question Bank ─────────────────────────────────────────────────────────────
   // Private per teacher (query always filters by teacher_id) - see
   // SUPABASE_QUESTION_BANK.sql for why this isn't enforced via RLS.
