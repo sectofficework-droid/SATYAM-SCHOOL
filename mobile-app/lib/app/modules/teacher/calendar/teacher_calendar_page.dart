@@ -101,7 +101,19 @@ class _TeacherCalendarPageState extends State<TeacherCalendarPage> {
     final now = DateTime.now();
     final isCurrentMonth = now.year == _visibleMonth.year && now.month == _visibleMonth.month;
 
-    final categoriesThisMonth = <String>{ for (final e in _events) (e['category'] as String?) ?? 'holiday' };
+    // A day with no event still counts as 'sunday' for the legend/dots when
+    // it falls on a Sunday - mirrors the admin grid's fallback in
+    // YearPlanningTab.js so both views of the same calendar agree, since no
+    // seed event is ever actually tagged 'sunday'.
+    final categoriesThisMonth = <String>{};
+    for (final e in _events) {
+      categoriesThisMonth.add((e['category'] as String?) ?? 'holiday');
+    }
+    for (int day = 1; day <= daysInMonth; day++) {
+      if (_eventsOn(day).isEmpty && DateTime(_visibleMonth.year, _visibleMonth.month, day).weekday == DateTime.sunday) {
+        categoriesThisMonth.add('sunday');
+      }
+    }
 
     return Scaffold(
       backgroundColor: AppColors.bg,
@@ -140,7 +152,10 @@ class _TeacherCalendarPageState extends State<TeacherCalendarPage> {
                       final day = i + 1;
                       final isToday = isCurrentMonth && now.day == day;
                       final dayEvents = _eventsOn(day);
-                      final dotColors = dayEvents.map((e) => categoryFor(e['category'] as String?).color).toSet().toList();
+                      final isSunday = DateTime(_visibleMonth.year, _visibleMonth.month, day).weekday == DateTime.sunday;
+                      final dotColors = dayEvents.isEmpty && isSunday
+                          ? [categoryFor('sunday').color]
+                          : dayEvents.map((e) => categoryFor(e['category'] as String?).color).toSet().toList();
                       return GestureDetector(
                         onTap: () => _showDaySheet(day),
                         child: Container(
