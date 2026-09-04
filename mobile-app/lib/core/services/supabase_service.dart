@@ -889,7 +889,8 @@ class SupabaseService {
     final res = await client.from('school_calendar_events').select()
         .gte('event_date', rangeStart.toIso8601String().split('T').first)
         .lte('event_date', rangeEnd.toIso8601String().split('T').first)
-        .order('event_date');
+        .order('event_date')
+        .order('id');
     return List<Map<String, dynamic>>.from(res);
   }
 }
