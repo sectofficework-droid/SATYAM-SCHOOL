@@ -128,31 +128,39 @@ async function circularBase64(url) {
   } catch { return null; }
 }
 
-// ── Make rounded-square PNG using canvas (design 2's square photo box) ────────
-async function roundedSquareBase64(url, radiusFrac = 0.08) {
+// ── Make rounded-rect PNG using canvas (design 2's photo box) ─────────────────
+// `ratio` is the destination box's width/height (e.g. CARD2_PHOTO_W/CARD2_PHOTO_H)
+// - the canvas is built at that same aspect ratio so jsPDF's addImage(bx,by,bw,bh)
+// never has to stretch a square crop into a non-square box (that stretch used to
+// squish every student's photo horizontally on Design 2's printed card, since the
+// canvas here was previously hardcoded to a 400x400 square regardless of the
+// destination box's shape).
+async function roundedSquareBase64(url, { radiusFrac = 0.08, ratio = 1 } = {}) {
   if (!url) return null;
   try {
     const res = await fetch(url);
     const blob = await res.blob();
     const objUrl = URL.createObjectURL(blob);
     return await new Promise((resolve) => {
-      const SZ = 400;
+      const BASE = 400;
+      const SW = ratio >= 1 ? BASE : Math.round(BASE * ratio);
+      const SH = ratio >= 1 ? Math.round(BASE / ratio) : BASE;
       const canvas = document.createElement("canvas");
-      canvas.width = SZ; canvas.height = SZ;
+      canvas.width = SW; canvas.height = SH;
       const ctx = canvas.getContext("2d");
       const img = new Image();
       img.onload = () => {
-        const r = SZ * radiusFrac;
+        const r = Math.min(SW, SH) * radiusFrac;
         ctx.beginPath();
         ctx.moveTo(r, 0);
-        ctx.arcTo(SZ, 0, SZ, SZ, r);
-        ctx.arcTo(SZ, SZ, 0, SZ, r);
-        ctx.arcTo(0, SZ, 0, 0, r);
-        ctx.arcTo(0, 0, SZ, 0, r);
+        ctx.arcTo(SW, 0, SW, SH, r);
+        ctx.arcTo(SW, SH, 0, SH, r);
+        ctx.arcTo(0, SH, 0, 0, r);
+        ctx.arcTo(0, 0, SW, 0, r);
         ctx.closePath();
         ctx.clip();
-        const sc = Math.max(SZ/img.width, SZ/img.height);
-        ctx.drawImage(img, (SZ - img.width*sc)/2, (SZ - img.height*sc)/2, img.width*sc, img.height*sc);
+        const sc = Math.max(SW/img.width, SH/img.height);
+        ctx.drawImage(img, (SW - img.width*sc)/2, (SH - img.height*sc)/2, img.width*sc, img.height*sc);
         URL.revokeObjectURL(objUrl);
         resolve(canvas.toDataURL("image/png"));
       };
@@ -166,6 +174,20 @@ async function roundedSquareBase64(url, radiusFrac = 0.08) {
 function rgb(hex) {
   const n = parseInt(hex.slice(1), 16);
   return [(n>>16)&255, (n>>8)&255, n&255];
+}
+
+// Shrinks the current font (assumes setFont/family already set) until `text`
+// fits `maxWidth`, instead of overflowing it - needed for the class box,
+// whose content ranges from "6TH" to "11TH - COMMERCE" (see CLASSES_LIST)
+// at one fixed box width.
+function fitFontSize(doc, text, maxWidth, startSize, minSize = 4.5) {
+  let size = startSize;
+  doc.setFontSize(size);
+  while (doc.getTextWidth(text) > maxWidth && size > minSize) {
+    size -= 0.3;
+    doc.setFontSize(size);
+  }
+  return size;
 }
 
 // Design 1 is the actual "SCHOOL ID CARD 1.jpg" Canva export used as a
@@ -239,6 +261,8 @@ async function drawCardDesign1(doc, s, bgB64, photoB64, cx, cy) {
 // and each info row's value are drawn on top, each preceded by an opaque
 // cover shape.
 const CARD2_W = 90, CARD2_H = 56.9; // 1011:639 aspect ratio
+const CARD2_PHOTO_W = 18.7, CARD2_PHOTO_H = 23.2; // pale-blue photo box, mm
+const CARD2_PHOTO_RATIO = CARD2_PHOTO_W / CARD2_PHOTO_H;
 
 async function drawCardDesign2(doc, s, bgB64, photoB64, cx, cy) {
   const [nr, ng, nb] = rgb(CARD_NAVY);
@@ -248,7 +272,7 @@ async function drawCardDesign2(doc, s, bgB64, photoB64, cx, cy) {
   }
 
   // ── Photo (inside the template's pale-blue box) ─────────────────
-  const bx = cx+3.6, by = cy+17.7, bw = 18.7, bh = 23.2;
+  const bx = cx+3.6, by = cy+17.7, bw = CARD2_PHOTO_W, bh = CARD2_PHOTO_H;
   if (photoB64) {
     try { doc.addImage(photoB64, "PNG", bx, by, bw, bh); } catch {}
   }
@@ -265,8 +289,9 @@ async function drawCardDesign2(doc, s, bgB64, photoB64, cx, cy) {
   doc.setTextColor(255, 255, 255);
   const nameFit = doc.splitTextToSize((s.name || "Student Name").toUpperCase(), nameW-4)[0];
   doc.text(nameFit, nameX+nameW/2, boxY+boxH/2+1.2, { align:"center" });
-  doc.setFontSize(7);
-  doc.text((s.std || "—").toUpperCase(), stdX+stdW/2, boxY+boxH/2+1.2, { align:"center" });
+  const stdText = (s.std || "—").toUpperCase();
+  fitFontSize(doc, stdText, stdW-2, 7);
+  doc.text(stdText, stdX+stdW/2, boxY+boxH/2+1.2, { align:"center" });
 
   // ── Info row values (labels are already printed on the template) ─
   const VALUE_X = cx+39.2, VALUE_W = 47.7;
@@ -329,7 +354,7 @@ async function generatePDF(students, designId, onProgress) {
     let photoUrl = "";
     if (s.photo) { try { photoUrl = (await getS3ViewUrl(s.photo))||""; } catch {} }
     const photoB64 = photoUrl
-      ? await (designId === 2 ? roundedSquareBase64(photoUrl, 0.02) : circularBase64(photoUrl))
+      ? await (designId === 2 ? roundedSquareBase64(photoUrl, { radiusFrac: 0.02, ratio: CARD2_PHOTO_RATIO }) : circularBase64(photoUrl))
       : null;
 
     const slot = i % perPage;
