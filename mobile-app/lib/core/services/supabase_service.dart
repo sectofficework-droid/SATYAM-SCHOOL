@@ -826,11 +826,14 @@ class SupabaseService {
 
   // Teacher settings ──────────────────────────────────────────────────────────
 
+  // Returns null both when the employee id doesn't match a row and when
+  // p_password is wrong - callers should treat null as "check your password"
+  // since a bad employee id can't happen from the app's own logged-in state.
   static Future<Map<String, dynamic>?> updateTeacherProfile({
-    required String employeeId, required String name, required String phone, required String email,
+    required String employeeId, required String name, required String phone, required String email, required String password,
   }) async {
     final res = await client.rpc('teacher_update_profile', params: {
-      'p_employee_id': employeeId, 'p_name': name, 'p_phone': phone, 'p_email': email,
+      'p_employee_id': employeeId, 'p_name': name, 'p_phone': phone, 'p_email': email, 'p_password': password,
     });
     return res == null ? null : Map<String, dynamic>.from(res as Map);
   }
@@ -853,6 +856,28 @@ class SupabaseService {
   }) async {
     final res = await client.rpc('teacher_verify_password', params: {
       'p_employee_id': employeeId, 'p_password': password,
+    });
+    return res == true;
+  }
+
+  // Student settings ────────────────────────────────────────────────────────
+
+  static Future<bool> verifyStudentPassword({
+    required String studentId, required String password,
+  }) async {
+    final res = await client.rpc('student_verify_password', params: {
+      'p_student_id': studentId, 'p_password': password,
+    });
+    return res == true;
+  }
+
+  // Returns false when p_old_password didn't match - callers should surface
+  // that as a wrong-password error, not a generic failure.
+  static Future<bool> changeStudentPassword({
+    required String studentId, required String oldPassword, required String newPassword,
+  }) async {
+    final res = await client.rpc('student_change_password', params: {
+      'p_student_id': studentId, 'p_old_password': oldPassword, 'p_new_password': newPassword,
     });
     return res == true;
   }
@@ -891,7 +916,8 @@ class SupabaseService {
     final res = await client.from('school_calendar_events').select()
         .gte('event_date', rangeStart.toIso8601String().split('T').first)
         .lte('event_date', rangeEnd.toIso8601String().split('T').first)
-        .order('event_date', ascending: true);
+        .order('event_date', ascending: true)
+        .order('id');
     return List<Map<String, dynamic>>.from(res);
   }
 }

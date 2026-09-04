@@ -28,9 +28,9 @@ class _StudentFeesPageState extends State<StudentFeesPage> {
         return;
       }
       final data = await SupabaseService.fetchFees(studentId);
-      setState(() { _data = data; _loading = false; });
+      if (mounted) setState(() { _data = data; _loading = false; });
     } catch (e) {
-      setState(() { _loading = false; _error = 'Failed to load fees.'; });
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load fees.'; });
     }
   }
 

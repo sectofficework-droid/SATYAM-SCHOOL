@@ -856,7 +856,11 @@ export default function StudentPage() {
   const handlePromote = async (student, discountData = {}) => {
     const nextClass = getNextClass(student.std);
     if (!nextClass) return;
-    const fTotal = feesMap[student.std] ?? CLASS_FEES[student.std] ?? 0;
+    // REQ-BUG-001: check against the fee_total actually locked in for this
+    // student's current enrollment, not the live current-year fee structure
+    // - otherwise a Settings fee-amount edit can wrongly block promotion for
+    // someone who already fully paid what they were actually charged.
+    const fTotal = student.fees?.total || feesMap[student.std] || CLASS_FEES[student.std] || 0;
     const fDisc  = student.fees?.discount ?? 0;
     const fPaid  = student.fees?.paid ?? 0;
     if (Math.max(fTotal - fDisc, 0) > fPaid) { alert("Cannot promote: student has pending fees. Please clear all dues first."); return; }
@@ -1308,7 +1312,9 @@ export default function StudentPage() {
               const a             = ACCENTS[idx % ACCENTS.length];
               const isPromoted      = !!student.promotedTo;
               const isLeftOrInactive = !isPromoted && (student.status === "Left" || student.status === "Inactive");
-              const feeTotal        = feesMap[student.std] ?? CLASS_FEES[student.std] ?? 0;
+              // REQ-BUG-001: use the fee_total snapshot locked in at
+              // admission/promotion, not the live current-year structure.
+              const feeTotal        = student.fees?.total || feesMap[student.std] || CLASS_FEES[student.std] || 0;
               const feeDiscount     = student.fees?.discount ?? 0;
               const feePaid         = student.fees?.paid ?? 0;
               const hasPendingFees  = Math.max(feeTotal - feeDiscount, 0) > feePaid;
@@ -1643,7 +1649,9 @@ export default function StudentPage() {
 
                     {/* ── Column 5: Fee Summary ── */}
                     {(() => {
-                      const gross    = feesMap[student.std] ?? CLASS_FEES[student.std] ?? 0;
+                      // REQ-BUG-001: use the fee_total snapshot locked in at
+                      // admission/promotion, not the live current-year structure.
+                      const gross    = student.fees?.total || feesMap[student.std] || CLASS_FEES[student.std] || 0;
                       const discount = student.fees?.discount ?? 0;
                       const actual   = Math.max(gross - discount, 0);
                       const paid     = student.fees?.paid     ?? 0;

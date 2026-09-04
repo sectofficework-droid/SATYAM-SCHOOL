@@ -210,6 +210,7 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
     );
 
     if (result != true) return;
+    if (!mounted) return;
     setState(() => _requesting = true);
     final profile     = AuthService.to.profile.value ?? {};
     final teacherId   = profile['id'] as String?;
@@ -274,7 +275,7 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
                       firstDate: DateTime.now().subtract(const Duration(days: 30)),
                       lastDate: DateTime.now(),
                     );
-                    if (picked != null) {
+                    if (picked != null && mounted) {
                       setState(() => _date = picked);
                       await _loadAttendanceForDate();
                     }
@@ -570,7 +571,7 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
               context: context, initialDate: _date,
               firstDate: DateTime.now().subtract(const Duration(days: 30)), lastDate: DateTime.now(),
             );
-            if (picked != null) {
+            if (picked != null && mounted) {
               setState(() => _date = picked);
               await _loadAttendanceForDate();
             }

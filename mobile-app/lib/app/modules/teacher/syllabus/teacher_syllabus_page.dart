@@ -206,6 +206,17 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     return (total: total, completed: completed);
   }
 
+  // Tapping a status badge you can't edit used to be a silent no-op
+  // (onTap: null) - indistinguishable from the toggle being broken. This
+  // gives that tap somewhere to go so it's clear it's read-only, not dead.
+  void _explainReadOnlyStatus(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 2),
+    ));
+  }
+
   Future<void> _cycleStatus(Map<String, dynamic> chapter) async {
     if (chapter['teacher_id'] != _employeeId) return; // view-only for others' chapters
     if ((_subtopicsByChapter[chapter['id']] ?? const []).isNotEmpty) return; // derived, not directly cycled
@@ -1350,11 +1361,18 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
               Expanded(child: Text(chapter['chapter'] ?? '',
                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.text))),
               GestureDetector(
-                onTap: (owned && derived == null) ? () => _cycleStatus(chapter) : null,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(color: _statusBg(status), borderRadius: BorderRadius.circular(8)),
-                  child: Text(status, style: TextStyle(color: _statusColor(status), fontSize: 11, fontWeight: FontWeight.w700)),
+                onTap: (owned && derived == null)
+                    ? () => _cycleStatus(chapter)
+                    : () => _explainReadOnlyStatus(!owned
+                        ? 'Only the teacher who added this chapter can update its status.'
+                        : 'Update status via the subtopics below.'),
+                child: Opacity(
+                  opacity: (owned && derived == null) ? 1 : .55,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(color: _statusBg(status), borderRadius: BorderRadius.circular(8)),
+                    child: Text(status, style: TextStyle(color: _statusColor(status), fontSize: 11, fontWeight: FontWeight.w700)),
+                  ),
                 ),
               ),
               if (owned && editable) ...[
@@ -1405,12 +1423,17 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                 const SizedBox(width: 8),
                 Expanded(child: Text(s['name'] ?? '', style: const TextStyle(fontSize: 13, color: AppColors.text))),
                 GestureDetector(
-                  onTap: owned ? () => _cycleSubtopicStatus(s) : null,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: _statusBg(s['status'] ?? 'Not Started'), borderRadius: BorderRadius.circular(6)),
-                    child: Text(s['status'] ?? 'Not Started',
-                      style: TextStyle(color: _statusColor(s['status'] ?? 'Not Started'), fontSize: 10, fontWeight: FontWeight.w700)),
+                  onTap: owned
+                      ? () => _cycleSubtopicStatus(s)
+                      : () => _explainReadOnlyStatus('Only the teacher who added this chapter can update its status.'),
+                  child: Opacity(
+                    opacity: owned ? 1 : .55,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: _statusBg(s['status'] ?? 'Not Started'), borderRadius: BorderRadius.circular(6)),
+                      child: Text(s['status'] ?? 'Not Started',
+                        style: TextStyle(color: _statusColor(s['status'] ?? 'Not Started'), fontSize: 10, fontWeight: FontWeight.w700)),
+                    ),
                   ),
                 ),
                 if (owned && editable) ...[

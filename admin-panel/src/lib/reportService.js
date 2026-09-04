@@ -286,6 +286,12 @@ export async function getFeesForSuperAdmin() {
     .from("academic_years").select("id").eq("is_current", true).single();
   if (!year) return [];
 
+  // REQ-BUG-001: classFees only serves as a fallback for legacy rows with
+  // no fee_total recorded - the actual source of truth is the snapshot
+  // taken at admission/promotion (row.fee_total below), same as
+  // getFeesForReport just above. Previously this ignored fee_total
+  // entirely and always used the live current-year structure, producing a
+  // different "Total Fees" figure than every other page in the app.
   const classFees = await getFeeStructure(year.id);
 
   const { data, error } = await supabase
@@ -320,7 +326,7 @@ export async function getFeesForSuperAdmin() {
       enrollNo: row.enrollment_no || "",
       name:     `${s.first_name} ${s.last_name}`.trim(),
       cls,
-      totalFee:       classFees[cls] || 0,
+      totalFee:       Number(row.fee_total) || classFees[cls] || 0,
       discount:       Number(row.fee_discount) || 0,
       discountReason: row.discount_reason || "",
       payments,
@@ -338,8 +344,8 @@ export async function getInventoryForReport() {
   const rows = [];
 
   for (const item of (itemsRes.data || [])) {
-    const totalIn   = (item.inventory_batches || []).reduce((s, b) => s + b.qty, 0);
-    const totalUsed = (item.inventory_usages  || []).reduce((s, u) => s + u.qty, 0);
+    const totalIn   = (item.inventory_batches || []).reduce((s, b) => s + (b.qty || 0), 0);
+    const totalUsed = (item.inventory_usages  || []).reduce((s, u) => s + (u.qty || 0), 0);
     const avail     = totalIn - totalUsed;
     const stockStatus = avail <= 0 ? "Out of Stock" : avail <= item.low_stock_at ? "Low Stock" : "In Stock";
     rows.push({

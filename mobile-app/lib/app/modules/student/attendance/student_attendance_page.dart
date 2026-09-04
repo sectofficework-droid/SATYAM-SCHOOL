@@ -22,7 +22,7 @@ class _StudentAttendancePageState extends State<StudentAttendancePage> {
     final profile   = AuthService.to.profile.value ?? {};
     final studentId = profile['id'] as String? ?? '';
     final records   = await SupabaseService.fetchStudentAttendance(studentId);
-    setState(() { _records = records; _loading = false; });
+    if (mounted) setState(() { _records = records; _loading = false; });
   }
 
   @override

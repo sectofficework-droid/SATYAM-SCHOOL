@@ -226,7 +226,9 @@ void _openEditProfile(BuildContext context) {
   final nameCtrl  = TextEditingController(text: profile['name'] as String? ?? '');
   final phoneCtrl = TextEditingController(text: profile['phone'] as String? ?? '');
   final emailCtrl = TextEditingController(text: profile['email'] as String? ?? '');
+  final passwordCtrl = TextEditingController();
   bool saving = false;
+  bool obscurePassword = true;
   String? error;
 
   showModalBottomSheet(
@@ -280,6 +282,19 @@ void _openEditProfile(BuildContext context) {
                 keyboardType: TextInputType.emailAddress,
                 decoration: const InputDecoration(labelText: 'Email', prefixIcon: Icon(Icons.email_outlined, color: AppColors.navy, size: 20)),
               ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: passwordCtrl,
+                obscureText: obscurePassword,
+                decoration: InputDecoration(
+                  labelText: 'Current Password',
+                  prefixIcon: const Icon(Icons.lock_outline_rounded, color: AppColors.navy, size: 20),
+                  suffixIcon: IconButton(
+                    icon: Icon(obscurePassword ? Icons.visibility_off_rounded : Icons.visibility_rounded, size: 18, color: AppColors.textHint),
+                    onPressed: () => setS(() => obscurePassword = !obscurePassword),
+                  ),
+                ),
+              ),
               if (error != null) ...[
                 const SizedBox(height: 10),
                 Text(error!, style: const TextStyle(color: AppColors.red, fontSize: 12, fontWeight: FontWeight.w600)),
@@ -290,20 +305,22 @@ void _openEditProfile(BuildContext context) {
                   final name  = nameCtrl.text.trim();
                   final phone = phoneCtrl.text.trim();
                   final email = emailCtrl.text.trim();
+                  final password = passwordCtrl.text;
                   if (name.isEmpty) { setS(() => error = 'Name cannot be empty.'); return; }
                   if (phone.isNotEmpty && !RegExp(r'^\d{10}$').hasMatch(phone)) {
                     setS(() => error = 'Enter a valid 10-digit mobile number.');
                     return;
                   }
                   if (email.isNotEmpty && !email.contains('@')) { setS(() => error = 'Enter a valid email address.'); return; }
+                  if (password.isEmpty) { setS(() => error = 'Enter your current password to save changes.'); return; }
                   if (employeeId == null) { setS(() => error = 'Session error - please sign in again.'); return; }
 
                   setS(() { saving = true; error = null; });
                   final updated = await SupabaseService.updateTeacherProfile(
-                    employeeId: employeeId, name: name, phone: phone, email: email,
+                    employeeId: employeeId, name: name, phone: phone, email: email, password: password,
                   );
                   if (updated == null) {
-                    setS(() { saving = false; error = 'Could not save changes. Please try again.'; });
+                    setS(() { saving = false; error = 'Incorrect password. Please try again.'; });
                     return;
                   }
                   await AuthService.to.updateProfileFields(updated);

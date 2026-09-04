@@ -52,8 +52,14 @@ function getStructureFee(std, feesMap) {
   return (feesMap ?? DEFAULT_FEES)[std] ?? 0;
 }
 
+// REQ-BUG-001 fix: totalFees must come from the fee_total snapshot locked
+// in at admission (student.fees.total), not the live current-year fee
+// structure - otherwise editing Settings' fee amounts retroactively
+// inflates/deflates every existing student's due amount for that class.
+// The structure lookup only serves as a fallback for legacy rows with no
+// snapshot recorded.
 function calcSummary(student, feesMap) {
-  const totalFees  = getStructureFee(student.std, feesMap);
+  const totalFees  = student.fees?.total || getStructureFee(student.std, feesMap);
   const discount   = student.discount?.amount ?? 0;
   const actualFees = Math.max(totalFees - discount, 0);
   // Only count payments recorded for the student's current class
@@ -456,6 +462,11 @@ export default function FeesPage() {
   const [reminderMsg,        setReminderMsg]        = useState("");
 
   const autoSelectDone = useRef(false);
+  // REQ-BUG-003: tracks which academic year the reminder selection was last
+  // initialized for, so a students reload triggered by saving a payment
+  // (fees\page.js handleSavePayment/handleSaveInventory) doesn't blow away
+  // an admin's manual unchecks - only a real year change should reset it.
+  const reminderInitYear = useRef(null);
 
   // ── Load academic years + active classes on mount ──────────
   useEffect(() => {
@@ -491,13 +502,29 @@ export default function FeesPage() {
   }, [selectedYearId]);
 
   // ── Init reminder selection once students load ──────────────
+  // Full re-select only happens on an actual academic-year change (or first
+  // load). A students reload triggered by saving a payment/inventory
+  // (handleSavePayment/handleSaveInventory below) instead just prunes
+  // anyone who's now fully paid out of the existing selection, preserving
+  // any the admin had deliberately unchecked while still incomplete.
   useEffect(() => {
     if (!students.length) return;
     const incomplete = students.filter(s => getPaymentStatus(s, feesMap) !== "Full Paid");
-    setSelectedIncomplete(new Set(incomplete.map(s => s.enrollment)));
+    const incompleteIds = new Set(incomplete.map(s => s.enrollment));
+
+    if (reminderInitYear.current !== selectedYearId) {
+      reminderInitYear.current = selectedYearId;
+      setSelectedIncomplete(incompleteIds);
+    } else {
+      setSelectedIncomplete(prev => {
+        const next = new Set([...prev].filter(id => incompleteIds.has(id)));
+        return next.size === prev.size ? prev : next;
+      });
+    }
+
     const first = incomplete[0];
     if (first) setReminderMsg(buildReminderMsg(first, msgLastDate, templates, feesMap));
-  }, [students, feesMap]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [students, feesMap, selectedYearId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-select student from URL params (after students load) ─
   useEffect(() => {

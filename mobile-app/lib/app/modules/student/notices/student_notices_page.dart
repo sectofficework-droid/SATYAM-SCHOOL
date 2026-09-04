@@ -25,7 +25,7 @@ class _StudentNoticesPageState extends State<StudentNoticesPage> {
     final notices = await SupabaseService.fetchNotices(
       audiences: const ['Everyone', 'All Students', 'Parents'],
     );
-    setState(() { _notices = notices; _loading = false; });
+    if (mounted) setState(() { _notices = notices; _loading = false; });
   }
 
   List<Map<String, dynamic>> get _filtered => _typeFilter == 'All'

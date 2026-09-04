@@ -6,7 +6,7 @@ import supabase from "./supabase";
 // the teacher app all see the same data.
 
 export async function getCalendarEvents(startDate, endDate) {
-  let query = supabase.from("school_calendar_events").select("*").order("event_date");
+  let query = supabase.from("school_calendar_events").select("*").order("event_date").order("id");
   if (startDate) query = query.gte("event_date", startDate);
   if (endDate) query = query.lte("event_date", endDate);
   const { data, error } = await query;

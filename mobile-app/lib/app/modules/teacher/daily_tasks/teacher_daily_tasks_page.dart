@@ -34,7 +34,13 @@ class _TeacherDailyTasksPageState extends State<TeacherDailyTasksPage> {
     final id = task['id'] as String;
     final employeeId = _employeeId;
     if (employeeId == null || _busyIds.contains(id)) return;
-    final wasDone = task['completedAt'] != null;
+    // REQ-BUG-008: must capture the original value itself, not just a
+    // wasDone bool derived from it - the optimistic setState below
+    // overwrites task['completedAt'], so reconstructing the rollback from
+    // wasDone alone was a no-op when un-marking (both branches evaluated to
+    // the already-nulled value).
+    final originalCompletedAt = task['completedAt'];
+    final wasDone = originalCompletedAt != null;
 
     setState(() {
       _busyIds.add(id);
@@ -47,7 +53,7 @@ class _TeacherDailyTasksPageState extends State<TeacherDailyTasksPage> {
         await SupabaseService.markDailyTaskDone(id, employeeId);
       }
     } catch (_) {
-      if (mounted) setState(() => task['completedAt'] = wasDone ? task['completedAt'] : null);
+      if (mounted) setState(() => task['completedAt'] = originalCompletedAt);
     } finally {
       if (mounted) setState(() => _busyIds.remove(id));
     }
