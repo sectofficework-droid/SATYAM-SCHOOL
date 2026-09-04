@@ -150,6 +150,16 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       move sensitive RPCs behind real Supabase Auth sessions, and/or add
       rate limiting at the Supabase/Edge layer. Also a MAJOR change —
       reopens DESIGN FIXED.
+      **2026-09-04 (continued): `school_calendar_events` also locked down.**
+      Same pattern as `students`/`admin_users` — RLS was disabled and `anon`
+      held full write grants. Unlike those two, the mobile teacher app reads
+      this table directly with the anon key and no real session, so `anon`
+      SELECT was kept; only `anon`'s INSERT/UPDATE/DELETE were revoked, RLS
+      enabled, and writes gated on the same `is_admin_user()` helper.
+      Migration: `mobile-app/SUPABASE_LOCK_CALENDAR_EVENTS.sql`. Live-verified:
+      RLS enabled, `anon` grants now SELECT-only, four policies present
+      exactly as written. `employees` and the remaining tables are still
+      unaddressed — still **not closed**.
 - [x] **REQ-SEC-004 — `teacher_update_profile` has zero identity check.
       FIXED 2026-09-04.** Checked 2026-08-18: NOT fixable without an app
       rebuild, so deferred out of Stage 1. Unlike `teacher_change_password` (which verifies
@@ -430,6 +440,45 @@ above — none of these are fixed, all await your decision on priority.
       use `if (mounted)`/`if (!mounted) return;`. `flutter analyze` on all
       4 files: clean, no errors. Full detail:
       `governance/work-log/LOG-2026-09-04.md`.
+
+### found and fixed 2026-09-04 (calendar + ID card documents)
+- [x] **REQ-BUG-010 — Calendar event queries had no tiebreaker for same-day
+      events. FIXED 2026-09-04.** Both `calendarService.js` (admin) and
+      `supabase_service.dart` (mobile) ordered by `event_date` alone, leaving
+      same-day events in whatever order Postgres happened to return them —
+      could vary between requests and let the admin/teacher views disagree
+      on order for the same day. **Fixed:** added `.order("id")` as a
+      tiebreaker in both. `next lint`/`flutter analyze` clean. `ef0bba3`.
+- [x] **REQ-BUG-011 — Teacher calendar didn't show the Sunday
+      legend/dot on Sundays with no seed event. FIXED 2026-09-04.**
+      `teacher_calendar_page.dart` only derived categories from actual
+      events, so an eventless Sunday rendered as a plain blank day —
+      disagreeing with the admin grid's Sunday fallback in
+      `YearPlanningTab.js` for the same underlying calendar. **Fixed:**
+      eventless Sundays now get the `'sunday'` category added to both the
+      month's legend set and that day's dot color. `flutter analyze` clean
+      (one pre-existing, unrelated `withOpacity` info). `a99663a`.
+- [x] **REQ-BUG-012 — Design 2 ID card photo squished; class-name box text
+      could overflow. FIXED 2026-09-04.** `documents/page.js`'s
+      `roundedSquareBase64` always rendered onto a hardcoded 400x400 square
+      canvas, so `jsPDF.addImage` had to stretch that square crop into
+      Design 2's non-square photo box — squishing every student's photo
+      horizontally on the printed card. Separately, the class-name box used
+      a fixed 7pt font that overflowed for longer values like
+      "11TH - COMMERCE". **Fixed:** the canvas now matches the destination
+      box's aspect ratio (no stretch); a new `fitFontSize` helper shrinks the
+      class-box font until the text fits. `next lint` clean. `c9ae97c`.
+- [x] **REQ-BUG-013 — Calendar event delete failures were silently
+      swallowed. FIXED 2026-09-04.** `YearPlanningTab.js`'s delete handler
+      reset saving state and closed the modal inside a `finally` block
+      regardless of whether the delete actually succeeded — a failed delete
+      looked identical to a successful one (no error, modal closed, list
+      reloaded as if nothing went wrong). **Fixed:** a failed delete now
+      shows "Failed to delete: &lt;message&gt;" and leaves the modal open;
+      the reload after a successful delete is now awaited. `next lint`
+      clean. `3ad0c59`.
+      Not click-tested in the browser (admin-panel dev server wasn't started
+      this session).
 
 **Reviewer also checked (no further issues found):** `auth_service.dart`,
 `face_recognition_service.dart` + the full attendance-kiosk capture→detect→
