@@ -103,12 +103,15 @@ export default function YearPlanningTab() {
       setSaving(true);
       try {
         await deleteCalendarEvent(modal.id);
-      } finally {
+      } catch (e) {
         setSaving(false);
+        setModalError("Failed to delete: " + e.message);
+        return;
       }
+      setSaving(false);
     }
     closeModal();
-    load();
+    await load();
   }
 
   async function resetToOfficialCalendar() {
