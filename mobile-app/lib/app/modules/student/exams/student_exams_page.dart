@@ -50,7 +50,7 @@ class _StudentExamsPageState extends State<StudentExamsPage> {
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
     child: Container(
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(color: AppColors.navy.withOpacity(.08), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: AppColors.navy.withValues(alpha: .08), borderRadius: BorderRadius.circular(12)),
       child: Row(children: [
         Expanded(child: _tabButton('Monthly Test', 0)),
         Expanded(child: _tabButton('Main Exams', 1)),

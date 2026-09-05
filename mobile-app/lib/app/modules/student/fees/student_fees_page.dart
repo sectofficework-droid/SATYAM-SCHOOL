@@ -109,7 +109,7 @@ class _StudentFeesPageState extends State<StudentFeesPage> {
               decoration: BoxDecoration(
                 color: AppColors.amberLight,
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.amber.withOpacity(.3)),
+                border: Border.all(color: AppColors.amber.withValues(alpha: .3)),
               ),
               child: Row(children: [
                 const Icon(Icons.discount_outlined, color: AppColors.amber, size: 16),
@@ -119,8 +119,8 @@ class _StudentFeesPageState extends State<StudentFeesPage> {
               ]),
             ),
 
-          Text('Payment History',
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text)),
+          const Text('Payment History',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text)),
           const SizedBox(height: 10),
 
           if (payments.isEmpty)
@@ -186,8 +186,8 @@ class _StudentFeesPageState extends State<StudentFeesPage> {
             }),
 
           const SizedBox(height: 24),
-          Text('Inventory Items',
-            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text)),
+          const Text('Inventory Items',
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.text)),
           const SizedBox(height: 10),
 
           if (inventory.isEmpty)

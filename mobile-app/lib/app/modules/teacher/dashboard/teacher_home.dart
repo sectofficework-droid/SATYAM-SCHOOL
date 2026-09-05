@@ -182,14 +182,14 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
                   width: 40, height: 40,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white.withOpacity(.4), width: 2),
+                    border: Border.all(color: Colors.white.withValues(alpha: .4), width: 2),
                   ),
                   child: ClipOval(
                     child: S3Image(
                       s3Key: photoKey,
                       width: 40, height: 40,
                       fallback: (_) => Container(
-                        color: Colors.white.withOpacity(.2),
+                        color: Colors.white.withValues(alpha: .2),
                         child: const Icon(Icons.person, color: Colors.white, size: 22),
                       ),
                     ),
@@ -244,7 +244,7 @@ class _AnimatedBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     height: 72,
-    decoration: BoxDecoration(
+    decoration: const BoxDecoration(
       color: Colors.white,
       boxShadow: AppShadows.nav,
     ),
@@ -264,7 +264,7 @@ class _AnimatedBottomNav extends StatelessWidget {
                   curve: Curves.easeOutCubic,
                   padding: EdgeInsets.symmetric(horizontal: active ? 18 : 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: active ? AppColors.navy.withOpacity(.08) : Colors.transparent,
+                    color: active ? AppColors.navy.withValues(alpha: .08) : Colors.transparent,
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: AnimatedSwitcher(

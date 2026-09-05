@@ -31,7 +31,7 @@ class NoticeTypeFilter extends StatelessWidget {
               decoration: BoxDecoration(
                 color: active ? color : light,
                 borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: active ? color : color.withOpacity(.25)),
+                border: Border.all(color: active ? color : color.withValues(alpha: .25)),
               ),
               child: Text(opt,
                 style: TextStyle(

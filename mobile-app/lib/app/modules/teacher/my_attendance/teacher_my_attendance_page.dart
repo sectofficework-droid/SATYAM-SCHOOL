@@ -69,7 +69,7 @@ class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
       decoration: BoxDecoration(color: AppColors.indigoLight, borderRadius: BorderRadius.circular(16)),
       child: Row(children: [
         Expanded(child: _punchTimeTile('Check In', checkIn)),
-        Container(width: 1, height: 32, color: AppColors.indigo.withOpacity(.2)),
+        Container(width: 1, height: 32, color: AppColors.indigo.withValues(alpha: .2)),
         Expanded(child: _punchTimeTile('Check Out', checkOut)),
       ]),
     );

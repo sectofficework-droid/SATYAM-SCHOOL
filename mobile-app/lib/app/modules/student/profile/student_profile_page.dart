@@ -188,7 +188,7 @@ void _openChangePassword(BuildContext context) {
                 Container(
                   width: 44, height: 44,
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [AppColors.navy, AppColors.navyMid], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                    gradient: const LinearGradient(colors: [AppColors.navy, AppColors.navyMid], begin: Alignment.topLeft, end: Alignment.bottomRight),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(Icons.lock_reset_rounded, color: Colors.white, size: 22),
@@ -237,7 +237,7 @@ void _openChangePassword(BuildContext context) {
                     decoration: BoxDecoration(
                       gradient: AppColors.navyGradient,
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                      boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: Center(child: saving
                       ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
@@ -305,7 +305,7 @@ void _openChangePassword(BuildContext context) {
                     decoration: BoxDecoration(
                       gradient: AppColors.navyGradient,
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                      boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: Center(child: saving
                       ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))

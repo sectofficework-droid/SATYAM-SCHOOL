@@ -106,7 +106,7 @@ class _TeacherDailyTasksPageState extends State<TeacherDailyTasksPage> {
                       color: AppColors.card,
                       borderRadius: BorderRadius.circular(14),
                       boxShadow: AppShadows.card,
-                      border: Border.all(color: done ? AppColors.green.withOpacity(.4) : AppColors.border),
+                      border: Border.all(color: done ? AppColors.green.withValues(alpha: .4) : AppColors.border),
                     ),
                     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Container(

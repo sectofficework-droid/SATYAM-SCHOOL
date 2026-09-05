@@ -29,7 +29,7 @@ Future<void> runSatyamApp({
     statusBarIconBrightness: Brightness.light,
   ));
 
-  await Supabase.initialize(url: _supabaseUrl, anonKey: _supabaseKey);
+  await Supabase.initialize(url: _supabaseUrl, publishableKey: _supabaseKey);
 
   // Register and initialise AuthService (restores session from secure storage)
   final authService = Get.put(AuthService());

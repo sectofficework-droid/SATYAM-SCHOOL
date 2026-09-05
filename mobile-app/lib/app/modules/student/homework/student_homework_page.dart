@@ -80,7 +80,7 @@ class _StudentHomeworkPageState extends State<StudentHomeworkPage> {
                       decoration: BoxDecoration(
                         color: AppColors.card,
                         borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: overdue ? AppColors.red.withOpacity(.3) : AppColors.border),
+                        border: Border.all(color: overdue ? AppColors.red.withValues(alpha: .3) : AppColors.border),
                       ),
                       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Container(
@@ -142,7 +142,7 @@ class _StudentHomeworkPageState extends State<StudentHomeworkPage> {
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
     child: Container(
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(color: AppColors.border.withOpacity(.4), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: AppColors.border.withValues(alpha: .4), borderRadius: BorderRadius.circular(12)),
       child: Row(children: [
         Expanded(child: _tabButton('Active', 0, _activeList.length)),
         Expanded(child: _tabButton('Archive', 1, _archiveList.length)),

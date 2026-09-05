@@ -247,7 +247,7 @@ class _StudentRow extends StatelessWidget {
                   onTap: () => Navigator.of(context).pop(),
                   child: Container(
                     width: 34, height: 34,
-                    decoration: BoxDecoration(color: AppColors.border, shape: BoxShape.circle),
+                    decoration: const BoxDecoration(color: AppColors.border, shape: BoxShape.circle),
                     child: const Icon(Icons.close_rounded, color: AppColors.textLight, size: 18),
                   ),
                 ),

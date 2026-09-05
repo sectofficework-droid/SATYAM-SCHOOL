@@ -66,7 +66,6 @@ class AppTheme {
       primary: AppColors.navy,
       secondary: AppColors.amber,
       surface: AppColors.card,
-      background: AppColors.bg,
     ),
     scaffoldBackgroundColor: AppColors.bg,
     appBarTheme: const AppBarTheme(

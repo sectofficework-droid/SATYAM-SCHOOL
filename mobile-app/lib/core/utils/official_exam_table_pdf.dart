@@ -5,8 +5,8 @@ import 'package:pdf/widgets.dart' as pw;
 // Landscape spreadsheet-style table: one row per student, one column per
 // subject - the "whole class, all subjects" export from the Official Exams
 // class-teacher overview. Same navy/gold branding as question_paper_pdf.dart.
-final _navy = PdfColor.fromInt(0xFF1a2b6b);
-final _gold = PdfColor.fromInt(0xFFf59e0b);
+const _navy = PdfColor.fromInt(0xFF1a2b6b);
+const _gold = PdfColor.fromInt(0xFFf59e0b);
 
 Future<Uint8List> buildOfficialExamTablePdf({
   required String examName,
@@ -60,7 +60,7 @@ Future<Uint8List> buildOfficialExamTablePdf({
         headers: headers,
         data: rows,
         headerStyle: pw.TextStyle(font: helveticaBold, fontSize: 9, color: PdfColors.white),
-        headerDecoration: pw.BoxDecoration(color: _navy),
+        headerDecoration: const pw.BoxDecoration(color: _navy),
         headerAlignment: pw.Alignment.center,
         cellStyle: pw.TextStyle(font: helvetica, fontSize: 8.5),
         cellAlignment: pw.Alignment.centerLeft,

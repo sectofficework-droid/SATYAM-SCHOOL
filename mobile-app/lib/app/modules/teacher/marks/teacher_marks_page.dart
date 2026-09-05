@@ -73,13 +73,15 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
         : <Map<String, dynamic>>[];
     final maxMarks = await SupabaseService.fetchMonthlyTestMaxMarks();
 
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _monthlyTestMaxMarks = maxMarks;
       _mineExams  = mine;
       _classExams = classWide;
       if (!_isClassTeacher) _scope = 0;
       _loading = false;
     });
+    }
   }
 
   // Marks can only be entered on or after the exam date - not before, even
@@ -171,7 +173,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                     Container(
                       width: 44, height: 44,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [AppColors.purple, AppColors.purple.withOpacity(.6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                        gradient: LinearGradient(colors: [AppColors.purple, AppColors.purple.withValues(alpha: .6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(Icons.grading_rounded, color: Colors.white, size: 22),
@@ -190,7 +192,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
-                    value: selectedClass,
+                    initialValue: selectedClass,
                     decoration: const InputDecoration(labelText: 'Class', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
                     items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                     onChanged: (v) => setS(() { selectedClass = v; selectedSubject = null; }),
@@ -198,7 +200,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                   const SizedBox(height: 14),
                   if (subjectOptions.isNotEmpty)
                     DropdownButtonFormField<String>(
-                      value: selectedSubject,
+                      initialValue: selectedSubject,
                       decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
                       items: subjectOptions.map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
                       onChanged: (v) => setS(() => selectedSubject = v),
@@ -261,7 +263,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                         'max_marks':  _monthlyTestMaxMarks,
                         'created_by': profile['id'],
                       });
-                      if (mounted) Navigator.pop(ctx);
+                      if (ctx.mounted) Navigator.pop(ctx);
                       _load();
                     },
                     child: Container(
@@ -269,7 +271,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                       decoration: BoxDecoration(
                         gradient: AppColors.navyGradient,
                         borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                        boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
                       ),
                       child: const Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
                         Icon(Icons.add_circle_outline_rounded, color: Colors.white, size: 20),
@@ -401,7 +403,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
     child: Container(
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(color: AppColors.navy.withOpacity(.08), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: AppColors.navy.withValues(alpha: .08), borderRadius: BorderRadius.circular(12)),
       child: Row(children: [
         Expanded(child: _scopeTabButton('Mine', 0)),
         Expanded(child: _scopeTabButton('Class Overview', 1)),
@@ -516,7 +518,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                   width: 50, height: 50,
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [AppColors.purple, AppColors.purple.withOpacity(.6)],
+                      colors: [AppColors.purple, AppColors.purple.withValues(alpha: .6)],
                       begin: Alignment.topLeft, end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(14),
@@ -576,7 +578,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
         child: Row(children: [
           Container(
             width: 44, height: 44,
-            decoration: BoxDecoration(color: Colors.white.withOpacity(.15), borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: .15), borderRadius: BorderRadius.circular(12)),
             child: const Icon(Icons.grading_rounded, color: Colors.white, size: 22),
           ),
           const SizedBox(width: 12),
@@ -587,7 +589,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
           ])),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(color: Colors.white.withOpacity(.15), borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: .15), borderRadius: BorderRadius.circular(8)),
             child: Text('${_students.length} students',
               style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
           ),
@@ -617,7 +619,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                     Container(
                       width: 38, height: 38,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(
+                        gradient: const LinearGradient(
                           colors: [AppColors.navy, AppColors.navyMid],
                           begin: Alignment.topLeft, end: Alignment.bottomRight,
                         ),
@@ -676,7 +678,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
               color: _saving ? AppColors.textHint : null,
               borderRadius: BorderRadius.circular(14),
               boxShadow: _saving ? [] : [
-                BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6)),
+                BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6)),
               ],
             ),
             child: Center(child: _saving
@@ -704,7 +706,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(
           width: 80, height: 80,
-          decoration: BoxDecoration(color: AppColors.blueLight, shape: BoxShape.circle),
+          decoration: const BoxDecoration(color: AppColors.blueLight, shape: BoxShape.circle),
           child: Icon(icon, color: AppColors.navy, size: 38),
         ),
         const SizedBox(height: 16),

@@ -69,7 +69,7 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
             const SizedBox(height: 20),
 
             // Modules header
-            _AnimEntry(delay: 80, child: const Text('Overview',
+            const _AnimEntry(delay: 80, child: Text('Overview',
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text))),
             const SizedBox(height: 12),
 
@@ -202,7 +202,7 @@ class _GreetingBanner extends StatelessWidget {
       ),
       borderRadius: BorderRadius.circular(24),
       boxShadow: [
-        BoxShadow(color: AppColors.navy.withOpacity(.3), blurRadius: 20, offset: const Offset(0, 8)),
+        BoxShadow(color: AppColors.navy.withValues(alpha: .3), blurRadius: 20, offset: const Offset(0, 8)),
       ],
     ),
     child: Row(children: [
@@ -217,9 +217,9 @@ class _GreetingBanner extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(.12),
+              color: Colors.white.withValues(alpha: .12),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white.withOpacity(.2)),
+              border: Border.all(color: Colors.white.withValues(alpha: .2)),
             ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               const Icon(Icons.class_rounded, color: Colors.white70, size: 13),
@@ -233,9 +233,9 @@ class _GreetingBanner extends StatelessWidget {
       Container(
         width: 64, height: 64,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(.12),
+          color: Colors.white.withValues(alpha: .12),
           borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withOpacity(.2)),
+          border: Border.all(color: Colors.white.withValues(alpha: .2)),
         ),
         child: const Icon(Icons.school_rounded, color: Colors.white, size: 34),
       ),

@@ -52,7 +52,7 @@ class _KioskHomePageState extends State<KioskHomePage> {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(24),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(.3), blurRadius: 30, offset: const Offset(0, 12))],
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .3), blurRadius: 30, offset: const Offset(0, 12))],
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(24),
@@ -81,7 +81,7 @@ class _KioskHomePageState extends State<KioskHomePage> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: AppColors.amber,
-                boxShadow: [BoxShadow(color: AppColors.amber.withOpacity(.5), blurRadius: 40, offset: const Offset(0, 12))],
+                boxShadow: [BoxShadow(color: AppColors.amber.withValues(alpha: .5), blurRadius: 40, offset: const Offset(0, 12))],
               ),
               child: const Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Icon(Icons.face_retouching_natural_rounded, color: AppColors.navyDark, size: 64),

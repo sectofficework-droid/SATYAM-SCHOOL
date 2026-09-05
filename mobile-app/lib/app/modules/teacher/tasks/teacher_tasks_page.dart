@@ -162,7 +162,7 @@ class _TaskCard extends StatelessWidget {
         color: AppColors.card,
         borderRadius: BorderRadius.circular(16),
         boxShadow: AppShadows.card,
-        border: _overdue ? Border.all(color: AppColors.red.withOpacity(.3)) : null,
+        border: _overdue ? Border.all(color: AppColors.red.withValues(alpha: .3)) : null,
       ),
       child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Container(
@@ -184,7 +184,7 @@ class _TaskCard extends StatelessWidget {
               ),
               const Spacer(),
               if (_overdue)
-                Text('Overdue', style: const TextStyle(color: AppColors.red, fontSize: 11, fontWeight: FontWeight.w700))
+                const Text('Overdue', style: TextStyle(color: AppColors.red, fontSize: 11, fontWeight: FontWeight.w700))
               else if (date != null)
                 Row(children: [
                   const Icon(Icons.schedule_rounded, size: 12, color: AppColors.textHint),
@@ -217,7 +217,7 @@ class _TaskCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.greenLight,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: AppColors.green.withOpacity(.3)),
+          border: Border.all(color: AppColors.green.withValues(alpha: .3)),
         ),
         child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           Icon(Icons.check_circle_rounded, size: 15, color: AppColors.green),

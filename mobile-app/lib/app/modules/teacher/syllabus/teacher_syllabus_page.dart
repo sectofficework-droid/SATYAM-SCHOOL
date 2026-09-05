@@ -92,7 +92,8 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
         ? await SupabaseService.fetchMySyllabusEditRequests(employeeId)
         : <Map<String, dynamic>>[];
 
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _mineChapters  = mine;
       _classChapters = classWide;
       _subtopicsByChapter = subMap;
@@ -100,6 +101,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
       if (!_isClassTeacher) _scope = 0;
       _loading = false;
     });
+    }
   }
 
   _SectionState _sectionState(String className, String subject) {
@@ -243,7 +245,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
               maxLines: 2,
               decoration: InputDecoration(
                 hintText: 'Reason - e.g. curriculum revised for this term',
-                filled: true, fillColor: AppColors.blueLight.withOpacity(.4),
+                filled: true, fillColor: AppColors.blueLight.withValues(alpha: .4),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               ),
             ),
@@ -253,7 +255,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
               maxLines: 3,
               decoration: InputDecoration(
                 hintText: 'What do you want to add/update? (optional)',
-                filled: true, fillColor: AppColors.blueLight.withOpacity(.4),
+                filled: true, fillColor: AppColors.blueLight.withValues(alpha: .4),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               ),
             ),
@@ -335,7 +337,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                   'status':     'Not Started',
                   'sort_order': e.key,
                 }).toList());
-                if (mounted) Navigator.pop(ctx);
+                if (ctx.mounted) Navigator.pop(ctx);
                 _load();
               },
               child: Container(
@@ -402,7 +404,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                     Container(
                       width: 44, height: 44,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [AppColors.teal, AppColors.teal.withOpacity(.6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                        gradient: LinearGradient(colors: [AppColors.teal, AppColors.teal.withValues(alpha: .6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(Icons.menu_book_rounded, color: Colors.white, size: 22),
@@ -416,14 +418,14 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                   ]),
                   const SizedBox(height: 20),
                   DropdownButtonFormField<String>(
-                    value: selectedClass,
+                    initialValue: selectedClass,
                     decoration: const InputDecoration(labelText: 'Class', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
                     items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                     onChanged: (v) => setS(() { selectedClass = v!; selectedSubject = null; }),
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
-                    value: selectedSubject,
+                    initialValue: selectedSubject,
                     isExpanded: true,
                     hint: const Text('Select', style: TextStyle(fontSize: 13)),
                     decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
@@ -493,7 +495,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                         'chapter':    name,
                         'status':     'Not Started',
                       }).toList());
-                      if (mounted) Navigator.pop(ctx);
+                      if (ctx.mounted) Navigator.pop(ctx);
                       _load();
                     },
                     child: Opacity(
@@ -503,7 +505,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                         decoration: BoxDecoration(
                           gradient: AppColors.navyGradient,
                           borderRadius: BorderRadius.circular(14),
-                          boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                          boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
                         ),
                         child: const Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
                           Icon(Icons.add_circle_outline_rounded, color: Colors.white, size: 20),
@@ -562,7 +564,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
     child: Container(
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(color: AppColors.navy.withOpacity(.08), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: AppColors.navy.withValues(alpha: .08), borderRadius: BorderRadius.circular(12)),
       child: Row(children: [
         Expanded(child: _scopeTabButton('Mine', 0)),
         Expanded(child: _scopeTabButton('Class Overview', 1)),
@@ -722,7 +724,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     onTap: onTap,
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-      decoration: BoxDecoration(color: color.withOpacity(.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: color.withOpacity(.3))),
+      decoration: BoxDecoration(color: color.withValues(alpha: .1), borderRadius: BorderRadius.circular(8), border: Border.all(color: color.withValues(alpha: .3))),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, size: 12, color: color),
         const SizedBox(width: 4),

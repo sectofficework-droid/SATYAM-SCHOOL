@@ -71,7 +71,7 @@ class _AttendanceViewState extends State<AttendanceView> {
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
     child: Container(
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(color: AppColors.navy.withOpacity(.08), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: AppColors.navy.withValues(alpha: .08), borderRadius: BorderRadius.circular(12)),
       child: Row(children: [
         Expanded(child: _tabButton('Monthly', 0)),
         Expanded(child: _tabButton('Yearly', 1)),
@@ -315,7 +315,7 @@ class _PercentRing extends StatelessWidget {
         child: CircularProgressIndicator(
           value: percent / 100,
           strokeWidth: 6,
-          backgroundColor: color.withOpacity(.2),
+          backgroundColor: color.withValues(alpha: .2),
           valueColor: AlwaysStoppedAnimation(color),
         ),
       ),

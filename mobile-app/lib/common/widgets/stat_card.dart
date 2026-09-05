@@ -64,9 +64,9 @@ class _StatCardState extends State<StatCard> {
               decoration: BoxDecoration(
                 color: widget.bgColor,
                 borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: widget.color.withOpacity(.55), width: _pressed ? 2.2 : 1.6),
+                border: Border.all(color: widget.color.withValues(alpha: .55), width: _pressed ? 2.2 : 1.6),
                 boxShadow: [
-                  BoxShadow(color: widget.color.withOpacity(.14), blurRadius: 14, offset: const Offset(0, 6)),
+                  BoxShadow(color: widget.color.withValues(alpha: .14), blurRadius: 14, offset: const Offset(0, 6)),
                 ],
               ),
               child: Stack(
@@ -79,7 +79,7 @@ class _StatCardState extends State<StatCard> {
                     top: -96, left: -28, right: -28,
                     child: Container(
                       height: 150,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: widget.color.withOpacity(.30)),
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: widget.color.withValues(alpha: .30)),
                     ),
                   ),
                   if (widget.centered)
@@ -111,7 +111,7 @@ class _StatCardState extends State<StatCard> {
                                 color: Colors.white,
                                 shape: BoxShape.circle,
                                 boxShadow: [
-                                  BoxShadow(color: widget.color.withOpacity(.30), blurRadius: 8, offset: const Offset(0, 3)),
+                                  BoxShadow(color: widget.color.withValues(alpha: .30), blurRadius: 8, offset: const Offset(0, 3)),
                                 ],
                               ),
                               child: Icon(widget.icon, color: widget.color, size: 27),
@@ -145,7 +145,7 @@ class _StatCardState extends State<StatCard> {
                                     color: Colors.white,
                                     shape: BoxShape.circle,
                                     boxShadow: [
-                                      BoxShadow(color: widget.color.withOpacity(.30), blurRadius: 8, offset: const Offset(0, 3)),
+                                      BoxShadow(color: widget.color.withValues(alpha: .30), blurRadius: 8, offset: const Offset(0, 3)),
                                     ],
                                   ),
                                   child: Icon(widget.icon, color: widget.color, size: 22),
@@ -185,7 +185,7 @@ class _StatCardState extends State<StatCard> {
                 decoration: BoxDecoration(
                   color: AppColors.red,
                   borderRadius: BorderRadius.circular(10),
-                  boxShadow: [BoxShadow(color: AppColors.red.withOpacity(.4), blurRadius: 6, offset: const Offset(0, 2))],
+                  boxShadow: [BoxShadow(color: AppColors.red.withValues(alpha: .4), blurRadius: 6, offset: const Offset(0, 2))],
                 ),
                 child: Text('${widget.badgeCount}',
                   style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),

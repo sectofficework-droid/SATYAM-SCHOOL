@@ -12,7 +12,6 @@ class StudentMarksPage extends StatefulWidget {
 }
 
 class _StudentMarksPageState extends State<StudentMarksPage> {
-  List<Map<String, dynamic>> _exams  = [];
   List<Map<String, dynamic>> _marks  = [];
   bool _loading = true;
 
@@ -49,7 +48,7 @@ class _StudentMarksPageState extends State<StudentMarksPage> {
         allMarks.add({...e, 'obtained': null});
       }
     }
-    if (mounted) setState(() { _exams = exams; _marks = allMarks; _loading = false; });
+    if (mounted) setState(() { _marks = allMarks; _loading = false; });
   }
 
   @override
@@ -107,7 +106,7 @@ class _StudentMarksPageState extends State<StudentMarksPage> {
                           Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Text(upcoming ? 'Not held' : (obt == null ? '—' : '${obt.toStringAsFixed(0)}'),
+                              Text(upcoming ? 'Not held' : (obt == null ? '—' : obt.toStringAsFixed(0)),
                                 style: TextStyle(
                                   fontSize: upcoming ? 13 : 28,
                                   fontWeight: FontWeight.w700,
@@ -126,7 +125,7 @@ class _StudentMarksPageState extends State<StudentMarksPage> {
                             child: LinearProgressIndicator(
                               value: pct / 100,
                               color: color,
-                              backgroundColor: color.withOpacity(.15),
+                              backgroundColor: color.withValues(alpha: .15),
                               minHeight: 6,
                             ),
                           ),

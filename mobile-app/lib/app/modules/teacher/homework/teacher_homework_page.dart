@@ -50,12 +50,14 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
         ? await SupabaseService.fetchHomework(classNames: [ownClass!])
         : <Map<String, dynamic>>[];
 
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _mineList  = mine;
       _classList = classWide;
       if (!_isClassTeacher) _scope = 0;
       _loading = false;
     });
+    }
   }
 
   DateTime? _dueDate(Map<String, dynamic> hw) => DateTime.tryParse(hw['due_date'] ?? '');
@@ -124,7 +126,7 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                   Container(
                     width: 44, height: 44,
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [AppColors.amber, AppColors.amber.withOpacity(.6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      gradient: LinearGradient(colors: [AppColors.amber, AppColors.amber.withValues(alpha: .6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(Icons.assignment_add, color: Colors.white, size: 22),
@@ -139,7 +141,7 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                 const SizedBox(height: 20),
                 if (classSubjectPairs.isNotEmpty) ...[
                   DropdownButtonFormField<String>(
-                    value: selectedPairKey,
+                    initialValue: selectedPairKey,
                     isExpanded: true,
                     decoration: const InputDecoration(labelText: 'Class & Subject', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
                     items: classSubjectPairs.map((p) => DropdownMenuItem(
@@ -155,14 +157,14 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                   ),
                 ] else ...[
                   DropdownButtonFormField<String>(
-                    value: selectedClass,
+                    initialValue: selectedClass,
                     decoration: const InputDecoration(labelText: 'Class', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
                     items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
                     onChanged: (v) => setS(() { selectedClass = v; selectedSubject = null; }),
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
-                    value: selectedSubject,
+                    initialValue: selectedSubject,
                     isExpanded: true,
                     hint: const Text('Select', style: TextStyle(fontSize: 13)),
                     decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
@@ -225,7 +227,7 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                       'due_date':    DateFormat('yyyy-MM-dd').format(dueDate!),
                       'created_by':  profile['id'],
                     });
-                    if (mounted) Navigator.pop(ctx);
+                    if (ctx.mounted) Navigator.pop(ctx);
                     _load();
                   },
                   child: Container(
@@ -233,7 +235,7 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                     decoration: BoxDecoration(
                       gradient: AppColors.navyGradient,
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                      boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: const Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
                       Icon(Icons.add_circle_outline_rounded, color: Colors.white, size: 20),
@@ -293,9 +295,9 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: AppShadows.card,
                   border: overdue
-                    ? Border.all(color: AppColors.red.withOpacity(.3))
+                    ? Border.all(color: AppColors.red.withValues(alpha: .3))
                     : urgent
-                      ? Border.all(color: AppColors.amber.withOpacity(.3))
+                      ? Border.all(color: AppColors.amber.withValues(alpha: .3))
                       : null,
                 ),
                 child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -415,7 +417,7 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
     child: Container(
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(color: AppColors.navy.withOpacity(.08), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: AppColors.navy.withValues(alpha: .08), borderRadius: BorderRadius.circular(12)),
       child: Row(children: [
         Expanded(child: _scopeTabButton('Mine', 0)),
         Expanded(child: _scopeTabButton('Class Overview', 1)),

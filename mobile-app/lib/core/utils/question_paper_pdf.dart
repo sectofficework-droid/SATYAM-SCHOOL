@@ -5,8 +5,8 @@ import 'package:pdf/widgets.dart' as pw;
 // Mirrors the Bonafide Certificate's letterhead design (admin panel,
 // documents/page.js) so every school document shares the same look - Times
 // New Roman school name, navy title, gold rules.
-final _navy = PdfColor.fromInt(0xFF1a2b6b);
-final _gold = PdfColor.fromInt(0xFFf59e0b);
+const _navy = PdfColor.fromInt(0xFF1a2b6b);
+const _gold = PdfColor.fromInt(0xFFf59e0b);
 
 const List<String> _weekdays = [
   'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',

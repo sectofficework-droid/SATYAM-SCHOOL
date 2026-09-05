@@ -14,7 +14,7 @@ Future<void> showBirthdayCelebration(BuildContext context, {required String name
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Birthday celebration',
-    barrierColor: Colors.black.withOpacity(.55),
+    barrierColor: Colors.black.withValues(alpha: .55),
     transitionDuration: const Duration(milliseconds: 300),
     pageBuilder: (_, __, ___) => _BirthdayCelebrationDialog(name: name, photoKey: photoKey),
     transitionBuilder: (_, anim, __, child) => FadeTransition(opacity: anim, child: child),
@@ -100,7 +100,7 @@ class _BirthdayCelebrationDialogState extends State<_BirthdayCelebrationDialog> 
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(28),
-      boxShadow: [BoxShadow(color: Colors.black.withOpacity(.25), blurRadius: 30, offset: const Offset(0, 12))],
+      boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .25), blurRadius: 30, offset: const Offset(0, 12))],
     ),
     child: Column(mainAxisSize: MainAxisSize.min, children: [
       Container(

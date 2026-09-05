@@ -135,7 +135,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                       child: Container(width: 240, height: 240,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(.03 + _ambientCtrl.value * 0.02),
+                          color: Colors.white.withValues(alpha: .03 + _ambientCtrl.value * 0.02),
                         )),
                     ),
                   ),
@@ -149,7 +149,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                       child: Container(width: 280, height: 280,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Colors.white.withOpacity(.02 + (1 - _ambientCtrl.value) * 0.02),
+                          color: Colors.white.withValues(alpha: .02 + (1 - _ambientCtrl.value) * 0.02),
                         )),
                     ),
                   ),
@@ -176,8 +176,8 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     gradient: RadialGradient(colors: [
-                                      Colors.white.withOpacity(.35),
-                                      Colors.white.withOpacity(0),
+                                      Colors.white.withValues(alpha: .35),
+                                      Colors.white.withValues(alpha: 0),
                                     ]),
                                   ),
                                 ),
@@ -199,11 +199,11 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                                       borderRadius: BorderRadius.circular(30),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black.withOpacity(.3),
+                                          color: Colors.black.withValues(alpha: .3),
                                           blurRadius: 40, offset: const Offset(0, 16),
                                         ),
                                         BoxShadow(
-                                          color: Colors.white.withOpacity(.1),
+                                          color: Colors.white.withValues(alpha: .1),
                                           blurRadius: 8, offset: const Offset(0, -2),
                                         ),
                                       ],
@@ -282,7 +282,7 @@ class _SplashScreenState extends State<SplashScreen> with TickerProviderStateMix
                             child: Container(
                               width: 56, height: 3,
                               decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(.5),
+                                color: Colors.white.withValues(alpha: .5),
                                 borderRadius: BorderRadius.circular(2),
                               ),
                             ),
@@ -346,7 +346,7 @@ class _LoadingDotsState extends State<_LoadingDots> with SingleTickerProviderSta
           margin: const EdgeInsets.symmetric(horizontal: 4),
           width: 7 * scale, height: 7 * scale,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.4 + 0.4 * scale),
+            color: Colors.white.withValues(alpha: 0.4 + 0.4 * scale),
             shape: BoxShape.circle,
           ),
         );

@@ -240,7 +240,7 @@ class _FacePunchPageState extends State<FacePunchPage> {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
             width: 96, height: 96,
-            decoration: BoxDecoration(color: AppColors.green, shape: BoxShape.circle),
+            decoration: const BoxDecoration(color: AppColors.green, shape: BoxShape.circle),
             child: const Icon(Icons.check_rounded, color: Colors.white, size: 56),
           ),
           const SizedBox(height: 24),

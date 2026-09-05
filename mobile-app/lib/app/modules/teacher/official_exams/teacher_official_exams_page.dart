@@ -168,12 +168,14 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
       SupabaseService.fetchClassStudentsByName(className),
       SupabaseService.fetchOfficialExamMarksForClass(examId, className),
     ]);
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _overviewSubjects = results[0] as List<String>;
       _overviewStudents = results[1] as List<Map<String, dynamic>>;
       _overviewMarks    = results[2] as List<Map<String, dynamic>>;
       _loadingOverview  = false;
     });
+    }
   }
 
   String get _title {
@@ -255,7 +257,7 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
     child: Container(
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(color: AppColors.navy.withOpacity(.08), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: AppColors.navy.withValues(alpha: .08), borderRadius: BorderRadius.circular(12)),
       child: Row(children: [
         Expanded(child: _scopeTabButton('Enter Marks', 0)),
         Expanded(child: _scopeTabButton('My Class — All Subjects', 1)),
@@ -310,7 +312,7 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
                       Container(
                         width: 50, height: 50,
                         decoration: BoxDecoration(
-                          gradient: LinearGradient(colors: [AppColors.lime, AppColors.lime.withOpacity(.6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                          gradient: LinearGradient(colors: [AppColors.lime, AppColors.lime.withValues(alpha: .6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
                           borderRadius: BorderRadius.circular(14),
                         ),
                         child: const Icon(Icons.fact_check_rounded, color: Colors.white, size: 24),
@@ -402,7 +404,7 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
       child: Row(children: [
         Container(
           width: 44, height: 44,
-          decoration: BoxDecoration(color: Colors.white.withOpacity(.15), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: Colors.white.withValues(alpha: .15), borderRadius: BorderRadius.circular(12)),
           child: const Icon(Icons.fact_check_rounded, color: Colors.white, size: 22),
         ),
         const SizedBox(width: 12),
@@ -412,7 +414,7 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
         ])),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(color: Colors.white.withOpacity(.15), borderRadius: BorderRadius.circular(8)),
+          decoration: BoxDecoration(color: Colors.white.withValues(alpha: .15), borderRadius: BorderRadius.circular(8)),
           child: Text('${_students.length} students', style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
         ),
       ]),
@@ -483,7 +485,7 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
             gradient: _saving ? null : AppColors.navyGradient,
             color: _saving ? AppColors.textHint : null,
             borderRadius: BorderRadius.circular(14),
-            boxShadow: _saving ? [] : [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+            boxShadow: _saving ? [] : [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
           ),
           child: Center(child: _saving
             ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
@@ -552,7 +554,7 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
     padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
     child: Container(
       padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(color: AppColors.navy.withOpacity(.08), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: AppColors.navy.withValues(alpha: .08), borderRadius: BorderRadius.circular(12)),
       child: Row(children: [
         Expanded(child: _overviewModeButton('By Subject', 'subject')),
         Expanded(child: _overviewModeButton('Full Table', 'table')),
@@ -697,7 +699,7 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
               gradient: _exportingOverviewPdf ? null : AppColors.navyGradient,
               color: _exportingOverviewPdf ? AppColors.textHint : null,
               borderRadius: BorderRadius.circular(14),
-              boxShadow: _exportingOverviewPdf ? [] : [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+              boxShadow: _exportingOverviewPdf ? [] : [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
             ),
             child: Center(child: _exportingOverviewPdf
               ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))

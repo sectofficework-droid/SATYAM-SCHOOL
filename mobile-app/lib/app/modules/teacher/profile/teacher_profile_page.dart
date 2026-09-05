@@ -39,15 +39,15 @@ class TeacherProfilePage extends StatelessWidget {
                         width: 88, height: 88,
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white.withOpacity(.4), width: 3),
-                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(.2), blurRadius: 16, offset: const Offset(0, 6))],
+                          border: Border.all(color: Colors.white.withValues(alpha: .4), width: 3),
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .2), blurRadius: 16, offset: const Offset(0, 6))],
                         ),
                         child: ClipOval(
                           child: S3Image(
                             s3Key: photoKey,
                             width: 88, height: 88,
                             fallback: (_) => Container(
-                              color: Colors.white.withOpacity(.15),
+                              color: Colors.white.withValues(alpha: .15),
                               child: const Icon(Icons.person_rounded, color: Colors.white, size: 44),
                             ),
                           ),
@@ -79,17 +79,17 @@ class TeacherProfilePage extends StatelessWidget {
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      colors: [AppColors.blue.withOpacity(.08), AppColors.blue.withOpacity(.02)],
+                      colors: [AppColors.blue.withValues(alpha: .08), AppColors.blue.withValues(alpha: .02)],
                       begin: Alignment.topLeft, end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: AppColors.blue.withOpacity(.2)),
+                    border: Border.all(color: AppColors.blue.withValues(alpha: .2)),
                   ),
                   child: Row(children: [
                     Container(
                       width: 44, height: 44,
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [AppColors.blue, AppColors.navy], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                        gradient: const LinearGradient(colors: [AppColors.blue, AppColors.navy], begin: Alignment.topLeft, end: Alignment.bottomRight),
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: const Icon(Icons.class_rounded, color: Colors.white, size: 22),
@@ -139,7 +139,7 @@ class TeacherProfilePage extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: AppColors.redLight,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.red.withOpacity(.3)),
+                    border: Border.all(color: AppColors.red.withValues(alpha: .3)),
                   ),
                   child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                     Icon(Icons.logout_rounded, color: AppColors.red, size: 20),
@@ -256,7 +256,7 @@ void _openEditProfile(BuildContext context) {
                 Container(
                   width: 44, height: 44,
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [AppColors.navy, AppColors.navyMid], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                    gradient: const LinearGradient(colors: [AppColors.navy, AppColors.navyMid], begin: Alignment.topLeft, end: Alignment.bottomRight),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(Icons.edit_rounded, color: Colors.white, size: 22),
@@ -337,7 +337,7 @@ void _openEditProfile(BuildContext context) {
                   decoration: BoxDecoration(
                     gradient: AppColors.navyGradient,
                     borderRadius: BorderRadius.circular(14),
-                    boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                    boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
                   ),
                   child: Center(child: saving
                     ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
@@ -393,7 +393,7 @@ void _openChangePassword(BuildContext context) {
                 Container(
                   width: 44, height: 44,
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(colors: [AppColors.navy, AppColors.navyMid], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                    gradient: const LinearGradient(colors: [AppColors.navy, AppColors.navyMid], begin: Alignment.topLeft, end: Alignment.bottomRight),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: const Icon(Icons.lock_reset_rounded, color: Colors.white, size: 22),
@@ -442,7 +442,7 @@ void _openChangePassword(BuildContext context) {
                     decoration: BoxDecoration(
                       gradient: AppColors.navyGradient,
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                      boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: Center(child: saving
                       ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))
@@ -510,7 +510,7 @@ void _openChangePassword(BuildContext context) {
                     decoration: BoxDecoration(
                       gradient: AppColors.navyGradient,
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                      boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: Center(child: saving
                       ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5))

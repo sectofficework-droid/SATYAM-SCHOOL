@@ -15,7 +15,6 @@ import '../profile/student_profile_page.dart';
 import '../attendance/student_attendance_page.dart';
 import '../exams/student_exams_page.dart';
 import '../fees/student_fees_page.dart';
-import '../homework/student_homework_page.dart';
 import '../notices/student_notices_page.dart';
 import '../../../../app/routes/app_routes.dart';
 
@@ -155,7 +154,7 @@ class _StudentHomeState extends State<StudentHome> {
                     width: 40, height: 40,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white.withOpacity(.4), width: 2),
+                      border: Border.all(color: Colors.white.withValues(alpha: .4), width: 2),
                     ),
                     child: ClipOval(child: StudentProfilePage.buildAvatar(photoKey, firstName, 20)),
                   ),
@@ -205,7 +204,7 @@ class _StudentBottomNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     height: 72,
-    decoration: BoxDecoration(color: Colors.white, boxShadow: AppShadows.nav),
+    decoration: const BoxDecoration(color: Colors.white, boxShadow: AppShadows.nav),
     child: Row(
       children: List.generate(_items.length, (i) {
         final item   = _items[i];
@@ -220,7 +219,7 @@ class _StudentBottomNav extends StatelessWidget {
                 curve: Curves.easeOutCubic,
                 padding: EdgeInsets.symmetric(horizontal: active ? 16 : 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: active ? AppColors.navy.withOpacity(.08) : Colors.transparent,
+                  color: active ? AppColors.navy.withValues(alpha: .08) : Colors.transparent,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: AnimatedSwitcher(
@@ -291,7 +290,7 @@ class _StudentDashboard extends StatelessWidget {
                 begin: Alignment.topLeft, end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(24),
-              boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.3), blurRadius: 20, offset: const Offset(0, 8))],
+              boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .3), blurRadius: 20, offset: const Offset(0, 8))],
             ),
             child: Row(children: [
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -311,9 +310,9 @@ class _StudentDashboard extends StatelessWidget {
               Container(
                 width: 64, height: 64,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(.12),
+                  color: Colors.white.withValues(alpha: .12),
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: Colors.white.withOpacity(.2)),
+                  border: Border.all(color: Colors.white.withValues(alpha: .2)),
                 ),
                 child: const Icon(Icons.school_rounded, color: Colors.white, size: 34),
               ),
@@ -388,9 +387,9 @@ class _StudentDashboard extends StatelessWidget {
   Widget _infoBadge(IconData icon, String label) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     decoration: BoxDecoration(
-      color: Colors.white.withOpacity(.12),
+      color: Colors.white.withValues(alpha: .12),
       borderRadius: BorderRadius.circular(8),
-      border: Border.all(color: Colors.white.withOpacity(.2)),
+      border: Border.all(color: Colors.white.withValues(alpha: .2)),
     ),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
       Icon(icon, color: Colors.white70, size: 12),

@@ -74,11 +74,13 @@ class _TeacherCreatePaperPageState extends State<TeacherCreatePaperPage> {
       teacherId: employeeId, className: _selectedClass, subject: _selectedSubject!,
       chapters: _selectedChapters.toList(),
     );
-    if (mounted) setState(() {
+    if (mounted) {
+      setState(() {
       _questions = questions;
       _selectedQuestionIds.clear(); // default: none selected
       _loadingQuestions = false;
     });
+    }
   }
 
   void _toggleChapter(String c) {
@@ -206,7 +208,7 @@ class _TeacherCreatePaperPageState extends State<TeacherCreatePaperPage> {
             Row(children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _selectedClass,
+                  initialValue: _selectedClass,
                   isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Class', isDense: true),
                   items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(),
@@ -216,7 +218,7 @@ class _TeacherCreatePaperPageState extends State<TeacherCreatePaperPage> {
               const SizedBox(width: 10),
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _selectedSubject,
+                  initialValue: _selectedSubject,
                   isExpanded: true,
                   hint: const Text('Select', style: TextStyle(fontSize: 13)),
                   decoration: const InputDecoration(labelText: 'Subject', isDense: true),
@@ -271,9 +273,9 @@ class _TeacherCreatePaperPageState extends State<TeacherCreatePaperPage> {
                         margin: const EdgeInsets.only(bottom: 6),
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: checked ? AppColors.navy.withOpacity(.06) : AppColors.card,
+                          color: checked ? AppColors.navy.withValues(alpha: .06) : AppColors.card,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: checked ? AppColors.navy.withOpacity(.3) : AppColors.border),
+                          border: Border.all(color: checked ? AppColors.navy.withValues(alpha: .3) : AppColors.border),
                         ),
                         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Icon(checked ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
@@ -328,7 +330,7 @@ class _TeacherCreatePaperPageState extends State<TeacherCreatePaperPage> {
                 Row(children: [
                   Expanded(
                     child: DropdownButtonFormField<int>(
-                      value: _durationHours,
+                      initialValue: _durationHours,
                       isExpanded: true,
                       decoration: const InputDecoration(isDense: true),
                       items: List.generate(7, (h) => h).map((h) => DropdownMenuItem(value: h, child: Text('$h hour${h == 1 ? '' : 's'}'))).toList(),
@@ -338,7 +340,7 @@ class _TeacherCreatePaperPageState extends State<TeacherCreatePaperPage> {
                   const SizedBox(width: 10),
                   Expanded(
                     child: DropdownButtonFormField<int>(
-                      value: _durationMinutes,
+                      initialValue: _durationMinutes,
                       isExpanded: true,
                       decoration: const InputDecoration(isDense: true),
                       items: [0, 10, 15, 20, 30, 40, 45, 50].map((m) => DropdownMenuItem(value: m, child: Text('$m minutes'))).toList(),
@@ -362,7 +364,7 @@ class _TeacherCreatePaperPageState extends State<TeacherCreatePaperPage> {
                   decoration: BoxDecoration(
                     gradient: AppColors.navyGradient,
                     borderRadius: BorderRadius.circular(14),
-                    boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                    boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
                   ),
                   child: Center(
                     child: _generating

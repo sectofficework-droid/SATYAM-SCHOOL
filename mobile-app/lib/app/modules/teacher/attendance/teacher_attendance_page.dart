@@ -69,8 +69,12 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
 
     final rows = await SupabaseService.fetchAttendanceForClassDate(className, dateStr);
     _status.clear();
-    for (final r in rows) _status[r['student_id'] as String] = r['status'] as String;
-    for (final s in _students) _status[s['id'] as String] ??= 'P';
+    for (final r in rows) {
+      _status[r['student_id'] as String] = r['status'] as String;
+    }
+    for (final s in _students) {
+      _status[s['id'] as String] ??= 'P';
+    }
     final wasMarked = rows.isNotEmpty;
 
     // Same calendar Year Planning manages - a month range covers whichever
@@ -187,7 +191,7 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
               maxLines: 3,
               decoration: InputDecoration(
                 hintText: 'Reason (optional) — e.g. marked a student absent by mistake',
-                filled: true, fillColor: AppColors.blueLight.withOpacity(.4),
+                filled: true, fillColor: AppColors.blueLight.withValues(alpha: .4),
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               ),
             ),
@@ -334,9 +338,9 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
-                  color: (_approvedWindow != null ? AppColors.green : AppColors.amber).withOpacity(.08),
+                  color: (_approvedWindow != null ? AppColors.green : AppColors.amber).withValues(alpha: .08),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: (_approvedWindow != null ? AppColors.green : AppColors.amber).withOpacity(.25)),
+                  border: Border.all(color: (_approvedWindow != null ? AppColors.green : AppColors.amber).withValues(alpha: .25)),
                 ),
                 child: Row(children: [
                   Icon(_approvedWindow != null ? Icons.lock_open_rounded : Icons.lock_outline_rounded,
@@ -376,8 +380,8 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: AppShadows.card,
                   border: Border.all(
-                    color: status == 'A' ? AppColors.red.withOpacity(.2)
-                         : AppColors.green.withOpacity(.15),
+                    color: status == 'A' ? AppColors.red.withValues(alpha: .2)
+                         : AppColors.green.withValues(alpha: .15),
                     width: 1,
                   ),
                 ),
@@ -385,7 +389,7 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
                   Container(
                     width: 36, height: 36,
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(
+                      gradient: const LinearGradient(
                         colors: [AppColors.navy, AppColors.navyMid],
                         begin: Alignment.topLeft, end: Alignment.bottomRight,
                       ),
@@ -412,9 +416,9 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
                           duration: const Duration(milliseconds: 180),
                           width: 36, height: 36,
                           decoration: BoxDecoration(
-                            color: active ? color.withOpacity(_isLocked ? .55 : 1) : color.withOpacity(.08),
+                            color: active ? color.withValues(alpha: _isLocked ? .55 : 1) : color.withValues(alpha: .08),
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: active ? color : color.withOpacity(.3)),
+                            border: Border.all(color: active ? color : color.withValues(alpha: .3)),
                           ),
                           child: Center(child: Text(v,
                             style: TextStyle(
@@ -466,7 +470,7 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
         borderRadius: BorderRadius.circular(14),
         boxShadow: _saving ? [] : [
           BoxShadow(
-            color: (_saved ? AppColors.green : AppColors.navy).withOpacity(.35),
+            color: (_saved ? AppColors.green : AppColors.navy).withValues(alpha: .35),
             blurRadius: 16, offset: const Offset(0, 6),
           ),
         ],
@@ -487,14 +491,14 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
         decoration: BoxDecoration(
-          color: AppColors.amber.withOpacity(.1),
+          color: AppColors.amber.withValues(alpha: .1),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.amber.withOpacity(.3)),
+          border: Border.all(color: AppColors.amber.withValues(alpha: .3)),
         ),
-        child: Row(children: [
-          const Icon(Icons.hourglass_top_rounded, color: AppColors.amber, size: 20),
-          const SizedBox(width: 10),
-          const Expanded(child: Text('Edit request sent — waiting for admin approval.',
+        child: const Row(children: [
+          Icon(Icons.hourglass_top_rounded, color: AppColors.amber, size: 20),
+          SizedBox(width: 10),
+          Expanded(child: Text('Edit request sent — waiting for admin approval.',
             style: TextStyle(fontSize: 13, color: AppColors.text, fontWeight: FontWeight.w600))),
         ]),
       );
@@ -506,15 +510,15 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
         decoration: BoxDecoration(
           color: AppColors.card,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.navy.withOpacity(.3)),
+          border: Border.all(color: AppColors.navy.withValues(alpha: .3)),
         ),
         child: Center(child: _requesting
           ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5))
-          : Row(mainAxisSize: MainAxisSize.min, children: [
+          : const Row(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.edit_note_rounded, color: AppColors.navy, size: 20),
-              const SizedBox(width: 8),
+              SizedBox(width: 8),
               Text('Request Edit',
-                style: const TextStyle(color: AppColors.navy, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
+                style: TextStyle(color: AppColors.navy, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
             ])),
       ),
     );

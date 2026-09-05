@@ -93,12 +93,12 @@ class _RecentNoticesSheetState extends State<_RecentNoticesSheet> {
         ),
         Expanded(
           child: _items.isEmpty
-              ? Center(child: Padding(
-                  padding: const EdgeInsets.all(24),
+              ? const Center(child: Padding(
+                  padding: EdgeInsets.all(24),
                   child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.notifications_off_outlined, color: AppColors.textHint, size: 36),
-                    const SizedBox(height: 10),
-                    const Text('You\'re all caught up', style: TextStyle(color: AppColors.textLight, fontSize: 13)),
+                    Icon(Icons.notifications_off_outlined, color: AppColors.textHint, size: 36),
+                    SizedBox(height: 10),
+                    Text('You\'re all caught up', style: TextStyle(color: AppColors.textLight, fontSize: 13)),
                   ]),
                 ))
               : ListView.separated(

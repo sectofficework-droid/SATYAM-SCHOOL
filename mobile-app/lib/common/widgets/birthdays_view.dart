@@ -174,7 +174,7 @@ class _BirthdaysViewState extends State<BirthdaysView> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
           child: Row(children: [
-            Expanded(child: Divider(color: color.withOpacity(.3), thickness: 1)),
+            Expanded(child: Divider(color: color.withValues(alpha: .3), thickness: 1)),
             const SizedBox(width: 10),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
@@ -224,7 +224,7 @@ class _BirthdaysViewState extends State<BirthdaysView> {
           ]),
           Text(p['subtitle'] as String, style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
         ])),
-        Icon(Icons.cake_rounded, size: 18, color: accent.withOpacity(.6)),
+        Icon(Icons.cake_rounded, size: 18, color: accent.withValues(alpha: .6)),
       ]),
     );
   }

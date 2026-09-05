@@ -55,7 +55,7 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
                   Container(
                     width: 44, height: 44,
                     decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [AppColors.orange, AppColors.orange.withOpacity(.6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                      gradient: LinearGradient(colors: [AppColors.orange, AppColors.orange.withValues(alpha: .6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(Icons.beach_access_rounded, color: Colors.white, size: 22),
@@ -121,7 +121,7 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
                       toDate: DateFormat('yyyy-MM-dd').format(toDate!),
                       reason: reasonCtrl.text.trim(),
                     );
-                    if (mounted) Navigator.pop(ctx);
+                    if (ctx.mounted) Navigator.pop(ctx);
                     _load();
                   },
                   child: Container(
@@ -129,7 +129,7 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
                     decoration: BoxDecoration(
                       gradient: AppColors.navyGradient,
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                      boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
                     child: const Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
                       Icon(Icons.send_rounded, color: Colors.white, size: 20),

@@ -131,7 +131,7 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
             Row(children: [
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _selectedClass,
+                  initialValue: _selectedClass,
                   isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Class', isDense: true,
                     prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
@@ -142,7 +142,7 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
               const SizedBox(width: 10),
               Expanded(
                 child: DropdownButtonFormField<String>(
-                  value: _selectedSubject,
+                  initialValue: _selectedSubject,
                   isExpanded: true,
                   decoration: const InputDecoration(labelText: 'Subject', isDense: true,
                     prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
@@ -154,7 +154,7 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
             ]),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(
-              value: _selectedChapter,
+              initialValue: _selectedChapter,
               isExpanded: true,
               decoration: const InputDecoration(labelText: 'Chapter', isDense: true,
                 prefixIcon: Icon(Icons.bookmark_border_rounded, color: AppColors.navy, size: 20)),
@@ -278,7 +278,7 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
         TextButton(
-          onPressed: () async { await SupabaseService.deleteQuestion(q['id']); if (mounted) Navigator.pop(ctx); _load(); },
+          onPressed: () async { await SupabaseService.deleteQuestion(q['id']); if (ctx.mounted) Navigator.pop(ctx); _load(); },
           child: const Text('Delete', style: TextStyle(color: AppColors.red)),
         ),
       ],
@@ -349,23 +349,26 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
                     const SizedBox(height: 16),
                     const Text('Options (mark the correct one)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textLight)),
                     const SizedBox(height: 8),
-                    ...List.generate(4, (i) {
-                      final label = String.fromCharCode(65 + i);
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: Row(children: [
-                          Radio<String>(
-                            value: label, groupValue: correctOption,
-                            onChanged: (v) => setS(() => correctOption = v),
-                            activeColor: AppColors.green,
-                          ),
-                          Expanded(child: TextField(
-                            controller: optionCtrls[i],
-                            decoration: InputDecoration(labelText: 'Option $label', isDense: true),
-                          )),
-                        ]),
-                      );
-                    }),
+                    RadioGroup<String>(
+                      groupValue: correctOption,
+                      onChanged: (v) => setS(() => correctOption = v),
+                      child: Column(children: List.generate(4, (i) {
+                        final label = String.fromCharCode(65 + i);
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(children: [
+                            Radio<String>(
+                              value: label,
+                              activeColor: AppColors.green,
+                            ),
+                            Expanded(child: TextField(
+                              controller: optionCtrls[i],
+                              decoration: InputDecoration(labelText: 'Option $label', isDense: true),
+                            )),
+                          ]),
+                        );
+                      })),
+                    ),
                   ],
                   if (error != null) ...[
                     const SizedBox(height: 10),
@@ -410,7 +413,7 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
                       height: 52,
                       decoration: BoxDecoration(
                         gradient: AppColors.navyGradient, borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6))],
+                        boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
                       ),
                       child: Center(child: Text(isEdit ? 'Save Changes' : 'Add to Bank',
                         style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins'))),

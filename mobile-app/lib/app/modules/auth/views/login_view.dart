@@ -62,7 +62,7 @@ class _Header extends StatelessWidget {
           color: Colors.white,
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(.25), blurRadius: 24, offset: const Offset(0, 8)),
+            BoxShadow(color: Colors.black.withValues(alpha: .25), blurRadius: 24, offset: const Offset(0, 8)),
           ],
         ),
         child: ClipRRect(
@@ -185,7 +185,7 @@ class _FormCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: AppColors.redLight,
                     borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.red.withOpacity(.3)),
+                    border: Border.all(color: AppColors.red.withValues(alpha: .3)),
                   ),
                   child: Row(children: [
                     const Icon(Icons.error_outline, color: AppColors.red, size: 18),
@@ -261,7 +261,7 @@ class _GradientButtonState extends State<_GradientButton> {
           color: widget.onTap == null ? AppColors.textHint : null,
           borderRadius: BorderRadius.circular(14),
           boxShadow: widget.onTap != null ? [
-            BoxShadow(color: AppColors.navy.withOpacity(.35), blurRadius: 16, offset: const Offset(0, 6)),
+            BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6)),
           ] : null,
         ),
         child: Center(
