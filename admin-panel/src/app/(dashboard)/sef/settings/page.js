@@ -9,6 +9,7 @@ import {
   getSefProfile, saveSefProfile,
   getSefAcademicYears, addSefAcademicYear, deleteSefAcademicYear, setSefCurrentYear,
   getSefClasses, addSefClass, removeSefClass,
+  getSefStdSubjects, addSefStdSubject, removeSefStdSubject,
   getSefFeeStructure, saveSefFeeStructure,
   getSefFeeReminderTemplate, saveSefFeeReminderTemplate,
   getSefRules, saveSefRules,
@@ -227,6 +228,86 @@ function ClassesSectionTab() {
         </div>
         {error && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {error}</p>}
       </div>
+
+      <StdSubjectsSection classes={classes} />
+    </div>
+  );
+}
+
+// Subjects per Std - feeds Employee's subject-mapping picker, Syllabus, and
+// Question Bank's Subject dropdown once a Std is picked there.
+function StdSubjectsSection({ classes }) {
+  const [selStd, setSelStd] = useState("");
+  const [subjects, setSubjects] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [newSubject, setNewSubject] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!selStd) { setSubjects([]); return; }
+    setLoading(true);
+    getSefStdSubjects(selStd).then(setSubjects).catch(() => {}).finally(() => setLoading(false));
+  }, [selStd]);
+
+  async function handleAdd() {
+    const trimmed = newSubject.trim();
+    if (!trimmed || !selStd) return;
+    if (subjects.some(s => s.subject === trimmed)) { setError("Already exists"); return; }
+    setError("");
+    try {
+      await addSefStdSubject(selStd, trimmed);
+      setNewSubject("");
+      getSefStdSubjects(selStd).then(setSubjects);
+    } catch { setError("Failed to add"); }
+  }
+
+  async function handleRemove(subject) {
+    try {
+      await removeSefStdSubject(selStd, subject);
+      getSefStdSubjects(selStd).then(setSubjects);
+    } catch { setError("Failed to remove"); }
+  }
+
+  return (
+    <div className="border-t border-gray-100 pt-4 space-y-3">
+      <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider">Subjects per Std</h3>
+      <p className="text-xs text-gray-500">Feeds the Subject dropdown on Employee, Syllabus, and Question Bank.</p>
+      {classes.length === 0 ? (
+        <p className="text-sm text-gray-400">Add a Std above first.</p>
+      ) : (
+        <>
+          <select className={inp + " max-w-xs"} value={selStd} onChange={e => { setSelStd(e.target.value); setError(""); }}>
+            <option value="">Select a Std...</option>
+            {classes.map(c => <option key={c.std} value={c.std}>{c.std}</option>)}
+          </select>
+          {selStd && (
+            loading ? <p className="text-sm text-gray-400">Loading…</p> : (
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {subjects.map(s => (
+                    <div key={s.subject} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-gray-100 text-gray-700">
+                      {s.subject}
+                      <button onClick={() => handleRemove(s.subject)} className="ml-0.5 text-gray-400 hover:text-red-500 transition-colors">
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                  {subjects.length === 0 && <p className="text-sm text-gray-400">No subjects added for {selStd} yet.</p>}
+                </div>
+                <div className="flex items-center gap-2 max-w-xs">
+                  <input className={inp} placeholder="e.g. Mathematics" value={newSubject}
+                    onChange={e => { setNewSubject(e.target.value); setError(""); }}
+                    onKeyDown={e => e.key === "Enter" && handleAdd()} />
+                  <button onClick={handleAdd} className="flex items-center gap-1 bg-school-navy text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-school-navy/90 transition-colors flex-shrink-0">
+                    <Plus className="w-4 h-4" /> Add
+                  </button>
+                </div>
+                {error && <p className="text-xs text-red-500 flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {error}</p>}
+              </>
+            )
+          )}
+        </>
+      )}
     </div>
   );
 }

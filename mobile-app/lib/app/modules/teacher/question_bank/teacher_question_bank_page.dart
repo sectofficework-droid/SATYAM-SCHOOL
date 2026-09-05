@@ -1,9 +1,35 @@
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
+import '../../../../core/services/s3_upload_service.dart';
 import '../../../../core/utils/teacher_classes.dart';
-import 'teacher_create_paper_page.dart';
+import '../../../../core/utils/document_compression.dart';
+
+// Assignment / Exam Paper / Question Bank - three sections, one module, all
+// backed by teacher_documents (see SUPABASE_TEACHER_DOCUMENTS.sql). Replaces
+// the old question-by-question builder + auto-generated paper: teachers now
+// just upload an already-prepared file per section instead of building
+// questions inside the app.
+const _kMaxDocBytes = 2 * 1024 * 1024; // 2 MB
+
+class _Section {
+  final String key;
+  final String label;
+  final String fieldLabel; // "Title" normally, "Exam Name" for Exam Paper
+  final IconData icon;
+  const _Section(this.key, this.label, this.fieldLabel, this.icon);
+}
+
+const _sections = [
+  _Section('assignment', 'Assignment', 'Title', Icons.assignment_outlined),
+  _Section('exam_paper', 'Exam Paper', 'Exam Name', Icons.description_outlined),
+  _Section('question_bank', 'Question Bank', 'Title', Icons.menu_book_rounded),
+];
 
 class TeacherQuestionBankPage extends StatefulWidget {
   const TeacherQuestionBankPage({super.key});
@@ -12,435 +38,353 @@ class TeacherQuestionBankPage extends StatefulWidget {
 }
 
 class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
-  late String _selectedClass;
-  String? _selectedSubject;
-  String? _selectedChapter;
-  final _customChapterCtrl = TextEditingController();
-  List<String> _chapterSuggestions = [];  // chapters already used on existing questions
-  List<String> _syllabusChapters   = [];  // the real chapter list from the Syllabus module
-
-  List<Map<String, dynamic>> _questions = [];
-  bool _loading = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final profile = AuthService.to.profile.value ?? {};
-    _selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
-        ? profile['class_name'] as String
-        : allSchoolClasses.first;
-  }
-
-  @override
-  void dispose() {
-    _customChapterCtrl.dispose();
-    super.dispose();
-  }
+  int _sectionIndex = 0;
+  List<Map<String, dynamic>> _documents = [];
+  bool _loading = true;
 
   String? get _employeeId => (AuthService.to.profile.value ?? {})['id'] as String?;
 
-  // Syllabus chapters (the real curriculum breakdown for this class+subject)
-  // first, then any chapter names already used on a question but not yet in
-  // the syllabus (kept for backward compatibility with older questions).
-  List<String> get _chapterOptions {
-    final set = <String>{..._syllabusChapters, ..._chapterSuggestions};
-    if (_selectedChapter != null) set.add(_selectedChapter!);
-    final list = set.toList();
-    list.sort((a, b) {
-      final an = int.tryParse(a.replaceFirst('Chapter ', ''));
-      final bn = int.tryParse(b.replaceFirst('Chapter ', ''));
-      if (an != null && bn != null) return an.compareTo(bn);
-      if (an != null) return -1;
-      if (bn != null) return 1;
-      return a.compareTo(b);
-    });
-    return list;
-  }
+  @override
+  void initState() { super.initState(); _load(); }
 
-  Future<void> _onSubjectChanged(String? v) async {
-    setState(() { _selectedSubject = v; _selectedChapter = null; _questions = []; _chapterSuggestions = []; _syllabusChapters = []; _customChapterCtrl.clear(); });
+  Future<void> _load() async {
+    setState(() => _loading = true);
     final employeeId = _employeeId;
-    if (employeeId == null || v == null) return;
-    final chapters = await SupabaseService.fetchQuestionChapters(
-      teacherId: employeeId, className: _selectedClass, subject: v,
-    );
-    final syllabusChapters = await SupabaseService.fetchSyllabusChapterNames(
-      className: _selectedClass, subject: v,
-    );
-    if (mounted) setState(() { _chapterSuggestions = chapters; _syllabusChapters = syllabusChapters; });
+    final docs = employeeId != null
+        ? await SupabaseService.fetchTeacherDocuments(teacherId: employeeId, section: _sections[_sectionIndex].key)
+        : <Map<String, dynamic>>[];
+    if (mounted) setState(() { _documents = docs; _loading = false; });
   }
 
-  void _confirmCustomChapter() {
-    final v = _customChapterCtrl.text.trim();
-    if (v.isEmpty || v == _selectedChapter) return;
-    setState(() => _selectedChapter = v);
+  Future<void> _openDocument(Map<String, dynamic> doc) async {
+    final url = await S3UploadService.getS3ViewUrl(doc['file_key'] as String);
+    if (url == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Could not open this document.'), behavior: SnackBarBehavior.floating));
+      }
+      return;
+    }
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _confirmDelete(Map<String, dynamic> doc) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Document?'),
+        content: Text('"${doc['title']}" will be removed. This cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Delete', style: TextStyle(color: AppColors.red))),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    await SupabaseService.deleteTeacherDocument(doc['id'] as String);
     _load();
   }
 
-  Future<void> _load() async {
-    final employeeId = _employeeId;
-    if (employeeId == null || _selectedSubject == null || _selectedChapter == null) {
-      setState(() => _questions = []);
-      return;
-    }
-    setState(() => _loading = true);
-    final questions = await SupabaseService.fetchQuestions(
-      teacherId: employeeId,
-      className: _selectedClass,
-      subject: _selectedSubject!,
-      chapter: _selectedChapter,
-    );
-    final chapters = await SupabaseService.fetchQuestionChapters(
-      teacherId: employeeId, className: _selectedClass, subject: _selectedSubject!,
-    );
-    final syllabusChapters = await SupabaseService.fetchSyllabusChapterNames(
-      className: _selectedClass, subject: _selectedSubject!,
-    );
-    if (mounted) setState(() { _questions = questions; _chapterSuggestions = chapters; _syllabusChapters = syllabusChapters; _loading = false; });
+  String _formatSize(num? bytes) {
+    if (bytes == null) return '';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).round()} KB';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
   }
 
-  Map<String, List<Map<String, dynamic>>> get _grouped {
-    final map = <String, List<Map<String, dynamic>>>{};
-    for (final q in _questions) {
-      final key = q['question_format'] == 'MCQ' ? 'MCQ' : '${q['marks']} Mark${q['marks'] == 1 ? '' : 's'}';
-      map.putIfAbsent(key, () => []).add(q);
-    }
-    return map;
+  String _formatDate(String? iso) {
+    final d = iso != null ? DateTime.tryParse(iso) : null;
+    return d != null ? DateFormat('d MMM yyyy').format(d) : '';
   }
 
   @override
   Widget build(BuildContext context) {
-    final grouped = _grouped;
+    final section = _sections[_sectionIndex];
     return Scaffold(
       appBar: AppBar(
         flexibleSpace: Container(decoration: const BoxDecoration(gradient: AppColors.navyGradient)),
         title: const Text('Question Bank'),
-        actions: [
-          TextButton.icon(
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const TeacherCreatePaperPage())),
-            icon: const Icon(Icons.note_add_outlined, color: Colors.white, size: 18),
-            label: const Text('Create Paper', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12)),
-          ),
-        ],
       ),
       body: Column(children: [
         Container(
           color: AppColors.card,
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Column(children: [
-            Row(children: [
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  initialValue: _selectedClass,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Class', isDense: true,
-                    prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
-                  items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(),
-                  onChanged: (v) { setState(() => _selectedClass = v!); _onSubjectChanged(_selectedSubject); },
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Row(children: _sections.asMap().entries.map((e) {
+            final active = e.key == _sectionIndex;
+            return Expanded(child: GestureDetector(
+              onTap: () { setState(() => _sectionIndex = e.key); _load(); },
+              child: Container(
+                margin: EdgeInsets.only(right: e.key == _sections.length - 1 ? 0 : 8),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: active ? AppColors.navy : AppColors.bg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: active ? AppColors.navy : AppColors.border),
                 ),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(e.value.icon, size: 18, color: active ? Colors.white : AppColors.textLight),
+                  const SizedBox(height: 4),
+                  Text(e.value.label, textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: active ? Colors.white : AppColors.textLight)),
+                ]),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: DropdownButtonFormField<String>(
-                  initialValue: _selectedSubject,
-                  isExpanded: true,
-                  decoration: const InputDecoration(labelText: 'Subject', isDense: true,
-                    prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
-                  hint: const Text('Select', style: TextStyle(fontSize: 13)),
-                  items: schoolSubjects.map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
-                  onChanged: _onSubjectChanged,
-                ),
-              ),
-            ]),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              initialValue: _selectedChapter,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Chapter', isDense: true,
-                prefixIcon: Icon(Icons.bookmark_border_rounded, color: AppColors.navy, size: 20)),
-              hint: Text(_selectedSubject == null ? 'Select a subject first' : 'Pick or type below', style: const TextStyle(fontSize: 13)),
-              items: _selectedSubject == null ? [] : _chapterOptions.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(),
-              onChanged: _selectedSubject == null ? null : (v) {
-                if (v == null) return;
-                setState(() { _selectedChapter = v; _customChapterCtrl.text = v; });
-                _load();
-              },
-            ),
-            if (_selectedSubject != null) ...[
-              const SizedBox(height: 10),
-              Row(children: [
-                Expanded(
-                  child: TextField(
-                    controller: _customChapterCtrl,
-                    decoration: const InputDecoration(labelText: 'Or type a new chapter name', isDense: true,
-                      prefixIcon: Icon(Icons.edit_outlined, color: AppColors.navy, size: 20)),
-                    onSubmitted: (_) => _confirmCustomChapter(),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                ElevatedButton(
-                  onPressed: _confirmCustomChapter,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.navy, minimumSize: const Size(0, 48),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: const Icon(Icons.check_rounded, color: Colors.white),
-                ),
-              ]),
-            ],
-          ]),
+            ));
+          }).toList()),
         ),
         const Divider(height: 1, color: AppColors.border),
-
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
-              : (_selectedSubject == null || _selectedChapter == null)
-                  ? _emptyState('Select a subject and chapter to view or add questions.', Icons.menu_book_rounded)
-                  : _questions.isEmpty
-                      ? _emptyState('No questions yet for this class/subject/chapter.\nTap + to add one.', Icons.quiz_outlined)
-                      : ListView(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
-                          children: grouped.entries.map((entry) => _sectionGroup(entry.key, entry.value)).toList(),
-                        ),
+              : _documents.isEmpty
+                  ? _emptyState(section)
+                  : RefreshIndicator(
+                      color: AppColors.navy,
+                      onRefresh: _load,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 88),
+                        itemCount: _documents.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (_, i) => _documentCard(_documents[i]),
+                      ),
+                    ),
         ),
       ]),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: (_selectedSubject == null || _selectedChapter == null) ? null : () => _showAddSheet(),
-        backgroundColor: (_selectedSubject == null || _selectedChapter == null) ? AppColors.textHint : AppColors.navy,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Add Question', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        onPressed: _showUploadSheet,
+        backgroundColor: AppColors.navy,
+        icon: const Icon(Icons.upload_file_rounded, color: Colors.white),
+        label: const Text('Upload', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
       ),
     );
   }
 
-  Widget _emptyState(String msg, IconData icon) => Center(child: Padding(
+  Widget _emptyState(_Section section) => Center(child: Padding(
     padding: const EdgeInsets.all(32),
     child: Column(mainAxisSize: MainAxisSize.min, children: [
       Container(
         width: 80, height: 80,
         decoration: const BoxDecoration(color: AppColors.indigoLight, shape: BoxShape.circle),
-        child: Icon(icon, color: AppColors.indigo, size: 38),
+        child: Icon(section.icon, color: AppColors.indigo, size: 38),
       ),
       const SizedBox(height: 16),
-      Text(msg, textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.5)),
+      Text('No ${section.label} Documents Yet', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.text)),
+      const SizedBox(height: 8),
+      const Text('Tap "Upload" below to add one.', textAlign: TextAlign.center,
+        style: TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.5)),
     ]),
   ));
 
-  Widget _sectionGroup(String label, List<Map<String, dynamic>> items) => Padding(
-    padding: const EdgeInsets.only(bottom: 16),
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.only(bottom: 8, left: 2),
-        child: Text('$label  (${items.length})',
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.navy)),
-      ),
-      ...items.map((q) => _questionCard(q)),
-    ]),
+  Widget _documentCard(Map<String, dynamic> doc) => GestureDetector(
+    onTap: () => _openDocument(doc),
+    child: Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(14), boxShadow: AppShadows.card),
+      child: Row(children: [
+        Container(
+          width: 42, height: 42,
+          decoration: BoxDecoration(color: AppColors.indigoLight, borderRadius: BorderRadius.circular(10)),
+          child: const Icon(Icons.insert_drive_file_outlined, color: AppColors.indigo, size: 20),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(doc['title'] ?? '', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.text)),
+          const SizedBox(height: 3),
+          Text('${doc['class']} · ${doc['subject']} · ${doc['academic_year']}',
+            style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
+          const SizedBox(height: 2),
+          Text('${_formatSize(doc['file_size'] as num?)} · ${_formatDate(doc['created_at'] as String?)}',
+            style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
+        ])),
+        IconButton(
+          icon: const Icon(Icons.delete_outline_rounded, color: AppColors.red, size: 20),
+          onPressed: () => _confirmDelete(doc),
+        ),
+      ]),
+    ),
   );
 
-  Widget _questionCard(Map<String, dynamic> q) {
-    final isMcq = q['question_format'] == 'MCQ';
-    return GestureDetector(
-      onTap: () => _showAddSheet(existing: q),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(14), boxShadow: AppShadows.card),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(q['question_text'] ?? '', style: const TextStyle(fontSize: 14, color: AppColors.text, fontWeight: FontWeight.w600)),
-            if (isMcq && q['options'] is List) ...[
-              const SizedBox(height: 6),
-              ...List<Map<String, dynamic>>.from(q['options']).map((o) => Padding(
-                padding: const EdgeInsets.only(top: 2),
-                child: Text('${o['label']}. ${o['text']}',
-                  style: TextStyle(fontSize: 12, color: q['correct_option'] == o['label'] ? AppColors.green : AppColors.textLight,
-                    fontWeight: q['correct_option'] == o['label'] ? FontWeight.w700 : FontWeight.normal)),
-              )),
-            ],
-          ])),
-          const SizedBox(width: 8),
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, color: AppColors.red, size: 20),
-            onPressed: () => _confirmDelete(q),
-          ),
-        ]),
-      ),
-    );
-  }
+  Future<void> _showUploadSheet() async {
+    final section = _sections[_sectionIndex];
+    final profile = AuthService.to.profile.value ?? {};
+    final employeeId = profile['id'] as String?;
+    final teacherName = profile['name'] as String?;
+    final titleCtrl = TextEditingController();
 
-  void _confirmDelete(Map<String, dynamic> q) {
-    showDialog(context: context, builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: const Text('Delete Question?'),
-      content: const Text('This cannot be undone.'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-        TextButton(
-          onPressed: () async { await SupabaseService.deleteQuestion(q['id']); if (ctx.mounted) Navigator.pop(ctx); _load(); },
-          child: const Text('Delete', style: TextStyle(color: AppColors.red)),
-        ),
-      ],
-    ));
-  }
+    String selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
+        ? profile['class_name'] as String
+        : allSchoolClasses.first;
+    String? selectedSubject;
 
-  void _showAddSheet({Map<String, dynamic>? existing}) {
-    final isEdit = existing != null;
-    String format = existing?['question_format'] ?? 'Written';
-    final marksCtrl = TextEditingController(text: existing?['marks']?.toString() ?? '1');
-    final textCtrl = TextEditingController(text: existing?['question_text'] ?? '');
-    final optionCtrls = List.generate(4, (i) {
-      final label = String.fromCharCode(65 + i);
-      final existingOptions = existing?['options'];
-      String text = '';
-      if (existingOptions is List) {
-        final match = existingOptions.cast<Map>().firstWhere((o) => o['label'] == label, orElse: () => {});
-        text = match['text']?.toString() ?? '';
-      }
-      return TextEditingController(text: text);
-    });
-    String? correctOption = existing?['correct_option'];
+    final academicYears = await SupabaseService.fetchAcademicYearLabels();
+    final currentYear = await SupabaseService.fetchCurrentAcademicYearLabel();
+    String? selectedAcademicYear = currentYear ?? (academicYears.isNotEmpty ? academicYears.last : null);
+    final classSubjects = (teacherName != null && currentYear != null)
+        ? await SupabaseService.fetchTeacherSubjectsByClass(currentYear, teacherName)
+        : <String, List<String>>{};
+
+    PlatformFile? pickedFile;
+    String? fileExt;
+    bool picking = false;
+    bool uploading = false;
     String? error;
 
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setS) => Padding(
-          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-          child: Container(
-            constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.88),
-            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
-                  Row(children: [
-                    Expanded(child: Text(isEdit ? 'Edit Question' : 'Add Question',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text))),
-                    IconButton(icon: const Icon(Icons.close_rounded, color: AppColors.textHint), onPressed: () => Navigator.pop(ctx)),
-                  ]),
-                  const SizedBox(height: 12),
-                  Row(children: [
-                    Expanded(child: _formatChip('Written', format, (v) => setS(() => format = v))),
-                    const SizedBox(width: 8),
-                    Expanded(child: _formatChip('MCQ', format, (v) => setS(() => format = v))),
-                  ]),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: marksCtrl,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Marks', prefixIcon: Icon(Icons.star_border_rounded, color: AppColors.navy, size: 20)),
-                  ),
-                  const SizedBox(height: 14),
-                  TextField(
-                    controller: textCtrl,
-                    maxLines: 3,
-                    decoration: const InputDecoration(labelText: 'Question', prefixIcon: Padding(
-                      padding: EdgeInsets.only(bottom: 40), child: Icon(Icons.help_outline_rounded, color: AppColors.navy, size: 20))),
-                  ),
-                  if (format == 'MCQ') ...[
-                    const SizedBox(height: 16),
-                    const Text('Options (mark the correct one)', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textLight)),
-                    const SizedBox(height: 8),
-                    RadioGroup<String>(
-                      groupValue: correctOption,
-                      onChanged: (v) => setS(() => correctOption = v),
-                      child: Column(children: List.generate(4, (i) {
-                        final label = String.fromCharCode(65 + i);
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Row(children: [
-                            Radio<String>(
-                              value: label,
-                              activeColor: AppColors.green,
-                            ),
-                            Expanded(child: TextField(
-                              controller: optionCtrls[i],
-                              decoration: InputDecoration(labelText: 'Option $label', isDense: true),
-                            )),
+        builder: (ctx, setS) {
+          final subjectOptions = classSubjects[selectedClass] ?? const <String>[];
+
+          Future<void> pickFile() async {
+            setS(() { error = null; picking = true; });
+            try {
+              final result = await FilePicker.pickFiles(
+                type: FileType.custom, allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'], withData: true,
+              );
+              final files = result?.files ?? const [];
+              if (files.isEmpty) { setS(() => picking = false); return; }
+              setS(() { pickedFile = files.first; fileExt = files.first.extension; picking = false; });
+            } catch (_) {
+              setS(() { error = 'Could not read that file.'; picking = false; });
+            }
+          }
+
+          Future<void> confirmUpload() async {
+            if ((selectedSubject ?? '').trim().isEmpty) { setS(() => error = 'Please select a subject.'); return; }
+            if (titleCtrl.text.trim().isEmpty) { setS(() => error = 'Please enter a ${section.fieldLabel.toLowerCase()}.'); return; }
+            if (pickedFile == null) { setS(() => error = 'Please pick a file to upload.'); return; }
+            if (employeeId == null || selectedAcademicYear == null) { setS(() => error = 'Session error - please sign in again.'); return; }
+
+            setS(() { uploading = true; error = null; });
+            try {
+              final bytes = pickedFile!.bytes ?? (pickedFile!.path != null ? await File(pickedFile!.path!).readAsBytes() : null);
+              if (bytes == null) throw Exception('Could not read the selected file.');
+              final ext = (fileExt ?? 'pdf').toLowerCase();
+              final compressed = await compressDocumentBytes(bytes, ext, maxBytes: _kMaxDocBytes);
+              final key = 'question-bank/$employeeId/${section.key}/${DateTime.now().millisecondsSinceEpoch}.$ext';
+              await S3UploadService.uploadToS3(compressed, key, pickedFile!.name);
+              await SupabaseService.createTeacherDocument({
+                'teacher_id': employeeId,
+                'section': section.key,
+                'academic_year': selectedAcademicYear,
+                'class': selectedClass,
+                'subject': selectedSubject,
+                'title': titleCtrl.text.trim(),
+                'file_key': key,
+                'file_name': pickedFile!.name,
+                'file_size': compressed.length,
+              });
+              if (ctx.mounted) Navigator.pop(ctx);
+              _load();
+            } catch (e) {
+              setS(() { error = 'Upload failed: $e'; uploading = false; });
+            }
+          }
+
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: Container(
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.9),
+              decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+              child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12),
+                            decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)))),
+                          Row(children: [
+                            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text('Upload ${section.label}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text)),
+                              const Text('PDF or image, up to 2 MB - larger files are compressed automatically',
+                                style: TextStyle(fontSize: 11.5, color: AppColors.textLight)),
+                            ])),
+                            IconButton(icon: const Icon(Icons.close_rounded, color: AppColors.textHint), onPressed: () => Navigator.pop(ctx)),
                           ]),
-                        );
-                      })),
-                    ),
-                  ],
-                  if (error != null) ...[
-                    const SizedBox(height: 10),
-                    Text(error!, style: const TextStyle(color: AppColors.red, fontSize: 12, fontWeight: FontWeight.w600)),
-                  ],
-                  const SizedBox(height: 20),
-                  GestureDetector(
-                    onTap: () async {
-                      final marks = int.tryParse(marksCtrl.text.trim());
-                      if (marks == null || marks <= 0) { setS(() => error = 'Enter a valid marks value.'); return; }
-                      if (textCtrl.text.trim().isEmpty) { setS(() => error = 'Enter the question text.'); return; }
-                      List<Map<String, String>>? options;
-                      if (format == 'MCQ') {
-                        options = List.generate(4, (i) => {'label': String.fromCharCode(65 + i), 'text': optionCtrls[i].text.trim()});
-                        if (options.any((o) => o['text']!.isEmpty)) { setS(() => error = 'Fill in all 4 options.'); return; }
-                        if (correctOption == null) { setS(() => error = 'Select the correct option.'); return; }
-                      }
-
-                      final employeeId = _employeeId;
-                      if (employeeId == null) { setS(() => error = 'Session error - please sign in again.'); return; }
-
-                      final data = {
-                        'teacher_id': employeeId,
-                        'class': _selectedClass,
-                        'subject': _selectedSubject,
-                        'chapter': _selectedChapter,
-                        'question_format': format,
-                        'marks': marks,
-                        'question_text': textCtrl.text.trim(),
-                        'options': format == 'MCQ' ? options : null,
-                        'correct_option': format == 'MCQ' ? correctOption : null,
-                      };
-                      if (isEdit) {
-                        await SupabaseService.updateQuestion(existing['id'], data);
-                      } else {
-                        await SupabaseService.createQuestion(data);
-                      }
-                      if (ctx.mounted) Navigator.pop(ctx);
-                      _load();
-                    },
-                    child: Container(
-                      height: 52,
-                      decoration: BoxDecoration(
-                        gradient: AppColors.navyGradient, borderRadius: BorderRadius.circular(14),
-                        boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
+                          const SizedBox(height: 16),
+                          DropdownButtonFormField<String>(
+                            initialValue: selectedAcademicYear,
+                            isExpanded: true,
+                            decoration: const InputDecoration(labelText: 'Academic Year', isDense: true,
+                              prefixIcon: Icon(Icons.calendar_month_rounded, color: AppColors.navy, size: 20)),
+                            items: academicYears.map((y) => DropdownMenuItem(value: y, child: Text(y))).toList(),
+                            onChanged: (v) => setS(() => selectedAcademicYear = v),
+                          ),
+                          const SizedBox(height: 14),
+                          DropdownButtonFormField<String>(
+                            initialValue: selectedClass,
+                            isExpanded: true,
+                            decoration: const InputDecoration(labelText: 'Class', isDense: true,
+                              prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
+                            items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(),
+                            onChanged: (v) => setS(() { selectedClass = v!; selectedSubject = null; }),
+                          ),
+                          const SizedBox(height: 14),
+                          DropdownButtonFormField<String>(
+                            initialValue: selectedSubject,
+                            isExpanded: true,
+                            hint: const Text('Select', style: TextStyle(fontSize: 13)),
+                            decoration: const InputDecoration(labelText: 'Subject', isDense: true,
+                              prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
+                            items: subjectOptions.map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
+                            onChanged: (v) => setS(() => selectedSubject = v),
+                          ),
+                          const SizedBox(height: 14),
+                          TextField(
+                            controller: titleCtrl,
+                            textCapitalization: TextCapitalization.sentences,
+                            decoration: InputDecoration(labelText: section.fieldLabel,
+                              prefixIcon: const Icon(Icons.edit_outlined, color: AppColors.navy, size: 20)),
+                          ),
+                          const SizedBox(height: 16),
+                          GestureDetector(
+                            onTap: picking ? null : pickFile,
+                            child: Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: AppColors.blueLight,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: AppColors.blue.withValues(alpha: .3)),
+                              ),
+                              child: Row(children: [
+                                Icon(pickedFile != null ? Icons.check_circle_rounded : Icons.attach_file_rounded, color: AppColors.blue, size: 20),
+                                const SizedBox(width: 10),
+                                Expanded(child: Text(
+                                  picking ? 'Reading file...' : (pickedFile?.name ?? 'Select PDF or Image'),
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(color: AppColors.blue, fontWeight: FontWeight.w700),
+                                )),
+                              ]),
+                            ),
+                          ),
+                          if (error != null) ...[
+                            const SizedBox(height: 10),
+                            Text(error!, style: const TextStyle(color: AppColors.red, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ],
+                          const SizedBox(height: 20),
+                          GestureDetector(
+                            onTap: uploading ? null : confirmUpload,
+                            child: Container(
+                              height: 52,
+                              decoration: BoxDecoration(
+                                gradient: AppColors.navyGradient,
+                                borderRadius: BorderRadius.circular(14),
+                                boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
+                              ),
+                              child: Center(child: uploading
+                                  ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                                  : const Text('Upload', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins'))),
+                            ),
+                          ),
+                        ],
                       ),
-                      child: Center(child: Text(isEdit ? 'Save Changes' : 'Add to Bank',
-                        style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins'))),
                     ),
                   ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _formatChip(String label, String selected, ValueChanged<String> onSelect) {
-    final active = label == selected;
-    return GestureDetector(
-      onTap: () => onSelect(label),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: active ? AppColors.navy : AppColors.card,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: active ? AppColors.navy : AppColors.border),
-        ),
-        child: Text(label, textAlign: TextAlign.center,
-          style: TextStyle(color: active ? Colors.white : AppColors.text, fontWeight: FontWeight.w700, fontSize: 13)),
+          );
+        },
       ),
     );
   }

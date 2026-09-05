@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/utils/teacher_classes.dart';
+import '../../../../core/utils/xlsx_reader.dart';
 
 const _statuses = ['Not Started', 'In Progress', 'Completed'];
 const _editWindow = Duration(hours: 24);
@@ -20,6 +23,36 @@ Color _statusBg(String status) => switch (status) {
   'In Progress' => AppColors.amberLight,
   _             => AppColors.border,
 };
+
+// Small radial "% complete" ring used on each subject card - a plain
+// CircularProgressIndicator with the percentage centered on top of it.
+class _CircularProgress extends StatelessWidget {
+  final double percent; // 0-100
+  final Color color;
+  final double size;
+  const _CircularProgress({required this.percent, required this.color, this.size = 60});
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: size,
+    height: size,
+    child: Stack(alignment: Alignment.center, children: [
+      SizedBox(
+        width: size,
+        height: size,
+        child: CircularProgressIndicator(
+          value: (percent / 100).clamp(0, 1),
+          strokeWidth: 6,
+          backgroundColor: AppColors.border,
+          valueColor: AlwaysStoppedAnimation<Color>(color),
+          strokeCap: StrokeCap.round,
+        ),
+      ),
+      Text('${percent.toStringAsFixed(0)}%',
+        style: TextStyle(fontSize: size * 0.24, fontWeight: FontWeight.w800, color: color)),
+    ]),
+  );
+}
 
 class TeacherSyllabusPage extends StatefulWidget {
   final bool embedded;
@@ -47,6 +80,12 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
 
   // 0 = Mine, 1 = Class Overview
   int _scope = 0;
+
+  // null = showing the subject grid; set = drilled into that group's own
+  // chapter list. Keyed the same way _grouped() keys its map ("Class ·
+  // Subject" for Mine, just "Subject" for Class Overview, since that's
+  // already scoped to one class).
+  String? _selectedGroupKey;
 
   final Set<String> _expanded = {}; // chapter ids currently showing subtopics
 
@@ -138,6 +177,20 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     return 'Not Started';
   }
 
+  // Whole-chapter completion (not leaf units) - "X/Y chapters" as shown on
+  // the subject card and detail header, distinct from the ring's percent
+  // (which is leaf-based, see _leafCounts) since a chapter only counts here
+  // once every one of its subtopics is Completed.
+  ({int total, int completed}) _chapterProgress(List<Map<String, dynamic>> chapters) {
+    int completed = 0;
+    for (final c in chapters) {
+      final subs = _subtopicsByChapter[c['id']] ?? const [];
+      final status = _derivedStatus(subs) ?? ((c['status'] ?? 'Not Started') as String);
+      if (status == 'Completed') completed++;
+    }
+    return (total: chapters.length, completed: completed);
+  }
+
   // A "leaf unit" is a subtopic if the chapter has any, else the chapter
   // itself - so a 3-subtopic chapter counts as 3 units toward growth, not 1.
   ({int total, int completed}) _leafCounts(List<Map<String, dynamic>> chapters) {
@@ -183,11 +236,74 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
   }
 
   Future<void> _deleteChapter(Map<String, dynamic> chapter) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Chapter?', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.text)),
+        content: Text(
+          '"${chapter['chapter']}" and any subtopics under it will be removed. This cannot be undone.',
+          style: const TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.4),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: AppColors.red, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
     await SupabaseService.deleteSyllabusChapter(chapter['id'] as String);
     _load();
   }
 
+  Future<void> _renameChapter(Map<String, dynamic> chapter) async {
+    final ctrl = TextEditingController(text: chapter['chapter'] as String? ?? '');
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Rename Chapter', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.text)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Save', style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (newName == null || newName.isEmpty || newName == chapter['chapter']) return;
+    setState(() => chapter['chapter'] = newName);
+    await SupabaseService.updateSyllabusChapterName(chapter['id'] as String, newName);
+  }
+
   Future<void> _deleteSubtopic(Map<String, dynamic> subtopic) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete Subtopic?', style: TextStyle(fontWeight: FontWeight.w700, color: AppColors.text)),
+        content: Text('"${subtopic['name']}" will be removed. This cannot be undone.',
+          style: const TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.4)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: AppColors.red, fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
     await SupabaseService.deleteSubtopic(subtopic['id'] as String);
     _load();
   }
@@ -366,24 +482,39 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     return map;
   }
 
-  void _showAddChapterSheet() {
+  Future<void> _showAddChapterSheet() async {
     final chapterCtrl = TextEditingController();
     final profile  = AuthService.to.profile.value ?? {};
     final myClasses = teacherClasses(profile);
+    final teacherName = profile['name'] as String?;
     String selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
         ? profile['class_name'] as String
         : (myClasses.isNotEmpty ? myClasses.first : allSchoolClasses.first);
     String? selectedSubject;
+    bool replaceExisting = false;
 
+    // Real Timetable-derived subjects per class (same source Homework/Marks
+    // Entry/Question Bank already use) instead of profile['subject_mappings'],
+    // which most teachers never configure and was missing real assignments
+    // like a 2nd-class GK teacher not showing GK in this dropdown at all.
+    final academicYear = await SupabaseService.fetchCurrentAcademicYearLabel();
+    final classSubjects = (teacherName != null && academicYear != null)
+        ? await SupabaseService.fetchTeacherSubjectsByClass(academicYear, teacherName)
+        : <String, List<String>>{};
+
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
-          final subjectOptions = teacherSubjectsForClass(profile, selectedClass);
+          final subjectOptions = classSubjects[selectedClass] ?? const <String>[];
           final sectionState = selectedSubject != null ? _sectionState(selectedClass, selectedSubject!) : null;
           final blocked = sectionState != null && sectionState.locked && sectionState.approvedWindow == null;
+          final existingChapters = selectedSubject != null
+              ? _mineChapters.where((c) => c['class'] == selectedClass && c['subject'] == selectedSubject).toList()
+              : const <Map<String, dynamic>>[];
           return Padding(
             padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
             child: Container(
@@ -429,14 +560,36 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                     isExpanded: true,
                     hint: const Text('Select', style: TextStyle(fontSize: 13)),
                     decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
-                    // Prefer this teacher's own mapped subjects for the class
-                    // (most teachers have none set up - see teacherSubjectsForClass),
-                    // falling back to every school-wide subject so this is
-                    // always a dropdown, never free text.
+                    // Real Timetable subjects for the class, falling back to
+                    // every school-wide subject if this teacher has no
+                    // Timetable periods at all yet, so this is always a
+                    // dropdown, never free text.
                     items: (subjectOptions.isNotEmpty ? subjectOptions : schoolSubjects)
                         .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
-                    onChanged: (v) => setS(() => selectedSubject = v),
+                    onChanged: (v) => setS(() { selectedSubject = v; replaceExisting = false; }),
                   ),
+                  if (existingChapters.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: AppColors.amberLight, borderRadius: BorderRadius.circular(10)),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('$selectedSubject already has ${existingChapters.length} chapter${existingChapters.length == 1 ? '' : 's'}.',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text)),
+                        const SizedBox(height: 6),
+                        GestureDetector(
+                          onTap: () => setS(() => replaceExisting = !replaceExisting),
+                          child: Row(children: [
+                            Icon(replaceExisting ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                              size: 18, color: replaceExisting ? AppColors.red : AppColors.textHint),
+                            const SizedBox(width: 6),
+                            const Expanded(child: Text('Replace existing chapters with these (instead of adding on top)',
+                              style: TextStyle(fontSize: 11.5, color: AppColors.textLight))),
+                          ]),
+                        ),
+                      ]),
+                    ),
+                  ],
                   const SizedBox(height: 14),
                   TextField(
                     controller: chapterCtrl,
@@ -488,12 +641,21 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                         ));
                         return;
                       }
+                      var sortOrder = 0;
+                      if (replaceExisting) {
+                        await SupabaseService.deleteSyllabusForSubject(
+                          teacherId: profile['id'] as String, className: selectedClass, subject: selectedSubject!.trim(),
+                        );
+                      } else {
+                        sortOrder = existingChapters.length;
+                      }
                       await SupabaseService.createSyllabusChapters(names.map((name) => {
                         'teacher_id': profile['id'],
                         'class':      selectedClass,
                         'subject':    selectedSubject!.trim(),
                         'chapter':    name,
                         'status':     'Not Started',
+                        'sort_order': sortOrder++,
                       }).toList());
                       if (ctx.mounted) Navigator.pop(ctx);
                       _load();
@@ -524,6 +686,300 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     );
   }
 
+  // Excel import - Class/Subject picked once (unlike the sheet itself, which
+  // only ever needs Chapter No + Chapter Name), teacher_id is always this
+  // teacher, and the file's own header row (row 1) is never read as data.
+  Future<void> _showImportSheet() async {
+    final profile   = AuthService.to.profile.value ?? {};
+    final myClasses = teacherClasses(profile);
+    final teacherName = profile['name'] as String?;
+    String selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
+        ? profile['class_name'] as String
+        : (myClasses.isNotEmpty ? myClasses.first : allSchoolClasses.first);
+    String? selectedSubject;
+    bool replaceExisting = false;
+
+    final academicYear = await SupabaseService.fetchCurrentAcademicYearLabel();
+    final classSubjects = (teacherName != null && academicYear != null)
+        ? await SupabaseService.fetchTeacherSubjectsByClass(academicYear, teacherName)
+        : <String, List<String>>{};
+
+    List<({int? no, String name, String? error})>? parsedRows;
+    String? fileError;
+    bool picking = false;
+    bool importing = false;
+    String? importError;
+
+    if (!mounted) return;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) {
+          final subjectOptions = classSubjects[selectedClass] ?? const <String>[];
+          final sectionState = selectedSubject != null ? _sectionState(selectedClass, selectedSubject!) : null;
+          final blocked = sectionState != null && sectionState.locked && sectionState.approvedWindow == null;
+          final validRows = (parsedRows ?? const []).where((r) => r.error == null).toList();
+          final existingChapters = selectedSubject != null
+              ? _mineChapters.where((c) => c['class'] == selectedClass && c['subject'] == selectedSubject).toList()
+              : const <Map<String, dynamic>>[];
+
+          Future<void> pickFile() async {
+            setS(() { fileError = null; parsedRows = null; picking = true; });
+            try {
+              final result = await FilePicker.pickFiles(
+                type: FileType.custom, allowedExtensions: ['xlsx'], withData: true,
+              );
+              final files = result?.files ?? const [];
+              if (files.isEmpty) { setS(() => picking = false); return; } // user cancelled the dialog
+
+              final picked = files.first;
+              // withData isn't always honoured on desktop - fall back to
+              // reading the path directly rather than silently doing
+              // nothing when .bytes comes back null.
+              final bytes = picked.bytes ?? (picked.path != null ? await File(picked.path!).readAsBytes() : null);
+              if (bytes == null) {
+                setS(() { fileError = 'Could not read the selected file. Please try again.'; picking = false; });
+                return;
+              }
+
+              final rows = readXlsxFirstSheet(bytes);
+              if (rows.length < 2) {
+                setS(() { fileError = 'File has no data rows below the header.'; picking = false; });
+                return;
+              }
+              final out = <({int? no, String name, String? error})>[];
+              for (final r in rows.skip(1)) {
+                if (r.every((c) => c.trim().isEmpty)) continue;
+                final noStr = r.isNotEmpty ? r[0].trim() : '';
+                final name  = r.length > 1 ? r[1].trim() : '';
+                final no = num.tryParse(noStr)?.toInt();
+                String? error;
+                if (noStr.isEmpty) {
+                  error = 'Chapter No missing';
+                } else if (no == null) {
+                  error = 'Chapter No "$noStr" is not a number';
+                } else if (name.isEmpty) {
+                  error = 'Chapter Name missing';
+                }
+                out.add((no: no, name: name, error: error));
+              }
+              setS(() { parsedRows = out; picking = false; });
+            } catch (_) {
+              setS(() { fileError = 'Could not read that file. Only .xlsx is supported.'; picking = false; });
+            }
+          }
+
+          Future<void> confirmImport() async {
+            setS(() { importing = true; importError = null; });
+            try {
+              final valid = validRows.toList()..sort((a, b) => a.no!.compareTo(b.no!));
+              var sortOrder = 0;
+              if (replaceExisting) {
+                await SupabaseService.deleteSyllabusForSubject(
+                  teacherId: profile['id'] as String, className: selectedClass, subject: selectedSubject!,
+                );
+              } else {
+                sortOrder = existingChapters.length;
+              }
+              await SupabaseService.createSyllabusChapters(valid.map((r) => {
+                'teacher_id': profile['id'],
+                'class':      selectedClass,
+                'subject':    selectedSubject,
+                'chapter':    r.name,
+                'status':     'Not Started',
+                'sort_order': sortOrder++,
+              }).toList());
+              if (ctx.mounted) Navigator.pop(ctx);
+              _load();
+            } catch (e) {
+              // Most likely cause: a stale cached login session whose
+              // teacher_id no longer matches a real employees row (e.g. the
+              // account was deleted/recreated since last login) - surfaced
+              // as a foreign-key error from Supabase. Whatever the cause,
+              // this must never fail silently - previously an uncaught
+              // exception here just crashed to the console with the sheet
+              // looking like it did nothing.
+              final msg = e.toString().contains('foreign key')
+                  ? 'Your login session looks out of date - please log out and log back in, then try again.'
+                  : 'Import failed: $e';
+              setS(() { importError = msg; importing = false; });
+            }
+          }
+
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: Container(
+              decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Center(child: Container(
+                    width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2)),
+                  )),
+                  Row(children: [
+                    Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(colors: [AppColors.blue, AppColors.blue.withValues(alpha: .6)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.upload_file_rounded, color: Colors.white, size: 22),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Import Syllabus', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text)),
+                      Text('Excel file: Chapter No, Chapter Name — row 1 is skipped', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
+                    ])),
+                    IconButton(icon: const Icon(Icons.close_rounded, color: AppColors.textHint), onPressed: () => Navigator.pop(ctx)),
+                  ]),
+                  const SizedBox(height: 20),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedClass,
+                    decoration: const InputDecoration(labelText: 'Class', prefixIcon: Icon(Icons.class_outlined, color: AppColors.navy, size: 20)),
+                    items: allSchoolClasses.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                    onChanged: (v) => setS(() { selectedClass = v!; selectedSubject = null; parsedRows = null; }),
+                  ),
+                  const SizedBox(height: 14),
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedSubject,
+                    isExpanded: true,
+                    hint: const Text('Select', style: TextStyle(fontSize: 13)),
+                    decoration: const InputDecoration(labelText: 'Subject', prefixIcon: Icon(Icons.book_outlined, color: AppColors.navy, size: 20)),
+                    items: (subjectOptions.isNotEmpty ? subjectOptions : schoolSubjects)
+                        .map((s) => DropdownMenuItem(value: s, child: Text(s, overflow: TextOverflow.ellipsis))).toList(),
+                    onChanged: (v) => setS(() { selectedSubject = v; parsedRows = null; replaceExisting = false; }),
+                  ),
+                  if (existingChapters.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: AppColors.amberLight, borderRadius: BorderRadius.circular(10)),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('$selectedSubject already has ${existingChapters.length} chapter${existingChapters.length == 1 ? '' : 's'}.',
+                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.text)),
+                        const SizedBox(height: 6),
+                        GestureDetector(
+                          onTap: () => setS(() => replaceExisting = !replaceExisting),
+                          child: Row(children: [
+                            Icon(replaceExisting ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded,
+                              size: 18, color: replaceExisting ? AppColors.red : AppColors.textHint),
+                            const SizedBox(width: 6),
+                            const Expanded(child: Text('Replace existing chapters with this file (instead of adding on top)',
+                              style: TextStyle(fontSize: 11.5, color: AppColors.textLight))),
+                          ]),
+                        ),
+                      ]),
+                    ),
+                  ],
+                  if (blocked) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: AppColors.redLight, borderRadius: BorderRadius.circular(10)),
+                      child: const Text(
+                        'This subject\'s syllabus is locked. Open it below and use Request Edit instead.',
+                        style: TextStyle(color: AppColors.red, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: (selectedSubject == null || blocked || picking) ? null : pickFile,
+                    child: Opacity(
+                      opacity: (selectedSubject == null || blocked) ? .5 : 1,
+                      child: Container(
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: AppColors.blueLight,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppColors.blue.withValues(alpha: .3)),
+                        ),
+                        child: Center(child: picking
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.blue))
+                            : Row(mainAxisSize: MainAxisSize.min, children: [
+                                const Icon(Icons.description_outlined, color: AppColors.blue, size: 18),
+                                const SizedBox(width: 8),
+                                Text(parsedRows == null ? 'Select Excel File (.xlsx)' : 'Choose a different file',
+                                  style: const TextStyle(color: AppColors.blue, fontWeight: FontWeight.w700)),
+                              ])),
+                      ),
+                    ),
+                  ),
+                  if (fileError != null) ...[
+                    const SizedBox(height: 8),
+                    Text(fileError!, style: const TextStyle(color: AppColors.red, fontSize: 12)),
+                  ],
+                  if (parsedRows != null) ...[
+                    const SizedBox(height: 12),
+                    Row(children: [
+                      Text('${validRows.length} chapter${validRows.length == 1 ? '' : 's'} found',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.green)),
+                      if (parsedRows!.length > validRows.length) ...[
+                        const SizedBox(width: 8),
+                        Text('${parsedRows!.length - validRows.length} skipped (errors)',
+                          style: const TextStyle(fontSize: 12, color: AppColors.red)),
+                      ],
+                    ]),
+                    const SizedBox(height: 6),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 160),
+                      child: SingleChildScrollView(
+                        child: Column(children: parsedRows!.map((r) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 3),
+                          child: Row(children: [
+                            SizedBox(width: 28, child: Text(r.no?.toString() ?? '?', style: const TextStyle(fontSize: 12, color: AppColors.textHint))),
+                            Expanded(child: Text(r.error ?? r.name,
+                              style: TextStyle(fontSize: 12.5, color: r.error != null ? AppColors.red : AppColors.text))),
+                          ]),
+                        )).toList()),
+                      ),
+                    ),
+                  ],
+                  if (importError != null) ...[
+                    const SizedBox(height: 10),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(color: AppColors.redLight, borderRadius: BorderRadius.circular(10)),
+                      child: Text(importError!, style: const TextStyle(color: AppColors.red, fontSize: 12, fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: (validRows.isEmpty || blocked || importing) ? null : confirmImport,
+                    child: Opacity(
+                      opacity: (validRows.isEmpty || blocked) ? .5 : 1,
+                      child: Container(
+                        height: 52,
+                        decoration: BoxDecoration(
+                          gradient: AppColors.navyGradient,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
+                        ),
+                        child: Center(child: importing
+                            ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Row(mainAxisSize: MainAxisSize.min, children: [
+                                const Icon(Icons.upload_rounded, color: Colors.white, size: 20),
+                                const SizedBox(width: 8),
+                                Text('Import ${validRows.length} Chapter${validRows.length == 1 ? '' : 's'}',
+                                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
+                              ])),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     Widget body;
@@ -532,16 +988,35 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     } else {
       body = Column(children: [
         if (_isClassTeacher) _buildScopeTabBar(),
-        _buildGrowthChips(),
-        Expanded(child: _scope == 0 ? _buildMineList() : _buildClassList()),
+        Expanded(
+          child: _selectedGroupKey == null
+              ? (_scope == 0 ? _buildMineGrid() : _buildClassGrid())
+              : _buildGroupDetail(),
+        ),
       ]);
     }
 
-    final fab = FloatingActionButton.extended(
-      onPressed: _showAddChapterSheet,
-      backgroundColor: AppColors.navy,
-      icon: const Icon(Icons.add, color: Colors.white),
-      label: const Text('Add Chapters', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+    final fab = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        FloatingActionButton.extended(
+          heroTag: 'syllabus_import_fab',
+          onPressed: _showImportSheet,
+          backgroundColor: Colors.white,
+          foregroundColor: AppColors.navy,
+          icon: const Icon(Icons.upload_file_rounded, color: AppColors.navy),
+          label: const Text('Import', style: TextStyle(color: AppColors.navy, fontWeight: FontWeight.w700)),
+        ),
+        const SizedBox(height: 10),
+        FloatingActionButton.extended(
+          heroTag: 'syllabus_add_fab',
+          onPressed: _showAddChapterSheet,
+          backgroundColor: AppColors.navy,
+          icon: const Icon(Icons.add, color: Colors.white),
+          label: const Text('Add Chapters', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        ),
+      ],
     );
 
     if (widget.embedded) {
@@ -575,7 +1050,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
   Widget _scopeTabButton(String label, int index) {
     final active = _scope == index;
     return GestureDetector(
-      onTap: () => setState(() => _scope = index),
+      onTap: () => setState(() { _scope = index; _selectedGroupKey = null; }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(vertical: 9),
@@ -590,68 +1065,14 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     );
   }
 
-  // ── Growth chips ────────────────────────────────────────────────────────
+  // ── Subject grid (top level) ────────────────────────────────────────────
+  // Each subject is one tile: a circular progress ring + name + chapter
+  // count. Tapping drills into that subject's own chapter list - the flat
+  // combined chapter list (with a separate row of tiny growth chips above
+  // it) this replaced made it hard to see at a glance which subjects still
+  // needed work without scrolling past every chapter first.
 
-  Widget _buildGrowthChips() {
-    if (_loading) return const SizedBox.shrink();
-    final chips = <Widget>[];
-    if (_scope == 0) {
-      if (_mineChapters.isEmpty) return const SizedBox.shrink();
-      chips.add(_growthChip('Overall', _leafCounts(_mineChapters), highlight: true));
-      final groups = _grouped(_mineChapters, includeClass: true).entries.toList()..sort((a, b) => a.key.compareTo(b.key));
-      chips.addAll(groups.map((e) => _growthChip(e.key, _leafCounts(e.value))));
-    } else {
-      if (_classChapters.isEmpty) return const SizedBox.shrink();
-      chips.add(_growthChip('Class Overall', _leafCounts(_classChapters), highlight: true));
-      final groups = _grouped(_classChapters, includeClass: false).entries.toList()..sort((a, b) => a.key.compareTo(b.key));
-      chips.addAll(groups.map((e) => _growthChip(e.key, _leafCounts(e.value))));
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: SizedBox(
-        // ListView's own padding used to carry the top:12 gap, but that
-        // padding eats into the cross-axis (height) budget a horizontal
-        // list gives its children - combined with this app's font metrics
-        // that left the chip's two-line Column just over its box, printing
-        // a 1px bottom-overflow banner. Moving the gap out to this wrapping
-        // Padding keeps the full 76px available to the chip content instead.
-        height: 76,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          itemCount: chips.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemBuilder: (_, i) => chips[i],
-        ),
-      ),
-    );
-  }
-
-  Widget _growthChip(String label, ({int total, int completed}) counts, {bool highlight = false}) {
-    final pct = counts.total == 0 ? 0.0 : counts.completed / counts.total * 100;
-    final color = pct >= 75 ? AppColors.green : pct >= 40 ? AppColors.amber : AppColors.red;
-    return Container(
-      width: 108,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: highlight ? AppColors.navy : AppColors.card,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: AppShadows.card,
-        border: highlight ? null : Border.all(color: AppColors.border),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-        Text('${pct.toStringAsFixed(0)}%',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: highlight ? Colors.white : color)),
-        const SizedBox(height: 2),
-        Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: highlight ? Colors.white70 : AppColors.textLight)),
-      ]),
-    );
-  }
-
-  // ── Mine tab ─────────────────────────────────────────────────────────────
-
-  Widget _buildMineList() {
+  Widget _buildMineGrid() {
     final grouped = _grouped(_mineChapters, includeClass: true);
     if (grouped.isEmpty) {
       return _emptyState(
@@ -663,25 +1084,190 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     return RefreshIndicator(
       color: AppColors.navy,
       onRefresh: _load,
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: GridView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1,
+        ),
         itemCount: sections.length,
         itemBuilder: (_, i) {
-          final chapters   = sections[i].value;
-          final className  = chapters.first['class'] as String? ?? '';
-          final subject    = chapters.first['subject'] as String? ?? '';
-          final state      = _sectionState(className, subject);
-          final editable   = !state.locked || state.approvedWindow != null;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 18),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              _sectionHeader(className, subject, state),
-              const SizedBox(height: 8),
-              ...chapters.map((c) => _chapterTile(c, owned: true, editable: editable)),
-            ]),
+          final key       = sections[i].key;
+          final chapters  = sections[i].value;
+          final className = chapters.first['class'] as String? ?? '';
+          final subject   = chapters.first['subject'] as String? ?? '';
+          final state     = _sectionState(className, subject);
+          return _subjectCard(
+            title: subject,
+            subtitle: className,
+            counts: _leafCounts(chapters),
+            chapterProgress: _chapterProgress(chapters),
+            locked: state.locked,
+            onTap: () => setState(() => _selectedGroupKey = key),
           );
         },
       ),
+    );
+  }
+
+  Widget _buildClassGrid() {
+    final grouped = _grouped(_classChapters, includeClass: false);
+    if (grouped.isEmpty) {
+      return _emptyState(title: 'No Syllabus Yet', subtitle: 'No chapters have been added for your class yet.');
+    }
+    final sections = grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
+    return RefreshIndicator(
+      color: AppColors.navy,
+      onRefresh: _load,
+      child: GridView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1,
+        ),
+        itemCount: sections.length,
+        itemBuilder: (_, i) => _subjectCard(
+          title: sections[i].key,
+          counts: _leafCounts(sections[i].value),
+          chapterProgress: _chapterProgress(sections[i].value),
+          onTap: () => setState(() => _selectedGroupKey = sections[i].key),
+        ),
+      ),
+    );
+  }
+
+  Widget _subjectCard({
+    required String title,
+    String? subtitle,
+    required ({int total, int completed}) counts,
+    required ({int total, int completed}) chapterProgress,
+    bool locked = false,
+    required VoidCallback onTap,
+  }) {
+    final pct   = counts.total == 0 ? 0.0 : counts.completed / counts.total * 100;
+    final color = pct >= 75 ? AppColors.green : pct >= 40 ? AppColors.amber : AppColors.red;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.card,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: AppShadows.card,
+          border: Border.all(color: AppColors.border),
+        ),
+        // FittedBox+scaleDown - same overflow lesson as StatCard/growth chip:
+        // a fixed-aspect grid cell can be a pixel or two shorter than this
+        // content's natural size depending on text-rendering metrics.
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _CircularProgress(percent: pct, color: color, size: 60),
+              const SizedBox(height: 8),
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                if (locked) const Padding(padding: EdgeInsets.only(right: 4), child: Icon(Icons.lock_outline_rounded, size: 12, color: AppColors.textHint)),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 130),
+                  child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.text)),
+                ),
+              ]),
+              if (subtitle != null && subtitle.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 11, color: AppColors.textLight)),
+              ],
+              const SizedBox(height: 2),
+              Text('${chapterProgress.completed}/${chapterProgress.total} chapters',
+                style: const TextStyle(fontSize: 10.5, color: AppColors.textHint)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Chapter detail (drilled into one subject) ───────────────────────────
+
+  Widget _buildGroupDetail() {
+    final key         = _selectedGroupKey!;
+    final isClassScope = _scope == 1;
+    final grouped = _grouped(isClassScope ? _classChapters : _mineChapters, includeClass: !isClassScope);
+    final chapters = grouped[key];
+    if (chapters == null || chapters.isEmpty) {
+      // The group disappeared from under us (e.g. its last chapter was just
+      // deleted) - bounce back to the grid instead of showing a dead end.
+      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) setState(() => _selectedGroupKey = null); });
+      return const SizedBox.shrink();
+    }
+    final className = isClassScope ? (AuthService.to.profile.value?['class_name'] as String? ?? '') : (chapters.first['class'] as String? ?? '');
+    final subject   = isClassScope ? key : (chapters.first['subject'] as String? ?? '');
+    final state     = _sectionState(className, subject);
+    final editableMine = !state.locked || state.approvedWindow != null;
+
+    return RefreshIndicator(
+      color: AppColors.navy,
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+        children: [
+          Row(children: [
+            GestureDetector(
+              onTap: () => setState(() => _selectedGroupKey = null),
+              child: Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.border)),
+                child: const Icon(Icons.arrow_back_rounded, size: 18, color: AppColors.navy),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: isClassScope
+                  ? Text(subject, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: AppColors.navy))
+                  : _sectionHeader(className, subject, state),
+            ),
+          ]),
+          const SizedBox(height: 14),
+          _progressSummary(_leafCounts(chapters), _chapterProgress(chapters)),
+          const SizedBox(height: 14),
+          ...chapters.asMap().entries.map((e) {
+            final c        = e.value;
+            final owned    = isClassScope ? c['teacher_id'] == _employeeId : true;
+            final editable = isClassScope ? (owned && c['locked'] != true) : editableMine;
+            return _chapterTile(c, number: e.key + 1, owned: owned, editable: editable,
+              className: isClassScope ? null : className, subject: isClassScope ? null : subject, state: isClassScope ? null : state);
+          }),
+        ],
+      ),
+    );
+  }
+
+  // The same completeness ring shown on the subject card, repeated at the
+  // top of the drilled-in chapter list - so the graph isn't only visible
+  // from the outside, and the "X/Y chapters" figure is right above the
+  // chapters it's summarizing.
+  Widget _progressSummary(({int total, int completed}) leafCounts, ({int total, int completed}) chapterProgress) {
+    final pct   = leafCounts.total == 0 ? 0.0 : leafCounts.completed / leafCounts.total * 100;
+    final color = pct >= 75 ? AppColors.green : pct >= 40 ? AppColors.amber : AppColors.red;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: AppShadows.card,
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(children: [
+        _CircularProgress(percent: pct, color: color, size: 56),
+        const SizedBox(width: 14),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${chapterProgress.completed}/${chapterProgress.total} chapters completed',
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.text)),
+          const SizedBox(height: 2),
+          Text('${pct.toStringAsFixed(0)}% of the syllabus covered',
+            style: const TextStyle(fontSize: 11.5, color: AppColors.textLight)),
+        ])),
+      ]),
     );
   }
 
@@ -733,55 +1319,24 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     ),
   );
 
-  // ── Class Overview tab ──────────────────────────────────────────────────
-
-  Widget _buildClassList() {
-    final grouped = _grouped(_classChapters, includeClass: false);
-    if (grouped.isEmpty) {
-      return _emptyState(title: 'No Syllabus Yet', subtitle: 'No chapters have been added for your class yet.');
-    }
-    final sections = grouped.entries.toList()..sort((a, b) => a.key.compareTo(b.key));
-    return RefreshIndicator(
-      color: AppColors.navy,
-      onRefresh: _load,
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-        itemCount: sections.length,
-        itemBuilder: (_, i) {
-          final section  = sections[i];
-          final chapters = section.value;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8, left: 2),
-                child: Text(section.key, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.navy)),
-              ),
-              ...chapters.map((c) {
-                final owned = c['teacher_id'] == _employeeId;
-                // Only this exact chapter row's own lock flag - Class
-                // Overview doesn't show the full request/window workflow
-                // (that lives in the Mine tab); a locked+owned chapter here
-                // just can't be deleted or grown new subtopics.
-                final editable = owned && c['locked'] != true;
-                return _chapterTile(c, owned: owned, editable: editable);
-              }),
-            ]),
-          );
-        },
-      ),
-    );
-  }
-
   // ── Shared chapter/subtopic tile ────────────────────────────────────────
 
-  Widget _chapterTile(Map<String, dynamic> chapter, {required bool owned, required bool editable}) {
+  Widget _chapterTile(Map<String, dynamic> chapter, {
+    required int number, required bool owned, required bool editable,
+    String? className, String? subject, _SectionState? state,
+  }) {
     final id = chapter['id'] as String;
     final subtopics = _subtopicsByChapter[id] ?? const [];
     final derived = _derivedStatus(subtopics);
     final status = derived ?? ((chapter['status'] ?? 'Not Started') as String);
     final isOpen = _expanded.contains(id);
     final locked = chapter['locked'] == true;
+    // Locked with no active approved-edit window - the ONLY reason the
+    // edit/delete icons below don't show. Surfaced here explicitly (not
+    // just the small lock glyph next to the title) since teachers kept
+    // reporting edit/delete as "not working" when the real cause was an
+    // earlier Lock tap they didn't realize blocks per-chapter changes.
+    final showLockedNotice = owned && locked && !editable && className != null && subject != null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -797,6 +1352,13 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             child: Row(children: [
+              Container(
+                width: 22, height: 22,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: AppColors.navy.withValues(alpha: .08), shape: BoxShape.circle),
+                child: Text('$number', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.navy)),
+              ),
+              const SizedBox(width: 10),
               if (locked) const Padding(padding: EdgeInsets.only(right: 6), child: Icon(Icons.lock_outline_rounded, size: 14, color: AppColors.textHint)),
               Expanded(child: Text(chapter['chapter'] ?? '',
                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.text))),
@@ -818,6 +1380,11 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
               if (owned && editable) ...[
                 const SizedBox(width: 8),
                 GestureDetector(
+                  onTap: () => _renameChapter(chapter),
+                  child: const Icon(Icons.edit_outlined, color: AppColors.textHint, size: 19),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
                   onTap: () => _deleteChapter(chapter),
                   child: const Icon(Icons.delete_outline_rounded, color: AppColors.textHint, size: 20),
                 ),
@@ -825,6 +1392,26 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
               const SizedBox(width: 4),
               Icon(isOpen ? Icons.expand_less_rounded : Icons.expand_more_rounded, color: AppColors.textHint, size: 18),
             ]),
+          ),
+        ),
+        if (showLockedNotice) Padding(
+          padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+          child: GestureDetector(
+            onTap: state?.pending != null ? null : () => _openRequestEditSheet(className, subject),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(8)),
+              child: Row(children: [
+                const Icon(Icons.lock_outline_rounded, size: 13, color: AppColors.textHint),
+                const SizedBox(width: 6),
+                Expanded(child: Text(
+                  state?.pending != null
+                      ? 'Locked - edit request pending admin approval'
+                      : 'Locked - tap to request an edit',
+                  style: const TextStyle(fontSize: 11, color: AppColors.textLight, fontWeight: FontWeight.w600),
+                )),
+              ]),
+            ),
           ),
         ),
         if (isOpen) Padding(

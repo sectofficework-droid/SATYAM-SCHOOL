@@ -1,0 +1,146 @@
+import 'package:flutter/material.dart';
+import '../../core/theme/app_theme.dart';
+import '../../core/services/supabase_service.dart';
+import 's3_image.dart';
+
+// Compact "today only" birthdays card for the Home dashboard - students and
+// staff whose birthday is today, school-wide (get_todays_birthdays RPC,
+// same one the admin dashboard's Birthdays cards use, so the two can never
+// drift). Always visible once loaded (unlike the sibling switcher/notice
+// popups elsewhere, which hide entirely when empty) - shows a "No birthdays
+// today" placeholder instead, so the module has a permanent, predictable
+// spot on the dashboard rather than disappearing on most days.
+class TodaysBirthdaysCard extends StatefulWidget {
+  const TodaysBirthdaysCard({super.key});
+  @override
+  State<TodaysBirthdaysCard> createState() => _TodaysBirthdaysCardState();
+}
+
+class _TodaysBirthdaysCardState extends State<TodaysBirthdaysCard> {
+  List<Map<String, dynamic>> _students = const [];
+  List<Map<String, dynamic>> _staff = const [];
+  bool _loaded = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    SupabaseService.fetchTodaysBirthdays().then((data) {
+      if (!mounted) return;
+      setState(() {
+        _students = data['students'] ?? const [];
+        _staff = data['staff'] ?? const [];
+        _loaded = true;
+      });
+    }).catchError((e) {
+      // "Nobody's birthday today" and "the RPC failed" both used to render
+      // identically - nothing at all - which made a real backend error
+      // indistinguishable from the correct empty state. Now shows the
+      // actual error so this isn't invisible next time something breaks.
+      if (mounted) setState(() { _loaded = true; _error = e.toString(); });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_loaded) return const SizedBox.shrink();
+    if (_error != null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 20),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: AppColors.redLight, borderRadius: BorderRadius.circular(14)),
+          child: Row(children: [
+            const Icon(Icons.error_outline_rounded, color: AppColors.red, size: 16),
+            const SizedBox(width: 8),
+            Expanded(child: Text("Couldn't load today's birthdays: $_error",
+              style: const TextStyle(fontSize: 11, color: AppColors.red))),
+          ]),
+        ),
+      );
+    }
+    final people = [
+      ..._students.map((s) => (
+        name: '${s['first_name'] ?? ''} ${s['last_name'] ?? ''}'.trim(),
+        subtitle: [s['class_name'], s['section_name']].where((v) => (v ?? '').toString().isNotEmpty).join('-'),
+        photoKey: s['photo_url'] as String?,
+        isStaff: false,
+      )),
+      ..._staff.map((s) => (
+        name: (s['name'] ?? '—').toString(),
+        subtitle: (s['designation'] ?? 'Staff').toString(),
+        photoKey: s['photo_url'] as String?,
+        isStaff: true,
+      )),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.pinkLight,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.pink.withValues(alpha: .25)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Text('🎂', style: TextStyle(fontSize: 18)),
+            const SizedBox(width: 8),
+            const Text("Today's Birthdays", style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.text)),
+            if (people.isNotEmpty) ...[
+              const Spacer(),
+              Text('${people.length}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.pink)),
+            ],
+          ]),
+          const SizedBox(height: 12),
+          if (people.isEmpty)
+            Row(children: [
+              Icon(Icons.cake_outlined, color: AppColors.pink.withValues(alpha: .5), size: 18),
+              const SizedBox(width: 8),
+              const Text('No birthdays today', style: TextStyle(fontSize: 12.5, color: AppColors.textLight)),
+            ])
+          else
+            SizedBox(
+              height: 82,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: people.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (_, i) => _personChip(people[i]),
+              ),
+            ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _personChip(({String name, String subtitle, String? photoKey, bool isStaff}) p) {
+    final accent = p.isStaff ? AppColors.navy : AppColors.pink;
+    return SizedBox(
+      width: 64,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Stack(clipBehavior: Clip.none, children: [
+          Container(
+            width: 52, height: 52,
+            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: accent, width: 2)),
+            child: ClipOval(child: S3Image(
+              s3Key: p.photoKey,
+              width: 52, height: 52,
+              fallback: (_) => Container(
+                color: accent.withValues(alpha: .15),
+                child: Icon(Icons.person, color: accent, size: 24),
+              ),
+            )),
+          ),
+          const Positioned(right: -2, bottom: -2, child: Text('🎉', style: TextStyle(fontSize: 16))),
+        ]),
+        const SizedBox(height: 4),
+        Text(p.name.isEmpty ? '—' : p.name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.text)),
+        Text(p.subtitle.isEmpty ? (p.isStaff ? 'Staff' : 'Student') : p.subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 9.5, color: AppColors.textLight)),
+      ]),
+    );
+  }
+}

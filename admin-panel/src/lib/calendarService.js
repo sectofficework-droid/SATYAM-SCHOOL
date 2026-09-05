@@ -14,17 +14,22 @@ export async function getCalendarEvents(startDate, endDate) {
   return (data || []).map(mapRow);
 }
 
-export async function addCalendarEvent({ date, category, label, icon }) {
+export async function addCalendarEvent({ date, category, label, icon, classes }) {
   const { data, error } = await supabase.from("school_calendar_events")
-    .insert({ event_date: date, category, title: label, icon: icon || null })
+    .insert({ event_date: date, category, title: label, icon: icon || null, applies_to_classes: classes?.length ? classes : null })
     .select().single();
   if (error) throw error;
   return mapRow(data);
 }
 
-export async function updateCalendarEvent(id, { date, category, label, icon }) {
+export async function updateCalendarEvent(id, { date, category, label, icon, classes }) {
+  const payload = { event_date: date, category, title: label, icon: icon || null };
+  // Only touch applies_to_classes when the caller actually knows about it -
+  // Year Planning's own edit modal never passes `classes` at all, and must
+  // not silently wipe a scope the Attendance module's Holidays tab set.
+  if (classes !== undefined) payload.applies_to_classes = classes.length ? classes : null;
   const { error } = await supabase.from("school_calendar_events")
-    .update({ event_date: date, category, title: label, icon: icon || null })
+    .update(payload)
     .eq("id", id);
   if (error) throw error;
 }
@@ -58,5 +63,5 @@ export async function resetCalendarEvents(events) {
 }
 
 function mapRow(row) {
-  return { id: row.id, date: row.event_date, category: row.category, label: row.title, icon: row.icon };
+  return { id: row.id, date: row.event_date, category: row.category, label: row.title, icon: row.icon, classes: row.applies_to_classes || null };
 }

@@ -1035,6 +1035,25 @@ function EditEmployeeModal({ emp, onClose, onSave }) {
   const [saving,    setSaving]    = useState(false);
   const [err,       setErr]       = useState("");
 
+  // Subject & Classes Taught - previously only settable when an employee was
+  // first created (AddEmployeeModal's Academic tab); this modal had no way
+  // to add/change it afterward, which is what admins were hitting when they
+  // tried to "set the subject teacher" for an existing teacher.
+  const [mappings, setMappings] = useState(emp.subjectMappings || []);
+  const [classList, setClassList] = useState([]);
+  useEffect(() => { getActiveClasses().then(cls => setClassList(cls.map(c => c.name))).catch(() => {}); }, []);
+
+  const addMapping    = () => setMappings((prev) => [...prev, { subject: "", classes: [] }]);
+  const removeMapping = (i) => setMappings((prev) => prev.filter((_, idx) => idx !== i));
+  const updateSubject = (i, val) =>
+    setMappings((prev) => prev.map((m, idx) => idx === i ? { ...m, subject: val } : m));
+  const toggleClass = (i, cls) =>
+    setMappings((prev) => prev.map((m, idx) => {
+      if (idx !== i) return m;
+      const classes = m.classes.includes(cls) ? m.classes.filter((c) => c !== cls) : [...m.classes, cls];
+      return { ...m, classes };
+    }));
+
   const typeInitialized = useRef(false);
   useEffect(() => {
     if (!typeInitialized.current) { typeInitialized.current = true; return; }
@@ -1046,7 +1065,10 @@ function EditEmployeeModal({ emp, onClose, onSave }) {
     if (!desig)       { setErr("Designation is required."); return; }
     if (!dept)        { setErr("Department is required."); return; }
     setSaving(true); setErr("");
-    await onSave({ ...emp, name: name.trim(), phone, altPhone, email, type, designation: desig, department: dept, employmentType: empType, status });
+    await onSave({
+      ...emp, name: name.trim(), phone, altPhone, email, type, designation: desig, department: dept, employmentType: empType, status,
+      subjectMappings: type === "teaching" ? mappings.filter((m) => m.subject && m.classes.length > 0) : [],
+    });
     setSaving(false);
   }
 
@@ -1118,6 +1140,63 @@ function EditEmployeeModal({ emp, onClose, onSave }) {
               </select>
             </div>
           </div>
+
+          {type === "teaching" && (
+            <div className="pt-1 border-t border-gray-100">
+              <div className="flex items-center justify-between mb-2 mt-4">
+                <label className="text-xs font-semibold text-gray-600">
+                  Subject &amp; Classes Taught
+                </label>
+                <button onClick={addMapping}
+                  className="flex items-center gap-1 px-2.5 py-1 bg-blue-50 text-blue-600 text-xs font-semibold rounded-lg hover:bg-blue-100 transition-colors">
+                  <Plus className="w-3 h-3" /> Add Subject
+                </button>
+              </div>
+
+              {mappings.length === 0 && (
+                <div className="text-center py-5 border border-dashed border-gray-200 rounded-xl text-xs text-gray-400">
+                  No subjects added yet. Click &ldquo;Add Subject&rdquo; above.
+                </div>
+              )}
+
+              <div className="space-y-3">
+                {mappings.map((m, i) => (
+                  <div key={i} className="border border-gray-200 rounded-xl p-3.5 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <select value={m.subject} onChange={(e) => updateSubject(i, e.target.value)}
+                        className={`flex-1 ${baseSel}`}>
+                        <option value="">Select Subject...</option>
+                        {SUBJECTS_LIST
+                          .filter((s) => !mappings.some((mm, ii) => ii !== i && mm.subject === s))
+                          .map((s) => <option key={s}>{s}</option>)
+                        }
+                      </select>
+                      <button onClick={() => removeMapping(i)}
+                        className="p-1.5 text-gray-400 hover:text-red-500 transition-colors flex-shrink-0">
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold text-gray-400 mb-1.5">Teaches this subject in:</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {classList.map((c) => (
+                          <button key={c} onClick={() => toggleClass(i, c)}
+                            className={`px-2 py-0.5 rounded-lg text-xs font-semibold border transition-colors ${
+                              m.classes.includes(c)
+                                ? "bg-school-navy text-white border-school-navy"
+                                : "bg-white text-gray-500 border-gray-200 hover:border-gray-300"
+                            }`}>
+                            {c}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {err && <p className="text-xs text-red-500">{err}</p>}
         </div>
         <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
@@ -1754,55 +1833,135 @@ function ManageDailyTasksTab({ employees }) {
     setDeactivateId(null);
   }
 
+  const allStaffTasks = tasks.filter(t => t.targetType === "all");
+  const specificTasks = tasks.filter(t => t.targetType === "specific");
+
+  // Grouped by employee for the card view below - the data model is task ->
+  // many employees, so a task assigned to 3 people appears on all 3 cards,
+  // not duplicated as 3 separate tasks.
+  const employeeCards = [];
+  const cardByEmployee = new Map();
+  for (const task of specificTasks) {
+    task.targetIds.forEach((empId, i) => {
+      if (!cardByEmployee.has(empId)) {
+        const card = { employeeId: empId, employeeName: task.targetNames[i] || "", tasks: [] };
+        cardByEmployee.set(empId, card);
+        employeeCards.push(card);
+      }
+      cardByEmployee.get(empId).tasks.push(task);
+    });
+  }
+  employeeCards.sort((a, b) => a.employeeName.localeCompare(b.employeeName));
+
+  const addingSpecific = modal === "add-specific";
+  const isAddModal = modal === "add" || addingSpecific;
+
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
-        <button onClick={() => setModal("add")}
-          className="flex items-center gap-2 bg-school-navy text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors shadow-sm">
-          <Plus className="w-4 h-4"/> Add Daily Task
-        </button>
+    <div className="space-y-6">
+      {/* All Staff Tasks - applies to everyone */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide">All Staff Tasks</h3>
+          <button onClick={() => setModal("add")}
+            className="flex items-center gap-2 bg-school-navy text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-school-navy/90 transition-colors shadow-sm">
+            <Plus className="w-4 h-4"/> Add Daily Task
+          </button>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          {loading ? (
+            <div className="flex items-center justify-center h-40 text-sm text-gray-400">Loading…</div>
+          ) : allStaffTasks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-32 gap-2">
+              <ListChecks className="w-10 h-10 text-gray-200" />
+              <p className="text-sm text-gray-400">No all-staff tasks yet</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-50">
+              {allStaffTasks.map(task => (
+                <div key={task.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-800 text-sm">{task.title}</p>
+                    {task.description && <p className="text-xs text-gray-500 mt-0.5">{task.description}</p>}
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button onClick={() => setModal(task)}
+                      className="p-2 rounded-lg text-gray-400 hover:text-school-navy hover:bg-school-navy/10 transition-colors">
+                      <Pencil className="w-4 h-4"/>
+                    </button>
+                    <button onClick={() => setDeactivateId(task.id)}
+                      className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                      <Trash2 className="w-4 h-4"/>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      {/* Staff-Specific Tasks - one card per staff member who has any */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wide">Staff-Specific Tasks</h3>
+          <button onClick={() => setModal("add-specific")}
+            className="flex items-center gap-2 bg-purple-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-purple-700 transition-colors shadow-sm">
+            <Plus className="w-4 h-4"/> Add Staff Task
+          </button>
+        </div>
+
         {loading ? (
-          <div className="flex items-center justify-center h-40 text-sm text-gray-400">Loading…</div>
-        ) : tasks.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-40 gap-2">
-            <ListChecks className="w-10 h-10 text-gray-200" />
-            <p className="text-sm text-gray-400">No daily tasks yet</p>
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex items-center justify-center h-40 text-sm text-gray-400">Loading…</div>
+        ) : employeeCards.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center justify-center h-32 gap-2">
+            <Users className="w-10 h-10 text-gray-200" />
+            <p className="text-sm text-gray-400">No staff-specific tasks yet</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-50">
-            {tasks.map(task => (
-              <div key={task.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-5 py-4">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-800 text-sm">{task.title}</p>
-                  {task.description && <p className="text-xs text-gray-500 mt-0.5">{task.description}</p>}
-                  <span className={`inline-block mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    task.targetType === "all" ? "bg-blue-100 text-blue-700" : "bg-purple-100 text-purple-700"
-                  }`}>
-                    {task.targetType === "all" ? "All Staff" : `${task.targetIds.length} Staff`}
-                  </span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {employeeCards.map(card => {
+              const photo = activeEmployees.find(e => e.id === card.employeeId)?.photo;
+              const initials = card.employeeName.split(" ").map(w => w[0]).filter(Boolean).slice(0, 2).join("").toUpperCase();
+              return (
+                <div key={card.employeeId} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-full overflow-hidden bg-purple-100 flex items-center justify-center flex-shrink-0 text-purple-700 text-xs font-bold">
+                      {photo ? <S3Image s3Key={photo} alt={card.employeeName} className="w-full h-full object-cover" /> : (initials || "?")}
+                    </div>
+                    <p className="font-semibold text-gray-800 text-sm truncate">{card.employeeName}</p>
+                  </div>
+                  <div className="space-y-2">
+                    {card.tasks.map(task => (
+                      <div key={task.id} className="flex items-start justify-between gap-2 bg-gray-50 rounded-lg px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-gray-700 truncate">{task.title}</p>
+                          {task.description && <p className="text-[11px] text-gray-500 truncate">{task.description}</p>}
+                        </div>
+                        <div className="flex items-center gap-0.5 flex-shrink-0">
+                          <button onClick={() => setModal(task)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-school-navy hover:bg-school-navy/10 transition-colors">
+                            <Pencil className="w-3.5 h-3.5"/>
+                          </button>
+                          <button onClick={() => setDeactivateId(task.id)}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
+                            <Trash2 className="w-3.5 h-3.5"/>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex items-center gap-1 flex-shrink-0">
-                  <button onClick={() => setModal(task)}
-                    className="p-2 rounded-lg text-gray-400 hover:text-school-navy hover:bg-school-navy/10 transition-colors">
-                    <Pencil className="w-4 h-4"/>
-                  </button>
-                  <button onClick={() => setDeactivateId(task.id)}
-                    className="p-2 rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 transition-colors">
-                    <Trash2 className="w-4 h-4"/>
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
 
       {modal && (
         <DailyTaskModal
-          task={modal === "add" ? null : modal}
+          task={isAddModal ? null : modal}
+          initialTargetType={addingSpecific ? "specific" : "all"}
           employees={activeEmployees}
           onClose={() => setModal(null)}
           onSave={handleSave}
@@ -1834,9 +1993,9 @@ function ManageDailyTasksTab({ employees }) {
   );
 }
 
-function DailyTaskModal({ task, employees, onClose, onSave }) {
+function DailyTaskModal({ task, employees, initialTargetType = "all", onClose, onSave }) {
   const isEdit = !!task?.id;
-  const blank  = { title: "", description: "", targetType: "all", employeeIds: [] };
+  const blank  = { title: "", description: "", targetType: initialTargetType, employeeIds: [] };
   const [form,   setForm]   = useState(task?.id ? { ...task, employeeIds: task.targetIds || [] } : blank);
   const [error,  setError]  = useState("");
   const [saving, setSaving] = useState(false);

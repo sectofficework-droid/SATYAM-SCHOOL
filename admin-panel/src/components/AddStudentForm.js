@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import supabase from "@/lib/supabase";
-import { addStudent as svcAddStudent, getNextEnrollmentNo } from "@/lib/studentService";
+import { addStudent as svcAddStudent, getNextEnrollmentNo, searchStudentsForSibling } from "@/lib/studentService";
 import { getActiveClasses } from "@/lib/settingsService";
 import {
   ChevronDown, Upload, X, Plus, FileText, AlertTriangle,
@@ -50,12 +50,6 @@ const DISCOUNT_REASONS = [
   "Old Student",
   "Other",
 ];
-
-const siblingsByClass = {
-  "10th": ["Arjun Patel", "Ravi Kumar"],
-  "9th":  ["Priya Shah", "Nisha Mehta"],
-  "8th":  ["Sneha Desai", "Pooja Joshi"],
-};
 
 const defaultDocTypes = [
   "Birth Certificate",
@@ -166,18 +160,32 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
 
   const [hasPrevSchool, setHasPrevSchool] = useState(false);
   const [hasSibling, setHasSibling] = useState(false);
-  const [siblings, setSiblings]     = useState([{ id: 1, cls: "", name: "" }]);
+  const [siblings, setSiblings]     = useState([{ id: 1, cls: "", name: "", studentId: "" }]);
+  // Real enrolled students in the picked class, per sibling row - fetched
+  // live (searchStudentsForSibling) so "name" resolves to an actual
+  // student_id instead of free text, which is what makes this sibling
+  // switchable in the student app later.
+  const [siblingOptionsByRow, setSiblingOptionsByRow] = useState({});
 
   const addSibling = () =>
-    setSiblings((p) => [...p, { id: Date.now(), cls: "", name: "" }]);
-  const removeSibling = (id) =>
+    setSiblings((p) => [...p, { id: Date.now(), cls: "", name: "", studentId: "" }]);
+  const removeSibling = (id) => {
     setSiblings((p) => p.filter((s) => s.id !== id));
-  const updateSibling = (id, field, val) =>
-    setSiblings((p) =>
-      p.map((s) =>
-        s.id === id ? { ...s, [field]: val, ...(field === "cls" ? { name: "" } : {}) } : s
-      )
-    );
+    setSiblingOptionsByRow((p) => { const n = { ...p }; delete n[id]; return n; });
+  };
+  const updateSiblingClass = (id, cls) => {
+    setSiblings((p) => p.map((s) => s.id === id ? { ...s, cls, name: "", studentId: "" } : s));
+    setSiblingOptionsByRow((p) => ({ ...p, [id]: [] }));
+    if (cls) {
+      searchStudentsForSibling(cls).then((opts) => {
+        setSiblingOptionsByRow((p) => ({ ...p, [id]: opts }));
+      }).catch(() => {});
+    }
+  };
+  const selectSiblingStudent = (id, studentId) => {
+    const picked = (siblingOptionsByRow[id] || []).find((o) => o.studentId === studentId);
+    setSiblings((p) => p.map((s) => s.id === id ? { ...s, studentId, name: picked?.name || "" } : s));
+  };
   const [hasDiscount, setHasDiscount]           = useState(false);
   const [discountAmount, setDiscountAmount]     = useState("");
   const [discountReason, setDiscountReason]     = useState("");
@@ -722,7 +730,7 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
                         <FieldLabel required>Sibling&apos;s Class</FieldLabel>
                         <SelectField
                           value={sib.cls}
-                          onChange={(e) => updateSibling(sib.id, "cls", e.target.value)}
+                          onChange={(e) => updateSiblingClass(sib.id, e.target.value)}
                           required
                         >
                           <option value="">Select Class</option>
@@ -732,16 +740,16 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
                       <div>
                         <FieldLabel required>Sibling&apos;s Name</FieldLabel>
                         <SelectField
-                          value={sib.name}
-                          onChange={(e) => updateSibling(sib.id, "name", e.target.value)}
+                          value={sib.studentId}
+                          onChange={(e) => selectSiblingStudent(sib.id, e.target.value)}
                           disabled={!sib.cls}
                           required
                         >
                           <option value="">
-                            {sib.cls ? "Select Student" : "Select class first"}
+                            {!sib.cls ? "Select class first" : (siblingOptionsByRow[sib.id]?.length ? "Select Student" : "No students found in this class")}
                           </option>
-                          {(siblingsByClass[sib.cls] || []).map((n) => (
-                            <option key={n}>{n}</option>
+                          {(siblingOptionsByRow[sib.id] || []).map((o) => (
+                            <option key={o.studentId} value={o.studentId}>{o.name}</option>
                           ))}
                         </SelectField>
                       </div>

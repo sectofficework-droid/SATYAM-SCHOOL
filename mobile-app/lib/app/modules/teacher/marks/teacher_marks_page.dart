@@ -29,6 +29,12 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
   bool _saving        = false;
   bool _isClassTeacher = false;
 
+  // Class -> subjects this teacher actually teaches there, from the real
+  // Timetable (see SupabaseService.fetchTeacherSubjectsByClass) - drives the
+  // Create Monthly Test sheet's Subject dropdown so it only offers what this
+  // teacher is actually scheduled to teach, not the whole school subject list.
+  Map<String, List<String>> _classSubjectsFromTT = {};
+
   // Admin-configurable default (Settings → Exams in the admin panel) - 25
   // unless management has changed it; fetched fresh each time the list
   // loads so a mid-session admin change takes effect without a restart.
@@ -73,11 +79,18 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
         : <Map<String, dynamic>>[];
     final maxMarks = await SupabaseService.fetchMonthlyTestMaxMarks();
 
+    final teacherName = profile['name'] as String?;
+    final academicYear = await SupabaseService.fetchCurrentAcademicYearLabel();
+    final classSubjects = (teacherName != null && academicYear != null)
+        ? await SupabaseService.fetchTeacherSubjectsByClass(academicYear, teacherName)
+        : <String, List<String>>{};
+
     if (mounted) {
       setState(() {
       _monthlyTestMaxMarks = maxMarks;
       _mineExams  = mine;
       _classExams = classWide;
+      _classSubjectsFromTT = classSubjects;
       if (!_isClassTeacher) _scope = 0;
       _loading = false;
     });
@@ -152,7 +165,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
-          final subjectOptions = selectedClass != null ? teacherSubjectsForClass(profile, selectedClass!) : <String>[];
+          final subjectOptions = selectedClass != null ? (_classSubjectsFromTT[selectedClass!] ?? const <String>[]) : const <String>[];
           return Padding(
             padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
             child: Container(

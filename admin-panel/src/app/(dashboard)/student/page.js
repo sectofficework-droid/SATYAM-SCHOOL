@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import useStore from "@/lib/store";
 import AddStudentForm from "@/components/AddStudentForm";
+import BasicDetailsImportModal from "@/components/BasicDetailsImportModal";
+import UpdateBasicDetailsModal from "@/components/UpdateBasicDetailsModal";
 import { useRouter } from "next/navigation";
 import supabase from "@/lib/supabase";
 import S3Image from "@/components/S3Image";
@@ -22,7 +24,8 @@ import {
   Plus, Search, GraduationCap, Phone, Calendar, Edit, Trash2,
   LogOut, Eye, User, ChevronDown, ArrowUpCircle,
   CheckCircle2, X, AlertTriangle, Package, FileText,
-  IndianRupee, Check, ArrowLeft, Download, RotateCcw, Lock, KeyRound, Copy,
+  IndianRupee, Check, ArrowLeft, Download, RotateCcw, Lock, Upload, Users,
+  KeyRound, Copy,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { fmtDMY } from "@/lib/utils";
@@ -744,6 +747,9 @@ export default function StudentPage() {
   const authUser = useStore(s => s.authUser);
   const canImpersonate = authUser && authUser.role !== "normal_admin"; // senior_admin & management only
   const [showAddModal, setShowAddModal]       = useState(false);
+  const [showBasicImportModal, setShowBasicImportModal] = useState(false);
+  const [basicDetailsModal, setBasicDetailsModal]     = useState(null);
+  const [detailsFilter, setDetailsFilter]     = useState("All");
 
   // Load academic years + active classes on mount
   useEffect(() => {
@@ -812,7 +818,8 @@ export default function StudentPage() {
     const matchStd    = stdFilter === "All Classes" || s.std === stdFilter;
     const matchDoc    = docFilter === "All" || (s.pendingDocs || []).includes(docFilter);
     const matchGovtId = govtIdFilter.length === 0 || govtIdFilter.some(k => !(s[k] && s[k].trim()));
-    return matchSearch && matchStd && matchDoc && matchGovtId;
+    const matchDetails = detailsFilter === "All" || s.dataStatus === detailsFilter;
+    return matchSearch && matchStd && matchDoc && matchGovtId && matchDetails;
   });
 
   const handleDeactivate = async (student, { reason, date }) => {
@@ -1015,6 +1022,29 @@ export default function StudentPage() {
         </div>
       )}
 
+      {showBasicImportModal && (
+        <BasicDetailsImportModal
+          onClose={() => setShowBasicImportModal(false)}
+          onImported={() => {
+            if (selectedYearId) {
+              fetchStudentsFromDB(selectedYearId).then((data) => setStudents(data));
+            }
+          }}
+        />
+      )}
+
+      {basicDetailsModal && (
+        <UpdateBasicDetailsModal
+          student={basicDetailsModal}
+          onClose={() => setBasicDetailsModal(null)}
+          onSaved={() => {
+            if (selectedYearId) {
+              fetchStudentsFromDB(selectedYearId).then((data) => setStudents(data));
+            }
+          }}
+        />
+      )}
+
       <div className="space-y-5">
 
         {/* ── Header ── */}
@@ -1028,13 +1058,22 @@ export default function StudentPage() {
               </span>
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center gap-2 bg-school-navy hover:bg-school-navy-dark text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm self-start sm:self-auto"
-          >
-            <Plus className="w-4 h-4" /> Add New Student
-          </button>
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setShowBasicImportModal(true)}
+              className="inline-flex items-center gap-2 bg-white border border-gray-200 hover:border-school-navy text-gray-600 hover:text-school-navy px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+            >
+              <Upload className="w-4 h-4" /> Import Basic Details
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAddModal(true)}
+              className="inline-flex items-center gap-2 bg-school-navy hover:bg-school-navy-dark text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+            >
+              <Plus className="w-4 h-4" /> Add New Student
+            </button>
+          </div>
         </div>
 
         {/* ── Promotion Period Banner ── */}
@@ -1193,6 +1232,38 @@ export default function StudentPage() {
               </button>
             )}
           </div>
+
+          {/* ── Complete / Incomplete Details Filter ── */}
+          {sessionStudents.some(s => s.dataStatus === "Incomplete") && (
+            <div className="flex items-center gap-2 flex-wrap pt-0.5 border-t border-gray-100">
+              <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest flex-shrink-0">
+                Details:
+              </span>
+              <button
+                onClick={() => setDetailsFilter(detailsFilter === "Incomplete" ? "All" : "Incomplete")}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all ${
+                  detailsFilter === "Incomplete"
+                    ? "bg-amber-600 text-white"
+                    : "bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100"
+                }`}
+              >
+                Incomplete
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                  detailsFilter === "Incomplete" ? "bg-white/25 text-white" : "bg-amber-100 text-amber-700"
+                }`}>
+                  {sessionStudents.filter(s => s.dataStatus === "Incomplete").length}
+                </span>
+              </button>
+              {detailsFilter !== "All" && (
+                <button
+                  onClick={() => setDetailsFilter("All")}
+                  className="ml-auto flex items-center gap-1 text-[11px] text-gray-400 hover:text-red-500 transition-colors"
+                >
+                  <X className="w-3 h-3" /> Clear
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── Export Bar ── */}
@@ -1261,19 +1332,26 @@ export default function StudentPage() {
                       <span className="text-white/25">·</span>
                       <span className="text-white/55 text-xs">Session {student.session}</span>
                     </div>
-                    {isPromoted ? (
-                      <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-400/20 text-blue-200">
-                        Promoted → {student.promotedTo.std}
-                      </span>
-                    ) : (
-                      <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                        student.status === "Active" ? "bg-green-400/20 text-green-300"
-                        : student.status === "Left"  ? "bg-gray-400/30 text-gray-300"
-                        : "bg-red-400/20 text-red-300"
-                      }`}>
-                        {student.status}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {student.dataStatus === "Incomplete" && (
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-amber-400/20 text-amber-200">
+                          Incomplete
+                        </span>
+                      )}
+                      {isPromoted ? (
+                        <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-blue-400/20 text-blue-200">
+                          Promoted → {student.promotedTo.std}
+                        </span>
+                      ) : (
+                        <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                          student.status === "Active" ? "bg-green-400/20 text-green-300"
+                          : student.status === "Left"  ? "bg-gray-400/30 text-gray-300"
+                          : "bg-red-400/20 text-red-300"
+                        }`}>
+                          {student.status}
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {/* ── Mobile Card (shown on phones, hidden on md+) ── */}
@@ -1294,13 +1372,18 @@ export default function StudentPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-1.5">
                           <h3 className="font-bold text-gray-900 text-sm leading-tight truncate">{student.name}</h3>
-                          {isPromoted ? (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">Promoted</span>
-                          ) : (
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ${student.status === "Active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                              {student.status}
-                            </span>
-                          )}
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            {student.dataStatus === "Incomplete" && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">Incomplete</span>
+                            )}
+                            {isPromoted ? (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Promoted</span>
+                            ) : (
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${student.status === "Active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                                {student.status}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <p className="text-xs text-gray-500 mt-0.5">#{student.enrollment} · {student.std}{student.section ? `-${student.section}` : ""}</p>
                         <p className="text-xs text-gray-500 truncate">{student.fatherName}</p>
@@ -1353,6 +1436,10 @@ export default function StudentPage() {
                               <Eye className="w-3.5 h-3.5 flex-shrink-0"/> View
                             </Link>
                           </div>
+                          <button onClick={() => setBasicDetailsModal(student)}
+                            className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-100">
+                            <Users className="w-3.5 h-3.5 flex-shrink-0"/> Update Basic Details
+                          </button>
                           <button disabled
                             className="flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-bold bg-gray-100 text-gray-400 cursor-not-allowed border border-gray-200">
                             <RotateCcw className="w-3.5 h-3.5 flex-shrink-0"/> Readmission
@@ -1673,6 +1760,12 @@ export default function StudentPage() {
                             >
                               <Eye className="w-4 h-4 flex-shrink-0" /> View
                             </Link>
+                            <button
+                              onClick={() => setBasicDetailsModal(student)}
+                              className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-100 transition-colors"
+                            >
+                              <Users className="w-4 h-4 flex-shrink-0" /> Update Basic Details
+                            </button>
                             <button
                               onClick={() => setDeactivateModal(student)}
                               className="flex items-center gap-2.5 w-full px-4 py-2.5 rounded-xl text-sm font-semibold bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-100 transition-colors"

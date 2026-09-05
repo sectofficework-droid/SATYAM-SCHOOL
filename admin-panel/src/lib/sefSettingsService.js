@@ -80,6 +80,30 @@ export async function removeSefClass(std) {
   if (error) throw error;
 }
 
+// ── Per-Std Subjects (feeds Employee's subject-mapping picker, Syllabus,
+// and Question Bank's Subject dropdown - see sef_phase2_schema.sql) ─────
+export async function getSefStdSubjects(std) {
+  let query = supabase.from("sef_std_subjects").select("std, subject, sort_order").order("sort_order");
+  if (std) query = query.eq("std", std);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data || [];
+}
+
+export async function addSefStdSubject(std, subject) {
+  const { data: existing } = await supabase
+    .from("sef_std_subjects").select("sort_order").eq("std", std)
+    .order("sort_order", { ascending: false }).limit(1);
+  const nextOrder = (existing?.[0]?.sort_order ?? -1) + 1;
+  const { error } = await supabase.from("sef_std_subjects").insert({ std, subject, sort_order: nextOrder });
+  if (error) throw error;
+}
+
+export async function removeSefStdSubject(std, subject) {
+  const { error } = await supabase.from("sef_std_subjects").delete().eq("std", std).eq("subject", subject);
+  if (error) throw error;
+}
+
 // ── Fee Structure ───────────────────────────────────────────────
 export async function getSefFeeStructure() {
   const { data, error } = await supabase.from("sef_fee_structure").select("std, default_fee");

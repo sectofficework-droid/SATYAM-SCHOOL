@@ -10,7 +10,6 @@ import '../modules/teacher/exams/teacher_exams_page.dart';
 import '../modules/teacher/homework/teacher_homework_page.dart';
 import '../modules/teacher/tasks/teacher_tasks_page.dart';
 import '../modules/teacher/question_bank/teacher_question_bank_page.dart';
-import '../modules/teacher/question_bank/teacher_create_paper_page.dart';
 import '../modules/teacher/calendar/teacher_calendar_page.dart';
 import '../modules/teacher/notices/teacher_notices_page.dart';
 import '../modules/teacher/profile/teacher_profile_page.dart';
@@ -18,7 +17,6 @@ import '../modules/teacher/syllabus/teacher_syllabus_page.dart';
 import '../modules/teacher/query/teacher_query_page.dart';
 import '../modules/teacher/rules/teacher_rules_page.dart';
 import '../modules/teacher/timetable/teacher_timetable_page.dart';
-import '../modules/teacher/birthdays/teacher_birthdays_page.dart';
 import '../modules/teacher/leave/teacher_leave_page.dart';
 import '../modules/teacher/daily_tasks/teacher_daily_tasks_page.dart';
 import 'app_routes.dart';
@@ -42,7 +40,6 @@ class AppPagesTeacher {
     GetPage(name: Routes.teacherHomework, page: () => const TeacherHomeworkPage()),
     GetPage(name: Routes.teacherTasks,    page: () => const TeacherTasksPage()),
     GetPage(name: Routes.teacherQuestionBank, page: () => const TeacherQuestionBankPage()),
-    GetPage(name: Routes.teacherCreatePaper, page: () => const TeacherCreatePaperPage()),
     GetPage(name: Routes.teacherCalendar, page: () => const TeacherCalendarPage()),
     GetPage(name: Routes.teacherNotices,  page: () => const TeacherNoticesPage()),
     GetPage(name: Routes.teacherProfile,  page: () => const TeacherProfilePage()),
@@ -50,7 +47,6 @@ class AppPagesTeacher {
     GetPage(name: Routes.teacherQuery,    page: () => const TeacherQueryPage()),
     GetPage(name: Routes.teacherRules,    page: () => const TeacherRulesPage()),
     GetPage(name: Routes.teacherTimetable, page: () => const TeacherTimetablePage()),
-    GetPage(name: Routes.teacherBirthdays, page: () => const TeacherBirthdaysPage()),
     GetPage(name: Routes.teacherLeave, page: () => const TeacherLeavePage()),
     GetPage(name: Routes.teacherDailyTasks, page: () => const TeacherDailyTasksPage()),
   ];

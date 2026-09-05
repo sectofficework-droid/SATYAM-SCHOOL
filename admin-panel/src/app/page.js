@@ -6,7 +6,8 @@ export default function RootPage({ searchParams }) {
   // this catches that case server-side before the code is lost.
   const code      = searchParams?.code;
   const tokenHash = searchParams?.token_hash;
-  if (code || tokenHash) {
+  const authError = searchParams?.error || searchParams?.error_description;
+  if (code || tokenHash || authError) {
     const qs = Object.entries(searchParams)
       .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
       .join("&");

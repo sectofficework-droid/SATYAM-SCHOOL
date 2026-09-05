@@ -23,6 +23,12 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
   bool _loading = true;
   bool _isClassTeacher = false;
 
+  // Class -> subjects this teacher actually teaches there, from the real
+  // Timetable (see SupabaseService.fetchTeacherSubjectsByClass) - drives the
+  // Add Homework sheet's Subject dropdown so it only ever offers what this
+  // teacher is actually scheduled to teach, not the whole school subject list.
+  Map<String, List<String>> _classSubjectsFromTT = {};
+
   // 0 = Mine, 1 = Class Overview
   int _scope = 0;
 
@@ -50,10 +56,17 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
         ? await SupabaseService.fetchHomework(classNames: [ownClass!])
         : <Map<String, dynamic>>[];
 
+    final teacherName = profile['name'] as String?;
+    final academicYear = await SupabaseService.fetchCurrentAcademicYearLabel();
+    final classSubjects = (teacherName != null && academicYear != null)
+        ? await SupabaseService.fetchTeacherSubjectsByClass(academicYear, teacherName)
+        : <String, List<String>>{};
+
     if (mounted) {
       setState(() {
       _mineList  = mine;
       _classList = classWide;
+      _classSubjectsFromTT = classSubjects;
       if (!_isClassTeacher) _scope = 0;
       _loading = false;
     });
@@ -80,12 +93,18 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
     DateTime? dueDate;
     final profile    = AuthService.to.profile.value ?? {};
     final myClasses  = teacherClasses(profile);
-    // A teacher with actual subject_mappings gets a single "Class - Subject"
-    // picker limited to what they're really allocated (e.g. "5th - EVS",
-    // "1st - Math"), instead of picking class and subject separately from
-    // every school subject. Most teachers have no mappings configured yet
-    // though, so they fall back to the old two-dropdown pickers.
-    final classSubjectPairs = teacherClassSubjectPairs(profile);
+    // A teacher with real Timetable periods gets a single "Class - Subject"
+    // picker limited to what they're actually scheduled to teach (e.g.
+    // "5th - EVS", "1st - Math"), instead of picking class and subject
+    // separately from every school subject. A teacher with no timetable
+    // periods at all yet falls back to the old two-dropdown pickers.
+    final classSubjectPairs = <({String className, String subject})>[
+      for (final entry in _classSubjectsFromTT.entries)
+        for (final subject in entry.value) (className: entry.key, subject: subject),
+    ]..sort((a, b) {
+        final byClass = allSchoolClasses.indexOf(a.className).compareTo(allSchoolClasses.indexOf(b.className));
+        return byClass != 0 ? byClass : a.subject.compareTo(b.subject);
+      });
 
     String? selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
         ? profile['class_name'] as String
@@ -105,7 +124,7 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) {
-        final subjectOptions = teacherSubjectsForClass(profile, selectedClass!);
+        final subjectOptions = _classSubjectsFromTT[selectedClass!] ?? const <String>[];
         return Padding(
           padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
           child: Container(

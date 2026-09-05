@@ -133,6 +133,10 @@ export function mapToStudent(enrollment) {
     deactivateReason: enrollment.deactivate_reason || "",
     deactivateDate:   enrollment.deactivate_date || "",
 
+    // Complete/Incomplete - set to "Incomplete" only by the Basic Details
+    // import; flips back to "Complete" the moment updateStudent() runs.
+    dataStatus:     s.data_status || "Complete",
+
     // TC uploaded check (for students who came from another school)
     tcUploaded: s.student_documents
       ? s.student_documents.some(d =>
@@ -208,11 +212,37 @@ export function mapToStudent(enrollment) {
     lastExamGiven:      s.student_previous_school?.last_exam_given ? "Yes" : "No",
     prevPercentage:     s.student_previous_school?.percentage || "",
 
-    // Siblings (if loaded)
+    // Siblings (if loaded) — studentId is only set for rows an admin has
+    // actually linked to a real enrolled student (see searchStudentsForSibling);
+    // older/free-text-only rows leave it null and just display as before.
     siblings: s.student_siblings
-      ? s.student_siblings.map(sib => ({ id: sib.id, name: sib.sibling_name, cls: sib.sibling_class }))
+      ? s.student_siblings.map(sib => ({ id: sib.id, name: sib.sibling_name, cls: sib.sibling_class, studentId: sib.sibling_student_id || null }))
       : [],
   };
+}
+
+// Live search for the Add/Edit Student "Sibling at This School" picker —
+// real enrolled students in the given class (current academic year),
+// replacing what used to be a hardcoded name list (siblingsByClass in
+// AddStudentForm.js) with no link to an actual student_id at all.
+export async function searchStudentsForSibling(className, excludeStudentId = null) {
+  if (!className) return [];
+  const [year, { data: classRow, error: classErr }] = await Promise.all([
+    getCurrentAcademicYear(),
+    supabase.from("classes").select("id").eq("name", className).single(),
+  ]);
+  if (classErr || !classRow) return [];
+
+  const { data, error } = await supabase
+    .from("student_enrollments")
+    .select("student:students(id, first_name, last_name)")
+    .eq("academic_year_id", year.id)
+    .eq("class_id", classRow.id);
+  if (error) throw error;
+  return (data || [])
+    .filter(r => r.student && (!excludeStudentId || r.student.id !== excludeStudentId))
+    .map(r => ({ studentId: r.student.id, name: `${r.student.first_name} ${r.student.last_name}`.trim() }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 // ── Academic Year ─────────────────────────────────────────────────────────────
@@ -315,7 +345,7 @@ export async function getStudents(yearId = null) {
       deactivate_reason, deactivate_date,
       student:students(
         id, first_name, last_name, photo_url, grno,
-        dob, gender, mobile1, mobile2, status,
+        dob, gender, mobile1, mobile2, status, data_status,
         religion, caste, mother_tongue, sub_caste, height_cm, weight_kg,
         place_of_birth, birth_state, birth_district, birth_city, birth_village,
         father_name, mother_name,
@@ -354,7 +384,7 @@ export async function getStudentByEnrollment(enrollmentNo) {
         id, first_name, last_name, photo_url, grno,
         dob, gender, place_of_birth, birth_state, birth_district, birth_city, birth_village, mobile1, mobile2,
         religion, caste, sub_caste, mother_tongue,
-        height_cm, weight_kg, status,
+        height_cm, weight_kg, status, data_status,
         father_name, mother_name,
         room_plot_no, society, landmark, area, pincode, address,
         aadhar, aadhar_name,
@@ -365,7 +395,7 @@ export async function getStudentByEnrollment(enrollmentNo) {
           school_name, grno, class, medium, place,
           attendance_days, last_exam_given, percentage
         ),
-        student_siblings(id, sibling_name, sibling_class),
+        student_siblings!student_siblings_student_id_fkey(id, sibling_name, sibling_class, sibling_student_id),
         student_documents(
           id, status, file_url, uploaded_at, reason,
           document_types(id, name)
@@ -504,6 +534,7 @@ export async function addStudent(formData) {
       birth_cert_reg_no:   formData.birthCertRegNo || null,
       birth_cert_reg_date: formData.birthCertRegDate || null,
       status:              "Active",
+      data_status:         formData.dataStatus || "Complete",
     })
     .select()
     .single();
@@ -565,13 +596,17 @@ export async function addStudent(formData) {
     });
   }
 
-  // 8. Insert siblings
+  // 8. Insert siblings — sibling_student_id links to a real enrolled
+  // student (picked live via searchStudentsForSibling), which is what
+  // makes this sibling switchable in the student app; null if the picker
+  // wasn't used (e.g. sibling not actually in this school).
   if (formData.siblings?.length > 0) {
     await supabase.from("student_siblings").insert(
       formData.siblings.map(sib => ({
-        student_id:    student.id,
-        sibling_name:  sib.name,
-        sibling_class: sib.cls || null,
+        student_id:         student.id,
+        sibling_name:       sib.name,
+        sibling_class:      sib.cls || null,
+        sibling_student_id: sib.studentId || null,
       }))
     );
   }
@@ -641,6 +676,11 @@ export async function updateStudent(studentId, formData) {
       birth_cert_reg_no:   formData.birthCertRegNo || null,
       birth_cert_reg_date: formData.birthCertRegDate || null,
       updated_at:          new Date().toISOString(),
+      // Any caller of updateStudent() is submitting the full-details form
+      // shape (ordinary Edit Student page, or the Replace Full Details
+      // import) - so a save through either path clears the Incomplete
+      // badge set by the Basic Details import, not just the dedicated tool.
+      data_status:         "Complete",
     })
     .eq("id", studentId);
   if (error) throw error;
@@ -682,12 +722,68 @@ export async function updateStudent(studentId, formData) {
     if (formData.siblings?.length > 0) {
       await supabase.from("student_siblings").insert(
         formData.siblings.map(sib => ({
-          student_id:    studentId,
-          sibling_name:  sib.name,
-          sibling_class: sib.cls,
+          student_id:         studentId,
+          sibling_name:       sib.name,
+          sibling_class:      sib.cls,
+          sibling_student_id: sib.studentId || null,
         }))
       );
     }
+  }
+}
+
+// ── Update Siblings Only ─────────────────────────────────────────────────────
+// Standalone sibling-link save, separate from updateStudent() above - the
+// full Edit Student form has native `required` fields (Religion, Address,
+// Mobile 1, Aadhar, etc.) all over it, so a basic-import "Incomplete"
+// student (only 8 fields on file) can't submit that form at all until every
+// other required field is filled in too, even to just link a sibling.
+// Touches only student_siblings - never data_status - since linking a
+// sibling isn't part of what "Incomplete" tracks.
+export async function updateStudentSiblings(studentId, siblings) {
+  await supabase.from("student_siblings").delete().eq("student_id", studentId);
+  if (siblings?.length > 0) {
+    const { error } = await supabase.from("student_siblings").insert(
+      siblings.map(sib => ({
+        student_id:         studentId,
+        sibling_name:       sib.name,
+        sibling_class:      sib.cls,
+        sibling_student_id: sib.studentId || null,
+      }))
+    );
+    if (error) throw error;
+  }
+}
+
+// ── Update Basic Details ──────────────────────────────────────────────────────
+// Same "don't touch the full form" reasoning as updateStudentSiblings above,
+// widened to cover the handful of fields a Basic Details import actually
+// collects (name, parents, DOB, mobile, address) plus photo and siblings -
+// everything the Update Basic Details modal in the Student module edits in
+// one save. Deliberately does NOT set data_status: "Complete" the way
+// updateStudent() does - this only ever touches a subset of the full-details
+// form, so the record should keep showing "Incomplete" (if it was) until
+// Super Admin > Replace Full Details actually backfills the rest.
+export async function updateStudentBasicDetails(studentId, data) {
+  const { error } = await supabase
+    .from("students")
+    .update({
+      first_name:  data.firstName,
+      last_name:   data.lastName || "",
+      father_name: data.fatherName || null,
+      mother_name: data.motherName || null,
+      dob:         data.dob || null,
+      mobile1:     data.mobile || null,
+      mobile2:     data.mobile2 || null,
+      address:     data.address || null,
+      photo_url:   data.photo,
+      updated_at:  new Date().toISOString(),
+    })
+    .eq("id", studentId);
+  if (error) throw error;
+
+  if (data.siblings !== undefined) {
+    await updateStudentSiblings(studentId, data.siblings);
   }
 }
 

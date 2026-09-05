@@ -85,10 +85,34 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Updated 2026-08-28: new "Admin Access Code" impersonation module, shipped
-to BOTH `debiprasad` AND `main` (merged + pushed — reaches Production).**
-Full detail: `ai-context\SESSION-2026-08-28-1.md`, plain-English mirror
-`work-log\LOG-2026-08-28.md`. Summary:
+**Updated 2026-08-24 — see `ai-context\SESSION-2026-08-24-1.md` for full
+detail. Flagged gap: `debiprasad` has since been merged to `main` (commit
+`2fc2570`) and the repo now works directly on `main` — but four feature
+commits between 2026-08-21 and 2026-08-24 (`886c6a3`, `f87a2ce`, `7c96bad`,
+`c0e11c1`, `d2f409c`) shipped with no governance log entry at all. Not
+backfilled this session (out of scope for what was asked) — the "three
+shipped changes" section immediately below is the last state this file
+actually attests to; treat everything after it as real but undocumented
+until a future session reconstructs it from `git log`.**
+
+**2026-08-24 addition — bulk student import (commit `7bd8cef`, on `main`,
+pushed):** new Student-module "Import Basic Details" tool (insert-only, 8
+fields, auto enrollment no) and new Super Admin "Replace Full Details" tool
+(matches by enrollment no, overwrites via `updateStudent()`). New
+`students.data_status` column ('Complete'/'Incomplete') drives a filter
+chip + badge on the student list. **Migration
+`mobile-app/SUPABASE_STUDENT_BASIC_IMPORT.sql` has NOT been run against
+production yet** — feature is shipped in code but non-functional until the
+user runs it. Verified: dev server compiled `/student` and `/super-admin`
+clean, no errors. Not verified: an actual import run, or mobile login for a
+basic-imported student (both need the migration first, then a manual
+pass — see SESSION-2026-08-24-1.md's Next steps).
+
+**Updated 2026-08-28 (on `debiprasad`, that branch's next update after the
+2026-08-24 entry above): new "Admin Access Code" impersonation module,
+recorded there as shipped to BOTH `debiprasad` AND `main` (merged + pushed
+— reaches Production).** Full detail: `ai-context\SESSION-2026-08-28-1.md`,
+plain-English mirror `work-log\LOG-2026-08-28.md`. Summary:
 - Management/senior_admin can generate a one-time, 10-minute, single-use
   code (student or employee detail view in the admin panel) that logs
   straight into that person's mobile-app account — no password touched.
@@ -111,8 +135,16 @@ Full detail: `ai-context\SESSION-2026-08-28-1.md`, plain-English mirror
   Access Code?") has only been verified via direct RPC calls + static
   analysis, not by actually running the app on a device/emulator.
 
-Earlier state (2026-08-21, `debiprasad` only at that time — now also on
-`main` via the 2026-08-28 merge above), unchanged since:
+**2026-09-04 note (this merge):** `main`'s own history at the time of this
+merge did not yet contain the 2026-08-28 impersonation work above as a
+merge commit here in `BOOTSTRAP.md`, even though `debiprasad`'s copy of
+this file asserted it had already reached `main` — a documentation gap
+consistent with the undocumented-commits pattern flagged in the 2026-08-24
+entry. Not investigated further here; the code-level merge for *this*
+session's changes (REQ-BUG-010..013, REQ-SEC-002 calendar continuation) is
+what actually happened via this commit.
+
+Earlier state (2026-08-21, `debiprasad` only at that time), unchanged since:
 1. **Add Student form extraction** — the ~1,400-line Add Student form moved
    out of `student/add/page.js` into a shared `components/AddStudentForm.js`
    (`variant="page"` | `"modal"`). Student list now opens Add Student as a
@@ -297,16 +329,31 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-Session `governance\ai-context\SESSION-2026-08-28-1.md` — built and shipped
+Session (this merge, 2026-09-04) — merged `debiprasad` into `main`
+(REQ-BUG-010..013: calendar ordering tiebreaker, teacher-calendar Sunday
+legend, Design 2 ID card photo/font fixes, calendar delete error handling;
+plus recording the already-applied REQ-SEC-002 `school_calendar_events`
+RLS lock). Full detail: `work-log\LOG-2026-09-04.md` session 2.
+
+Prior checkpoint: `governance\ai-context\SESSION-2026-08-28-1.md` — built and shipped
 the "Admin Access Code" impersonation module (management/senior_admin can
 log into any student/teacher's mobile-app account without their password,
 via a one-time 10-minute code + full audit log), found and fixed a real
 privilege-escalation bug in it the same session (internal helper functions
 reachable by anyone via Postgres's default PUBLIC execute grant — closed
 via explicit REVOKEs), merged `debiprasad` into `main` and pushed both
-(first merge to `main` since 2026-08-20). Also deleted the two standing QA
+(first merge to `main` since 2026-08-20, per that session's own record —
+see the 2026-09-04 note under "Code status" above on the discrepancy with
+what this file otherwise shows). Also deleted the two standing QA
 test accounts at the user's request. Not yet done: live device test of the
 new mobile-app login-screen UI.
+
+Prior checkpoint: `governance\ai-context\SESSION-2026-08-24-1.md` — shipped the bulk
+student import feature (Basic Details import + Replace Full Details
+import + Complete/Incomplete tracking), committed `7bd8cef`, pushed to
+`origin\main`. Flagged (not fixed) a 3-day governance gap — see "Code
+status" above. Migration not yet run against production; functional
+verification still pending the user.
 
 Prior checkpoint: `governance\ai-context\SESSION-2026-08-21-3.md` — fixed and shipped
 REQ-SEC-001 (plaintext `app_password`): wrote a real plan this time
@@ -336,10 +383,28 @@ and `ai-context\archive\SESSION-2026-08-19-2.md` (read-only secrets-hygiene
 check).
 
 ## Next step
+**2026-09-04 (this merge), current:**
+0. Click through the calendar and ID-card fixes just merged (Sunday legend
+   on the teacher calendar, Design 2 ID card print with a long class name
+   like "11TH - COMMERCE") — none of the 5 commits in this merge were
+   click-tested in a running app/browser this session. See
+   `work-log\LOG-2026-09-04.md` session 2, next steps 1/1b/1c.
+0a. Continue REQ-SEC-002 for `employees` and the remaining ~22 tables
+    (see TODO.md).
+
+**Carried over from 2026-08-28 (unchanged, not re-verified this session):**
 1. **Live-verify the new mobile-app login UI** — build+install a debug APK
    and actually try "Have an Admin Access Code?" on a device/emulator; only
    verified via direct RPC calls + static analysis so far (see
    `SESSION-2026-08-28-1.md`).
+
+**Carried over from 2026-08-24 (unchanged, not re-verified this session):**
+1a. Manually verify the bulk-import flow end-to-end (both tools,
+    badge/filter, bogus-enrollment-no error path, mobile login) — see
+    `SESSION-2026-08-24-1.md`. `mobile-app/SUPABASE_STUDENT_BASIC_IMPORT.sql`
+    still needs to be run against production first if not already done.
+1b. Decide whether/when to backfill the governance gap flagged above
+    (four undocumented feature commits, 2026-08-21 → 2026-08-24).
 2. **Install the handed-off debug APK on an actual device and verify the
    password-reset popup live** — reset a test student's password from the
    admin panel, open the app, confirm the "Password Reset" notice appears

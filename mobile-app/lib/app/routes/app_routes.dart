@@ -9,7 +9,6 @@ abstract class Routes {
   static const teacherHomework  = '/teacher/homework';
   static const teacherTasks     = '/teacher/tasks';
   static const teacherQuestionBank = '/teacher/question-bank';
-  static const teacherCreatePaper = '/teacher/create-paper';
   static const teacherCalendar = '/teacher/calendar';
   static const teacherNotices   = '/teacher/notices';
   static const teacherProfile   = '/teacher/profile';
@@ -17,7 +16,6 @@ abstract class Routes {
   static const teacherQuery     = '/teacher/query';
   static const teacherRules     = '/teacher/rules';
   static const teacherTimetable = '/teacher/timetable';
-  static const teacherBirthdays = '/teacher/birthdays';
   static const teacherLeave     = '/teacher/leave';
   static const teacherDailyTasks = '/teacher/daily-tasks';
   static const studentHome      = '/student/home';

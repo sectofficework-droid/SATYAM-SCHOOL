@@ -139,6 +139,35 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  // Every other active teaching-staff member (excludes the given employeeId,
+  // the requester, since they can't cover their own leave) - lets the Leave
+  // page's "Managed By" picker offer a real name instead of free text. Phone
+  // is included so that same picker can WhatsApp the covering teacher
+  // directly, not just the Principal.
+  static Future<List<Map<String, dynamic>>> fetchOtherTeachers(String excludeEmployeeId) async {
+    final res = await client
+        .from('employees')
+        .select('id, name, phone')
+        .eq('type', 'teaching')
+        .eq('status', 'Active')
+        .neq('id', excludeEmployeeId)
+        .order('name');
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  // Same "designation = Principal" lookup get_student_helpdesk_contacts uses
+  // for the Student app's Help Desk - direct select works fine for the
+  // teacher app too (name/phone aren't sensitive the way aadhar/address are).
+  static Future<Map<String, dynamic>?> fetchPrincipalContact() async {
+    final res = await client
+        .from('employees')
+        .select('name, phone')
+        .eq('designation', 'Principal')
+        .eq('status', 'Active')
+        .maybeSingle();
+    return res;
+  }
+
   // No limit, same reasoning as fetchStudentAttendance above - the Yearly
   // attendance view needs the whole academic year's records.
   static Future<List<Map<String, dynamic>>> fetchEmployeeAttendance(String employeeId) async {
@@ -258,7 +287,7 @@ class SupabaseService {
     var query = client.from('homework').select();
     if (className != null) query = query.eq('class', className);
     if (createdBy != null) query = query.eq('created_by', createdBy);
-    final res = await query.order('due_date');
+    final res = await query.order('due_date', ascending: true);
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -323,6 +352,12 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  // Without onConflict, upsert() targets the table's primary key (id) - since
+  // these records never include one, every save silently INSERTED a fresh
+  // row instead of updating the existing mark, even though exam_marks has a
+  // real UNIQUE (exam_id, student_id) constraint. That's what made re-saving
+  // already-entered marks look broken - the edit never actually landed on
+  // the row being displayed, just piled up a duplicate underneath it.
   static Future<void> saveMarksBatch(List<Map<String, dynamic>> records) async {
     await client.from('exam_marks').upsert(records, onConflict: 'exam_id,student_id');
   }
@@ -344,7 +379,7 @@ class SupabaseService {
   static Future<List<Map<String, dynamic>>> fetchOfficialExams({String? academicYearId}) async {
     var query = client.from('official_exams').select();
     if (academicYearId != null) query = query.eq('academic_year_id', academicYearId);
-    final res = await query.order('sort_order');
+    final res = await query.order('sort_order', ascending: true);
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -353,7 +388,7 @@ class SupabaseService {
         .from('class_subjects')
         .select('subject_name')
         .eq('class_name', className)
-        .order('sort_order');
+        .order('sort_order', ascending: true);
     return List<Map<String, dynamic>>.from(res).map((r) => r['subject_name'] as String).toList();
   }
 
@@ -431,7 +466,7 @@ class SupabaseService {
     var query = client.from('syllabus').select();
     if (className != null) query = query.eq('class', className);
     if (teacherId != null) query = query.eq('teacher_id', teacherId);
-    final res = await query.order('sort_order');
+    final res = await query.order('sort_order', ascending: true);
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -440,19 +475,6 @@ class SupabaseService {
   static Future<void> createSyllabusChapters(List<Map<String, dynamic>> rows) async {
     if (rows.isEmpty) return;
     await client.from('syllabus').insert(rows);
-  }
-
-  // Distinct chapter names already added to the syllabus for a class+subject
-  // (by any teacher) - lets Question Bank offer the real curriculum chapter
-  // list instead of generic "Chapter 1..12" placeholders.
-  static Future<List<String>> fetchSyllabusChapterNames({
-    required String className, required String subject,
-  }) async {
-    final res = await client.from('syllabus').select('chapter')
-        .eq('class', className).eq('subject', subject);
-    final chapters = List<Map<String, dynamic>>.from(res).map((r) => r['chapter'] as String).toSet().toList();
-    chapters.sort();
-    return chapters;
   }
 
   static Future<void> updateSyllabusStatus(String id, String status) async {
@@ -466,12 +488,30 @@ class SupabaseService {
     await client.from('syllabus').delete().eq('id', id);
   }
 
+  static Future<void> updateSyllabusChapterName(String id, String chapter) async {
+    await client.from('syllabus').update({'chapter': chapter}).eq('id', id);
+  }
+
+  // Wipes every chapter (and via ON DELETE CASCADE, their subtopics) this
+  // teacher has for one class+subject - used by "Replace Existing" on Add
+  // Chapters/Import, so re-uploading a corrected sheet doesn't just append
+  // another full copy on top of what's already there.
+  static Future<void> deleteSyllabusForSubject({
+    required String teacherId, required String className, required String subject,
+  }) async {
+    await client.from('syllabus')
+        .delete()
+        .eq('teacher_id', teacherId)
+        .eq('class', className)
+        .eq('subject', subject);
+  }
+
   // Subtopics under a chapter - optional, own independent progress. A
   // chapter with subtopics has its own status derived app-side from these
   // instead of being cycled directly.
   static Future<List<Map<String, dynamic>>> fetchSubtopics(List<String> chapterIds) async {
     if (chapterIds.isEmpty) return [];
-    final res = await client.from('syllabus_subtopics').select().inFilter('chapter_id', chapterIds).order('sort_order');
+    final res = await client.from('syllabus_subtopics').select().inFilter('chapter_id', chapterIds).order('sort_order', ascending: true);
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -584,7 +624,7 @@ class SupabaseService {
   };
 
   static Future<String?> fetchCurrentAcademicYearLabel() async {
-    final res = await client.from('academic_years').select('label, is_current').order('label');
+    final res = await client.from('academic_years').select('label, is_current').order('label', ascending: true);
     final rows = List<Map<String, dynamic>>.from(res);
     if (rows.isEmpty) return null;
     final current = rows.where((r) => r['is_current'] == true).toList();
@@ -596,6 +636,17 @@ class SupabaseService {
   static Future<Map<String, dynamic>?> fetchPeriodDefs() async {
     final res = await client.from('school_profile').select('period_defs').maybeSingle();
     return res?['period_defs'] as Map<String, dynamic>?;
+  }
+
+  // { groupName: [weekday, ...] } - which weekdays use which day group's
+  // periods. Day groups are fully custom now (admin can add/rename/delete
+  // them in Settings → Timetable), so this replaces what used to be a
+  // hardcoded assumption in TimetableView (_weekdayToGroup) that the
+  // group's own name told you the weekdays. Null if never customized -
+  // callers fall back to the old hardcoded 3-group mapping in that case.
+  static Future<Map<String, dynamic>?> fetchDayGroupWeekdays() async {
+    final res = await client.from('school_profile').select('day_group_weekdays').maybeSingle();
+    return res?['day_group_weekdays'] as Map<String, dynamic>?;
   }
 
   static Future<List<Map<String, dynamic>>> fetchTimetableForClass(String academicYear, String className) async {
@@ -617,6 +668,26 @@ class SupabaseService {
         .eq('academic_year', academicYear)
         .eq('teacher', teacherName);
     return List<Map<String, dynamic>>.from(res);
+  }
+
+  // Which subjects this teacher actually teaches, per class - derived from
+  // the real Timetable instead of profile['subject_mappings'] (see
+  // teacherSubjectsForClass in teacher_classes.dart), which most teachers
+  // never get configured at all. Homework/Marks Entry subject dropdowns use
+  // this so a teacher only sees subjects they're actually scheduled to
+  // teach for the selected class, not the entire school subject list.
+  static Future<Map<String, List<String>>> fetchTeacherSubjectsByClass(String academicYear, String teacherName) async {
+    final rows = await fetchTimetableForTeacher(academicYear, teacherName);
+    final reverseOverrides = {for (final e in _timetableClassNameOverrides.entries) e.value: e.key};
+    final map = <String, Set<String>>{};
+    for (final r in rows) {
+      final subject = r['subject'] as String?;
+      final ttClassName = r['class_name'] as String?;
+      if (subject == null || subject.isEmpty || ttClassName == null || ttClassName.isEmpty) continue;
+      final className = reverseOverrides[ttClassName] ?? ttClassName;
+      map.putIfAbsent(className, () => {}).add(subject);
+    }
+    return map.map((k, v) => MapEntry(k, v.toList()..sort()));
   }
 
   // Queries & Suggestions ────────────────────────────────────────────────────
@@ -684,7 +755,7 @@ class SupabaseService {
         .from('daily_tasks')
         .select('id, title, description, target_type, daily_task_targets(employee_id)')
         .eq('active', true)
-        .order('created_at');
+        .order('created_at', ascending: true);
     final completionsRes = await client
         .from('daily_task_completions')
         .select('daily_task_id, completed_at')
@@ -811,77 +882,33 @@ class SupabaseService {
     return res == true;
   }
 
-  // Question Bank ─────────────────────────────────────────────────────────────
-  // Private per teacher (query always filters by teacher_id) - see
-  // SUPABASE_QUESTION_BANK.sql for why this isn't enforced via RLS.
+  // Question Bank module - Assignment / Exam Paper / Question Bank ─────────────
+  // All three sections are plain uploaded documents (teacher_documents,
+  // distinguished by `section`) rather than in-app question building - see
+  // SUPABASE_TEACHER_DOCUMENTS.sql. Private per teacher (query always filters
+  // by teacher_id), same as the old question_bank table this replaces.
 
-  static Future<List<Map<String, dynamic>>> fetchQuestions({
-    required String teacherId, required String className, required String subject, String? chapter,
+  static Future<List<String>> fetchAcademicYearLabels() async {
+    final res = await client.from('academic_years').select('label').order('label', ascending: true);
+    return List<Map<String, dynamic>>.from(res).map((r) => r['label'] as String).toList();
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchTeacherDocuments({
+    required String teacherId, required String section,
   }) async {
-    var query = client.from('question_bank').select()
+    final res = await client.from('teacher_documents').select()
         .eq('teacher_id', teacherId)
-        .eq('class', className)
-        .eq('subject', subject);
-    if (chapter != null && chapter.isNotEmpty) query = query.eq('chapter', chapter);
-    final res = await query.order('created_at');
+        .eq('section', section)
+        .order('created_at', ascending: false);
     return List<Map<String, dynamic>>.from(res);
   }
 
-  // Distinct chapter names this teacher has already used for a class+subject,
-  // so the chapter picker can suggest existing ones instead of always
-  // retyping (and risking inconsistent spelling that would split one chapter
-  // into two).
-  static Future<List<String>> fetchQuestionChapters({
-    required String teacherId, required String className, required String subject,
-  }) async {
-    final res = await client.from('question_bank').select('chapter')
-        .eq('teacher_id', teacherId)
-        .eq('class', className)
-        .eq('subject', subject);
-    final chapters = List<Map<String, dynamic>>.from(res).map((r) => r['chapter'] as String).toSet().toList();
-    chapters.sort();
-    return chapters;
+  static Future<void> createTeacherDocument(Map<String, dynamic> data) async {
+    await client.from('teacher_documents').insert(data);
   }
 
-  static Future<void> createQuestion(Map<String, dynamic> data) async {
-    await client.from('question_bank').insert(data);
-  }
-
-  static Future<void> updateQuestion(String id, Map<String, dynamic> data) async {
-    await client.from('question_bank').update(data).eq('id', id);
-  }
-
-  static Future<void> deleteQuestion(String id) async {
-    await client.from('question_bank').delete().eq('id', id);
-  }
-
-  // Multi-chapter question fetch, used when picking questions for a paper
-  // (a paper can pull from more than one chapter at once).
-  static Future<List<Map<String, dynamic>>> fetchQuestionsForChapters({
-    required String teacherId, required String className, required String subject, required List<String> chapters,
-  }) async {
-    if (chapters.isEmpty) return [];
-    final res = await client.from('question_bank').select()
-        .eq('teacher_id', teacherId)
-        .eq('class', className)
-        .eq('subject', subject)
-        .inFilter('chapter', chapters)
-        .order('created_at');
-    return List<Map<String, dynamic>>.from(res);
-  }
-
-  // Question Papers (Exam / Assignment) ─────────────────────────────────────
-  static Future<Map<String, dynamic>> createQuestionPaper(Map<String, dynamic> data) async {
-    final res = await client.from('question_papers').insert(data).select().single();
-    return Map<String, dynamic>.from(res);
-  }
-
-  static Future<void> saveQuestionPaperItems(String paperId, List<String> questionIds) async {
-    if (questionIds.isEmpty) return;
-    final items = List.generate(questionIds.length, (i) => {
-      'paper_id': paperId, 'question_id': questionIds[i], 'order_index': i,
-    });
-    await client.from('question_paper_items').insert(items);
+  static Future<void> deleteTeacherDocument(String id) async {
+    await client.from('teacher_documents').delete().eq('id', id);
   }
 
   // School Calendar ──────────────────────────────────────────────────────────
@@ -889,7 +916,7 @@ class SupabaseService {
     final res = await client.from('school_calendar_events').select()
         .gte('event_date', rangeStart.toIso8601String().split('T').first)
         .lte('event_date', rangeEnd.toIso8601String().split('T').first)
-        .order('event_date')
+        .order('event_date', ascending: true)
         .order('id');
     return List<Map<String, dynamic>>.from(res);
   }

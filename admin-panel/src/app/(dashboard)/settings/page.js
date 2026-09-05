@@ -12,7 +12,8 @@ import {
   Phone, Mail, MapPin, Hash, Shield, UserPlus,
   GraduationCap, Lock, ChevronDown, ChevronUp, Pencil,
   AlertCircle, LogOut, SlidersHorizontal, LayoutGrid,
-  Download, FileSpreadsheet, MessageSquare, CalendarRange, Layers, ScrollText, Award, Smartphone, KeyRound,
+  Download, FileSpreadsheet, MessageSquare, CalendarRange, Layers, ScrollText, Award, Smartphone,
+  Link2, KeyRound,
 } from "lucide-react";
 import YearPlanningTab from "./YearPlanningTab";
 import RulesRegulationsTab from "./RulesRegulationsTab";
@@ -33,7 +34,7 @@ import {
   getClassesWithSections, setClassActiveInDB, insertSection, deleteSectionFromDB, updateSectionTeacher,
   addSupportingTeacher, removeSupportingTeacher,
   getTeachingEmployees, getAllClassSubjects, saveClassSubjects,
-  getPeriodDefs, savePeriodDefs,
+  getPeriodDefs, savePeriodDefs, getDayGroupWeekdays, saveDayGroupWeekdays,
 } from "@/lib/settingsService";
 
 function FieldError({ msg }) {
@@ -97,7 +98,30 @@ const DEF_USERS = [
 ];
 
 // ── Timetable Constants ────────────────────────────────────────────────────────
-const DAY_GROUPS = ["Mon – Wed", "Thu – Fri", "Saturday"];
+// Day groups themselves are no longer a fixed list - admin can add/rename/
+// delete them freely (see TimetableTab). DEF_PERIOD_DEFS/DEF_DAY_GROUP_WEEKDAYS
+// below are only the starting defaults for a school that's never touched this
+// yet - exactly today's 3-group Mon–Sat split, so nothing changes until the
+// new UI is actually used.
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const DEF_DAY_GROUP_WEEKDAYS = {
+  "Mon – Wed": ["Monday", "Tuesday", "Wednesday"],
+  "Thu – Fri": ["Thursday", "Friday"],
+  "Saturday": ["Saturday"],
+};
+
+// Groups sorted by their earliest assigned weekday (Mon-first), so the grid/
+// tabs/exports read in natural week order without needing separately
+// persisted ordering - a group with no weekdays assigned yet sorts last.
+function sortDayGroups(names, weekdaysMap) {
+  const rank = (name) => {
+    const days = weekdaysMap?.[name] || [];
+    const idxs = days.map(d => WEEKDAYS.indexOf(d)).filter(i => i >= 0);
+    return idxs.length ? Math.min(...idxs) : 99;
+  };
+  return [...names].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+}
 
 const DEF_PERIOD_DEFS = {
   "Mon – Wed": [
@@ -134,43 +158,23 @@ const SUBJECTS_TT = [
   "Activity & Play","Free Period","Odia - MIL","G.K.",
 ];
 
-const TEACHERS_TT = [
-  "Pami Pradhan","Rashmita Patra","Priti Singh","Janki Das",
-  "Shivani Pradhan","Smurti Panda","Manisha Biswal","Parvati Polai",
-  "Sita Gouda","Kabita Panigrahi","Barsha Pradhan","Liza Patra",
-  "Laxmi Behera","Pragyan Panda","Priyanka Bisoyi","Priyanka Padhi",
-];
-
-const TEACHER_PALETTE = [
-  { bg:"bg-amber-100",   text:"text-amber-900",   border:"border-amber-300"   },
-  { bg:"bg-blue-100",    text:"text-blue-900",    border:"border-blue-300"    },
-  { bg:"bg-green-100",   text:"text-green-900",   border:"border-green-300"   },
-  { bg:"bg-purple-100",  text:"text-purple-900",  border:"border-purple-300"  },
-  { bg:"bg-pink-100",    text:"text-pink-900",    border:"border-pink-300"    },
-  { bg:"bg-indigo-100",  text:"text-indigo-900",  border:"border-indigo-300"  },
-  { bg:"bg-teal-100",    text:"text-teal-900",    border:"border-teal-300"    },
-  { bg:"bg-orange-100",  text:"text-orange-900",  border:"border-orange-300"  },
-  { bg:"bg-red-100",     text:"text-red-900",     border:"border-red-300"     },
-  { bg:"bg-cyan-100",    text:"text-cyan-900",    border:"border-cyan-300"    },
-  { bg:"bg-lime-100",    text:"text-lime-900",    border:"border-lime-300"    },
-  { bg:"bg-rose-100",    text:"text-rose-900",    border:"border-rose-300"    },
-  { bg:"bg-violet-100",  text:"text-violet-900",  border:"border-violet-300"  },
-  { bg:"bg-emerald-100", text:"text-emerald-900", border:"border-emerald-300" },
-  { bg:"bg-fuchsia-100", text:"text-fuchsia-900", border:"border-fuchsia-300" },
-  { bg:"bg-sky-100",     text:"text-sky-900",     border:"border-sky-300"     },
-];
-
-const TEACHER_RGB_PALETTE = [
-  [254,243,199],[219,234,254],[220,252,231],[243,232,255],
-  [252,231,243],[224,231,255],[204,251,241],[255,237,213],
-  [254,226,226],[207,250,254],[236,252,203],[255,228,230],
-  [237,233,254],[209,250,229],[253,224,255],[224,242,254],
-];
-
-function getTeacherColor(teacher) {
-  if (!teacher) return null;
-  const idx = TEACHERS_TT.indexOf(teacher);
-  return TEACHER_PALETTE[(idx >= 0 ? idx : 0) % TEACHER_PALETTE.length];
+// Teacher colors used to come from a fixed 16-swatch palette picked by
+// hashing the name mod 16 (hashIndex) - collision-spread, but with more
+// than a handful of teachers (this school has 50+ staff) two teachers
+// landing on the same swatch was inevitable, not just possible. Colors are
+// now generated per teacher from their position in the live roster
+// (already alphabetical - getTeachingEmployees orders by name), spacing
+// hues evenly around the full 360° wheel for however many teachers
+// actually exist, so every currently-active teacher gets a genuinely
+// distinct color instead of sharing a swatch. Built once via useMemo in
+// TimetableTab as `teacherColorMap` (name -> {bg, text, border, rgb}); see
+// its definition for how index/total become a hue.
+function hslToRgb(h, s, l) {
+  s /= 100; l /= 100;
+  const k = (n) => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(255 * f(0)), Math.round(255 * f(8)), Math.round(255 * f(4))];
 }
 
 function shortName(name) {
@@ -1553,15 +1557,48 @@ function TimetableTab() {
   const [periodsEditMode,  setPeriodsEditMode]  = useState(false);
   const [periodsForm,      setPeriodsForm]      = useState(() => JSON.parse(JSON.stringify(DEF_PERIOD_DEFS)));
   const [periodsSaved,     setPeriodsSaved]     = useState(false);
-  const [activeGroup,      setActiveGroup]      = useState(DAY_GROUPS[0]);
+  const [activeGroup,      setActiveGroup]      = useState(Object.keys(DEF_PERIOD_DEFS)[0]);
+
+  // Which weekdays use which day group's periods - see
+  // mobile-app/SUPABASE_TIMETABLE_CUSTOMIZE_MERGE.sql. weekdaysForm is the
+  // draft edited alongside periodsForm during periodsEditMode; groupRenames/
+  // groupDeletes track structural changes (current name -> original DB name,
+  // and original DB names to delete) made during THIS edit session, applied
+  // to saved `timetables` rows only on Save so Cancel stays truly a no-op.
+  const [dayGroupWeekdays, setDayGroupWeekdaysLocal] = useState(null);
+  const [weekdaysForm,     setWeekdaysForm]     = useState(() => JSON.parse(JSON.stringify(DEF_DAY_GROUP_WEEKDAYS)));
+  const [groupRenames,     setGroupRenames]     = useState({}); // currentName -> originalDbName
+  const [groupDeletes,     setGroupDeletes]     = useState(new Set()); // originalDbNames
+
+  // Teacher and Subject options for the cell editor - previously hardcoded
+  // 16-name/20-subject lists (TEACHERS_TT/SUBJECTS_TT), so any teacher hired
+  // since, or any subject not in that exact list, simply had no option to
+  // pick from. Teachers now come live from Employees; subjects are scoped
+  // per-class from the "Subjects" tab's class_subjects table (same source
+  // SubjectsTab writes to), falling back to the generic SUBJECTS_TT starter
+  // list for a class that hasn't been configured there yet.
+  const [teacherList,      setTeacherList]      = useState([]); // [{id, name}]
+  const [classSubjectsMap, setClassSubjectsMap]  = useState({}); // store-format class name -> [subjects]
 
   useEffect(() => {
     getPeriodDefs()
       .then(defs => {
         setPeriodDefsLocal(defs);
         setPeriodsForm(JSON.parse(JSON.stringify(defs || DEF_PERIOD_DEFS)));
+        // activeGroup started out pointing at the fallback default's first
+        // key - once the real saved groups load, make sure it still points
+        // at something that actually exists (a school that's already
+        // customized this could have entirely different group names).
+        const keys = Object.keys(defs || DEF_PERIOD_DEFS);
+        setActiveGroup(prev => keys.includes(prev) ? prev : (keys[0] || ""));
       })
       .finally(() => setPeriodDefsLoading(false));
+    getDayGroupWeekdays()
+      .then(map => {
+        setDayGroupWeekdaysLocal(map);
+        setWeekdaysForm(JSON.parse(JSON.stringify(map || DEF_DAY_GROUP_WEEKDAYS)));
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1569,6 +1606,37 @@ function TimetableTab() {
       .then(data => setTtActiveClasses(data.filter(c => c.is_active).map(c => dbToStore(c.name))))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    getTeachingEmployees().then(setTeacherList).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    getAllClassSubjects().then(dbMap => {
+      const storeMap = {};
+      Object.entries(dbMap).forEach(([dbName, subjects]) => { storeMap[dbToStore(dbName)] = subjects; });
+      setClassSubjectsMap(storeMap);
+    }).catch(() => {});
+  }, []);
+
+  const teacherNames = teacherList.map(t => t.name);
+
+  // One evenly-spaced hue per teacher, indexed by their position in the
+  // (already name-sorted) roster - see hslToRgb's comment above for why.
+  const teacherColorMap = useMemo(() => {
+    const map = {};
+    const total = teacherList.length;
+    teacherList.forEach((t, i) => {
+      const hue = Math.round((360 * i) / Math.max(total, 1));
+      map[t.name] = {
+        bg:     `hsl(${hue}, 68%, 93%)`,
+        text:   `hsl(${hue}, 55%, 30%)`,
+        border: `hsl(${hue}, 55%, 78%)`,
+        rgb:    hslToRgb(hue, 68, 93),
+      };
+    });
+    return map;
+  }, [teacherList]);
 
   useEffect(() => {
     supabase.from("academic_years").select("label, is_current").order("label").then(({ data }) => {
@@ -1599,7 +1667,7 @@ function TimetableTab() {
       if (!built[year])                              built[year]                              = {};
       if (!built[year][row.day_group])               built[year][row.day_group]               = {};
       if (!built[year][row.day_group][row.slot_id])  built[year][row.day_group][row.slot_id]  = {};
-      built[year][row.day_group][row.slot_id][row.class_name] = { subject: row.subject || "", teacher: row.teacher || "" };
+      built[year][row.day_group][row.slot_id][row.class_name] = { subject: row.subject || "", teacher: row.teacher || "", mergedWith: row.merged_with || [] };
     });
     setTtData(built);
     setTtLoading(false);
@@ -1607,7 +1675,12 @@ function TimetableTab() {
 
   useEffect(() => { if (selYear) loadTT(selYear); }, [selYear]);
 
-  const activeDefs = periodsEditMode ? periodsForm : (periodDefs || DEF_PERIOD_DEFS);
+  const activeDefs     = periodsEditMode ? periodsForm : (periodDefs || DEF_PERIOD_DEFS);
+  const activeWeekdays = periodsEditMode ? weekdaysForm : (dayGroupWeekdays || DEF_DAY_GROUP_WEEKDAYS);
+  const groupList = useMemo(
+    () => sortDayGroups(Object.keys(activeDefs), activeWeekdays),
+    [activeDefs, activeWeekdays]
+  );
   function groupSlots(group) { return activeDefs[group] ?? []; }
 
   function fmtTime(t) { if (!t) return ""; const [h,m] = t.split(":"); return `${parseInt(h)}:${m}`; }
@@ -1617,15 +1690,100 @@ function TimetableTab() {
   function startPeriodsEdit() {
     periodsBackup.current = JSON.parse(JSON.stringify(periodDefs || DEF_PERIOD_DEFS));
     setPeriodsForm(JSON.parse(JSON.stringify(periodDefs || DEF_PERIOD_DEFS)));
+    setWeekdaysForm(JSON.parse(JSON.stringify(dayGroupWeekdays || DEF_DAY_GROUP_WEEKDAYS)));
+    setGroupRenames({});
+    setGroupDeletes(new Set());
     setPeriodsEditMode(true);
   }
-  function cancelPeriodsEdit() { setPeriodsForm(periodsBackup.current); setPeriodsEditMode(false); }
+  function cancelPeriodsEdit() {
+    setPeriodsForm(periodsBackup.current);
+    setGroupRenames({});
+    setGroupDeletes(new Set());
+    setPeriodsEditMode(false);
+  }
   async function savePeriodsEdit() {
+    // Cascade renames/deletes to saved timetable rows (every academic year,
+    // not just the selected one - a schedule name change should stay
+    // consistent everywhere) before the group names they reference stop
+    // existing in period_defs.
+    for (const [currentName, originalName] of Object.entries(groupRenames)) {
+      if (currentName !== originalName) {
+        await supabase.from("timetables").update({ day_group: currentName }).eq("day_group", originalName);
+      }
+    }
+    for (const originalName of groupDeletes) {
+      await supabase.from("timetables").delete().eq("day_group", originalName);
+    }
     await savePeriodDefs(periodsForm);
+    await saveDayGroupWeekdays(weekdaysForm);
     setPeriodDefsLocal(periodsForm);
+    setDayGroupWeekdaysLocal(weekdaysForm);
+    setGroupRenames({});
+    setGroupDeletes(new Set());
     setPeriodsSaved(true);
     setPeriodsEditMode(false);
+    if (selYear) loadTT(selYear); // renamed/deleted groups can change which saved rows exist
     setTimeout(() => setPeriodsSaved(false), 2500);
+  }
+
+  // originalNameOf: resolves a possibly-just-renamed-this-session group back
+  // to the name it's actually saved under in `timetables`, so a rename then
+  // a delete (or two renames in a row) in the same edit session still
+  // cascades correctly against the real saved data.
+  function originalNameOf(currentName) { return groupRenames[currentName] || currentName; }
+
+  function addDayGroup() {
+    const name = (window.prompt('New day group name (e.g. "Sunday" or "Special Week"):', "") || "").trim();
+    if (!name) return;
+    if (periodsForm[name]) { alert(`A day group named "${name}" already exists.`); return; }
+    setPeriodsForm(prev => ({ ...prev, [name]: [{ id: "slot_" + Date.now(), label: "Period 1", startTime: "09:00", endTime: "09:45", isBreak: false }] }));
+    setWeekdaysForm(prev => ({ ...prev, [name]: [] }));
+    setActiveGroup(name);
+  }
+
+  function renameDayGroup(oldName) {
+    const name = (window.prompt("Rename day group:", oldName) || "").trim();
+    if (!name || name === oldName) return;
+    if (periodsForm[name]) { alert(`A day group named "${name}" already exists.`); return; }
+    const original = originalNameOf(oldName);
+    setPeriodsForm(prev => {
+      const { [oldName]: slots, ...rest } = prev;
+      return { ...rest, [name]: slots };
+    });
+    setWeekdaysForm(prev => {
+      const { [oldName]: days, ...rest } = prev;
+      return { ...rest, [name]: days || [] };
+    });
+    setGroupRenames(prev => {
+      const { [oldName]: _drop, ...rest } = prev;
+      return { ...rest, [name]: original };
+    });
+    setActiveGroup(name);
+  }
+
+  function deleteDayGroup(name) {
+    const typed = window.prompt(`This deletes "${name}" and ALL saved timetable entries under it, for every academic year. Type the group name to confirm:`);
+    if (typed !== name) return;
+    const original = originalNameOf(name);
+    setPeriodsForm(prev => { const { [name]: _drop, ...rest } = prev; return rest; });
+    setWeekdaysForm(prev => { const { [name]: _drop, ...rest } = prev; return rest; });
+    setGroupRenames(prev => { const { [name]: _drop, ...rest } = prev; return rest; });
+    setGroupDeletes(prev => new Set([...prev, original]));
+    setActiveGroup(prev => prev === name ? (Object.keys(periodsForm).find(g => g !== name) || "") : prev);
+  }
+
+  // One group per weekday - selecting a weekday for `group` clears it from
+  // whichever group had it before; clicking an already-assigned weekday on
+  // its own group unassigns it (no school that day, same as Sunday already
+  // implicitly is).
+  function toggleGroupWeekday(group, day) {
+    setWeekdaysForm(prev => {
+      const next = {};
+      for (const g of Object.keys(prev)) next[g] = (prev[g] || []).filter(d => d !== day);
+      const wasOnThisGroup = (prev[group] || []).includes(day);
+      if (!wasOnThisGroup) next[group] = [...(next[group] || []), day];
+      return next;
+    });
   }
 
   function moveSlot(group, idx, dir) {
@@ -1663,23 +1821,66 @@ function TimetableTab() {
   const activeColClasses = CLASSES.filter(c => ttActiveClasses.includes(c));
 
   function getSlot(group, slotId, cls) {
-    return ttData?.[selYear]?.[group]?.[slotId]?.[cls] ?? { subject:"", teacher:"" };
+    return ttData?.[selYear]?.[group]?.[slotId]?.[cls] ?? { subject:"", teacher:"", mergedWith:[] };
   }
   function setSlotVal(group, slotId, cls, key, value) {
     setTtData(prev => {
       const next = JSON.parse(JSON.stringify(prev));
-      if (!next[selYear])                     next[selYear]                     = {};
-      if (!next[selYear][group])              next[selYear][group]              = {};
-      if (!next[selYear][group][slotId])      next[selYear][group][slotId]      = {};
-      if (!next[selYear][group][slotId][cls]) next[selYear][group][slotId][cls] = { subject:"", teacher:"" };
-      next[selYear][group][slotId][cls][key] = value;
+      const ensure = (c) => {
+        if (!next[selYear])                next[selYear]                = {};
+        if (!next[selYear][group])         next[selYear][group]         = {};
+        if (!next[selYear][group][slotId]) next[selYear][group][slotId] = {};
+        if (!next[selYear][group][slotId][c]) next[selYear][group][slotId][c] = { subject:"", teacher:"", mergedWith:[] };
+        return next[selYear][group][slotId][c];
+      };
+      const cell = ensure(cls);
+      cell[key] = value;
+      // Merged classes always share subject+teacher - propagate so a later
+      // edit here can't silently drift the merge partners out of sync.
+      if ((key === "subject" || key === "teacher") && cell.mergedWith?.length) {
+        cell.mergedWith.forEach(partnerCls => { ensure(partnerCls)[key] = value; });
+      }
       return next;
     });
   }
+  // Toggles a merge link between `cls` and `partnerCls` at this exact
+  // group+slot - merging copies cls's current subject/teacher onto the
+  // partner and links both ways; un-merging drops the link both ways
+  // without touching either class's own subject/teacher.
+  function toggleMerge(group, slotId, cls, partnerCls) {
+    setTtData(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const ensure = (c) => {
+        if (!next[selYear])                next[selYear]                = {};
+        if (!next[selYear][group])         next[selYear][group]         = {};
+        if (!next[selYear][group][slotId]) next[selYear][group][slotId] = {};
+        if (!next[selYear][group][slotId][c]) next[selYear][group][slotId][c] = { subject:"", teacher:"", mergedWith:[] };
+        return next[selYear][group][slotId][c];
+      };
+      const cell = ensure(cls);
+      const already = (cell.mergedWith || []).includes(partnerCls);
+      const partner = ensure(partnerCls);
+      if (already) {
+        cell.mergedWith = (cell.mergedWith || []).filter(c => c !== partnerCls);
+        partner.mergedWith = (partner.mergedWith || []).filter(c => c !== cls);
+      } else {
+        cell.mergedWith = [...new Set([...(cell.mergedWith || []), partnerCls])];
+        partner.subject = cell.subject;
+        partner.teacher = cell.teacher;
+        partner.mergedWith = [...new Set([...(partner.mergedWith || []), cls])];
+      }
+      return next;
+    });
+  }
+  // Classes actually merged with currentCls at this slot don't count as a
+  // conflict - a real conflict is a DIFFERENT class that independently
+  // already holds that teacher in the same slot.
   function getBusyTeachers(group, slotId, currentCls) {
     const busy = new Set();
+    const mergedPartners = new Set(getSlot(group, slotId, currentCls).mergedWith || []);
     Object.entries(ttData?.[selYear]?.[group]?.[slotId] ?? {}).forEach(([cls, cell]) => {
-      if (cls !== currentCls && cell?.teacher) busy.add(cell.teacher);
+      if (cls === currentCls || mergedPartners.has(cls)) return;
+      if (cell?.teacher) busy.add(cell.teacher);
     });
     return busy;
   }
@@ -1692,7 +1893,11 @@ function TimetableTab() {
       Object.entries(slots).forEach(([slotId, classes]) => {
         Object.entries(classes).forEach(([cls, cell]) => {
           if (cell.subject || cell.teacher) {
-            rows.push({ academic_year: selYear, day_group: group, slot_id: slotId, class_name: cls, subject: cell.subject || "", teacher: cell.teacher || "" });
+            rows.push({
+              academic_year: selYear, day_group: group, slot_id: slotId, class_name: cls,
+              subject: cell.subject || "", teacher: cell.teacher || "",
+              merged_with: cell.mergedWith?.length ? cell.mergedWith : null,
+            });
           }
         });
       });
@@ -1723,13 +1928,12 @@ function TimetableTab() {
     doc.setFontSize(9); doc.setTextColor(100,100,100);
     doc.text("Satyam Stars International School  ·  Surat, Gujarat", pw/2, 46, { align:"center" });
     let y = 58;
-    DAY_GROUPS.forEach((group) => {
+    groupList.forEach((group) => {
       const slots = groupSlots(group);
-      const isSat = group === "Saturday";
-      doc.setFillColor(...(isSat ? [180,72,0] : [30,58,95]));
+      doc.setFillColor(30,58,95);
       doc.setTextColor(255,255,255); doc.setFontSize(11);
       doc.rect(30, y, pw-60, 18, "F");
-      doc.text(`  ${group}${isSat ? "  —  Half Day" : ""}`, 34, y+13);
+      doc.text(`  ${group}`, 34, y+13);
       y += 22;
       const head = [["TIME", ...activeColClasses]];
       const body = slots.map(slot => {
@@ -1754,15 +1958,15 @@ function TimetableTab() {
           const cls = activeColClasses[data.column.index - 1];
           if (!cls) return;
           const cell = getSlot(group, slot.id, cls);
-          if (cell?.teacher) {
-            const tidx = TEACHERS_TT.indexOf(cell.teacher);
-            if (tidx >= 0) { data.cell.styles.fillColor = TEACHER_RGB_PALETTE[tidx % TEACHER_RGB_PALETTE.length]; data.cell.styles.textColor = [40,40,40]; }
+          if (cell?.teacher && teacherColorMap[cell.teacher]) {
+            data.cell.styles.fillColor = teacherColorMap[cell.teacher].rgb;
+            data.cell.styles.textColor = [40,40,40];
           }
         },
         margin: { left:30, right:30 },
       });
       y = (doc.lastAutoTable?.finalY ?? y) + 14;
-      if (y > doc.internal.pageSize.height - 60 && group !== DAY_GROUPS[DAY_GROUPS.length-1]) { doc.addPage(); y = 30; }
+      if (y > doc.internal.pageSize.height - 60 && group !== groupList[groupList.length-1]) { doc.addPage(); y = 30; }
     });
     doc.save(`Timetable_${selYear}.pdf`);
   }
@@ -1770,7 +1974,18 @@ function TimetableTab() {
   // ── Excel Export ──
   function exportExcel() {
     const wb = XLSX.utils.book_new();
-    DAY_GROUPS.forEach(group => {
+    // Excel sheet names: max 31 chars, and \/*?[]: are illegal - didn't
+    // matter while groups were always "Mon – Wed"/"Thu – Fri"/"Saturday",
+    // but a custom group name could now hit either limit.
+    const usedSheetNames = new Set();
+    function safeSheetName(name) {
+      let safe = name.replace(/[\\/*?[\]:]/g, "").slice(0, 31) || "Group";
+      let n = 2;
+      while (usedSheetNames.has(safe)) { safe = `${name.slice(0, 28)} ${n++}`; }
+      usedSheetNames.add(safe);
+      return safe;
+    }
+    groupList.forEach(group => {
       const slots = groupSlots(group);
       const data = [
         ["TIME", ...activeColClasses],
@@ -1787,7 +2002,7 @@ function TimetableTab() {
       ];
       const ws = XLSX.utils.aoa_to_sheet(data);
       ws["!cols"] = [{ wch:14 }, ...activeColClasses.map(() => ({ wch:16 }))];
-      XLSX.utils.book_append_sheet(wb, ws, group.replace("–","to"));
+      XLSX.utils.book_append_sheet(wb, ws, safeSheetName(group));
     });
     XLSX.writeFile(wb, `Timetable_${selYear}.xlsx`);
   }
@@ -1822,17 +2037,55 @@ function TimetableTab() {
           )}
         </div>
 
-        {/* Day group tab selector */}
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-4">
-          {DAY_GROUPS.map(g => (
-            <button key={g} onClick={() => setActiveGroup(g)}
-              className={`flex-1 text-xs font-semibold py-1.5 px-2 rounded-lg transition-colors ${
-                activeGroup === g ? "bg-white text-school-navy shadow-sm" : "text-gray-500 hover:text-gray-700"
-              }`}>
-              {g}
-            </button>
+        {/* Day group tab selector - fully custom: add/rename/delete groups,
+            each with its own weekday assignment, not a fixed set of 3. */}
+        <div className="flex flex-wrap items-center gap-1.5 mb-3">
+          {groupList.map(g => (
+            <div key={g} className={`flex items-center rounded-lg ${activeGroup === g ? "bg-gray-100" : ""}`}>
+              <button onClick={() => setActiveGroup(g)}
+                className={`text-xs font-semibold py-1.5 px-2.5 rounded-lg transition-colors ${
+                  activeGroup === g ? "bg-white text-school-navy shadow-sm m-0.5" : "text-gray-500 hover:text-gray-700"
+                }`}>
+                {g}
+              </button>
+              {periodsEditMode && (
+                <>
+                  <button onClick={() => renameDayGroup(g)} title="Rename" className="p-1 text-gray-400 hover:text-school-navy rounded transition-colors">
+                    <Pencil className="w-3 h-3"/>
+                  </button>
+                  <button onClick={() => deleteDayGroup(g)} title="Delete" className="p-1 mr-0.5 text-gray-400 hover:text-red-600 rounded transition-colors">
+                    <Trash2 className="w-3 h-3"/>
+                  </button>
+                </>
+              )}
+            </div>
           ))}
+          {periodsEditMode && (
+            <button onClick={addDayGroup}
+              className="flex items-center gap-1 text-xs font-semibold py-1.5 px-2.5 rounded-lg border-2 border-dashed border-school-navy/30 text-school-navy hover:border-school-navy hover:bg-school-navy/5 transition-colors">
+              <Plus className="w-3 h-3"/> Add Day Group
+            </button>
+          )}
         </div>
+
+        {periodsEditMode && activeGroup && (
+          <div className="mb-4 p-3 bg-gray-50 rounded-xl border border-gray-100">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wide mb-1.5">Weekdays using &quot;{activeGroup}&quot;</p>
+            <div className="flex flex-wrap gap-1.5">
+              {WEEKDAYS.map(day => {
+                const active = (weekdaysForm[activeGroup] || []).includes(day);
+                return (
+                  <button key={day} onClick={() => toggleGroupWeekday(activeGroup, day)}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg border transition-colors ${
+                      active ? "bg-school-navy text-white border-school-navy" : "bg-white text-gray-500 border-gray-200 hover:border-school-navy/40"
+                    }`}>
+                    {day.slice(0, 3)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Period rows for selected day group */}
         <div className="space-y-2">
@@ -1945,7 +2198,7 @@ function TimetableTab() {
           <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
             <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5"/>
             <p className="text-xs text-amber-700 font-medium">
-              Click any cell to assign subject & teacher · Busy teachers are disabled
+              Click any cell to assign subject & teacher · Busy teachers are disabled · Use &quot;Merge With&quot; to put one teacher in two classes at once
             </p>
           </div>
         )}
@@ -1968,20 +2221,19 @@ function TimetableTab() {
       )}
 
       {/* ── One table per day group, stacked ── */}
-      {!ttLoading && DAY_GROUPS.map(group => {
+      {!ttLoading && groupList.map(group => {
         const slots  = groupSlots(group);
-        const isSat  = group === "Saturday";
-        const hdrBg  = isSat ? "bg-amber-600" : "bg-school-navy";
         const colLen = activeColClasses.length;
+        const groupDays = (activeWeekdays[group] || []).map(d => d.slice(0, 3)).join(", ");
 
         return (
           <div key={group} className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
 
             {/* Group header */}
-            <div className={`${hdrBg} px-4 py-3 flex items-center gap-3`}>
+            <div className="bg-school-navy px-4 py-3 flex items-center gap-3">
               <LayoutGrid className="w-4 h-4 text-white/70 flex-shrink-0"/>
               <p className="text-white font-bold text-sm tracking-wide">
-                {group}{isSat ? "  ·  Half Day" : ""}
+                {group}{groupDays ? `  ·  ${groupDays}` : ""}
                 <span className="ml-3 text-white/50 font-normal text-xs">WEF {selYear}</span>
               </p>
             </div>
@@ -2018,14 +2270,20 @@ function TimetableTab() {
                     const rowBg = idx % 2 === 0 ? "bg-white" : "bg-gray-50/40";
                     return (
                       <tr key={slot.id} className={`border-b border-gray-100 ${rowBg}`}>
-                        <td className={`px-3 py-2 border-r border-gray-200 text-center sticky left-0 z-10 ${rowBg}`}>
+                        {/* Sticky TIME column always fully opaque white - it
+                            used to reuse rowBg, which is semi-transparent on
+                            alternating rows (bg-gray-50/40), so scrolling the
+                            table horizontally let the subject/teacher cells
+                            underneath show through the sticky column instead
+                            of being hidden behind it. */}
+                        <td className="px-3 py-2 border-r border-gray-200 text-center sticky left-0 z-10 bg-white">
                           <p className="text-[10px] font-bold text-school-navy whitespace-nowrap">{fmtSlotTime(slot)}</p>
                         </td>
                         {activeColClasses.map(cls => {
                           const cell   = getSlot(group, slot.id, cls);
                           const active = isCellActive(group, slot.id, cls);
                           const busy   = active ? getBusyTeachers(group, slot.id, cls) : new Set();
-                          const tColor = getTeacherColor(cell.teacher);
+                          const tColor = cell.teacher ? teacherColorMap[cell.teacher] : null;
                           const filled = cell.subject || cell.teacher;
 
                           return (
@@ -2036,18 +2294,37 @@ function TimetableTab() {
                                     onChange={e => setSlotVal(group, slot.id, cls, "subject", e.target.value)}
                                     className="w-full text-[11px] border border-gray-200 rounded-lg px-1.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-school-navy cursor-pointer bg-white">
                                     <option value="">— Subject —</option>
-                                    {SUBJECTS_TT.map(s => <option key={s}>{s}</option>)}
+                                    {(classSubjectsMap[cls]?.length ? classSubjectsMap[cls] : SUBJECTS_TT).map(s => <option key={s}>{s}</option>)}
                                   </select>
                                   <select value={cell.teacher}
                                     onChange={e => setSlotVal(group, slot.id, cls, "teacher", e.target.value)}
                                     className="w-full text-[11px] border border-gray-200 rounded-lg px-1.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-school-navy cursor-pointer bg-white">
                                     <option value="">— Teacher —</option>
-                                    {TEACHERS_TT.map(t => (
+                                    {teacherNames.map(t => (
                                       <option key={t} value={t} disabled={busy.has(t)}>
                                         {busy.has(t) ? `⚠ ${t} (busy)` : t}
                                       </option>
                                     ))}
                                   </select>
+                                  {activeColClasses.length > 1 && (
+                                    <div className="pt-1 border-t border-gray-100">
+                                      <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide mb-1">Merge With</p>
+                                      <div className="flex flex-wrap gap-1">
+                                        {activeColClasses.filter(c => c !== cls).map(partnerCls => {
+                                          const merged = (cell.mergedWith || []).includes(partnerCls);
+                                          return (
+                                            <button key={partnerCls} type="button"
+                                              onClick={() => toggleMerge(group, slot.id, cls, partnerCls)}
+                                              className={`text-[10px] px-1.5 py-0.5 rounded-md font-semibold border transition-colors ${
+                                                merged ? "bg-purple-600 text-white border-purple-600" : "bg-white text-gray-500 border-gray-200 hover:border-purple-300"
+                                              }`}>
+                                              {partnerCls}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
                                   <button onClick={() => setActiveCell(null)}
                                     className="w-full py-1 rounded-lg bg-school-navy text-white text-[10px] font-bold hover:bg-school-navy/90 transition-colors">
                                     Done
@@ -2058,17 +2335,24 @@ function TimetableTab() {
                                   onClick={() => editMode && setActiveCell({ group, slotId:slot.id, cls })}
                                   className={`rounded-lg px-1.5 py-1.5 transition-all ${editMode ? "cursor-pointer" : ""} ${
                                     filled
-                                      ? `${tColor?.bg||"bg-gray-100"} border ${tColor?.border||"border-gray-200"} ${editMode ? "hover:opacity-75 hover:ring-2 hover:ring-school-navy/30" : ""}`
+                                      ? `border ${editMode ? "hover:opacity-75 hover:ring-2 hover:ring-school-navy/30" : ""}`
                                       : editMode
                                         ? "min-h-[44px] border-2 border-dashed border-gray-200 hover:border-school-navy/50 hover:bg-school-navy/5 flex items-center justify-center"
                                         : "min-h-[44px]"
                                   }`}
+                                  style={filled ? { backgroundColor: tColor?.bg || "#f3f4f6", borderColor: tColor?.border || "#e5e7eb" } : undefined}
                                 >
                                   {filled ? (
                                     <>
-                                      <p className={`text-[11px] font-bold leading-tight ${tColor?.text||"text-gray-800"} truncate`}>{cell.subject}</p>
+                                      <div className="flex items-center gap-1">
+                                        <p className="text-[11px] font-bold leading-tight truncate flex-1" style={{ color: tColor?.text || "#1f2937" }}>{cell.subject}</p>
+                                        {cell.mergedWith?.length > 0 && (
+                                          <Link2 className="w-2.5 h-2.5 flex-shrink-0" style={{ color: tColor?.text || "#6b7280" }}
+                                            title={`Merged with ${cell.mergedWith.join(", ")}`}/>
+                                        )}
+                                      </div>
                                       {cell.teacher && (
-                                        <p className={`text-[10px] mt-0.5 leading-tight ${tColor?.text||"text-gray-500"} opacity-80 truncate`}>{shortName(cell.teacher)}</p>
+                                        <p className="text-[10px] mt-0.5 leading-tight opacity-80 truncate" style={{ color: tColor?.text || "#6b7280" }}>{shortName(cell.teacher)}</p>
                                       )}
                                     </>
                                   ) : editMode ? (
@@ -2093,10 +2377,11 @@ function TimetableTab() {
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-5 py-4">
         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2.5">Teacher Colour Legend</p>
         <div className="flex flex-wrap gap-1.5">
-          {TEACHERS_TT.map((t, i) => {
-            const c = TEACHER_PALETTE[i % TEACHER_PALETTE.length];
+          {teacherNames.map((t) => {
+            const c = teacherColorMap[t];
             return (
-              <span key={t} className={`${c.bg} ${c.text} text-[11px] font-semibold px-2.5 py-1 rounded-full border ${c.border}`}>
+              <span key={t} className="text-[11px] font-semibold px-2.5 py-1 rounded-full border"
+                style={{ backgroundColor: c?.bg, color: c?.text, borderColor: c?.border }}>
                 {shortName(t)}
               </span>
             );

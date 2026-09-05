@@ -38,6 +38,39 @@ export async function getTeachingStaff() {
   return data || [];
 }
 
+// ── Timetable lookup - auto-fills the syllabus importer's subject teacher ──
+// Settings → Timetable stores its own class-name spellings ("JR KG",
+// "11th Commerce") rather than classes.name ("JR.KG", "11th - Commerce") -
+// same drift the mobile app already maps around in supabase_service.dart's
+// _timetableClassNameOverrides - and teacher is free text there (no FK), so
+// this resolves to a name; the caller matches that against real teaching
+// staff to get an id.
+const TIMETABLE_CLASS_OVERRIDES = {
+  "JR.KG": "JR KG",
+  "SR.KG": "SR KG",
+  "11th - Commerce": "11th Commerce",
+  "12th - Commerce": "12th Commerce",
+};
+
+export async function getSubjectTeacherFromTimetable(academicYear, className, subjectName) {
+  if (!academicYear || !className || !subjectName) return null;
+  const ttClassName = TIMETABLE_CLASS_OVERRIDES[className] || className;
+  const { data, error } = await supabase
+    .from("timetables")
+    .select("teacher")
+    .eq("academic_year", academicYear)
+    .eq("class_name", ttClassName)
+    .eq("subject", subjectName);
+  if (error) throw error;
+  // Most-frequent non-empty teacher across that class+subject's slots (there
+  // can be more than one period a week) - a single subject should only ever
+  // have one teacher, but this is defensive against inconsistent data.
+  const counts = {};
+  (data || []).forEach(r => { if (r.teacher) counts[r.teacher] = (counts[r.teacher] || 0) + 1; });
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  return sorted.length ? sorted[0][0] : null;
+}
+
 // ── Admin CRUD - bypasses the lock entirely, admin edits are authoritative ──
 
 export async function addChapters(rows) {
@@ -154,4 +187,35 @@ export function computeClassGrowth(allSyllabus, subtopicsByChapter) {
     name: className,
     ...leafCounts(chapters, subtopicsByChapter),
   })).sort((a, b) => b.pct - a.pct);
+}
+
+// One entry per subject, aggregating every class/teacher for that subject.
+export function computeSubjectGrowth(allSyllabus, subtopicsByChapter) {
+  const bySubject = groupBy(allSyllabus, c => c.subject);
+  return Object.entries(bySubject).map(([subject, chapters]) => ({
+    id: subject,
+    name: subject,
+    ...leafCounts(chapters, subtopicsByChapter),
+  })).sort((a, b) => b.pct - a.pct);
+}
+
+// School-wide leaf-unit counts by status (Not Started / In Progress /
+// Completed) - same "leaf = subtopic if the chapter has any, else the
+// chapter itself" rule leafCounts() uses above, just split by status
+// instead of collapsed into a single completed/total pair.
+export function computeStatusDistribution(allSyllabus, subtopicsByChapter) {
+  const counts = { "Not Started": 0, "In Progress": 0, "Completed": 0 };
+  allSyllabus.forEach(c => {
+    const subs = subtopicsByChapter[c.id] || [];
+    if (subs.length === 0) {
+      const status = c.status || "Not Started";
+      counts[status] = (counts[status] || 0) + 1;
+    } else {
+      subs.forEach(s => {
+        const status = s.status || "Not Started";
+        counts[status] = (counts[status] || 0) + 1;
+      });
+    }
+  });
+  return counts;
 }

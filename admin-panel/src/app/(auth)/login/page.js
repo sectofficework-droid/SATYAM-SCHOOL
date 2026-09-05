@@ -81,8 +81,12 @@ function LoginPageInner() {
     setError(""); setInfo("");
     if (!isValidEmail(forgotEmail)) { setError("Enter a valid email address."); return; }
     setForgotLoading(true);
+    // Bare path, no query string — Supabase's redirect-URL allowlist match
+    // can reject an otherwise-registered URL if it doesn't match exactly,
+    // and `type` isn't read on the PKCE `code` branch this flow actually
+    // takes anyway (see /auth/callback).
     const { error: e2 } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
-      redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
+      redirectTo: `${window.location.origin}/auth/callback`,
     });
     setForgotLoading(false);
     if (e2) { setError(e2.message); return; }

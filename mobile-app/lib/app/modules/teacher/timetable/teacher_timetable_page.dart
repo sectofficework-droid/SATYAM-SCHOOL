@@ -17,7 +17,8 @@ class TeacherTimetablePage extends StatefulWidget {
 
 class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
   Map<String, dynamic>? _periodDefs;
-  Map<String, Map<String, dynamic>> _rowsByGroupSlot = {};
+  Map<String, dynamic>? _dayGroupWeekdays;
+  Map<String, List<Map<String, dynamic>>> _rowsByGroupSlot = {};
   bool _loading = true;
 
   @override
@@ -30,15 +31,26 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
 
     final year = await SupabaseService.fetchCurrentAcademicYearLabel();
     final defs = await SupabaseService.fetchPeriodDefs();
+    final weekdaysMap = await SupabaseService.fetchDayGroupWeekdays();
     final rows = (year != null && teacherName.isNotEmpty)
         ? await SupabaseService.fetchTimetableForTeacher(year, teacherName)
         : <Map<String, dynamic>>[];
 
-    final map = <String, Map<String, dynamic>>{};
+    // A merged teacher genuinely has two rows for the same group+slot (one
+    // per merged class) - appending (not overwriting) so both show up
+    // instead of one silently replacing the other.
+    final map = <String, List<Map<String, dynamic>>>{};
     for (final r in rows) {
-      map['${r['day_group']}|${r['slot_id']}'] = r;
+      map.putIfAbsent('${r['day_group']}|${r['slot_id']}', () => []).add(r);
     }
-    if (mounted) setState(() { _periodDefs = defs; _rowsByGroupSlot = map; _loading = false; });
+    if (mounted) {
+      setState(() {
+      _periodDefs = defs;
+      _dayGroupWeekdays = weekdaysMap;
+      _rowsByGroupSlot = map;
+      _loading = false;
+    });
+    }
   }
 
   @override
@@ -47,13 +59,18 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
         ? const Center(child: CircularProgressIndicator(color: AppColors.navy))
         : TimetableView(
             periodDefs: _periodDefs,
+            dayGroupWeekdays: _dayGroupWeekdays,
             rowsByGroupSlot: _rowsByGroupSlot,
-            buildFilled: (row) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('Class ${row['class_name'] ?? ''}',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.text)),
-              if ((row['subject'] ?? '').toString().isNotEmpty)
-                Text(row['subject'], style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
-            ]),
+            buildFilled: (rows) {
+              final classNames = rows.map((r) => (r['class_name'] ?? '').toString()).where((c) => c.isNotEmpty).join(' & ');
+              final subject = (rows.first['subject'] ?? '').toString();
+              return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Class $classNames',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.text)),
+                if (subject.isNotEmpty)
+                  Text(subject, style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
+              ]);
+            },
             buildEmpty: () => const Text('Free — not teaching', style: TextStyle(fontSize: 13, color: AppColors.textHint, fontStyle: FontStyle.italic)),
           );
 

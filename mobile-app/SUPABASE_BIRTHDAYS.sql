@@ -36,7 +36,7 @@ BEGIN
     ),
     'staff', (
       SELECT COALESCE(json_agg(row_to_json(r)), '[]'::json) FROM (
-        SELECT e.id, e.name, e.designation, e.department, e.photo AS photo_url, e.dob
+        SELECT e.id, e.name, e.designation, e.department, e.photo_url, e.dob
         FROM employees e
         WHERE e.dob IS NOT NULL
           AND e.status = 'Active'
