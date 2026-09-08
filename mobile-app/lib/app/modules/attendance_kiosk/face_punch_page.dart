@@ -141,7 +141,7 @@ class _FacePunchPageState extends State<FacePunchPage> {
       _scheduleReturn();
     } catch (e, st) {
       debugPrint('Face punch failed: $e\n$st');
-      _showError('Error: $e');
+      _showError('Something went wrong. Please try again.');
     }
   }
 

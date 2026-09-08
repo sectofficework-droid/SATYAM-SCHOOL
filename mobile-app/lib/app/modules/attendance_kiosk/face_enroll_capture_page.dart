@@ -113,7 +113,7 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
     } catch (e, st) {
       debugPrint('Face enroll capture failed: $e\n$st');
       if (!mounted) return;
-      setState(() { _busy = false; _stage = _Stage.camera; _message = 'Error: $e'; });
+      setState(() { _busy = false; _stage = _Stage.camera; _message = 'Something went wrong. Please try again.'; });
     }
   }
 
