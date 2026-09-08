@@ -30,6 +30,7 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
   _Stage _stage = _Stage.camera;
   String _message = '';
   final List<List<double>> _embeddings = [];
+  bool _busy = false;
 
   @override
   void initState() {
@@ -71,8 +72,8 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
 
   Future<void> _capture() async {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized || _employeeId.isEmpty) return;
-    setState(() { _message = ''; });
+    if (controller == null || !controller.value.isInitialized || _employeeId.isEmpty || _busy) return;
+    setState(() { _busy = true; _message = ''; });
 
     try {
       final photo = await controller.takePicture();
@@ -81,25 +82,25 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       final face = await svc.detectSingleFace(photo.path);
       if (!mounted) return;
       if (face == null) {
-        setState(() => _message = 'No face detected - please face the camera and try again.');
+        setState(() { _busy = false; _message = 'No face detected - please face the camera and try again.'; });
         return;
       }
       if (!svc.eyesOpen(face)) {
-        setState(() => _message = 'Keep your eyes open and try again.');
+        setState(() { _busy = false; _message = 'Keep your eyes open and try again.'; });
         return;
       }
 
       final embedding = await svc.getEmbedding(photo.path, face);
       if (!mounted) return;
       if (embedding == null) {
-        setState(() => _message = 'Could not read your face clearly - try again.');
+        setState(() { _busy = false; _message = 'Could not read your face clearly - try again.'; });
         return;
       }
 
       _embeddings.add(embedding);
 
       if (_embeddings.length < _totalShots) {
-        setState(() {});
+        setState(() { _busy = false; });
         return;
       }
 
@@ -112,7 +113,7 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
     } catch (e, st) {
       debugPrint('Face enroll capture failed: $e\n$st');
       if (!mounted) return;
-      setState(() { _stage = _Stage.camera; _message = 'Error: $e'; });
+      setState(() { _busy = false; _stage = _Stage.camera; _message = 'Error: $e'; });
     }
   }
 
@@ -166,7 +167,7 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       Padding(
         padding: const EdgeInsets.all(32),
         child: GestureDetector(
-          onTap: controller == null ? null : _capture,
+          onTap: controller == null || _busy ? null : _capture,
           child: Container(
             width: 76, height: 76,
             decoration: BoxDecoration(shape: BoxShape.circle, color: AppColors.amber, border: Border.all(color: Colors.white, width: 4)),

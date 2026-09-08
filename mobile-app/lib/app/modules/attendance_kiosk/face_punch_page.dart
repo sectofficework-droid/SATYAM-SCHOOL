@@ -31,6 +31,7 @@ class _FacePunchPageState extends State<FacePunchPage> {
   String? _resultAction; // 'check_in' | 'check_out'
   DateTime? _resultTime;
   Timer? _returnTimer;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -70,8 +71,8 @@ class _FacePunchPageState extends State<FacePunchPage> {
 
   Future<void> _capture() async {
     final controller = _controller;
-    if (controller == null || !controller.value.isInitialized) return;
-    setState(() { _stage = _Stage.processing; _message = 'Scanning...'; });
+    if (controller == null || !controller.value.isInitialized || _busy) return;
+    setState(() { _busy = true; _stage = _Stage.processing; _message = 'Scanning...'; });
 
     try {
       final photo = await controller.takePicture();
@@ -146,7 +147,7 @@ class _FacePunchPageState extends State<FacePunchPage> {
 
   void _showError(String message) {
     if (!mounted) return;
-    setState(() { _stage = _Stage.error; _message = message; });
+    setState(() { _busy = false; _stage = _Stage.error; _message = message; });
     _scheduleReturn(seconds: 4);
   }
 
@@ -159,7 +160,7 @@ class _FacePunchPageState extends State<FacePunchPage> {
 
   void _retry() {
     _returnTimer?.cancel();
-    setState(() { _stage = _Stage.camera; _message = ''; });
+    setState(() { _busy = false; _stage = _Stage.camera; _message = ''; });
   }
 
   @override
@@ -209,7 +210,7 @@ class _FacePunchPageState extends State<FacePunchPage> {
       Padding(
         padding: const EdgeInsets.all(32),
         child: GestureDetector(
-          onTap: controller == null ? null : _capture,
+          onTap: controller == null || _busy ? null : _capture,
           child: Container(
             width: 76, height: 76,
             decoration: BoxDecoration(
