@@ -160,6 +160,19 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       RLS enabled, `anon` grants now SELECT-only, four policies present
       exactly as written. `employees` and the remaining tables are still
       unaddressed — still **not closed**.
+      **2026-09-07 — scope corrected upward.** Supabase's own live security
+      advisor (ground truth, not a grep of tracked `.sql` files) reports
+      **73 tables** with RLS disabled project-wide, not ~25 — the ~25
+      figure only ever covered mobile-app-facing tables grepped from
+      `mobile-app/SUPABASE_*.sql`; the advisor also catches admin-panel
+      -only tables never in a tracked migration file at all (`fee_payments`,
+      `employee_salaries`, `expenses`, `student_documents`,
+      `leave_requests`, etc.). `students` and `admin_users` confirmed still
+      correctly locked. Not investigated or acted on further this session —
+      see `ai-context\SESSION-2026-09-07-1.md`. Do not blanket-enable RLS
+      without matching policies (breaks access outright); needs the same
+      per-table policy decision this item already required, just at a
+      larger scale than previously scoped.
 - [x] **REQ-SEC-004 — `teacher_update_profile` has zero identity check.
       FIXED 2026-09-04.** Checked 2026-08-18: NOT fixable without an app
       rebuild, so deferred out of Stage 1. Unlike `teacher_change_password` (which verifies

@@ -329,7 +329,42 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-Session (this merge, 2026-09-04) — merged `debiprasad` into `main`
+**Session 2026-09-07** — Play Store publishing continued (store-listing
+assets + reviewer test accounts). Full detail:
+`ai-context\SESSION-2026-09-07-1.md`, plain-English mirror
+`work-log\LOG-2026-09-07.md`. Summary:
+- Wrote store listing descriptions, icon, feature graphics, and 8
+  on-device screenshots for both Teacher and Student apps (all sitting
+  untracked in `mobile-app/`, nothing uploaded to Play Console yet).
+- 3 of the 8 screenshots contained real identifiable data (a real
+  enrolled child's name/photo/enrollment no, a real staff member's name,
+  a full real class roster) — user explicitly ruled out dummy data, so
+  fixed via pixel-level redaction (`ffmpeg drawbox`) instead; un-redacted
+  originals deleted, never shared.
+- **Created two new reviewer test accounts directly in production
+  Supabase** for Google's App Access requirement (the prior QA accounts,
+  enrollment `0049`/`EMP030`, were deleted 2026-08-28): teacher `EMP900`
+  and student enrollment `9001`, both placed in the pre-existing, verified
+  -empty "ADMIN QA" class/Section A. Verified via the real
+  `teacher_login`/`student_login` RPCs directly (not just row inserts).
+  Password given to the user in-chat only — **not recorded in any
+  governance file**, per §J6.
+- **Confirmed this is a new Play Console developer account** — both apps
+  now need 12+ opted-in closed testers for 14 consecutive days before
+  either can reach Production. Flagged as the timeline's long pole.
+- **REQ-SEC-002 figure corrected** — Supabase's live security advisor
+  reports **73 tables** with RLS disabled (not ~25 as previously estimated
+  from static grep of `mobile-app/SUPABASE_*.sql` alone); includes
+  `employees`, `fee_payments`, and most admin-panel-only tables. `students`
+  and `admin_users` remain correctly locked per the 2026-09-04 partial fix.
+  Not acted on this session — flagged only, added to `TODO.md`.
+- **Flagged, not backfilled:** the 2026-09-05/06 Play Store signing +
+  privacy-policy work (real keystore generated, `build.gradle.kts` wired,
+  privacy policy deployed and live) happened with zero `governance\` log
+  entries — same undocumented-work pattern as the 2026-08-21→24 gap already
+  on record below. See top of `SESSION-2026-09-07-1.md`.
+
+Prior checkpoint: (2026-09-04 merge) — merged `debiprasad` into `main`
 (REQ-BUG-010..013: calendar ordering tiebreaker, teacher-calendar Sunday
 legend, Design 2 ID card photo/font fixes, calendar delete error handling;
 plus recording the already-applied REQ-SEC-002 `school_calendar_events`
@@ -383,7 +418,16 @@ and `ai-context\archive\SESSION-2026-08-19-2.md` (read-only secrets-hygiene
 check).
 
 ## Next step
-**2026-09-04 (this merge), current:**
+**2026-09-07, current:**
+0. Data Safety form + content rating questionnaire in Play Console.
+0a. Start recruiting 12+ closed-testing testers now — confirmed new
+    developer account, 14-day clock only starts once they're opted in; the
+    timeline's long pole (see `LOG-2026-09-07.md`).
+0b. Create both Play Console listings, upload the signed AABs, set tracks.
+0c. REQ-SEC-002 corrected scope (73 tables, not ~25) needs the user's
+    priority decision — not fixed yet, see `TODO.md`.
+
+**2026-09-04 (prior merge):**
 0. Click through the calendar and ID-card fixes just merged (Sunday legend
    on the teacher calendar, Design 2 ID card print with a long class name
    like "11TH - COMMERCE") — none of the 5 commits in this merge were
