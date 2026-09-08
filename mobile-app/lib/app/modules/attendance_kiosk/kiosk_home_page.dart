@@ -4,10 +4,13 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../routes/app_routes.dart';
+import 'admin_pin_dialog.dart';
 
-// Idle screen for the shared attendance kiosk - no login, just a live clock
-// and one big action. Staff walk up, tap Scan, and the punch screen figures
-// out who they are from their face alone (see face_punch_page.dart).
+// Idle screen for the attendance kiosk - no login, just a live clock and
+// one big action. Staff walk up, tap Scan, and the punch screen figures out
+// who they are from their face alone (see face_punch_page.dart). This
+// device lives with the admin, not staff, so the settings icon (enrolling/
+// updating a face) is PIN-gated - see admin_pin_dialog.dart.
 class KioskHomePage extends StatefulWidget {
   const KioskHomePage({super.key});
   @override
@@ -42,8 +45,11 @@ class _KioskHomePageState extends State<KioskHomePage> {
             alignment: Alignment.topRight,
             child: IconButton(
               icon: const Icon(Icons.settings_outlined, color: Colors.white54, size: 22),
-              tooltip: 'Set up / update my face',
-              onPressed: () => Get.toNamed(Routes.kioskEnrollLogin),
+              tooltip: 'Set up / update staff face (admin only)',
+              onPressed: () async {
+                final unlocked = await showAdminPinGate(context);
+                if (unlocked) Get.toNamed(Routes.kioskEnrollLogin);
+              },
             ),
           ),
           const Spacer(),

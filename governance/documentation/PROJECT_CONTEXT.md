@@ -77,7 +77,7 @@ Dashboard, Attendance, Exams, Marks, Fees (fee status), Homework, Help Desk, Que
 Dashboard, Students (My Students / class overview), Attendance (class), My Attendance (own staff attendance), Homework, Marks, Exams, Official Exams, Question Bank (paper generator), Daily Tasks/Tasks, Leave (leave requests), Calendar (year planning, linked to the admin panel's Year Planning data), Notices, Query, Syllabus, Rules & Regulations, Timetable, Birthdays, Profile.
 
 ### Attendance kiosk app
-One shared device at the school entrance (not per-user) for staff face-scan punch in/out. Fully on-device pipeline, no cloud ML calls: `camera` captures → `google_mlkit_face_detection` detects the face → `tflite_flutter` runs a bundled MobileFaceNet model (`assets/models/mobilefacenet.tflite`) for embedding match against enrolled staff faces. Screens: `kiosk_home_page.dart`, `face_enroll_login_page.dart`, `face_enroll_capture_page.dart` (staff registration), `face_punch_page.dart` (punch in/out).
+One device, kept with admin (not a public entrance kiosk) for staff face-scan punch in/out. Fully on-device pipeline, no cloud ML calls: `camera` captures → `google_mlkit_face_detection` detects the face → `tflite_flutter` runs a bundled MobileFaceNet model (`assets/models/mobilefacenet.tflite`) for embedding match against enrolled staff faces. Screens: `kiosk_home_page.dart`, `face_enroll_login_page.dart`, `face_enroll_capture_page.dart` (staff registration), `face_punch_page.dart` (punch in/out). Punching stays self-service (any staff can scan), but enrollment is PIN-gated (`admin_pin_dialog.dart` + `kiosk_pin_service.dart`, device-local secure storage, no backend involved) so only admin can open the enroll flow.
 
 ---
 
