@@ -28,3 +28,6 @@ Thumbs.db
 # Editor/IDE
 .vscode/
 .idea/
+
+# Claude Code local settings — machine-specific, causes spurious diffs
+.claude/
