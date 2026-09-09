@@ -210,6 +210,30 @@ stash (`flutter pub get` lockfile churn from running `flutter analyze` on
 REQ-SEC-001 is now fixed (see item 3). REQ-SEC-002/003/004 (below) are
 unaffected — still exactly as they were.
 
+**2026-09-09 addition — multi-shift attendance, Flutter + admin panel
+(commit `1c8e08a`, merged to `main`, pushed):** wired the kiosk/teacher app
+and admin panel up to the multi-shift `employee_shifts` backend that a
+prior, unlogged session had already applied to production. Found and fixed
+two real bugs while verifying end-to-end on BlueStacks: a camera-freeze in
+the kiosk's "Not Me" → Enter Code → back flow (user caught this live), and
+a wrong-role grant — **none of the three Flutter apps ever sign in through
+real Supabase Auth, so every request from any of them, including the
+teacher app's own checkout, executes as `anon`, never `authenticated`** —
+the prior session's grants only covered `authenticated`, silently breaking
+checkout and the new shift list. Fixed live + reflected in the migration
+file. Also made and self-corrected a mistake: test-data cleanup on a real
+employee's record deleted one genuinely real, pre-existing attendance row
+along with the test rows — caught same session, restored from values
+already captured earlier. Full detail:
+`ai-context\SESSION-2026-09-09-1.md`, plain-English mirror
+`work-log\LOG-2026-09-09.md`. **Current git state:** `debiprasad` and
+`main` both at `1c8e08a`, in sync, pushed. **Still not done: the real
+physical kiosk device needs the new build installed** — it's been
+non-functional for check-ins since the prior session's backend migration
+went live (old installed build still does the now-blocked direct table
+write); this session's fix is what repairs it, but only once actually
+installed.
+
 ## Continuity folder — no git-ignore exception needed (RULEBOOK.md §0.8/§0.9)
 History: on 2026-08-19, `ai-context\`/`work-log\` were first tracked via a
 gitignore carve-out cut into `Scratch/` (the user asked: "if I lost it
@@ -329,7 +353,41 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Session 2026-09-07** — Play Store publishing continued (store-listing
+**Session 2026-09-09** — Multi-shift attendance feature finished: Flutter
+apps (kiosk + teacher) and admin panel wired up to the `employee_shifts`
+backend, merged to `main`. Full detail:
+`ai-context\SESSION-2026-09-09-1.md`, plain-English mirror
+`work-log\LOG-2026-09-09.md`. Summary:
+- Kiosk/teacher app now call `record_face_punch`/`record_check_out`/
+  `redeem_punch_code` RPCs instead of the old broken direct
+  `employee_attendance` writes; an "already checked in" punch attempt now
+  shows a clear blocking message. Teacher app's My Attendance banner and
+  the admin panel's Mark Attendance tab both list every shift of the day.
+- **Two real bugs found and fixed during live BlueStacks verification**:
+  (1) kiosk camera froze after backing out of the Enter Code screen a
+  certain way — paused preview was never resumed on route-pop, user caught
+  this live; (2) the prior session's RPC/table grants covered
+  `authenticated` only, but **none of the three Flutter apps sign in
+  through real Supabase Auth — every request from any of them runs as
+  `anon`** — this silently broke the teacher app's checkout and the new
+  shift list. Fixed live in Supabase + reflected in the migration file.
+  Generalizes past just `employees` (the existing REQ-SEC-002 note) to
+  every Flutter↔Supabase call project-wide — noted in `TODO.md`.
+- **Mistake made and self-corrected same session**: test-data cleanup on a
+  real employee's record deleted a genuinely real, unrelated attendance row
+  along with the test rows — caught immediately after, restored from
+  values already captured earlier in the session. Nothing lost, but
+  recorded plainly rather than glossed over.
+- Merged `debiprasad` → `main` at the user's request ("its testing; merge
+  to main") — confirmed first via `git merge-base` that this was a clean
+  fast-forward (main had zero commits debiprasad lacked), not a real
+  3-way merge, so no risk to either branch's other work. Both branches now
+  at `1c8e08a`, pushed.
+- **Not done: the real physical kiosk device still needs the new build
+  installed** — it's been broken for actual check-ins since the prior
+  session's backend migration went live; this is the priority next step.
+
+Prior checkpoint: **Session 2026-09-07** — Play Store publishing continued (store-listing
 assets + reviewer test accounts). Full detail:
 `ai-context\SESSION-2026-09-07-1.md`, plain-English mirror
 `work-log\LOG-2026-09-07.md`. Summary:
@@ -418,7 +476,16 @@ and `ai-context\archive\SESSION-2026-08-19-2.md` (read-only secrets-hygiene
 check).
 
 ## Next step
-**2026-09-07, current:**
+**2026-09-09, current:**
+0. **Install the new build on the real physical kiosk device** — the
+   currently-installed build has been non-functional for check-ins since
+   the prior session's backend migration went live; this is the priority
+   item. See `LOG-2026-09-09.md`.
+0a. Give the checkout flow one more real-device test after installing —
+    only verified on BlueStacks this session, whose webcam doesn't fully
+    represent the kiosk's real front camera.
+
+**2026-09-07 (prior):**
 0. Data Safety form + content rating questionnaire in Play Console.
 0a. Start recruiting 12+ closed-testing testers now — confirmed new
     developer account, 14-day clock only starts once they're opted in; the

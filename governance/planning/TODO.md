@@ -173,6 +173,22 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       without matching policies (breaks access outright); needs the same
       per-table policy decision this item already required, just at a
       larger scale than previously scoped.
+      **2026-09-09 — generalizing note, not a new finding.** Confirmed via
+      `grep -rln "\.auth\." mobile-app/lib` = zero matches: **none** of the
+      three Flutter apps (kiosk/teacher/student) ever call Supabase Auth's
+      sign-in — this item's existing `employees` note ("mobile app reads/
+      writes it directly with the anon key... no real session") is true of
+      every table/RPC every Flutter app touches, not just `employees`.
+      Practically: any grant written as `authenticated`-only in this
+      codebase is invisible to all three Flutter apps — only the admin
+      panel (real `@supabase/ssr` auth, confirmed) is ever actually
+      `authenticated`. Found the hard way this session when a new
+      migration's `authenticated`-only grants silently broke a Flutter
+      feature (`record_check_out`/`employee_shifts`, see
+      `ai-context\SESSION-2026-09-09-1.md`) — fixed for that specific case,
+      but the underlying architecture (no real per-user DB identity for any
+      mobile client) is exactly what this item is already tracking. No
+      severity/status change; recorded per §J14.
 - [x] **REQ-SEC-004 — `teacher_update_profile` has zero identity check.
       FIXED 2026-09-04.** Checked 2026-08-18: NOT fixable without an app
       rebuild, so deferred out of Stage 1. Unlike `teacher_change_password` (which verifies
