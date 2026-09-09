@@ -180,29 +180,31 @@ class SupabaseService {
   }
 
   // Face-scan punch attendance ──────────────────────────────────────────────
-  // face_embedding is a jsonb array of doubles (MobileFaceNet output) -
-  // supabase_flutter already decodes jsonb into a plain List, no manual
-  // jsonDecode needed.
+  // face_embedding is a jsonb array of ~10 reference vectors (one per
+  // enrollment shot, see face_enroll_capture_page.dart), not one averaged
+  // vector - matching against the best of several references per person
+  // handles lighting/distance/angle variation far better than a single
+  // blended-together average would. supabase_flutter already decodes jsonb
+  // into plain Lists, no manual jsonDecode needed.
 
-  static Future<List<double>?> fetchFaceEmbedding(String employeeId) async {
-    final res = await client
-        .from('employees')
-        .select('face_embedding')
-        .eq('id', employeeId)
-        .maybeSingle();
-    final raw = res?['face_embedding'];
-    if (raw is! List) return null;
-    return raw.map((e) => (e as num).toDouble()).toList();
-  }
-
-  static Future<void> saveFaceEmbedding(String employeeId, List<double> embedding) async {
+  static Future<void> saveFaceEmbedding(String employeeId, List<List<double>> embeddings) async {
     await client.from('employees').update({
-      'face_embedding': embedding,
+      'face_embedding': embeddings,
       'face_enrolled_at': DateTime.now().toIso8601String(),
     }).eq('id', employeeId);
   }
 
-  // Every enrolled staff member's reference embedding, for the kiosk's
+  // Clears a staff member's enrollment - the kiosk's "Registered" tab uses
+  // this so admin can wipe a bad/duplicate enrollment and have them show up
+  // under "Not Registered" again for a clean re-scan.
+  static Future<void> deleteFaceEmbedding(String employeeId) async {
+    await client.from('employees').update({
+      'face_embedding': null,
+      'face_enrolled_at': null,
+    }).eq('id', employeeId);
+  }
+
+  // Every enrolled staff member's reference embeddings, for the kiosk's
   // 1-to-many "whose face is this" match - inactive staff are excluded so a
   // former employee's old enrollment can't still clock someone in.
   static Future<List<Map<String, dynamic>>> fetchAllFaceEmbeddings() async {
@@ -213,52 +215,113 @@ class SupabaseService {
         .neq('status', 'Inactive');
     return List<Map<String, dynamic>>.from(res).map((row) {
       final raw = row['face_embedding'];
+      final embeddings = raw is List
+          ? raw.whereType<List>().map((e) => e.map((v) => (v as num).toDouble()).toList()).toList()
+          : <List<double>>[];
       return {
         'id': row['id'],
         'name': row['name'],
-        'embedding': raw is List ? raw.map((e) => (e as num).toDouble()).toList() : <double>[],
+        'embeddings': embeddings,
       };
-    }).where((row) => (row['embedding'] as List).isNotEmpty).toList();
+    }).where((row) => (row['embeddings'] as List).isNotEmpty).toList();
   }
 
-  // Decides check-in vs check-out from today's existing row (if any) and
-  // upserts only the field that changed - onConflict upsert only touches
-  // columns present in the payload, so an already-set check_in_at survives
-  // the check-out call untouched. Returns what happened so the punch screen
-  // can show the right message.
+  // Active staff for the kiosk's admin-facing enrollment picker, split into
+  // "not registered" / "registered" by whether face_embedding is set - lets
+  // admin pick a name instead of that staff member typing their own login.
+  static Future<List<Map<String, dynamic>>> fetchStaffForEnrollment() async {
+    final res = await client
+        .from('employees')
+        .select('id, name, face_embedding')
+        .neq('status', 'Inactive')
+        .order('name');
+    return List<Map<String, dynamic>>.from(res).map((row) => {
+      'id':         row['id'],
+      'name':       row['name'],
+      'registered': row['face_embedding'] != null,
+    }).toList();
+  }
+
+  // The kiosk only ever handles check-in - checkout is self-service from
+  // the staff member's own app (recordCheckOut below), since that's
+  // already behind their own login and doesn't need a face-scan. A staff
+  // member can walk up and scan again later the same day without being
+  // blocked; the first scan is what sets check_in_at, later ones just
+  // report that same time back rather than erroring.
   static Future<Map<String, dynamic>> recordFacePunch(String employeeId, String date) async {
     final existing = await client
         .from('employee_attendance')
-        .select('check_in_at, check_out_at')
+        .select('check_in_at')
         .eq('employee_id', employeeId)
         .eq('date', date)
         .maybeSingle();
 
+    final existingCheckIn = existing?['check_in_at'] as String?;
+    if (existingCheckIn != null) {
+      return {'action': 'check_in', 'time': DateTime.parse(existingCheckIn)};
+    }
+
     final now = DateTime.now();
+    await client.from('employee_attendance').upsert({
+      'employee_id':  employeeId,
+      'date':         date,
+      'status':       'P',
+      'check_in_at':  now.toIso8601String(),
+      'punch_method': 'face',
+    }, onConflict: 'employee_id,date');
+    return {'action': 'check_in', 'time': now};
+  }
 
-    if (existing == null || existing['check_in_at'] == null) {
-      await client.from('employee_attendance').upsert({
-        'employee_id':  employeeId,
-        'date':         date,
-        'status':       'P',
-        'check_in_at':  now.toIso8601String(),
-        'punch_method': 'face',
-      }, onConflict: 'employee_id,date');
-      return {'action': 'check_in', 'time': now};
-    }
+  // Staff-initiated checkout from their own app (My Attendance) - the
+  // counterpart to the kiosk's check-in-only recordFacePunch above. No
+  // punch_method here: leaving it out of the upsert payload means it stays
+  // whatever the check-in already set it to ('face' from the kiosk, or
+  // null if admin marked the day manually), same "only touch columns
+  // present in the payload" upsert behavior used throughout this file.
+  static Future<DateTime> recordCheckOut(String employeeId, String date) async {
+    final now = DateTime.now();
+    await client.from('employee_attendance').upsert({
+      'employee_id':  employeeId,
+      'date':         date,
+      'status':       'P',
+      'check_out_at': now.toIso8601String(),
+    }, onConflict: 'employee_id,date');
+    return now;
+  }
 
-    if (existing['check_out_at'] == null) {
-      await client.from('employee_attendance').upsert({
-        'employee_id':  employeeId,
-        'date':         date,
-        'status':       'P',
-        'check_out_at': now.toIso8601String(),
-        'punch_method': 'face',
-      }, onConflict: 'employee_id,date');
-      return {'action': 'check_out', 'time': now};
-    }
+  // Punch override codes - the fallback when the kiosk's face match is
+  // wrong or fails outright (see face_punch_page.dart's "Not me" / "Enter
+  // Code Instead"). Admin mints a code from the employee's profile in the
+  // admin panel (generate_punch_code, authenticated-only); these two are
+  // the kiosk's anon-callable half of that flow. Both are thin wrappers -
+  // lookup_punch_code/redeem_punch_code do the real validation server-side
+  // (expiry, single-use, time bounds), these just shape the response and
+  // let PostgrestException surface for the caller to map into a friendly
+  // message.
 
-    return {'action': 'already_done'};
+  static Future<Map<String, dynamic>?> lookupPunchCode(String code) async {
+    final res = await client.rpc('lookup_punch_code', params: {'p_code': code}) as List;
+    if (res.isEmpty) return null;
+    final row = res.first as Map;
+    return {
+      'employeeId':   row['o_employee_id'] as String,
+      'employeeName': row['o_employee_name'] as String? ?? 'Staff',
+      'generatedAt':  DateTime.parse(row['o_generated_at'] as String),
+      'expiresAt':    DateTime.parse(row['o_expires_at'] as String),
+    };
+  }
+
+  static Future<Map<String, dynamic>> redeemPunchCode(String code, String date, DateTime checkInAt) async {
+    final res = await client.rpc('redeem_punch_code', params: {
+      'p_code': code,
+      'p_date': date,
+      'p_check_in_at': checkInAt.toIso8601String(),
+    }) as List;
+    final row = res.first as Map;
+    return {
+      'employeeName': row['o_employee_name'] as String? ?? 'Staff',
+      'checkInAt':    DateTime.parse(row['o_check_in_at'] as String),
+    };
   }
 
   // Homework ──────────────────────────────────────────────────────────────────

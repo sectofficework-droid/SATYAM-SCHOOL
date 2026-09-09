@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
@@ -60,13 +61,79 @@ class FaceRecognitionService {
   // if no face was found. "Largest" so a bystander in the background of a
   // punch selfie can't accidentally get picked over the person actually
   // taking it.
+  //
+  // Detection runs on an exposure-corrected copy when the shot is badly
+  // over/underexposed (see _exposureCorrectedCopy) - a washed-out
+  // highlight or a near-black frame both erase the contrast a detector
+  // needs to find facial contours at all, regardless of how good the
+  // detector otherwise is. The correction only changes pixel brightness,
+  // never geometry, so the returned Face's boundingBox is still valid
+  // pixel coordinates against the original file for getEmbedding to crop.
   Future<Face?> detectSingleFace(String imagePath) async {
-    final input = InputImage.fromFilePath(imagePath);
-    final faces = await _faceDetector.processImage(input);
-    if (faces.isEmpty) return null;
-    faces.sort((a, b) =>
-        (b.boundingBox.width * b.boundingBox.height).compareTo(a.boundingBox.width * a.boundingBox.height));
-    return faces.first;
+    final correctedPath = await _exposureCorrectedCopy(imagePath);
+    try {
+      final input = InputImage.fromFilePath(correctedPath ?? imagePath);
+      final faces = await _faceDetector.processImage(input);
+      if (faces.isEmpty) return null;
+      faces.sort((a, b) =>
+          (b.boundingBox.width * b.boundingBox.height).compareTo(a.boundingBox.width * a.boundingBox.height));
+      return faces.first;
+    } finally {
+      if (correctedPath != null) {
+        try { await File(correctedPath).delete(); } catch (_) {}
+      }
+    }
+  }
+
+  // Null (use the original photo as-is) unless the shot is bright/dark
+  // enough that a detector would plausibly struggle with it, in which case
+  // returns the path to a gamma-corrected copy. Any failure here (decode
+  // error, disk full, whatever) just falls back to the original file
+  // rather than blocking detection entirely.
+  Future<String?> _exposureCorrectedCopy(String imagePath) async {
+    try {
+      final bytes = await File(imagePath).readAsBytes();
+      var image = img.decodeImage(bytes);
+      if (image == null) return null;
+      image = img.bakeOrientation(image);
+
+      final gamma = _exposureGammaFor(image);
+      if (gamma == null) return null;
+
+      final corrected = img.adjustColor(image, gamma: gamma);
+      final correctedPath = '$imagePath.exposure.jpg';
+      await File(correctedPath).writeAsBytes(img.encodeJpg(corrected, quality: 90));
+      return correctedPath;
+    } catch (e) {
+      debugPrint('Exposure correction skipped: $e');
+      return null;
+    }
+  }
+
+  // Gamma > 1 darkens (recovers a blown-out highlight back into a
+  // detectable range); gamma < 1 brightens (pulls a near-black frame up).
+  // Untested against real staff yet - if detection still fails at the
+  // extremes, or starts mis-firing in normal light, these thresholds/gamma
+  // values are the first thing to retune.
+  double? _exposureGammaFor(img.Image image) {
+    final meanLuminance = _averageLuminance(image);
+    if (meanLuminance > 190) return 1.8;
+    if (meanLuminance < 55) return 0.6;
+    return null;
+  }
+
+  double _averageLuminance(img.Image image) {
+    var sum = 0.0;
+    var count = 0;
+    const stride = 4; // sampling is plenty for an average, and far cheaper
+                       // than visiting every pixel of a full-res photo
+    for (var y = 0; y < image.height; y += stride) {
+      for (var x = 0; x < image.width; x += stride) {
+        sum += image.getPixel(x, y).luminance;
+        count++;
+      }
+    }
+    return count == 0 ? 128 : sum / count;
   }
 
   bool eyesOpen(Face face) {
@@ -84,6 +151,13 @@ class FaceRecognitionService {
   // Crops [face]'s bounding box out of the photo at [imagePath], resizes it
   // to what MobileFaceNet expects, and returns its L2-normalized 192-d
   // embedding. Null if the file can't be decoded.
+  //
+  // Histogram-equalizes the crop before it reaches the model (see
+  // _normalizeLighting below) - this is what makes a punch taken in a dim
+  // hallway comparable to an enrollment shot taken under bright office
+  // light. Applied identically on both the enrollment and punch paths
+  // (this one function serves both), so it doesn't bias the match either
+  // way, just removes absolute-brightness differences before they can.
   Future<List<double>?> getEmbedding(String imagePath, Face face) async {
     final bytes = await File(imagePath).readAsBytes();
     var image = img.decodeImage(bytes);
@@ -97,7 +171,7 @@ class FaceRecognitionService {
     final h = box.height.clamp(1, image.height - y).toInt();
 
     final cropped = img.copyCrop(image, x: x, y: y, width: w, height: h);
-    final resized = img.copyResize(cropped, width: _inputSize, height: _inputSize);
+    final resized = _normalizeLighting(img.copyResize(cropped, width: _inputSize, height: _inputSize));
 
     final input = List.generate(
       1,
@@ -123,6 +197,16 @@ class FaceRecognitionService {
     return _l2Normalize(output[0]);
   }
 
+  // Spreads the crop's luminance histogram into full [0, 255] range in HSL
+  // color mode (stretches lightness, leaves hue/saturation alone) so a
+  // washed-out low-light shot and a well-lit one land in roughly the same
+  // brightness/contrast neighborhood before the model ever sees them.
+  // Plain per-pixel brightness math (e.g. a flat gamma bump) doesn't do
+  // this - it shifts everything by the same amount instead of correcting
+  // for how compressed the dynamic range already is.
+  img.Image _normalizeLighting(img.Image face) =>
+      img.histogramEqualization(face, mode: img.HistogramEqualizeMode.color);
+
   List<double> _l2Normalize(List<double> v) {
     var sumSq = 0.0;
     for (final x in v) {
@@ -145,16 +229,4 @@ class FaceRecognitionService {
     return dot / (math.sqrt(normA) * math.sqrt(normB));
   }
 
-  // Averages several enrollment shots into one reference embedding, then
-  // re-normalizes - more robust than trusting any single shot's lighting/angle.
-  List<double> averageEmbeddings(List<List<double>> embeddings) {
-    final size = embeddings.first.length;
-    final avg = List.filled(size, 0.0);
-    for (final e in embeddings) {
-      for (var i = 0; i < size; i++) {
-        avg[i] += e[i] / embeddings.length;
-      }
-    }
-    return _l2Normalize(avg);
-  }
 }

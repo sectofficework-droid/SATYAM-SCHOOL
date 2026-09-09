@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="ic_launcher_background">#FFFFFF</color>
+
+    <!-- Mirrors mobile-app/lib/core/theme/app_theme.dart's AppColors -
+         kept in sync manually since the native confirm dialog
+         (MainActivity.kt) can't read Dart constants. -->
+    <color name="brand_navy">#0F2340</color>
+    <color name="brand_amber">#F59E0B</color>
+    <color name="brand_green">#10B981</color>
 </resources>

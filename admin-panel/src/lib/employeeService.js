@@ -90,3 +90,19 @@ export async function resetEmployeePassword(id, newPassword) {
   });
   if (error) throw error;
 }
+
+// Mints a 6-digit code (valid 15 min, single-use) for the attendance
+// kiosk's face-scan fallback - staff types this in when face match is
+// wrong or fails outright (see mobile-app's enter_punch_code_page.dart).
+// generate_punch_code is granted to `authenticated` only, not `anon` -
+// the kiosk's anon key can look up / redeem a code but can never mint one
+// itself, so this action only exists here, behind admin login.
+export async function generateFacePunchCode(employeeId) {
+  const { data, error } = await supabase.rpc("generate_punch_code", {
+    p_employee_id: employeeId,
+  });
+  if (error) throw error;
+  const row = data?.[0];
+  if (!row) throw new Error("No code returned.");
+  return { code: row.code, expiresAt: row.expires_at };
+}

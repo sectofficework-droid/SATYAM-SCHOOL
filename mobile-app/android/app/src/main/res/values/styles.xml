@@ -15,4 +15,35 @@
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+
+    <!-- Attendance kiosk's face-punch confirm dialog (MainActivity.kt) -
+         the app's base theme above is the legacy platform theme (Flutter
+         handles its own UI, so this normally doesn't matter), which made
+         a plain AlertDialog look dated. This ThemeOverlay gives just that
+         one native dialog Material's rounded-corner card + brand-colored
+         buttons without touching the app's real theme. -->
+    <style name="PunchConfirmDialogTheme" parent="ThemeOverlay.MaterialComponents.MaterialAlertDialog">
+        <item name="buttonBarPositiveButtonStyle">@style/PunchConfirmPositiveButton</item>
+        <item name="buttonBarNegativeButtonStyle">@style/PunchConfirmNegativeButton</item>
+        <item name="shapeAppearanceOverlay">@style/PunchConfirmDialogShape</item>
+        <item name="colorSurface">@android:color/white</item>
+    </style>
+
+    <style name="PunchConfirmDialogShape" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">20dp</item>
+    </style>
+
+    <style name="PunchConfirmPositiveButton" parent="Widget.MaterialComponents.Button">
+        <item name="backgroundTint">@color/brand_amber</item>
+        <item name="android:textColor">@color/brand_navy</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textStyle">bold</item>
+        <item name="cornerRadius">24dp</item>
+    </style>
+
+    <style name="PunchConfirmNegativeButton" parent="Widget.MaterialComponents.Button.TextButton">
+        <item name="android:textColor">#94A3B8</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
 </resources>

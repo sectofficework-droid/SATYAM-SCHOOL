@@ -33,6 +33,7 @@ abstract class Routes {
   // Attendance kiosk flavor - standalone, no login-gated home route.
   static const kioskHome          = '/attendance/home';
   static const kioskPunch         = '/attendance/punch';
-  static const kioskEnrollLogin   = '/attendance/enroll-login';
+  static const kioskEnrollList    = '/attendance/enroll-list';
   static const kioskEnrollCapture = '/attendance/enroll-capture';
+  static const kioskEnterCode     = '/attendance/enter-code';
 }

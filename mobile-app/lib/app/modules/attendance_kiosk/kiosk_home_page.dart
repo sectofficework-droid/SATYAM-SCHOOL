@@ -48,7 +48,7 @@ class _KioskHomePageState extends State<KioskHomePage> {
               tooltip: 'Set up / update staff face (admin only)',
               onPressed: () async {
                 final unlocked = await showAdminPinGate(context);
-                if (unlocked) Get.toNamed(Routes.kioskEnrollLogin);
+                if (unlocked) Get.toNamed(Routes.kioskEnrollList);
               },
             ),
           ),
@@ -94,7 +94,7 @@ class _KioskHomePageState extends State<KioskHomePage> {
                 SizedBox(height: 10),
                 Text('SCAN FACE', style: TextStyle(
                   color: AppColors.navyDark, fontSize: 18, fontWeight: FontWeight.w800, letterSpacing: 1, fontFamily: 'Poppins')),
-                Text('to punch in / out', style: TextStyle(
+                Text('to check in', style: TextStyle(
                   color: AppColors.navyDark, fontSize: 12, fontWeight: FontWeight.w600, fontFamily: 'Poppins')),
               ]),
             ),

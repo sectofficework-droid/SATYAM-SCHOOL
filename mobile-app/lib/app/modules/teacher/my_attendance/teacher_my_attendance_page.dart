@@ -5,9 +5,12 @@ import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../common/widgets/attendance_view.dart';
 
-// Read-only: this teacher's own day-by-day attendance (Present/Absent/
-// Leave), marked by admin or auto-marked 'L' when a leave request is
-// approved (see "My Leave").
+// Day-by-day attendance (Present/Absent/Leave), marked by admin or
+// auto-marked 'L' when a leave request is approved (see "My Leave") - plus
+// one self-service action: checkout. The attendance kiosk only ever
+// records check-in (a shared device isn't the right place to trust a
+// checkout time - anyone could walk up and tap it for someone else), so
+// checkout happens here instead, behind the teacher's own login.
 class TeacherMyAttendancePage extends StatefulWidget {
   const TeacherMyAttendancePage({super.key});
   @override
@@ -17,6 +20,7 @@ class TeacherMyAttendancePage extends StatefulWidget {
 class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
   List<Map<String, dynamic>> _records = [];
   bool _loading = true;
+  bool _checkingOut = false;
 
   @override
   void initState() { super.initState(); _load(); }
@@ -29,6 +33,26 @@ class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
         ? await SupabaseService.fetchEmployeeAttendance(employeeId)
         : <Map<String, dynamic>>[];
     if (mounted) setState(() { _records = records; _loading = false; });
+  }
+
+  Future<void> _checkOut() async {
+    final profile    = AuthService.to.profile.value ?? {};
+    final employeeId = profile['id'] as String?;
+    if (employeeId == null || _checkingOut) return;
+    setState(() => _checkingOut = true);
+    try {
+      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      await SupabaseService.recordCheckOut(employeeId, today);
+      await _load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not check out. Please try again.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _checkingOut = false);
+    }
   }
 
   // Today's row, if any - carries the face-punch check-in/check-out times
@@ -70,7 +94,20 @@ class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
       child: Row(children: [
         Expanded(child: _punchTimeTile('Check In', checkIn)),
         Container(width: 1, height: 32, color: AppColors.indigo.withValues(alpha: .2)),
-        Expanded(child: _punchTimeTile('Check Out', checkOut)),
+        Expanded(
+          child: checkOut != null || checkIn == null
+              ? _punchTimeTile('Check Out', checkOut)
+              : Center(
+                  child: _checkingOut
+                      ? const SizedBox(width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.indigo))
+                      : TextButton(
+                          onPressed: _checkOut,
+                          child: const Text('Check Out', style: TextStyle(
+                            color: AppColors.indigo, fontWeight: FontWeight.w800, fontSize: 13)),
+                        ),
+                ),
+        ),
       ]),
     );
   }

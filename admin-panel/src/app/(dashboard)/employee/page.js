@@ -11,7 +11,7 @@ import {
   isNonEmpty, isPastOrTodayDate, isValidUploadFile,
 } from "@/lib/validators";
 import { getActiveClasses, getClassesWithSections } from "@/lib/settingsService";
-import { getEmployees, addEmployee, updateEmployee, resetEmployeePassword } from "@/lib/employeeService";
+import { getEmployees, addEmployee, updateEmployee, resetEmployeePassword, generateFacePunchCode } from "@/lib/employeeService";
 import { createImpersonationCode } from "@/lib/impersonationService";
 import { uploadFileToS3, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile, formatFileSize } from "@/lib/fileCompression";
@@ -280,6 +280,74 @@ function ImpersonationRow({ employeeId }) {
   );
 }
 
+// Face-punch kiosk fallback code - staff uses this when the kiosk's face
+// match is wrong or fails outright (see mobile-app's "Not me" / "Enter
+// Code Instead"). Same generate-and-countdown shape as ImpersonationRow
+// above, different RPC/purpose: this one only ever gets redeemed by the
+// kiosk for an attendance check-in, never used for admin-panel access.
+function PunchCodeRow({ employeeId }) {
+  const [result, setResult] = useState(null);
+  const [error, setError]   = useState("");
+  const [loading, setLoading] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(0);
+
+  async function handleGenerate() {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await generateFacePunchCode(employeeId);
+      setResult(data);
+    } catch (err) {
+      setError(err?.message || "Failed to generate code.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!result?.expiresAt) return;
+    const tick = () => {
+      const left = Math.max(0, Math.round((new Date(result.expiresAt).getTime() - Date.now()) / 1000));
+      setSecondsLeft(left);
+    };
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [result]);
+
+  const mm = String(Math.floor(secondsLeft / 60)).padStart(2, "0");
+  const ss = String(secondsLeft % 60).padStart(2, "0");
+
+  return (
+    <div className="flex items-start gap-2.5">
+      <KeyRound className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 mt-0.5" />
+      <div className="flex-1 min-w-0">
+        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Face-Punch Kiosk Code</p>
+        {!result ? (
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={handleGenerate} disabled={loading}
+              className="text-xs font-semibold text-school-navy hover:underline disabled:opacity-40">
+              {loading ? "Generating..." : "Generate Code"}
+            </button>
+            {error && <span className="text-[10px] text-red-500">{error}</span>}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-sm text-gray-800 font-bold font-mono tracking-wider">{result.code}</p>
+            <button type="button" onClick={() => navigator.clipboard?.writeText(result.code)}
+              className="text-gray-400 hover:text-gray-600">
+              <Copy className="w-3 h-3" />
+            </button>
+            <span className={`text-[10px] font-semibold ${secondsLeft <= 60 ? "text-red-500" : "text-gray-400"}`}>
+              {secondsLeft > 0 ? `${mm}:${ss}` : "Expired"}
+            </span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── View Employee Modal ────────────────────────────────────────────────────────
 function ViewEmployeeModal({ emp, onClose }) {
   const [mounted, setMounted] = useState(false);
@@ -375,6 +443,7 @@ function ViewEmployeeModal({ emp, onClose }) {
               <InfoRow label="Status"          value={emp.status}         icon={Shield}    />
               <PasswordRow employeeId={emp.id} onReset={(pw) => resetEmployeePassword(emp.id, pw)} />
               {canImpersonate && <ImpersonationRow employeeId={emp.id} />}
+              <PunchCodeRow employeeId={emp.id} />
             </div>
           </div>
 

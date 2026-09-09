@@ -103,3 +103,12 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // The attendance kiosk's face-punch confirm dialog is a native
+    // Android AlertDialog (see MainActivity.kt) - Material Components
+    // gives it a modern look (rounded corners, brand-colored buttons)
+    // instead of the legacy platform dialog style the app's base theme
+    // would otherwise produce.
+    implementation("com.google.android.material:material:1.12.0")
+}
