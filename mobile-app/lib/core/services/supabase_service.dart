@@ -190,7 +190,7 @@ class SupabaseService {
   static Future<void> saveFaceEmbedding(String employeeId, List<List<double>> embeddings) async {
     await client.from('employees').update({
       'face_embedding': embeddings,
-      'face_enrolled_at': DateTime.now().toIso8601String(),
+      'face_enrolled_at': DateTime.now().toUtc().toIso8601String(),
     }).eq('id', employeeId);
   }
 
@@ -271,7 +271,13 @@ class SupabaseService {
       'employee_id':  employeeId,
       'date':         date,
       'status':       'P',
-      'check_in_at':  now.toIso8601String(),
+      // .toUtc() before serializing - DateTime.now() is device-local and a
+      // local DateTime's toIso8601String() carries no offset/'Z', so
+      // Postgres parses the naive digits as literal UTC (no conversion),
+      // storing local wall-clock digits mislabeled as UTC. .toUtc() first
+      // makes the string carry the real UTC instant so it round-trips
+      // correctly through the .toLocal() read above.
+      'check_in_at':  now.toUtc().toIso8601String(),
       'punch_method': 'face',
     }, onConflict: 'employee_id,date');
     return {'action': 'check_in', 'time': now};
@@ -289,7 +295,7 @@ class SupabaseService {
       'employee_id':  employeeId,
       'date':         date,
       'status':       'P',
-      'check_out_at': now.toIso8601String(),
+      'check_out_at': now.toUtc().toIso8601String(),
     }, onConflict: 'employee_id,date');
     return now;
   }
@@ -320,7 +326,7 @@ class SupabaseService {
     final res = await client.rpc('redeem_punch_code', params: {
       'p_code': code,
       'p_date': date,
-      'p_check_in_at': checkInAt.toIso8601String(),
+      'p_check_in_at': checkInAt.toUtc().toIso8601String(),
     }) as List;
     final row = res.first as Map;
     return {
