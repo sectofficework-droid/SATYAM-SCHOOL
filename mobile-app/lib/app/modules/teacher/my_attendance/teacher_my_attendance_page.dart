@@ -83,8 +83,11 @@ class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
 
   Widget _buildTodayPunchBanner() {
     final today = _todayRecord;
-    final checkIn  = DateTime.tryParse((today?['check_in_at']  ?? '').toString());
-    final checkOut = DateTime.tryParse((today?['check_out_at'] ?? '').toString());
+    // check_in_at/check_out_at come back UTC-tagged from Postgres -
+    // .toLocal() so the tiles below show the device's actual wall-clock
+    // time instead of the raw UTC hour/minute.
+    final checkIn  = DateTime.tryParse((today?['check_in_at']  ?? '').toString())?.toLocal();
+    final checkOut = DateTime.tryParse((today?['check_out_at'] ?? '').toString())?.toLocal();
     if (checkIn == null && checkOut == null) return const SizedBox.shrink();
 
     return Container(

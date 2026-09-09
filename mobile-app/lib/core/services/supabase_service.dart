@@ -258,7 +258,12 @@ class SupabaseService {
 
     final existingCheckIn = existing?['check_in_at'] as String?;
     if (existingCheckIn != null) {
-      return {'action': 'check_in', 'time': DateTime.parse(existingCheckIn)};
+      // Postgres returns timestamptz values UTC-tagged (e.g. "...+00") -
+      // DateTime.parse preserves that tag, and DateFormat prints whatever
+      // hour/minute the DateTime is tagged with rather than converting, so
+      // an un-.toLocal()'d value here shows up 5:30 off from the wall clock
+      // on an IST device.
+      return {'action': 'check_in', 'time': DateTime.parse(existingCheckIn).toLocal()};
     }
 
     final now = DateTime.now();
@@ -306,8 +311,8 @@ class SupabaseService {
     return {
       'employeeId':   row['o_employee_id'] as String,
       'employeeName': row['o_employee_name'] as String? ?? 'Staff',
-      'generatedAt':  DateTime.parse(row['o_generated_at'] as String),
-      'expiresAt':    DateTime.parse(row['o_expires_at'] as String),
+      'generatedAt':  DateTime.parse(row['o_generated_at'] as String).toLocal(),
+      'expiresAt':    DateTime.parse(row['o_expires_at'] as String).toLocal(),
     };
   }
 
@@ -320,7 +325,7 @@ class SupabaseService {
     final row = res.first as Map;
     return {
       'employeeName': row['o_employee_name'] as String? ?? 'Staff',
-      'checkInAt':    DateTime.parse(row['o_check_in_at'] as String),
+      'checkInAt':    DateTime.parse(row['o_check_in_at'] as String).toLocal(),
     };
   }
 
