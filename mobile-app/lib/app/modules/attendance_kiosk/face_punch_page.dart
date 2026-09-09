@@ -169,7 +169,16 @@ class _FacePunchPageState extends State<FacePunchPage> {
       final confirmed = await NativeUiService.confirmPunch(bestName ?? 'Staff');
       if (!mounted) return;
       if (!confirmed) {
-        Get.toNamed(Routes.kioskEnterCode);
+        // Awaited: the preview was paused above for the confirm dialog and
+        // is never implicitly resumed by GetX's route pop, so without this
+        // await+resume the camera comes back from Enter Code frozen on its
+        // last frame - neither rescanning nor returning home - until the
+        // user happens to hit "Try Again" (which is the only other place
+        // resumePreview() is called).
+        await Get.toNamed(Routes.kioskEnterCode);
+        if (!mounted) return;
+        await controller.resumePreview();
+        setState(() { _busy = false; _stage = _Stage.camera; _message = 'Position your face in the circle'; });
         return;
       }
 
@@ -179,6 +188,12 @@ class _FacePunchPageState extends State<FacePunchPage> {
         onTimeout: () => throw TimeoutException('recordFacePunch timed out'),
       );
       final time = result['time'] as DateTime;
+      if (result['status'] == 'already_in') {
+        await controller.resumePreview();
+        _showError('$bestName is already checked in since ${DateFormat('h:mm a').format(time)}.'
+            ' Check out from your app first.', offerCode: false);
+        return;
+      }
       await NativeUiService.showToast('$bestName checked in at ${DateFormat('h:mm a').format(time)}');
       if (mounted) Get.back();
     } catch (e, st) {
@@ -187,9 +202,12 @@ class _FacePunchPageState extends State<FacePunchPage> {
     }
   }
 
-  void _enterCodeInstead() {
+  void _enterCodeInstead() async {
     _returnTimer?.cancel();
-    Get.toNamed(Routes.kioskEnterCode);
+    await Get.toNamed(Routes.kioskEnterCode);
+    if (!mounted) return;
+    _controller?.resumePreview(); // no-op if it was never paused
+    setState(() { _busy = false; _stage = _Stage.camera; _message = 'Position your face in the circle'; });
   }
 
   void _showError(String message, {required bool offerCode}) {

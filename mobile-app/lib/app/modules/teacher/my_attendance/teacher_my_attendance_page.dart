@@ -19,6 +19,7 @@ class TeacherMyAttendancePage extends StatefulWidget {
 
 class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
   List<Map<String, dynamic>> _records = [];
+  List<Map<String, dynamic>> _todayShifts = [];
   bool _loading = true;
   bool _checkingOut = false;
 
@@ -29,10 +30,14 @@ class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
     setState(() => _loading = true);
     final profile    = AuthService.to.profile.value ?? {};
     final employeeId = profile['id'] as String?;
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
     final records = employeeId != null
         ? await SupabaseService.fetchEmployeeAttendance(employeeId)
         : <Map<String, dynamic>>[];
-    if (mounted) setState(() { _records = records; _loading = false; });
+    final shifts = employeeId != null
+        ? await SupabaseService.fetchEmployeeShiftsForDate(employeeId, today)
+        : <Map<String, dynamic>>[];
+    if (mounted) setState(() { _records = records; _todayShifts = shifts; _loading = false; });
   }
 
   Future<void> _checkOut() async {
@@ -41,8 +46,12 @@ class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
     if (employeeId == null || _checkingOut) return;
     setState(() => _checkingOut = true);
     try {
-      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      await SupabaseService.recordCheckOut(employeeId, today);
+      final result = await SupabaseService.recordCheckOut(employeeId);
+      if (result['status'] == 'no_open_shift' && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No open shift to check out of.')),
+        );
+      }
       await _load();
     } catch (e) {
       if (mounted) {
@@ -53,18 +62,6 @@ class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
     } finally {
       if (mounted) setState(() => _checkingOut = false);
     }
-  }
-
-  // Today's row, if any - carries the face-punch check-in/check-out times
-  // (fetchEmployeeAttendance already select()s every column, so these come
-  // through with no extra query).
-  Map<String, dynamic>? get _todayRecord {
-    final today = DateTime.now();
-    for (final r in _records) {
-      final d = DateTime.tryParse((r['date'] ?? '').toString());
-      if (d != null && d.year == today.year && d.month == today.month && d.day == today.day) return r;
-    }
-    return null;
   }
 
   @override
@@ -81,26 +78,41 @@ class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
           ]),
   );
 
+  // Every shift of the day, oldest first (one row of check-in/check-out
+  // per shift) instead of a single pair - staff can punch in, check out,
+  // and punch in again the same day, and all of those shifts should show,
+  // not just the latest. The checkout button only ever appears once, on
+  // whichever shift (if any) has no check_out_at yet - there's at most one
+  // open shift at a time, enforced server-side.
   Widget _buildTodayPunchBanner() {
-    final today = _todayRecord;
-    // check_in_at/check_out_at come back UTC-tagged from Postgres -
-    // .toLocal() so the tiles below show the device's actual wall-clock
-    // time instead of the raw UTC hour/minute.
-    final checkIn  = DateTime.tryParse((today?['check_in_at']  ?? '').toString())?.toLocal();
-    final checkOut = DateTime.tryParse((today?['check_out_at'] ?? '').toString())?.toLocal();
-    if (checkIn == null && checkOut == null) return const SizedBox.shrink();
+    if (_todayShifts.isEmpty) return const SizedBox.shrink();
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(color: AppColors.indigoLight, borderRadius: BorderRadius.circular(16)),
+      child: Column(children: [
+        for (final shift in _todayShifts) _buildShiftRow(shift),
+      ]),
+    );
+  }
+
+  Widget _buildShiftRow(Map<String, dynamic> shift) {
+    // check_in_at/check_out_at come back UTC-tagged from Postgres -
+    // .toLocal() so the tiles below show the device's actual wall-clock
+    // time instead of the raw UTC hour/minute.
+    final checkIn  = DateTime.tryParse((shift['check_in_at']  ?? '').toString())?.toLocal();
+    final checkOut = DateTime.tryParse((shift['check_out_at'] ?? '').toString())?.toLocal();
+    final isOpen = checkOut == null;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(children: [
         Expanded(child: _punchTimeTile('Check In', checkIn)),
         Container(width: 1, height: 32, color: AppColors.indigo.withValues(alpha: .2)),
         Expanded(
-          child: checkOut != null || checkIn == null
-              ? _punchTimeTile('Check Out', checkOut)
-              : Center(
+          child: isOpen
+              ? Center(
                   child: _checkingOut
                       ? const SizedBox(width: 20, height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.indigo))
@@ -109,7 +121,8 @@ class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
                           child: const Text('Check Out', style: TextStyle(
                             color: AppColors.indigo, fontWeight: FontWeight.w800, fontSize: 13)),
                         ),
-                ),
+                )
+              : _punchTimeTile('Check Out', checkOut),
         ),
       ]),
     );

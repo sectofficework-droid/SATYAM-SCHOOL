@@ -83,6 +83,28 @@ export async function getEmployeeAttendanceForDate(date) {
   return data || [];
 }
 
+// employee_shifts: one row per shift (multi-shift support) underneath the
+// day-level employee_attendance above - a staff member can punch in/out
+// more than once a day, which the day-level row can't represent past the
+// first pair. Returned grouped by employee_id so the Mark Attendance tab
+// can render every shift for a given employee/date instead of just one
+// in/out line. Direct SELECT (authenticated has a read grant) - writes
+// only happen through the kiosk/app RPCs (record_face_punch etc), never
+// from here.
+export async function getEmployeeShiftsForDate(date) {
+  const { data, error } = await supabase
+    .from("employee_shifts")
+    .select("employee_id, check_in_at, check_out_at, punch_method")
+    .eq("date", date)
+    .order("check_in_at");
+  if (error) throw error;
+  const byEmployee = {};
+  for (const row of data || []) {
+    (byEmployee[row.employee_id] ??= []).push(row);
+  }
+  return byEmployee;
+}
+
 // records: [{ employee_id, date, status }]
 export async function saveEmployeeAttendanceForDate(records) {
   if (!records.length) return;

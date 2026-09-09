@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import {
   getPendingLeaveRequests, approveLeaveRequest, rejectLeaveRequest,
-  getEmployeeAttendanceForDate, saveEmployeeAttendanceForDate,
+  getEmployeeAttendanceForDate, saveEmployeeAttendanceForDate, getEmployeeShiftsForDate,
 } from "@/lib/staffLeaveService";
 import {
   getDailyTasks, addDailyTask, updateDailyTask, deactivateDailyTask, getCompletionStatus,
@@ -1757,7 +1757,7 @@ function fmtPunchTime(iso) {
 function MarkStaffAttendanceTab({ employees }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [status, setStatus] = useState({}); // employee_id -> 'P'|'A'
-  const [punches, setPunches] = useState({}); // employee_id -> { check_in_at, check_out_at, punch_method }
+  const [shiftsByEmployee, setShiftsByEmployee] = useState({}); // employee_id -> [{ check_in_at, check_out_at, punch_method }]
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -1766,17 +1766,14 @@ function MarkStaffAttendanceTab({ employees }) {
 
   useEffect(() => {
     setLoading(true);
-    getEmployeeAttendanceForDate(date).then(rows => {
-      const map = {};
-      const punchMap = {};
-      rows.forEach(r => {
-        map[r.employee_id] = r.status;
-        punchMap[r.employee_id] = { check_in_at: r.check_in_at, check_out_at: r.check_out_at, punch_method: r.punch_method };
-      });
-      activeEmployees.forEach(e => { if (!map[e.id]) map[e.id] = "P"; });
-      setStatus(map);
-      setPunches(punchMap);
-    }).finally(() => setLoading(false));
+    Promise.all([getEmployeeAttendanceForDate(date), getEmployeeShiftsForDate(date)])
+      .then(([rows, shifts]) => {
+        const map = {};
+        rows.forEach(r => { map[r.employee_id] = r.status; });
+        activeEmployees.forEach(e => { if (!map[e.id]) map[e.id] = "P"; });
+        setStatus(map);
+        setShiftsByEmployee(shifts);
+      }).finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
 
@@ -1811,22 +1808,20 @@ function MarkStaffAttendanceTab({ employees }) {
       ) : (
         <div className="divide-y divide-gray-50 max-h-[520px] overflow-y-auto">
           {activeEmployees.map(e => {
-            const punch = punches[e.id];
-            const checkIn  = fmtPunchTime(punch?.check_in_at);
-            const checkOut = fmtPunchTime(punch?.check_out_at);
+            const shifts = shiftsByEmployee[e.id] || [];
             return (
               <div key={e.id} className="flex items-center justify-between px-5 py-3 gap-3">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-gray-800">{e.name}</p>
                   <p className="text-xs text-gray-400">{e.designation}</p>
-                  {(checkIn || checkOut) && (
-                    <p className="text-xs text-gray-500 mt-1">
-                      {checkIn ? `In: ${checkIn}` : "In: —"} · {checkOut ? `Out: ${checkOut}` : "Out: —"}
-                      {punch?.punch_method === "face" && (
+                  {shifts.map((s, i) => (
+                    <p key={i} className="text-xs text-gray-500 mt-1">
+                      {`In: ${fmtPunchTime(s.check_in_at) || "—"}`} · {`Out: ${fmtPunchTime(s.check_out_at) || "—"}`}
+                      {s.punch_method === "face" && (
                         <span className="ml-1.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 text-[10px] font-semibold align-middle">Face Punch</span>
                       )}
                     </p>
-                  )}
+                  ))}
                 </div>
                 <div className="flex gap-1.5 flex-shrink-0">
                   {["P", "A"].map(v => (

@@ -89,6 +89,16 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
       final date = DateFormat('yyyy-MM-dd').format(_chosenTime);
       final result = await SupabaseService.redeemPunchCode(code, date, _chosenTime);
       if (!mounted) return;
+      if (result['status'] == 'already_in') {
+        final since = DateFormat('h:mm a').format(result['checkInAt'] as DateTime);
+        setState(() {
+          _busy = false;
+          _stage = _Stage.error;
+          _employeeName = result['employeeName'] as String;
+          _message = '$_employeeName is already checked in since $since. Check out from your app first.';
+        });
+        return;
+      }
       setState(() {
         _stage = _Stage.success;
         _employeeName = result['employeeName'] as String;

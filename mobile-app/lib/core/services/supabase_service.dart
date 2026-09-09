@@ -244,60 +244,60 @@ class SupabaseService {
 
   // The kiosk only ever handles check-in - checkout is self-service from
   // the staff member's own app (recordCheckOut below), since that's
-  // already behind their own login and doesn't need a face-scan. A staff
-  // member can walk up and scan again later the same day without being
-  // blocked; the first scan is what sets check_in_at, later ones just
-  // report that same time back rather than erroring.
+  // already behind their own login and doesn't need a face-scan. Goes
+  // through the record_face_punch RPC (not a direct table write) so the
+  // "one open shift at a time" rule is enforced server-side, where a
+  // tampered kiosk APK can't bypass it - status comes back 'checked_in' or
+  // 'already_in' so the caller can show a block message instead of a
+  // silent no-op.
   static Future<Map<String, dynamic>> recordFacePunch(String employeeId, String date) async {
-    final existing = await client
-        .from('employee_attendance')
-        .select('check_in_at')
-        .eq('employee_id', employeeId)
-        .eq('date', date)
-        .maybeSingle();
-
-    final existingCheckIn = existing?['check_in_at'] as String?;
-    if (existingCheckIn != null) {
-      // Postgres returns timestamptz values UTC-tagged (e.g. "...+00") -
-      // DateTime.parse preserves that tag, and DateFormat prints whatever
-      // hour/minute the DateTime is tagged with rather than converting, so
-      // an un-.toLocal()'d value here shows up 5:30 off from the wall clock
-      // on an IST device.
-      return {'action': 'check_in', 'time': DateTime.parse(existingCheckIn).toLocal()};
-    }
-
     final now = DateTime.now();
-    await client.from('employee_attendance').upsert({
-      'employee_id':  employeeId,
-      'date':         date,
-      'status':       'P',
-      // .toUtc() before serializing - DateTime.now() is device-local and a
-      // local DateTime's toIso8601String() carries no offset/'Z', so
-      // Postgres parses the naive digits as literal UTC (no conversion),
-      // storing local wall-clock digits mislabeled as UTC. .toUtc() first
-      // makes the string carry the real UTC instant so it round-trips
-      // correctly through the .toLocal() read above.
-      'check_in_at':  now.toUtc().toIso8601String(),
-      'punch_method': 'face',
-    }, onConflict: 'employee_id,date');
-    return {'action': 'check_in', 'time': now};
+    final res = await client.rpc('record_face_punch', params: {
+      'p_employee_id': employeeId,
+      'p_date': date,
+      // .toUtc() before serializing - see the timezone note on
+      // redeemPunchCode below, same reasoning applies here.
+      'p_check_in_at': now.toUtc().toIso8601String(),
+    }) as List;
+    final row = res.first as Map;
+    return {
+      'status': row['o_status'] as String,
+      'time':   DateTime.parse(row['o_check_in_at'] as String).toLocal(),
+    };
   }
 
   // Staff-initiated checkout from their own app (My Attendance) - the
-  // counterpart to the kiosk's check-in-only recordFacePunch above. No
-  // punch_method here: leaving it out of the upsert payload means it stays
-  // whatever the check-in already set it to ('face' from the kiosk, or
-  // null if admin marked the day manually), same "only touch columns
-  // present in the payload" upsert behavior used throughout this file.
-  static Future<DateTime> recordCheckOut(String employeeId, String date) async {
+  // counterpart to the kiosk's check-in-only recordFacePunch above. Closes
+  // whichever shift is currently open for them via the record_check_out
+  // RPC (not date-scoped - handles a shift that started before midnight).
+  // status comes back 'checked_out' or 'no_open_shift'.
+  static Future<Map<String, dynamic>> recordCheckOut(String employeeId) async {
     final now = DateTime.now();
-    await client.from('employee_attendance').upsert({
-      'employee_id':  employeeId,
-      'date':         date,
-      'status':       'P',
-      'check_out_at': now.toUtc().toIso8601String(),
-    }, onConflict: 'employee_id,date');
-    return now;
+    final res = await client.rpc('record_check_out', params: {
+      'p_employee_id': employeeId,
+      'p_check_out_at': now.toUtc().toIso8601String(),
+    }) as List;
+    final row = res.first as Map;
+    final checkOutAt = row['o_check_out_at'] as String?;
+    return {
+      'status': row['o_status'] as String,
+      'time':   checkOutAt != null ? DateTime.parse(checkOutAt).toLocal() : null,
+    };
+  }
+
+  // Every shift for one employee on one day, oldest first - the teacher
+  // app's My Attendance banner lists all of them (not just one in/out
+  // pair), and the checkout button always targets whichever one has no
+  // check_out_at yet. Direct SELECT, not an RPC: authenticated already has
+  // a read grant on employee_shifts, no need for a bespoke fetch function.
+  static Future<List<Map<String, dynamic>>> fetchEmployeeShiftsForDate(String employeeId, String date) async {
+    final res = await client
+        .from('employee_shifts')
+        .select()
+        .eq('employee_id', employeeId)
+        .eq('date', date)
+        .order('check_in_at');
+    return List<Map<String, dynamic>>.from(res);
   }
 
   // Punch override codes - the fallback when the kiosk's face match is
@@ -331,6 +331,7 @@ class SupabaseService {
     final row = res.first as Map;
     return {
       'employeeName': row['o_employee_name'] as String? ?? 'Staff',
+      'status':       row['o_status'] as String,
       'checkInAt':    DateTime.parse(row['o_check_in_at'] as String).toLocal(),
     };
   }
