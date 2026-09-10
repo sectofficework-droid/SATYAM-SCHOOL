@@ -290,6 +290,13 @@ function mapFormForUpdate(form) {
     // student's photo even though nothing about it was touched.
     photo:            form.photo,
     grNo:             form.grNo,
+    // Resolved to the enrollment's class_id inside updateStudent() - a plain
+    // students-table field wouldn't do anything, the student's class lives
+    // on student_enrollments (see the roll_no/joinDate handling right next
+    // to it there). Previously missing here entirely, so choosing a new
+    // Class in this form (or the Spreadsheet Bulk Editor) silently did
+    // nothing on save.
+    std:              form.cls || undefined,
     rollNo:           form.roll ? Number(form.roll) : undefined,
     joinDate:         form.joinDate || undefined,
     firstName:        form.firstName,

@@ -685,11 +685,20 @@ export async function updateStudent(studentId, formData) {
     .eq("id", studentId);
   if (error) throw error;
 
-  // Update enrollment fields (roll_no, date_of_join) if provided
+  // Update enrollment fields (roll_no, date_of_join, class) if provided
   if (formData.enrollmentId) {
     const enrollUpdate = {};
     if (formData.rollNo !== undefined) enrollUpdate.roll_no = formData.rollNo;
     if (formData.joinDate)             enrollUpdate.date_of_join = formData.joinDate;
+    // A student's class lives on student_enrollments.class_id, not on the
+    // students table itself - resolve the chosen class name the same way
+    // addStudent()/promoteStudent() do. Throws (via getClassByName's
+    // .single()) if the name doesn't match a real class, same validation
+    // those already rely on.
+    if (formData.std) {
+      const cls = await getClassByName(formData.std);
+      enrollUpdate.class_id = cls.id;
+    }
     if (Object.keys(enrollUpdate).length > 0) {
       const { error: enrollErr } = await supabase
         .from("student_enrollments")
