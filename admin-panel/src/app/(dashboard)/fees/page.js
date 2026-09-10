@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import useStore from "@/lib/store";
 import { isPositiveAmount } from "@/lib/validators";
 import {
   IndianRupee, Search, Send, Bell, CheckCircle2,
@@ -16,7 +15,7 @@ import {
   saveFeePayment,
   markInventoryGiven,
 } from "@/lib/feesService";
-import { getActiveClasses } from "@/lib/settingsService";
+import { getActiveClasses, getFeeReminderTemplates } from "@/lib/settingsService";
 import { bagItemAllowedForClass } from "@/lib/studentService";
 import DateInputDMY from "@/components/DateInputDMY";
 
@@ -175,8 +174,7 @@ const NOTIFY_LANGS = [
   { key:"or", label:"Odia"    },
 ];
 
-function NotificationModal({ student, onClose, feesMap }) {
-  const templates  = useStore(s => s.feeReminderTemplates);
+function NotificationModal({ student, onClose, feesMap, templates }) {
   const defaultLast = new Date(Date.now() + 7 * 86400000).toISOString().split("T")[0];
   const [lastDate, setLastDate] = useState(defaultLast);
   const [lang,     setLang]     = useState("en");
@@ -413,8 +411,10 @@ function ViewModal({ student, onClose, feesMap }) {
 // ── Main Page ──────────────────────────────────────────────────
 export default function FeesPage() {
   const searchParams = useSearchParams();
-  const templates    = useStore(s => s.feeReminderTemplates);
+  const [templates, setTemplates] = useState({ en: "", hi: "", or: "" });
   const [activeClassNames, setActiveClassNames] = useState([]);
+
+  useEffect(() => { getFeeReminderTemplates().then(setTemplates).catch(() => {}); }, []);
 
   // ── DB state ────────────────────────────────────────────────
   const [students,       setStudents]      = useState([]);
@@ -722,7 +722,7 @@ export default function FeesPage() {
   return (
     <>
       {notifyStudent && (
-        <NotificationModal student={notifyStudent} onClose={() => setNotifyStudent(null)} feesMap={feesMap} />
+        <NotificationModal student={notifyStudent} onClose={() => setNotifyStudent(null)} feesMap={feesMap} templates={templates} />
       )}
       {viewStudent && (
         <ViewModal student={viewStudent} onClose={() => setViewStudent(null)} feesMap={feesMap} />

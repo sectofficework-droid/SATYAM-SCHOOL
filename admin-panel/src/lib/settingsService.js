@@ -47,6 +47,36 @@ export async function getPeriodDefs() {
   return data?.period_defs || null;
 }
 
+// ── Fee Reminder Templates ────────────────────────────────────────
+// Previously Zustand-only (localStorage) - same class of bug as
+// period_defs before it was moved here (see comment above): an edit only
+// ever showed up on the browser that made it, so a template change made by
+// one admin silently never applied when a different admin/device sent a
+// reminder.
+const DEFAULT_FEE_REMINDER_TEMPLATES = {
+  en: "Dear Parent,\n{name} (Class {class}, Roll {roll}) has {amount} school fees pending.\nPlease pay on or before {date}.\nThank you,\nSatyam Stars International School, Surat",
+  hi: "प्रिय अभिभावक,\n{name} (कक्षा {class}, रोल {roll}) की {amount} स्कूल फीस बाकी है।\nकृपया {date} तक जमा करें।\nधन्यवाद,\nसत्यम स्टार्स इंटरनेशनल स्कूल, सूरत",
+  or: "ପ୍ରିୟ ଅଭିଭାବକ,\n{name} (ଶ୍ରେଣୀ {class}, ରୋଲ {roll}) ର {amount} ସ୍କୁଲ ଶୁଳ୍କ ବାକି ଅଛି।\nଦଯାକରି {date} ପୂର୍ବରୁ ଦିଅନ୍ତୁ।\nଧନ୍ୟବାଦ,\nସତ୍ୟମ ଷ୍ଟାର୍ସ ଇଣ୍ଟରନ୍ୟାସନାଲ ସ୍କୁଲ, ସୁରାଟ",
+};
+
+export async function getFeeReminderTemplates() {
+  const { data, error } = await supabase
+    .from("school_profile")
+    .select("fee_reminder_templates")
+    .limit(1)
+    .single();
+  if (error) throw error;
+  return data?.fee_reminder_templates || DEFAULT_FEE_REMINDER_TEMPLATES;
+}
+
+export async function saveFeeReminderTemplates(templates) {
+  const { error } = await supabase
+    .from("school_profile")
+    .update({ fee_reminder_templates: templates, updated_at: new Date().toISOString() })
+    .not("id", "is", null);
+  if (error) throw error;
+}
+
 export async function savePeriodDefs(defs) {
   const { error } = await supabase
     .from("school_profile")

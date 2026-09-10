@@ -82,6 +82,30 @@ export async function updateItemAddress(id, storageAddress) {
   if (error) throw error;
 }
 
+// name/price only - total/issued are computed from batches/usages (see
+// mapItem above), there's no single column to overwrite for those; adding a
+// real batch/usage entry is how those actually change.
+export async function updateInventoryItemBasics(id, { name, price }) {
+  const { error } = await supabase
+    .from("inventory_items")
+    .update({ name, price: Number(price) || 0 })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+// Fails with a Postgres FK-violation (23503) if any student_inventory_assignments
+// still reference this item - surfaced as a friendly error rather than letting
+// the raw Postgres message through, since "Item Master" doesn't show that link.
+export async function deleteInventoryItem(id) {
+  const { error } = await supabase.from("inventory_items").delete().eq("id", id);
+  if (error) {
+    if (error.code === "23503") {
+      throw new Error("This item is already assigned to one or more students and can't be deleted. Remove those assignments first.");
+    }
+    throw error;
+  }
+}
+
 export async function addBatch(itemId, batch) {
   const { data, error } = await supabase
     .from("inventory_batches")
@@ -140,20 +164,35 @@ function mapAsset(row) {
     returnDate: c.return_date || null,
   }));
   const currentCheckout = checkouts.find(c => !c.returnDate) || null;
+  const history = (row.asset_history || [])
+    .map(h => ({
+      id:     h.id,
+      date:   h.date || "",
+      action: h.action,
+      from:   h.from_person || "",
+      to:     h.to_person   || "",
+      note:   h.note        || "",
+    }))
+    .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   return {
     id:              row.id,
     name:            row.name,
     brand:           row.brand           || "",
+    category:        row.category        || "",
     storageAddress:  row.storage_address || "",
+    purchaseDate:    row.purchase_date   || "",
+    value:           Number(row.value)   || 0,
+    status:          row.status          || "Active",
     currentCheckout,
     checkouts,
+    history,
   };
 }
 
 export async function getAssets() {
   const { data, error } = await supabase
     .from("assets")
-    .select("*, asset_checkouts(*)")
+    .select("*, asset_checkouts(*), asset_history(*)")
     .order("name");
   if (error) throw error;
   return (data || []).map(mapAsset);
@@ -170,7 +209,67 @@ export async function addAsset(asset) {
     .select()
     .single();
   if (error) throw error;
-  return mapAsset({ ...data, asset_checkouts: [] });
+  return mapAsset({ ...data, asset_checkouts: [], asset_history: [] });
+}
+
+// name/brand kept separate from the table's display concatenation ("Name
+// (Brand)") - callers must pass them back apart, not the combined string,
+// or brand text would get baked into name on every edit.
+export async function updateAsset(id, asset) {
+  const { error } = await supabase
+    .from("assets")
+    .update({
+      name:            asset.name,
+      brand:           asset.brand          || null,
+      category:        asset.category       || null,
+      storage_address: asset.storageAddress || null,
+      purchase_date:   asset.purchaseDate   || null,
+      value:           Number(asset.value)  || 0,
+      status:          asset.status         || "Active",
+    })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+// ── Asset History (freeform log) ─────────────────────────────────────────
+// Separate from asset_checkouts (the Take/Return flow used elsewhere) -
+// this is a manually-kept log for anything else worth recording against an
+// asset (transferred, damaged, repaired, etc).
+
+export async function addAssetHistoryEntry(assetId, entry) {
+  const { data, error } = await supabase
+    .from("asset_history")
+    .insert({
+      asset_id:    assetId,
+      date:        entry.date || null,
+      action:      entry.action || "Assigned",
+      from_person: entry.from || null,
+      to_person:   entry.to   || null,
+      note:        entry.note || null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return { id: data.id, date: data.date || "", action: data.action, from: data.from_person || "", to: data.to_person || "", note: data.note || "" };
+}
+
+export async function updateAssetHistoryEntry(id, entry) {
+  const { error } = await supabase
+    .from("asset_history")
+    .update({
+      date:        entry.date || null,
+      action:      entry.action || "Assigned",
+      from_person: entry.from || null,
+      to_person:   entry.to   || null,
+      note:        entry.note || null,
+    })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteAssetHistoryEntry(id) {
+  const { error } = await supabase.from("asset_history").delete().eq("id", id);
+  if (error) throw error;
 }
 
 export async function takeAsset(assetId, checkout) {

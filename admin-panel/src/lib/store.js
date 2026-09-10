@@ -83,10 +83,6 @@ const useStore = create(
       ],
       setEmployees: (list) => set({ employees: list }),
 
-      // ── Role Permissions ──────────────────────────────────────
-      rolePermissions: {},
-      setRolePermissions: (perms) => set({ rolePermissions: perms }),
-
       // ── Active Classes ─────────────────────────────────────────
       activeClasses: [
         "JR KG","SR KG","Balvatika",
@@ -105,19 +101,6 @@ const useStore = create(
       // ── Employee Attendance Summary ───────────────────────────
       attendanceSummary: null,
       setAttendanceSummary: (data) => set({ attendanceSummary: data }),
-
-      // ── Employee Salaries (management-only) ───────────────────
-      employeeSalaries: {
-        EMP001: 45000, EMP002: 25000, EMP003: 22000, EMP004: 22000,
-        EMP005: 20000, EMP006: 18000, EMP007: 20000, EMP008: 20000,
-        EMP011: 24000, EMP012: 23000, EMP013: 23000, EMP014: 22000,
-        EMP015: 22000, EMP016: 22000, EMP017: 22000, EMP018: 22000,
-        EMP019: 22000, EMP020: 22000, EMP021: 22000, EMP022: 22000,
-        EMP023: 22000, EMP024: 22000, EMP025: 22000, EMP026: 22000,
-        EMP027: 15000,
-      },
-      updateEmployeeSalary: (empId, amount) =>
-        set((s) => ({ employeeSalaries: { ...s.employeeSalaries, [empId]: amount } })),
 
       salaryPayments: [],
       addSalaryPayments: (payments) =>
@@ -161,25 +144,6 @@ const useStore = create(
         students: typeof listOrUpdater === "function" ? listOrUpdater(s.students) : listOrUpdater,
       })),
       addStudent: (student) => set((s) => ({ students: [...s.students, student] })),
-
-      // ── Student Inventory Items (master list) ─────────────────
-      studentInventoryItems: ["Red Bag", "Blue Bag", "Garment Card", "Book Set", "Notebook Set", "ID Card", "School Diary"],
-      addStudentInventoryItem: (name) => set((s) => ({
-        studentInventoryItems: s.studentInventoryItems.includes(name)
-          ? s.studentInventoryItems
-          : [...s.studentInventoryItems, name],
-      })),
-      removeStudentInventoryItem: (name) => set((s) => ({
-        studentInventoryItems: s.studentInventoryItems.filter((i) => i !== name),
-      })),
-
-      // ── Fee Reminder Templates ────────────────────────────────
-      feeReminderTemplates: {
-        en: "Dear Parent,\n{name} (Class {class}, Roll {roll}) has {amount} school fees pending.\nPlease pay on or before {date}.\nThank you,\nSatyam Stars International School, Surat",
-        hi: "प्रिय अभिभावक,\n{name} (कक्षा {class}, रोल {roll}) की {amount} स्कूल फीस बाकी है।\nकृपया {date} तक जमा करें।\nधन्यवाद,\nसत्यम स्टार्स इंटरनेशनल स्कूल, सूरत",
-        or: "ପ୍ରିୟ ଅଭିଭାବକ,\n{name} (ଶ୍ରେଣୀ {class}, ରୋଲ {roll}) ର {amount} ସ୍କୁଲ ଶୁଳ୍କ ବାକି ଅଛି।\nଦଯାକରି {date} ପୂର୍ବରୁ ଦିଅନ୍ତୁ।\nଧନ୍ୟବାଦ,\nସତ୍ୟମ ଷ୍ଟାର୍ସ ଇଣ୍ଟରନ୍ୟାସନାଲ ସ୍କୁଲ, ସୁରାଟ",
-      },
-      setFeeReminderTemplates: (t) => set({ feeReminderTemplates: t }),
 
       // ── Pending Tasks ──────────────────────────────────────────
       pendingTasks: [],

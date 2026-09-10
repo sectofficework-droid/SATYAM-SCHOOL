@@ -1283,7 +1283,7 @@ function EditEmployeeModal({ emp, onClose, onSave }) {
 }
 
 // ── Attendance Section ─────────────────────────────────────────────────────────
-function AttendanceSection({ employees, salaries, setAttendanceSummary }) {
+function AttendanceSection({ employees, setAttendanceSummary }) {
   const today = new Date().toISOString().split("T")[0];
   const [periodType, setPeriodType] = useState("fullmonth");
   const [fromDate,   setFromDate]   = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0]);
@@ -1330,7 +1330,7 @@ function AttendanceSection({ employees, salaries, setAttendanceSummary }) {
       (name  && e.name.toLowerCase()  === String(name).trim().toLowerCase())
     ) || null;
   }
-  function getSal(emp) { return emp ? ((salaries||{})[emp.empId] ?? 15000) : 15000; }
+  function getSal(emp) { return emp?.salary ?? 0; }
 
   function handleFile(file) {
     if (!file || periodDays === 0) return;
@@ -2442,7 +2442,6 @@ export default function EmployeePage() {
   const [viewEmp, setViewEmp]       = useState(null);
   const [addOpen, setAddOpen]       = useState(false);
 
-  const salaries       = useStore(s => s.employeeSalaries);
   const setAttendanceSummary = useStore(s => s.setAttendanceSummary);
 
   const total       = employees.length;
@@ -2515,7 +2514,6 @@ export default function EmployeePage() {
       {view === "attendance" && (
         <AttendanceSection
           employees={employees}
-          salaries={salaries || {}}
           setAttendanceSummary={setAttendanceSummary}
         />
       )}

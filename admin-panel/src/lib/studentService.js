@@ -699,6 +699,14 @@ export async function updateStudent(studentId, formData) {
       const cls = await getClassByName(formData.std);
       enrollUpdate.class_id = cls.id;
     }
+    // Same gap as class_id above - the "Replace Full Details" bulk import
+    // has always sent admissionClass, but nothing here ever wrote
+    // admission_class_id, so re-importing to fix a wrong Admission Class
+    // silently did nothing.
+    if (formData.admissionClass) {
+      const admCls = await getClassByName(formData.admissionClass);
+      enrollUpdate.admission_class_id = admCls.id;
+    }
     if (Object.keys(enrollUpdate).length > 0) {
       const { error: enrollErr } = await supabase
         .from("student_enrollments")
@@ -708,8 +716,14 @@ export async function updateStudent(studentId, formData) {
     }
   }
 
-  // Update previous school
-  if (formData.lastSchoolName) {
+  // Update previous school - hasPrevSchool === false means the edit form's
+  // toggle was explicitly switched off, so the stale row must be deleted,
+  // not just left alone (an empty lastSchoolName alone is ambiguous: other
+  // callers, like the Super Admin bulk editor, never touch this field at
+  // all and would otherwise trip a delete they never intended).
+  if (formData.hasPrevSchool === false) {
+    await supabase.from("student_previous_school").delete().eq("student_id", studentId);
+  } else if (formData.lastSchoolName) {
     await supabase
       .from("student_previous_school")
       .upsert({

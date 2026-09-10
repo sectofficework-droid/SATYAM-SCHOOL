@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Check, UserPlus, X, Pencil, Trash2, Save } from "lucide-react";
-import useStore from "@/lib/store";
 import supabase from "@/lib/supabase";
 import { isValidName, isNonEmpty, hasNoErrors } from "@/lib/validators";
 
@@ -57,39 +56,6 @@ function EditBar({ editMode, saved, onEdit, onSave, onCancel }) {
   );
 }
 
-const PERM_ROLES = ["Admin","Teacher"];
-
-const PERMISSION_GROUPS = [
-  {
-    group:"Students",
-    items:[
-      { id:"student_basic", label:"Student Basic Info",    desc:"Name, class, section, roll no, photo" },
-      { id:"student_full",  label:"Student Full Details",  desc:"DOB, parent contact, govt IDs, all documents" },
-    ],
-  },
-  {
-    group:"Fees",
-    items:[
-      { id:"fees_view",       label:"View Fee Records",         desc:"See fee payment history and pending dues" },
-      { id:"fees_class_only", label:"Assigned Class Fees Only", desc:"Restrict fee view to their assigned class only" },
-      { id:"fees_remind",     label:"Send Fee Reminders",       desc:"Notify parents about pending fee payments" },
-    ],
-  },
-  {
-    group:"Other Access",
-    items:[
-      { id:"attendance", label:"Attendance",     desc:"Mark and view daily student attendance" },
-      { id:"reports",    label:"Reports",         desc:"View and export school reports" },
-      { id:"timetable",  label:"View Timetable",  desc:"Access and view the class timetable" },
-    ],
-  },
-];
-
-const DEFAULT_ROLE_PERMS = {
-  "Admin":   { student_basic:true, student_full:true,  fees_view:true,  fees_class_only:false, fees_remind:true,  attendance:true,  reports:true,  timetable:true  },
-  "Teacher": { student_basic:true, student_full:false, fees_view:true,  fees_class_only:true,  fees_remind:true,  attendance:true,  reports:false, timetable:true  },
-};
-
 const ROLE_LABELS = {
   management:   "Management Head",
   senior_admin: "Senior Admin",
@@ -103,36 +69,6 @@ const ROLE_COLORS = {
 const DB_ROLES = ["management", "senior_admin", "normal_admin"];
 
 export default function UsersRolesTab() {
-  // ── Permissions ──
-  const storedPerms = useStore(s => s.rolePermissions);
-  const savePerms   = useStore(s => s.setRolePermissions);
-  const pBackupRef  = useRef(null);
-
-  const [perms, setPerms] = useState(() => {
-    // Always start from DEFAULT_ROLE_PERMS so all required roles exist,
-    // then overlay any previously saved values for matching roles.
-    const saved = storedPerms ?? {};
-    return Object.fromEntries(
-      PERM_ROLES.map(role => [
-        role,
-        { ...DEFAULT_ROLE_PERMS[role], ...(saved[role] ?? {}) },
-      ])
-    );
-  });
-  const [pEditMode, setPEditMode] = useState(false);
-  const [pSaved,    setPSaved]    = useState(false);
-
-  function pStartEdit() { pBackupRef.current = JSON.parse(JSON.stringify(perms)); setPEditMode(true); }
-  function pCancel()    { setPerms(pBackupRef.current); setPEditMode(false); }
-  function pSave()      { savePerms(perms); setPSaved(true); setPEditMode(false); setTimeout(() => setPSaved(false), 2500); }
-
-  function togglePerm(role, permId) {
-    setPerms(prev => ({
-      ...prev,
-      [role]: { ...(DEFAULT_ROLE_PERMS[role] ?? {}), ...(prev[role] ?? {}), [permId]: !(prev[role]?.[permId] ?? false) },
-    }));
-  }
-
   // ── Users (real DB data) ──
   const [users,    setUsers]    = useState([]);
   const [usersLoading, setUsersLoading] = useState(true);
@@ -195,108 +131,6 @@ export default function UsersRolesTab() {
 
   return (
     <div className="space-y-5">
-
-      {/* ── Role Permissions Matrix ── */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-gray-700">Role Permissions</h3>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Control what each role can access in the teacher &amp; staff app
-            </p>
-          </div>
-          <EditBar editMode={pEditMode} saved={pSaved} onEdit={pStartEdit} onSave={pSave} onCancel={pCancel}/>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b border-gray-100">
-                <th className="px-5 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wide" style={{ minWidth:"220px" }}>
-                  Permission
-                </th>
-                <th className="px-4 py-3 text-center text-xs font-bold text-red-600 whitespace-nowrap">
-                  Super Admin
-                </th>
-                {PERM_ROLES.map(role => (
-                  <th key={role} className="px-4 py-3 text-center text-xs font-bold text-gray-600 whitespace-nowrap">
-                    {role}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {PERMISSION_GROUPS.map(group => (
-                <>
-                  <tr key={group.group} className="bg-school-navy/5 border-b border-gray-100">
-                    <td colSpan={PERM_ROLES.length + 2} className="px-5 py-2">
-                      <span className="text-[10px] font-black text-school-navy uppercase tracking-[0.2em]">
-                        {group.group}
-                      </span>
-                    </td>
-                  </tr>
-                  {group.items.map((perm, idx) => (
-                    <tr key={perm.id} className={`border-b border-gray-50 ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"}`}>
-                      <td className="px-5 py-3.5">
-                        <p className="text-sm font-semibold text-gray-800">{perm.label}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">{perm.desc}</p>
-                      </td>
-                      {/* Super Admin — always enabled, locked */}
-                      <td className="px-4 py-3.5 text-center">
-                        <div className="flex justify-center">
-                          <div className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center">
-                            <Check className="w-4 h-4 text-red-600"/>
-                          </div>
-                        </div>
-                      </td>
-                      {/* Other roles — toggleable */}
-                      {PERM_ROLES.map(role => {
-                        const enabled = perms[role]?.[perm.id] ?? false;
-                        return (
-                          <td key={role} className="px-4 py-3.5 text-center">
-                            <div className="flex justify-center">
-                              <button
-                                disabled={!pEditMode}
-                                onClick={() => togglePerm(role, perm.id)}
-                                className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all ${
-                                  enabled
-                                    ? "bg-green-500 text-white shadow-sm"
-                                    : "bg-gray-100 border border-gray-200 text-transparent"
-                                } ${pEditMode ? "cursor-pointer hover:opacity-75 hover:scale-110" : "cursor-default"}`}
-                              >
-                                <Check className="w-4 h-4"/>
-                              </button>
-                            </div>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Legend */}
-        <div className="px-5 py-3 border-t border-gray-100 bg-gray-50 flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-1.5">
-            <div className="w-5 h-5 rounded-md bg-green-500 flex items-center justify-center">
-              <Check className="w-3 h-3 text-white"/>
-            </div>
-            <span className="text-xs text-gray-500 font-medium">Allowed</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <div className="w-5 h-5 rounded-md bg-gray-100 border border-gray-200"/>
-            <span className="text-xs text-gray-500 font-medium">Not allowed</span>
-          </div>
-          {pEditMode && (
-            <span className="text-xs text-amber-600 font-medium ml-2">
-              · Click any cell to toggle permission
-            </span>
-          )}
-        </div>
-      </div>
 
       {/* ── Users List ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">

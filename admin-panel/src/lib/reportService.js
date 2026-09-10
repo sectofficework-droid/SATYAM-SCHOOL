@@ -300,7 +300,7 @@ export async function getFeesForSuperAdmin() {
       id, enrollment_no, fee_total, fee_discount, discount_reason,
       student:students(first_name, last_name),
       class:classes!student_enrollments_class_id_fkey(name),
-      fee_payments(id, amount, payment_date)
+      fee_payments(id, amount, payment_date, due_amount, due_date, label)
     `)
     .eq("academic_year_id", year.id)
     .order("roll_no");
@@ -314,9 +314,14 @@ export async function getFeesForSuperAdmin() {
       .sort((a, b) => (a.payment_date || "").localeCompare(b.payment_date || ""))
       .map((p, i) => ({
         id:       p.id,
-        label:    `Payment ${i + 1}`,
-        amount:   Number(p.amount) || 0,
-        dueDate:  "",
+        label:    p.label || `Payment ${i + 1}`,
+        // due_amount/due_date/label are new columns (previously the "Amount"
+        // field editable here just aliased the actual-received `amount`
+        // column, so it could never show a real Partial/Unpaid balance).
+        // Legacy rows with no due_amount recorded yet fall back to the
+        // amount actually received, same as before this fix.
+        amount:   p.due_amount != null ? Number(p.due_amount) : Number(p.amount) || 0,
+        dueDate:  p.due_date || "",
         paid:     Number(p.amount) || 0,
         paidDate: p.payment_date || "",
       }));

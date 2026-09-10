@@ -20,6 +20,7 @@ function mapFromDB(row) {
     joiningDate:     row.joining_date || "",
     employmentType:  row.employment_type || "Permanent",
     status:          row.status || "Active",
+    salary:          Number(row.monthly_salary) || 0,
     appPassword:     row.app_password || "",
     classTeacherOf:  row.class_teacher_of_section_id || null,
     subjectMappings: row.subject_mappings || [],
@@ -46,6 +47,7 @@ function mapToDB(emp) {
     joining_date:                emp.joiningDate || null,
     employment_type:             emp.employmentType || null,
     status:                      emp.status || "Active",
+    monthly_salary:              Number(emp.salary) || 0,
     class_teacher_of_section_id: emp.classTeacherOf || null,
     subject_mappings:            emp.subjectMappings || [],
     documents:                   emp.documents || [],
@@ -76,6 +78,19 @@ export async function updateEmployee(id, emp) {
   const { error } = await supabase
     .from("employees")
     .update(mapToDB(emp))
+    .eq("id", id);
+  if (error) throw error;
+}
+
+// Targeted single-column update for the Salary tab's quick inline edit -
+// previously salary lived only in Zustand/localStorage (never Supabase at
+// all), so different admins/devices saw different figures for the same
+// employee and it was disconnected from Reports (which derives salary from
+// the real salary_payments ledger instead). Now a real column.
+export async function updateEmployeeSalary(id, amount) {
+  const { error } = await supabase
+    .from("employees")
+    .update({ monthly_salary: Number(amount) || 0, updated_at: new Date().toISOString() })
     .eq("id", id);
   if (error) throw error;
 }

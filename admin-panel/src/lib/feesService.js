@@ -137,7 +137,10 @@ export async function updateFeesForEnrollment(enrollmentId, { discount, discount
   for (const p of existingPayments) {
     await supabase
       .from("fee_payments")
-      .update({ amount: p.paid, payment_date: p.paidDate || null })
+      .update({
+        amount: p.paid, payment_date: p.paidDate || null,
+        due_amount: p.amount ?? null, due_date: p.dueDate || null, label: p.label || null,
+      })
       .eq("id", p.id);
   }
 
@@ -149,6 +152,9 @@ export async function updateFeesForEnrollment(enrollmentId, { discount, discount
       student_id:    studentId,
       amount:        p.paid,
       payment_date:  p.paidDate || null,
+      due_amount:    p.amount ?? null,
+      due_date:      p.dueDate || null,
+      label:         p.label || null,
     }));
     const { error: insErr } = await supabase.from("fee_payments").insert(rows);
     if (insErr) throw insErr;

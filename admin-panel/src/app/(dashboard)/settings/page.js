@@ -36,6 +36,7 @@ import {
   addSupportingTeacher, removeSupportingTeacher,
   getTeachingEmployees, getAllClassSubjects, saveClassSubjects,
   getPeriodDefs, savePeriodDefs, getDayGroupWeekdays, saveDayGroupWeekdays,
+  getFeeReminderTemplates, saveFeeReminderTemplates,
 } from "@/lib/settingsService";
 
 function FieldError({ msg }) {
@@ -2398,16 +2399,31 @@ function TimetableTab() {
 // ── Main Settings Page ─────────────────────────────────────────────────────────
 // ── Tab: Fee Reminder Templates ────────────────────────────────────────────────
 function FeeReminderTab() {
-  const stored    = useStore(s => s.feeReminderTemplates);
-  const setStored = useStore(s => s.setFeeReminderTemplates);
-  const [form,     setForm]     = useState({ ...stored });
+  const [form,     setForm]     = useState({ en: "", hi: "", or: "" });
+  const [loading,  setLoading]  = useState(true);
   const [editMode, setEditMode] = useState(false);
   const [saved,    setSaved]    = useState(false);
+  const [error,    setError]    = useState("");
   const [backup,   setBackup]   = useState(null);
 
-  function startEdit() { setBackup({ ...form }); setEditMode(true); }
-  function cancel()    { setForm(backup); setEditMode(false); }
-  function save()      { setStored(form); setSaved(true); setEditMode(false); setTimeout(() => setSaved(false), 2500); }
+  useEffect(() => {
+    getFeeReminderTemplates().then(setForm).catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  function startEdit() { setBackup({ ...form }); setEditMode(true); setError(""); }
+  function cancel()    { setForm(backup); setEditMode(false); setError(""); }
+  async function save() {
+    setError("");
+    try {
+      await saveFeeReminderTemplates(form);
+      setSaved(true); setEditMode(false);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      setError(e.message || "Failed to save templates.");
+    }
+  }
+
+  if (loading) return <div className="flex items-center justify-center py-16 text-sm text-gray-400">Loading…</div>;
 
   const LANGS = [
     { key:"en", label:"English Template"  },
@@ -2450,6 +2466,7 @@ function FeeReminderTab() {
             </div>
           ))}
         </div>
+        {error && <p className="text-xs text-red-500">{error}</p>}
         <EditBar editMode={editMode} saved={saved} onEdit={startEdit} onSave={save} onCancel={cancel}/>
       </div>
     </div>

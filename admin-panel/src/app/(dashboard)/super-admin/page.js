@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   ShieldCheck, Crown, Shield, LogOut, Eye, EyeOff,
   Camera, Calendar, CreditCard, MapPin, User, Tag,
@@ -23,10 +23,13 @@ import { getCurrentYearClassFees } from "@/lib/settingsService";
 import { DEFAULT_DOCS } from "@/lib/constants";
 import { uploadFileToS3, getS3ViewUrl, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile, formatFileSize } from "@/lib/fileCompression";
-import { getEmployees } from "@/lib/employeeService";
+import { getEmployees, updateEmployeeSalary } from "@/lib/employeeService";
 import { getFeesForSuperAdmin } from "@/lib/reportService";
 import { updateFeesForEnrollment, markInventoryGiven, markInventoryPending } from "@/lib/feesService";
-import { getAssets, getInventoryItems } from "@/lib/inventoryService";
+import {
+  getAssets, getInventoryItems, updateAsset, addAssetHistoryEntry, updateAssetHistoryEntry, deleteAssetHistoryEntry,
+  updateInventoryItemBasics, deleteInventoryItem, addInventoryItem,
+} from "@/lib/inventoryService";
 import * as XLSX from "xlsx";
 import DateInputDMY from "@/components/DateInputDMY";
 import { fmtDMY } from "@/lib/utils";
@@ -1181,13 +1184,10 @@ function FeesPanel({ fees }) {
 
 // ── Inventory Panel ───────────────────────────────────────────────────────────
 function InventoryPanel({ students }) {
-  const masterItems   = useStore(s => s.studentInventoryItems);
-  const addMasterItem = useStore(s => s.addStudentInventoryItem);
-  const remMasterItem = useStore(s => s.removeStudentInventoryItem);
-
   const [tab,        setTab]        = useState("assets");
   const [assets,     setAssets]     = useState([]);
   const [stock,      setStock]      = useState([]);
+  const [items,      setItems]      = useState([]); // raw inventory_items rows (id/name/category/price) - backs Item Master + Stock
   const [stuInv,     setStuInv]     = useState([]);
   const [invLoading, setInvLoading] = useState(true);
   const [clsF,       setClsF]       = useState("All");
@@ -1199,30 +1199,30 @@ function InventoryPanel({ students }) {
   const [saved,      setSaved]      = useState("");
   const [newItem,    setNewItem]     = useState("");
   const [confirmDel, setConfirmDel] = useState(null);
-  let _hid = 100;
 
-  useEffect(() => {
-    Promise.all([getAssets(), getInventoryItems()])
+  const loadInventory = useCallback(() => {
+    setInvLoading(true);
+    return Promise.all([getAssets(), getInventoryItems()])
       .then(([assetData, itemData]) => {
         setAssets(assetData.map(a => ({
-          id:           a.id,
-          name:         a.name + (a.brand ? ` (${a.brand})` : ""),
-          category:     "",
-          location:     a.storageAddress || "",
-          status:       a.currentCheckout ? "In Use" : "Available",
-          assignedTo:   a.currentCheckout?.takenBy || "—",
-          purchaseDate: "",
-          value:        0,
-          history: a.checkouts.flatMap(c => {
-            const rows = [{ id: c.id, date: c.takenDate || "", action: "Assigned", from: "", to: c.takenBy || "", note: c.purpose || "" }];
-            if (c.returnDate) rows.push({ id: c.id + 100000, date: c.returnDate, action: "Returned", from: c.takenBy || "", to: "", note: "" });
-            return rows;
-          }),
+          id:             a.id,
+          name:           a.name,
+          brand:          a.brand,
+          category:       a.category,
+          location:       a.storageAddress,
+          purchaseDate:   a.purchaseDate,
+          value:          a.value,
+          status:         a.status,                                          // Active/Maintenance/Disposed - real, editable
+          checkoutStatus: a.currentCheckout ? "In Use" : "Available",         // derived from open checkout - read-only
+          assignedTo:     a.currentCheckout?.takenBy || "—",
+          checkouts:      a.checkouts,                                       // read-only, managed via the Take/Return flow elsewhere
+          history:        a.history,                                         // freeform log, editable here
         })));
+        setItems(itemData);
         setStock(itemData.map(item => ({
           id:     item.id,
           item:   item.name,
-          price:  0,
+          price:  item.price,
           total:  item.batches.reduce((s, b) => s + b.qty, 0),
           issued: item.usages.reduce((s, u) => s + u.qty, 0),
         })));
@@ -1231,8 +1231,14 @@ function InventoryPanel({ students }) {
       .finally(() => setInvLoading(false));
   }, []);
 
-  // Derive student item columns from actual DB inventory (not store list)
-  // so renamed/added items always show correctly regardless of localStorage state.
+  useEffect(() => { loadInventory(); }, [loadInventory]);
+
+  const masterItems = items.filter(i => i.category === "student");
+
+  // Derive student item columns from actual DB inventory (assignment
+  // records) PLUS any Item Master entry that has no assignments yet, so a
+  // freshly-added item shows up as a checkable column immediately instead
+  // of only appearing once someone happens to get the first assignment.
   const dbItemNames = useMemo(() => {
     const seen = new Set();
     const order = [];
@@ -1241,8 +1247,11 @@ function InventoryPanel({ students }) {
         if (inv.item && !seen.has(inv.item)) { seen.add(inv.item); order.push(inv.item); }
       })
     );
+    items.filter(i => i.category === "student").forEach(i => {
+      if (!seen.has(i.name)) { seen.add(i.name); order.push(i.name); }
+    });
     return order;
-  }, [students]);
+  }, [students, items]);
 
   useEffect(() => {
     const todayIso = new Date().toISOString().split("T")[0];
@@ -1268,16 +1277,89 @@ function InventoryPanel({ students }) {
 
   function showSaved(msg) { setSaved(msg); setTimeout(()=>setSaved(""),2000); }
 
-  function addHistEntry(assetId) {
-    setAssets(prev=>prev.map(a=>a.id===assetId?{...a,history:[...a.history,{id:_hid++,date:"",action:"Assigned",from:"",to:"",note:""}]}:a));
+  async function saveAssetEdit(a) {
+    try {
+      await updateAsset(a.id, { name: a.name, brand: a.brand, category: a.category, storageAddress: a.location, purchaseDate: a.purchaseDate, value: a.value, status: a.status });
+      setExpandId(null);
+      showSaved("Asset updated!");
+      loadInventory();
+    } catch (err) {
+      alert("Failed to save asset: " + err.message);
+    }
+  }
+
+  async function addHistEntry(assetId) {
+    try {
+      const entry = await addAssetHistoryEntry(assetId, { date: new Date().toISOString().slice(0, 10), action: "Assigned", from: "", to: "", note: "" });
+      setAssets(prev=>prev.map(a=>a.id===assetId?{...a,history:[...a.history,entry]}:a));
+    } catch (err) {
+      alert("Failed to add history entry: " + err.message);
+    }
   }
 
   function updateHistEntry(assetId, hIdx, key, val) {
     setAssets(prev=>prev.map(a=>a.id===assetId?{...a,history:a.history.map((h,i)=>i===hIdx?{...h,[key]:val}:h)}:a));
   }
 
-  function removeHistEntry(assetId, hIdx) {
-    setAssets(prev=>prev.map(a=>a.id===assetId?{...a,history:a.history.filter((_,i)=>i!==hIdx)}:a));
+  async function removeHistEntry(assetId, hIdx) {
+    const asset = assets.find(a=>a.id===assetId);
+    const entry = asset?.history[hIdx];
+    if (!entry) return;
+    try {
+      await deleteAssetHistoryEntry(entry.id);
+      setAssets(prev=>prev.map(a=>a.id===assetId?{...a,history:a.history.filter((_,i)=>i!==hIdx)}:a));
+    } catch (err) {
+      alert("Failed to remove history entry: " + err.message);
+    }
+  }
+
+  async function saveHistory(assetId) {
+    const asset = assets.find(a=>a.id===assetId);
+    if (!asset) return;
+    try {
+      for (const h of asset.history) await updateAssetHistoryEntry(h.id, h);
+      setHistMode(null);
+      showSaved("History saved!");
+    } catch (err) {
+      alert("Failed to save history: " + err.message);
+    }
+  }
+
+  async function saveStockEdit(s) {
+    try {
+      await updateInventoryItemBasics(s.id, { name: s.item, price: s.price });
+      setStockEdit(null);
+      showSaved("Stock updated!");
+      loadInventory();
+    } catch (err) {
+      alert("Failed to save stock item: " + err.message);
+    }
+  }
+
+  async function handleAddMasterItem(e) {
+    e.preventDefault();
+    const trimmed = newItem.trim();
+    if (!trimmed) return;
+    try {
+      await addInventoryItem({ name: trimmed, category: "student" });
+      setNewItem("");
+      showSaved(`"${trimmed}" added to item master.`);
+      loadInventory();
+    } catch (err) {
+      alert("Failed to add item: " + err.message);
+    }
+  }
+
+  async function handleDeleteMasterItem(item) {
+    try {
+      await deleteInventoryItem(item.id);
+      setConfirmDel(null);
+      showSaved(`"${item.name}" removed from item master.`);
+      loadInventory();
+    } catch (err) {
+      alert(err.message);
+      setConfirmDel(null);
+    }
   }
 
   const filteredStu = stuInv.filter(s=>clsF==="All"||s.cls===clsF);
@@ -1306,13 +1388,13 @@ function InventoryPanel({ students }) {
                 <>
                   <tr key={a.id} className={`border-b border-gray-100 hover:bg-gray-50 ${expandId===a.id?"bg-amber-50":""}`}>
                     <td className="px-3 py-2 text-gray-400">{a.id}</td>
-                    <td className="px-3 py-2 font-semibold text-gray-800">{a.name}</td>
-                    <td className="px-3 py-2 text-gray-600">{a.category}</td>
-                    <td className="px-3 py-2 text-gray-600">{a.location}</td>
-                    <td className="px-3 py-2 text-gray-600">{a.assignedTo}</td>
-                    <td className="px-3 py-2 text-gray-600">{a.purchaseDate}</td>
+                    <td className="px-3 py-2 font-semibold text-gray-800">{a.name}{a.brand?` (${a.brand})`:""}</td>
+                    <td className="px-3 py-2 text-gray-600">{a.category || "—"}</td>
+                    <td className="px-3 py-2 text-gray-600">{a.location || "—"}</td>
+                    <td className="px-3 py-2 text-gray-600">{a.assignedTo} <span className="text-[10px] text-gray-400">({a.checkoutStatus})</span></td>
+                    <td className="px-3 py-2 text-gray-600">{a.purchaseDate || "—"}</td>
                     <td className="px-3 py-2 font-semibold">₹{a.value.toLocaleString()}</td>
-                    <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${a.status==="Active"?"bg-green-100 text-green-700":"bg-yellow-100 text-yellow-700"}`}>{a.status}</span></td>
+                    <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${a.status==="Active"?"bg-green-100 text-green-700":a.status==="Maintenance"?"bg-yellow-100 text-yellow-700":"bg-red-100 text-red-700"}`}>{a.status}</span></td>
                     <td className="px-3 py-2">
                       <div className="flex items-center gap-2">
                         <button onClick={()=>setExpandId(expandId===a.id?null:a.id)} className="flex items-center gap-1 text-amber-700 font-semibold hover:text-amber-900">
@@ -1329,7 +1411,7 @@ function InventoryPanel({ students }) {
                   {expandId===a.id && (
                     <tr key={`ae-${a.id}`}><td colSpan={9} className="px-4 py-3 bg-amber-50/50">
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-                        {[{l:"Name",f:"name",t:"text"},{l:"Category",f:"category",t:"text"},{l:"Location",f:"location",t:"text"},{l:"Assigned To",f:"assignedTo",t:"text"},{l:"Purchase Date",f:"purchaseDate",t:"date"},{l:"Value ₹",f:"value",t:"number"},{l:"Status",f:"status",t:"sel",opts:["Active","Maintenance","Disposed"]}].map(({l,f,t,opts})=>(
+                        {[{l:"Name",f:"name",t:"text"},{l:"Brand",f:"brand",t:"text"},{l:"Category",f:"category",t:"text"},{l:"Location",f:"location",t:"text"},{l:"Purchase Date",f:"purchaseDate",t:"date"},{l:"Value ₹",f:"value",t:"number"},{l:"Condition",f:"status",t:"sel",opts:["Active","Maintenance","Disposed"]}].map(({l,f,t,opts})=>(
                           <div key={f} className="flex flex-col gap-0.5">
                             <label className="text-[10px] font-semibold text-gray-500">{l}</label>
                             {t==="sel"
@@ -1339,7 +1421,8 @@ function InventoryPanel({ students }) {
                           </div>
                         ))}
                       </div>
-                      <button onClick={()=>{setExpandId(null);showSaved("Asset updated!");}} className="flex items-center gap-1.5 bg-amber-500 text-white px-4 py-2 rounded-lg text-xs font-semibold"><Save className="w-3.5 h-3.5"/>Save</button>
+                      <p className="text-[11px] text-gray-400 mb-2">&quot;Assigned To&quot; is managed via the Take/Return checkout flow in Inventory Management, not editable here.</p>
+                      <button onClick={()=>saveAssetEdit(a)} className="flex items-center gap-1.5 bg-amber-500 text-white px-4 py-2 rounded-lg text-xs font-semibold"><Save className="w-3.5 h-3.5"/>Save</button>
                     </td></tr>
                   )}
 
@@ -1370,7 +1453,7 @@ function InventoryPanel({ students }) {
                         </div>
                         <div className="flex gap-2">
                           <button onClick={()=>addHistEntry(a.id)} className="flex items-center gap-1.5 border border-dashed border-purple-400 text-purple-700 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-purple-50"><Plus className="w-3.5 h-3.5"/>Add Entry</button>
-                          <button onClick={()=>{setHistMode(null);showSaved("History saved!");}} className="flex items-center gap-1.5 bg-purple-600 text-white px-4 py-1.5 rounded-lg text-xs font-semibold"><Save className="w-3.5 h-3.5"/>Save History</button>
+                          <button onClick={()=>saveHistory(a.id)} className="flex items-center gap-1.5 bg-purple-600 text-white px-4 py-1.5 rounded-lg text-xs font-semibold"><Save className="w-3.5 h-3.5"/>Save History</button>
                         </div>
                       </div>
                     </td></tr>
@@ -1492,15 +1575,16 @@ function InventoryPanel({ students }) {
                   </tr>
                   {stockEdit===s.id && (
                     <tr key={`se-${s.id}`}><td colSpan={7} className="px-4 py-3 bg-amber-50/60">
-                      <div className="flex flex-wrap gap-4 mb-3">
-                        {[{l:"Item",f:"item",t:"text"},{l:"Price ₹",f:"price",t:"number"},{l:"Total Qty",f:"total",t:"number"},{l:"Issued",f:"issued",t:"number"}].map(({l,f,t})=>(
+                      <div className="flex flex-wrap gap-4 mb-2">
+                        {[{l:"Item",f:"item",t:"text"},{l:"Price ₹",f:"price",t:"number"}].map(({l,f,t})=>(
                           <div key={f} className="flex flex-col gap-0.5">
                             <label className="text-[10px] font-semibold text-gray-500">{l}</label>
                             <input type={t} className="border border-gray-200 rounded px-2 py-1.5 text-xs bg-white focus:outline-none w-28" value={s[f]} onChange={e=>setStock(prev=>prev.map(x=>x.id===s.id?{...x,[f]:t==="number"?Number(e.target.value):e.target.value}:x))}/>
                           </div>
                         ))}
                       </div>
-                      <button onClick={()=>{setStockEdit(null);showSaved("Stock updated!");}} className="flex items-center gap-1.5 bg-amber-500 text-white px-4 py-2 rounded-lg text-xs font-semibold"><Save className="w-3.5 h-3.5"/>Save</button>
+                      <p className="text-[11px] text-gray-400 mb-2">Total Qty and Issued are computed from batch/usage records, not directly editable here — add a batch or usage entry in Inventory Management to adjust them.</p>
+                      <button onClick={()=>saveStockEdit(s)} className="flex items-center gap-1.5 bg-amber-500 text-white px-4 py-2 rounded-lg text-xs font-semibold"><Save className="w-3.5 h-3.5"/>Save</button>
                     </td></tr>
                   )}
                 </>
@@ -1525,17 +1609,17 @@ function InventoryPanel({ students }) {
               <p className="text-sm text-gray-400">No items configured yet.</p>
             )}
             <div className="space-y-2">
-              {masterItems.map((name) => (
-                <div key={name} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
+              {masterItems.map((item) => (
+                <div key={item.id} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5">
                   <div className="flex items-center gap-2.5">
                     <Package className="w-3.5 h-3.5 text-blue-400 flex-shrink-0"/>
-                    <span className="text-sm font-semibold text-gray-800">{name}</span>
+                    <span className="text-sm font-semibold text-gray-800">{item.name}</span>
                   </div>
-                  {confirmDel === name ? (
+                  {confirmDel === item.id ? (
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-red-600 font-semibold">Delete &quot;{name}&quot;?</span>
+                      <span className="text-xs text-red-600 font-semibold">Delete &quot;{item.name}&quot;?</span>
                       <button
-                        onClick={() => { remMasterItem(name); setConfirmDel(null); showSaved(`"${name}" removed from item master.`); }}
+                        onClick={() => handleDeleteMasterItem(item)}
                         className="px-3 py-1 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition-colors"
                       >Yes, Delete</button>
                       <button
@@ -1545,7 +1629,7 @@ function InventoryPanel({ students }) {
                     </div>
                   ) : (
                     <button
-                      onClick={() => setConfirmDel(name)}
+                      onClick={() => setConfirmDel(item.id)}
                       className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 hover:text-red-500 border border-gray-200 hover:border-red-300 px-3 py-1.5 rounded-lg transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5"/>Delete
@@ -1561,14 +1645,7 @@ function InventoryPanel({ students }) {
             <p className="text-xs font-bold text-gray-600 uppercase tracking-wide mb-3">Add New Item</p>
             <form
               className="flex items-center gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const trimmed = newItem.trim();
-                if (!trimmed) return;
-                addMasterItem(trimmed);
-                setNewItem("");
-                showSaved(`"${trimmed}" added to item master.`);
-              }}
+              onSubmit={handleAddMasterItem}
             >
               <input
                 value={newItem}
@@ -1595,9 +1672,8 @@ function InventoryPanel({ students }) {
 
 // -- Salary Panel (Management Head only) -------------------------------------------
 function SalaryPanel({ employees: propEmployees }) {
-  const employees  = propEmployees || [];
-  const salaries   = useStore(s => s.employeeSalaries);
-  const updateSal  = useStore(s => s.updateEmployeeSalary);
+  const [employees, setEmployees] = useState(propEmployees || []);
+  useEffect(() => { setEmployees(propEmployees || []); }, [propEmployees]);
 
   const curMonth = new Date().toISOString().slice(0, 7);
   const [month,      setMonth]      = useState(curMonth);
@@ -1609,10 +1685,11 @@ function SalaryPanel({ employees: propEmployees }) {
   const [allPayments, setAllPayments] = useState([]);
   const [paying,      setPaying]      = useState(false);
 
-  const safeSalaries = salaries || {};
-
   const monthLabel = (m) => new Date(m + "-01").toLocaleDateString("en-IN", { month:"long", year:"numeric" });
-  function getSal(emp) { return safeSalaries[emp.empId] ?? 15000; }
+  // 0 (unset) shows honestly rather than defaulting to a plausible-looking
+  // placeholder - salary lived only in per-browser localStorage before this
+  // fix, so every employee's real figure needs re-entering once here.
+  function getSal(emp) { return emp.salary ?? 0; }
 
   async function loadPayments(m) {
     const { data } = await supabase
@@ -1647,9 +1724,16 @@ function SalaryPanel({ employees: propEmployees }) {
   function fmtAmt(n)  { return "\u20b9" + Number(n).toLocaleString("en-IN"); }
   function fmtDate(d) { try { return new Date(d).toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}); } catch { return d; } }
 
-  function saveSalary(empId) {
+  async function saveSalary(emp) {
     const v = parseInt(editVal, 10);
-    if (!isNaN(v) && v > 0) updateSal(empId, v);
+    if (!isNaN(v) && v > 0) {
+      try {
+        await updateEmployeeSalary(emp.id, v);
+        setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, salary: v } : e));
+      } catch (err) {
+        alert("Failed to save salary: " + (err?.message || "Unknown error"));
+      }
+    }
     setEditId(null);
   }
 
@@ -1767,8 +1851,8 @@ function SalaryPanel({ employees: propEmployees }) {
                       <div className="flex items-center gap-1">
                         <input type="number" className="border border-emerald-300 rounded px-2 py-1 w-24 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-400"
                           value={editVal} onChange={e=>setEditVal(e.target.value)} autoFocus
-                          onKeyDown={e=>{ if(e.key==="Enter") saveSalary(emp.empId); if(e.key==="Escape") setEditId(null); }}/>
-                        <button onClick={()=>saveSalary(emp.empId)} className="p-1 rounded bg-emerald-500 text-white hover:bg-emerald-600"><Check className="w-3 h-3"/></button>
+                          onKeyDown={e=>{ if(e.key==="Enter") saveSalary(emp); if(e.key==="Escape") setEditId(null); }}/>
+                        <button onClick={()=>saveSalary(emp)} className="p-1 rounded bg-emerald-500 text-white hover:bg-emerald-600"><Check className="w-3 h-3"/></button>
                         <button onClick={()=>setEditId(null)} className="p-1 rounded bg-gray-200 text-gray-600 hover:bg-gray-300"><X className="w-3 h-3"/></button>
                       </div>
                     ) : (
@@ -1898,8 +1982,6 @@ function AllMonthsHistory({ salPayments, monthLabel, fmtAmt, fmtDate }) {
 
 function EmployeePanel({ employees: propEmployees }) {
   const setStoreEmployees = useStore(s => s.setEmployees);
-  const salaries          = useStore(s => s.employeeSalaries);
-  const updateSal         = useStore(s => s.updateEmployeeSalary);
 
   const [employees, setEmployeesLocal] = useState(propEmployees || []);
   function setEmployees(updated) { setEmployeesLocal(updated); setStoreEmployees(updated); }
@@ -1937,7 +2019,7 @@ function EmployeePanel({ employees: propEmployees }) {
       employmentType: emp.employmentType || "Permanent",
       joiningDate:    emp.joiningDate    || "",
       status:         emp.status         || "Active",
-      salary:         salaries[emp.empId]|| "",
+      salary:         emp.salary || "",
     });
     setPhotoPreview(null); setPhotoKey(null); setPhotoSize(0); setPhotoError("");
     if (emp.photo) {
@@ -2010,22 +2092,21 @@ function EmployeePanel({ employees: propEmployees }) {
       alert("Please wait for uploads to finish before saving.");
       return;
     }
-    const { salary: salVal, ...empFields } = form;
     const emp = employees.find(e => e.id === editId);
     const photo = photoKey || emp?.photo || null;
     const documents = empDocs.map(d => ({ name: d.name, uploaded: !!d.key, fileName: d.fileName || "", fileUrl: d.key || null }));
+    // salary is a real employees.monthly_salary column now - flows through
+    // like any other field instead of a separate Zustand-only write.
+    const salary = form.salary !== "" && !isNaN(Number(form.salary)) ? Number(form.salary) : (emp?.salary ?? 0);
     try {
       const { updateEmployee } = await import("@/lib/employeeService");
-      await updateEmployee(editId, { ...emp, ...empFields, photo, documents });
+      await updateEmployee(editId, { ...emp, ...form, salary, photo, documents });
     } catch (err) {
       alert("Failed to save employee: " + (err?.message || "Unknown error"));
       return;
     }
-    const updated = employees.map(e => e.id === editId ? { ...e, ...empFields, photo, documents } : e);
+    const updated = employees.map(e => e.id === editId ? { ...e, ...form, salary, photo, documents } : e);
     setEmployees(updated);
-    if (emp && salVal && !isNaN(Number(salVal)) && Number(salVal) > 0) {
-      updateSal(emp.empId, Number(salVal));
-    }
     setEditId(null);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
@@ -2087,7 +2168,7 @@ function EmployeePanel({ employees: propEmployees }) {
                   <td className="px-3 py-2 text-gray-600">{emp.phone||"—"}</td>
                   <td className="px-3 py-2 text-gray-500 max-w-[140px] truncate">{emp.email||"—"}</td>
                   <td className="px-3 py-2 text-emerald-700 font-semibold">
-                    {salaries[emp.empId] ? "₹"+Number(salaries[emp.empId]).toLocaleString("en-IN") : <span className="text-gray-300 text-[10px]">Not set</span>}
+                    {emp.salary ? "₹"+Number(emp.salary).toLocaleString("en-IN") : <span className="text-gray-300 text-[10px]">Not set</span>}
                   </td>
                   <td className="px-3 py-2">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${emp.status==="Active"?"bg-green-100 text-green-700":"bg-red-100 text-red-700"}`}>

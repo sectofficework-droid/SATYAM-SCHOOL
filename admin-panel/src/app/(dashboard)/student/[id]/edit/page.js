@@ -517,6 +517,11 @@ function EditForm({ existing, id, router }) {
         apaar:             form.apaar,
         birthCertRegNo:    form.birthCertRegNo,
         birthCertRegDate:  form.birthCertRegDate,
+        // Explicit boolean (not just an empty lastSchoolName) so
+        // updateStudent() can tell "toggled off" apart from "this caller
+        // doesn't touch previous-school at all" and actually clear the
+        // stale record instead of silently leaving it untouched.
+        hasPrevSchool:      hasPrevSchool,
         lastSchoolName:     hasPrevSchool ? form.lastSchoolName : "",
         lastSchoolGrNo:     form.lastSchoolGrNo,
         lastSchoolClass:    form.lastSchoolClass,

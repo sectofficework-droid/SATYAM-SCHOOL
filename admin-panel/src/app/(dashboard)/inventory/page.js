@@ -503,7 +503,6 @@ function UseStockModal({ items, onClose, onSave }) {
     onSave({
       itemId: selId,
       usage: { qty: qtyNum, date, purpose, note: note.trim(), by: receivedBy },
-      isStudentDist: purpose === "student" && selectedItem?.category === "student",
     });
   };
 
@@ -582,7 +581,7 @@ function UseStockModal({ items, onClose, onSave }) {
           {purpose === "student" && selId && (
             <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-xl px-3.5 py-2.5">
               <Users className="w-3.5 h-3.5 text-blue-500 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-blue-700">Student distribution auto-deducts from stock and updates the student coverage count.</p>
+              <p className="text-xs text-blue-700">This deducts the quantity from stock. To mark which specific students received it, use Student Items (Super Admin) or Fees &gt; mark inventory given instead.</p>
             </div>
           )}
         </div>
@@ -774,7 +773,8 @@ function ReturnAssetModal({ asset, onClose, onSave }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
-  const masterItems = useStore(s => s.studentInventoryItems);
+  // Student-facing items are just inventory_items rows with category "student" -
+  // Item Master (Super Admin) manages these directly now, no separate list to sync.
 
   const [items,    setItems]   = useState([]);
   const [assets,   setAssets]  = useState([]);
@@ -1038,13 +1038,13 @@ export default function InventoryPage() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {masterItems.map((name) => (
-            <span key={name} className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 text-blue-800 text-xs font-semibold px-3 py-1.5 rounded-full">
+          {items.filter(i => i.category === "student").map((item) => (
+            <span key={item.id} className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 text-blue-800 text-xs font-semibold px-3 py-1.5 rounded-full">
               <Package className="w-3 h-3 text-blue-400 flex-shrink-0" />
-              {name}
+              {item.name}
             </span>
           ))}
-          {masterItems.length === 0 && (
+          {items.filter(i => i.category === "student").length === 0 && (
             <p className="text-xs text-gray-400">No items configured. Go to Super Admin → Inventory → Item Master to add items.</p>
           )}
         </div>
