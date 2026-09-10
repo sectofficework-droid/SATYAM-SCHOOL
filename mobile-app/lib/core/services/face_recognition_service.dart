@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
@@ -35,7 +36,19 @@ class FaceRecognitionService {
   static const double _eyeOpenThreshold   = 0.4;
   static const double _eyeClosedThreshold = 0.35;
 
+  // Minimum averaged real-face probability (see livenessScore) to accept a
+  // punch as a live person rather than a photo/screen spoof. The upstream
+  // reference implementation has no threshold beyond a bare argmax over 3
+  // classes - this floor exists so a near-tie (e.g. 34% real vs 33%/33%
+  // spoof classes) doesn't count as a pass. Untested against real spoof
+  // attempts yet; this is the number to retune first once that testing
+  // happens - see assets/models/LICENSE_MODELS.md.
+  static const double kLivenessRealThreshold = 0.6;
+  static const int _livenessInputSize = 80; // MiniFASNet's expected crop size
+
   Interpreter? _interpreter;
+  Interpreter? _livenessInterpreter27;
+  Interpreter? _livenessInterpreter40;
   FaceDetector? _detector;
 
   FaceDetector get _faceDetector => _detector ??= FaceDetector(
@@ -51,8 +64,16 @@ class FaceRecognitionService {
   Future<Interpreter> _model() async =>
       _interpreter ??= await Interpreter.fromAsset('assets/models/mobilefacenet.tflite');
 
+  Future<Interpreter> _liveness27() async =>
+      _livenessInterpreter27 ??= await Interpreter.fromAsset('assets/models/spoof_model_scale_2_7.tflite');
+
+  Future<Interpreter> _liveness40() async =>
+      _livenessInterpreter40 ??= await Interpreter.fromAsset('assets/models/spoof_model_scale_4_0.tflite');
+
   Future<void> preload() async {
     await _model();
+    await _liveness27();
+    await _liveness40();
     // ignore: unnecessary_statements
     _faceDetector;
   }
@@ -136,6 +157,73 @@ class FaceRecognitionService {
     return count == 0 ? 128 : sum / count;
   }
 
+  // Hard reject bounds, distinct from _exposureGammaFor's soft-correct
+  // range above - a near-black or near-blown-out frame has lost real detail
+  // that gamma correction can only stretch, not restore, so past these
+  // points the honest answer is "ask for another shot", not "quietly patch
+  // it up and hope the detector/recognizer copes". Untested against real
+  // staff yet; retune first if legitimate shots keep getting rejected.
+  static const double kMinUsableLuminance = 20.0;
+  static const double kMaxUsableLuminance = 235.0;
+
+  Future<bool> isExposureUnusable(String imagePath) async {
+    final bytes = await File(imagePath).readAsBytes();
+    final image = img.decodeImage(bytes);
+    if (image == null) return true; // unreadable - treat as unusable, not a free pass
+    final lum = _averageLuminance(image);
+    return lum < kMinUsableLuminance || lum > kMaxUsableLuminance;
+  }
+
+  // Below this Laplacian-variance-style sharpness score, a shot is too
+  // blurry to trust for recognition/enrollment - a sharp image has high
+  // local-contrast variance, a blurry/out-of-focus one is smooth and lands
+  // well below this. Untested against real staff yet; retune first if
+  // legitimate (if slightly soft) shots keep getting rejected.
+  static const double kMinSharpnessVariance = 60.0;
+
+  // Runs on [face]'s cropped region specifically, not the whole frame, so a
+  // blurry background behind a sharp face doesn't wrongly reject a shot
+  // that's actually fine to use.
+  Future<bool> isTooBlurry(String imagePath, Face face) async {
+    final bytes = await File(imagePath).readAsBytes();
+    var image = img.decodeImage(bytes);
+    if (image == null) return true;
+    image = img.bakeOrientation(image);
+
+    final box = face.boundingBox;
+    final x = box.left.clamp(0, image.width - 1).toInt();
+    final y = box.top.clamp(0, image.height - 1).toInt();
+    final w = box.width.clamp(1, image.width - x).toInt();
+    final h = box.height.clamp(1, image.height - y).toInt();
+    final crop = img.copyCrop(image, x: x, y: y, width: w, height: h);
+    final gray = img.grayscale(crop);
+    return _laplacianVariance(gray) < kMinSharpnessVariance;
+  }
+
+  // 4-neighbor discrete Laplacian (center*4 - up - down - left - right) as
+  // a cheap stand-in for a full 3x3 Laplacian convolution - variance of
+  // that response across the image is the sharpness score. Strided for the
+  // same reason _averageLuminance is: plenty accurate for a pass/fail gate
+  // without walking every pixel of a full-res crop.
+  double _laplacianVariance(img.Image gray) {
+    const stride = 2;
+    final responses = <double>[];
+    for (var y = 1; y < gray.height - 1; y += stride) {
+      for (var x = 1; x < gray.width - 1; x += stride) {
+        final c = gray.getPixel(x, y).luminance.toDouble();
+        final u = gray.getPixel(x, y - 1).luminance.toDouble();
+        final d = gray.getPixel(x, y + 1).luminance.toDouble();
+        final l = gray.getPixel(x - 1, y).luminance.toDouble();
+        final r = gray.getPixel(x + 1, y).luminance.toDouble();
+        responses.add(4 * c - u - d - l - r);
+      }
+    }
+    if (responses.isEmpty) return 0;
+    final mean = responses.reduce((a, b) => a + b) / responses.length;
+    final variance = responses.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) / responses.length;
+    return variance;
+  }
+
   bool eyesOpen(Face face) {
     final l = face.leftEyeOpenProbability, r = face.rightEyeOpenProbability;
     if (l == null || r == null) return false;
@@ -195,6 +283,103 @@ class FaceRecognitionService {
     interpreter.run(input, output);
 
     return _l2Normalize(output[0]);
+  }
+
+  // Liveness / anti-spoofing (MiniFASNet, dual-scale) - see
+  // assets/models/LICENSE_MODELS.md for source/license/inference contract.
+  // Two models look at the same detected face cropped/expanded at different
+  // scales (2.7x and 4.0x of its bounding box, centered on it) - a printed
+  // photo or phone/tablet screen shows different texture/moiré artifacts at
+  // different crop scales than a real face does, which is what these models
+  // are actually trained to pick up on (ML Kit's detectSingleFace already
+  // answered "is there a face here", this answers "is it real").
+  //
+  // Returns the averaged real-face probability (compare against
+  // kLivenessRealThreshold), or null if either crop/inference failed - kept
+  // as a raw score rather than a bool so the caller can log/display it the
+  // same way match similarity is handled, not hidden behind an opaque cutoff.
+  Future<double?> livenessScore(String imagePath, Face face) async {
+    final bytes = await File(imagePath).readAsBytes();
+    var image = img.decodeImage(bytes);
+    if (image == null) return null;
+    image = img.bakeOrientation(image);
+
+    final p27 = await _runLivenessModel(await _liveness27(), image, face.boundingBox, 2.7);
+    final p40 = await _runLivenessModel(await _liveness40(), image, face.boundingBox, 4.0);
+    if (p27 == null || p40 == null) return null;
+
+    // Upstream label convention: class index 1 = real face (0 and 2 are
+    // different spoof-attack categories). Averaging the two scales' softmax
+    // outputs before reading off the real-class slot matches
+    // shubham0204/OnDevice-Face-Recognition-Android's combination logic
+    // exactly - that's where these converted .tflite files came from.
+    const realIndex = 1;
+    return (p27[realIndex] + p40[realIndex]) / 2.0;
+  }
+
+  Future<List<double>?> _runLivenessModel(Interpreter interpreter, img.Image image, Rect box, double scale) async {
+    final crop = _expandAndCrop(image, box, scale);
+    if (crop == null) return null;
+    final resized = img.copyResize(crop, width: _livenessInputSize, height: _livenessInputSize);
+
+    // BGR, not RGB - these models expect BGR input (see
+    // LICENSE_MODELS.md), unlike MobileFaceNet's RGB-normalized path above.
+    // Raw 0-255 values, no /128 normalization - matches the reference
+    // implementation's preprocessing.
+    final input = List.generate(
+      1,
+      (_) => List.generate(
+        _livenessInputSize,
+        (yy) => List.generate(_livenessInputSize, (xx) {
+          final p = resized.getPixel(xx, yy);
+          return [p.b.toDouble(), p.g.toDouble(), p.r.toDouble()];
+        }),
+      ),
+    );
+
+    final output = List.generate(1, (_) => List.filled(3, 0.0));
+    interpreter.run(input, output);
+    return _softmax(output[0]);
+  }
+
+  // Replicates Silent-Face-Anti-Spoofing's CropImage.crop: expand [box] to
+  // scale x its own width/height around its own center, clamp the scale so
+  // the expanded box can't exceed the source image, then SHIFT (not shrink)
+  // any edge that still falls outside the image back into bounds. A subtly
+  // wrong crop here wouldn't error, it would just silently feed the model a
+  // differently-framed face than it was trained on - replicated faithfully
+  // rather than approximated for that reason.
+  img.Image? _expandAndCrop(img.Image image, Rect box, double scale) {
+    final srcW = image.width, srcH = image.height;
+    final boxW = box.width, boxH = box.height;
+    if (boxW <= 0 || boxH <= 0) return null;
+
+    final cappedScale = [scale, (srcH - 1) / boxH, (srcW - 1) / boxW].reduce(math.min);
+    final cx = box.left + boxW / 2, cy = box.top + boxH / 2;
+    final newW = boxW * cappedScale, newH = boxH * cappedScale;
+
+    var left = cx - newW / 2, top = cy - newH / 2;
+    var right = cx + newW / 2, bottom = cy + newH / 2;
+
+    if (left < 0)      { right  -= left; left   = 0; }
+    if (top < 0)       { bottom -= top;  top    = 0; }
+    if (right > srcW)  { left   -= (right - srcW);  right  = srcW.toDouble(); }
+    if (bottom > srcH) { top    -= (bottom - srcH); bottom = srcH.toDouble(); }
+    left = left.clamp(0, srcW - 1);
+    top  = top.clamp(0, srcH - 1);
+
+    final cropX = left.round();
+    final cropY = top.round();
+    final cropW = (right - left).round().clamp(1, srcW - cropX);
+    final cropH = (bottom - top).round().clamp(1, srcH - cropY);
+    return img.copyCrop(image, x: cropX, y: cropY, width: cropW, height: cropH);
+  }
+
+  List<double> _softmax(List<double> logits) {
+    final maxVal = logits.reduce(math.max);
+    final exps = logits.map((x) => math.exp(x - maxVal)).toList();
+    final sum = exps.reduce((a, b) => a + b);
+    return exps.map((x) => x / sum).toList();
   }
 
   // Spreads the crop's luminance histogram into full [0, 255] range in HSL

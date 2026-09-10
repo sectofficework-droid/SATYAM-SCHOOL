@@ -48,6 +48,10 @@ dependencies:
   archive: ^4.0.9
   xml: ^7.0.1
 
+  # QR-code staff attendance (kiosk generates + renders, Teacher app scans)
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^5.2.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

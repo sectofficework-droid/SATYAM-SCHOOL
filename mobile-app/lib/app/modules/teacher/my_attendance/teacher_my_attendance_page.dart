@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../common/widgets/attendance_view.dart';
+import '../../../routes/app_routes.dart';
 
 // Day-by-day attendance (Present/Absent/Leave), marked by admin or
 // auto-marked 'L' when a leave request is approved (see "My Leave") - plus
@@ -74,9 +76,40 @@ class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
         ? const Center(child: CircularProgressIndicator(color: AppColors.navy))
         : Column(children: [
             _buildTodayPunchBanner(),
+            _buildScanQrButton(),
             Expanded(child: AttendanceView(records: _records, showLeave: true)),
           ]),
   );
+
+  // Third check-in method alongside the kiosk's face-scan and admin override
+  // code: scan the QR the kiosk is displaying (see qr_punch_page.dart /
+  // scan_attendance_qr_page.dart). Only meaningful when there's no open
+  // shift already - same "already_in" protection recordFacePunch enforces
+  // server-side, this is just the UI not offering a redundant action.
+  bool get _hasOpenShift => _todayShifts.any((s) => s['check_out_at'] == null);
+
+  Widget _buildScanQrButton() {
+    if (_hasOpenShift) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: () async {
+            final punched = await Get.toNamed(Routes.teacherQrScan);
+            if (punched == true) _load();
+          },
+          icon: const Icon(Icons.qr_code_scanner_rounded, size: 18),
+          label: const Text('Scan Attendance QR', style: TextStyle(fontWeight: FontWeight.w700)),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: AppColors.indigo,
+            side: const BorderSide(color: AppColors.indigo),
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+        ),
+      ),
+    );
+  }
 
   // Every shift of the day, oldest first (one row of check-in/check-out
   // per shift) instead of a single pair - staff can punch in, check out,

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   GraduationCap, IndianRupee, Users, Package, Search,
   RefreshCw, Download, FileText, ShieldCheck, BookOpen, Landmark, IdCard,
-  CheckSquare, X, LogOut,
+  CheckSquare, X, LogOut, Fingerprint,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -12,6 +12,7 @@ import {
   getStudentsForReport, getFeesForReport,
   getEmployeesForReport, getInventoryForReport,
   getPaymentsForReport, getAcademicYearLabels, getTcIssuedForReport,
+  getStaffAttendanceForReport,
 } from "@/lib/reportService";
 import { MM, computeColumnLayout, triggerPdfDownload } from "@/lib/pdfTableExport";
 import DateInputDMY from "@/components/DateInputDMY";
@@ -57,8 +58,19 @@ function fmtDate(dateStr) {
   return `${d.padStart(2,"0")}/${m.padStart(2,"0")}/${y}`;
 }
 
+// Full timestamptz (employee_shifts/employee_attendance check_in_at etc.) to
+// local date+time - kept distinct from fmtDate since a shift can cross
+// midnight and the bare date would then hide which day the punch landed on.
+function fmtDateTime(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
+}
+
 function formatCellValue(col, value) {
   if (value === undefined || value === null || value === "") return "";
+  if (col.isDateTime) return fmtDateTime(value);
   return col.isDate ? fmtDate(value) : value;
 }
 
@@ -560,6 +572,62 @@ const REPORT_CONFIGS = {
       {label:"Total Salary", value:`Rs ${d.reduce((s,x)=>s+x.salary,0).toLocaleString("en-IN")}`,color:"amber" },
     ];},
   },
+  staffAttendance: {
+    label:"Staff Attendance (Kiosk)", icon:Fingerprint,
+    // designation/department options are patched in at render time from the
+    // live data (activeQuickFilters below) - actual values are free text set
+    // per-employee in the Employee module, not a fixed enum like EMP_ROLES.
+    quickFilters:[
+      {key:"designation", label:"Designation",  options:["All"]},
+      {key:"department",  label:"Department",   options:["All"]},
+      {key:"status",      label:"Status",       options:["All","Present","Absent","Leave"]},
+      {key:"punchMethod", label:"Punch Method", options:["All","face","qr","code"]},
+      {key:"punctuality", label:"Punctuality",  options:["All","Late","On Time"]},
+    ],
+    dateField:"date", dateLabel:"Date",
+    columns:[
+      {key:"date",        label:"Date",           dflt:true,  isDate:true },
+      {key:"empCode",     label:"Emp Code",       dflt:false },
+      {key:"name",        label:"Employee Name",  dflt:true  },
+      {key:"designation", label:"Designation",    dflt:true  },
+      {key:"department",  label:"Department",     dflt:false },
+      {key:"status",      label:"Status",         dflt:true  },
+      {key:"checkIn",     label:"Check-In",       dflt:true,  isDateTime:true },
+      {key:"checkOut",    label:"Check-Out",      dflt:true,  isDateTime:true },
+      {key:"punctuality", label:"Punctuality",    dflt:true  },
+      {key:"shiftCount",  label:"Shifts",         dflt:false },
+      {key:"hoursWorked", label:"Hours Worked",   dflt:false },
+      {key:"punchMethod", label:"Punch Method",   dflt:false },
+    ],
+    getData(sourceData, f, df, dt, s) {
+      let d = sourceData || [];
+      if (f.designation && f.designation !== "All") d = d.filter(x => x.designation === f.designation);
+      if (f.department  && f.department  !== "All") d = d.filter(x => x.department  === f.department);
+      if (f.status      && f.status      !== "All") d = d.filter(x => x.status      === f.status);
+      if (f.punchMethod && f.punchMethod !== "All") d = d.filter(x => x.punchMethod === f.punchMethod);
+      if (f.punctuality && f.punctuality !== "All") d = d.filter(x => x.punctuality.startsWith(f.punctuality === "Late" ? "Late" : "On Time"));
+      if (df) d = d.filter(x => x.date >= df);
+      if (dt) d = d.filter(x => x.date <= dt);
+      if (s) {
+        const q = s.toLowerCase();
+        d = d.filter(x => x.name.toLowerCase().includes(q) || (x.empCode || "").toLowerCase().includes(q));
+      }
+      return d;
+    },
+    getSummary(d) {
+      const present = d.filter(x => x.status === "Present").length;
+      const absent  = d.filter(x => x.status === "Absent").length;
+      const leave   = d.filter(x => x.status === "Leave").length;
+      const late    = d.filter(x => x.punctuality.startsWith("Late")).length;
+      return [
+        {label:"Total Records", value:d.length, color:"blue"  },
+        {label:"Present",       value:present,  color:"green" },
+        {label:"Absent",        value:absent,   color:"red"   },
+        {label:"On Leave",      value:leave,    color:"orange"},
+        {label:"Late Arrivals", value:late,     color:"red"   },
+      ];
+    },
+  },
   inventory: {
     label:"Inventory & Asset Report", icon:Package,
     quickFilters:[
@@ -690,11 +758,11 @@ const COLOR_MAP = {
 function StatusBadge({ value }) {
   if (!value) return <span className="text-gray-300">-</span>;
   const cls =
-    ["Active","Fully Paid"].includes(value)                         ? "bg-green-100 text-green-700"  :
+    ["Active","Fully Paid","Present"].includes(value)                        ? "bg-green-100 text-green-700"  :
     value === "Partial"                                             ? "bg-amber-100 text-amber-700"  :
     value === "On Leave"                                            ? "bg-amber-100 text-amber-700"  :
     value === "Leave"                                               ? "bg-orange-100 text-orange-700":
-    ["Pending","Maintenance","Resigned","Inactive"].includes(value) ? "bg-red-100 text-red-700"      :
+    ["Pending","Maintenance","Resigned","Inactive","Absent"].includes(value) ? "bg-red-100 text-red-700"      :
     "bg-gray-100 text-gray-600";
   return <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${cls}`}>{value}</span>;
 }
@@ -740,13 +808,14 @@ export default function ReportPage() {
   const [dbEmployees, setDbEmployees] = useState([]);
   const [dbInventory, setDbInventory] = useState([]);
   const [dbTcIssued,  setDbTcIssued]  = useState([]);
+  const [dbStaffAttendance, setDbStaffAttendance] = useState([]);
   const [dbLoading,   setDbLoading]   = useState(true);
   const [dbSessions,  setDbSessions]  = useState(SESSIONS_FALLBACK);
 
   const loadAll = useCallback(async () => {
     setDbLoading(true);
     try {
-      const [students, fees, payments, employees, inventory, sessions, tcIssued] = await Promise.all([
+      const [students, fees, payments, employees, inventory, sessions, tcIssued, staffAttendance] = await Promise.all([
         getStudentsForReport(),
         getFeesForReport(),
         getPaymentsForReport(),
@@ -754,6 +823,7 @@ export default function ReportPage() {
         getInventoryForReport(),
         getAcademicYearLabels(),
         getTcIssuedForReport(),
+        getStaffAttendanceForReport(),
       ]);
       setDbStudents(students);
       setDbFees(fees);
@@ -761,6 +831,7 @@ export default function ReportPage() {
       setDbEmployees(employees);
       setDbInventory(inventory);
       setDbTcIssued(tcIssued);
+      setDbStaffAttendance(staffAttendance);
       if (sessions.length) setDbSessions(sessions);
     } catch (e) {
       console.error("Report loadAll error:", e);
@@ -779,11 +850,26 @@ export default function ReportPage() {
     ? (feesView === "collection" ? cfg.collectionConfig : cfg.statusConfig)
     : cfg;
 
+  // Staff Attendance's designation/department are free text set per-employee
+  // (not a fixed enum like EMP_ROLES), so their filter options are derived
+  // from whatever actually shows up in the loaded attendance rows.
+  const dbStaffDesignations = useMemo(
+    () => [...new Set(dbStaffAttendance.map(r => r.designation).filter(Boolean))].sort(),
+    [dbStaffAttendance]
+  );
+  const dbStaffDepartments = useMemo(
+    () => [...new Set(dbStaffAttendance.map(r => r.department).filter(Boolean))].sort(),
+    [dbStaffAttendance]
+  );
+
   // Patch session filter options with live DB years (module-level config uses SESSIONS_FALLBACK as static placeholder)
   const activeQuickFilters = useMemo(() =>
-    (ecfg.quickFilters || []).map(f =>
-      f.key === "session" ? { ...f, options: ["All", ...dbSessions] } : f
-    ), [ecfg.quickFilters, dbSessions]);
+    (ecfg.quickFilters || []).map(f => {
+      if (f.key === "session")     return { ...f, options: ["All", ...dbSessions] };
+      if (f.key === "designation" && rType === "staffAttendance") return { ...f, options: ["All", ...dbStaffDesignations] };
+      if (f.key === "department"  && rType === "staffAttendance") return { ...f, options: ["All", ...dbStaffDepartments] };
+      return f;
+    }), [ecfg.quickFilters, dbSessions, rType, dbStaffDesignations, dbStaffDepartments]);
 
   useEffect(() => {
     const activeCols = cfg.isFeesModule
@@ -801,11 +887,12 @@ export default function ReportPage() {
   }, [rType, feesView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sourceData =
-    rType === "fees" && feesView === "collection" ? dbPayments  :
-    rType === "fees"                              ? dbFees      :
-    rType === "employee"                          ? dbEmployees :
-    rType === "inventory"                         ? dbInventory :
-    rType === "tcIssued"                          ? dbTcIssued  :
+    rType === "fees" && feesView === "collection" ? dbPayments        :
+    rType === "fees"                              ? dbFees            :
+    rType === "employee"                          ? dbEmployees       :
+    rType === "inventory"                         ? dbInventory       :
+    rType === "tcIssued"                          ? dbTcIssued        :
+    rType === "staffAttendance"                   ? dbStaffAttendance :
     /* student, eligibility, grRegister, udiseEntry, penEntry */ dbStudents;
 
   let data = ecfg.getData(sourceData, filters, dateFrom, dateTo, search);

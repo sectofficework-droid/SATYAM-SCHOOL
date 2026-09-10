@@ -36,4 +36,7 @@ abstract class Routes {
   static const kioskEnrollList    = '/attendance/enroll-list';
   static const kioskEnrollCapture = '/attendance/enroll-capture';
   static const kioskEnterCode     = '/attendance/enter-code';
+  static const kioskQrPunch       = '/attendance/qr-punch';
+  // Teacher app - QR scan counterpart of kioskQrPunch above.
+  static const teacherQrScan    = '/teacher/qr-scan';
 }

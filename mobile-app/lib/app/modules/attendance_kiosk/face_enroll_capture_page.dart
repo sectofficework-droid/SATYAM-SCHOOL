@@ -9,20 +9,23 @@ import '../../routes/app_routes.dart';
 
 enum _Stage { camera, saving, success, error }
 
-// Captures shots across 10 distinct head angles/distances for whoever admin
-// just picked on StaffEnrollListPage and saves all 10 reference embeddings
-// (not one blended average - see saveFaceEmbedding) so a punch only has to
-// be close to ONE of them, not a compromise of all of them. Admin taps
-// "I'm Ready" to start; after that it's hands-off - a timer polls
-// takePicture() every ~1s (same still-photo pipeline the punch screen
-// uses) and auto-accepts the first attempt per prompt that clears
-// face-detected + eyes-open AND is a genuinely different pose from every
-// shot already taken (see _isDiverseEnough) - someone who doesn't actually
-// move for the "turn left" prompt just keeps getting told to change their
-// angle instead of silently recording two near-identical shots. Re-running
-// this (e.g. staff grew a beard, lighting keeps failing them) just
-// overwrites the old embeddings - saveFaceEmbedding is a plain update, not
-// append.
+// Captures 25 diverse shots (22 if the staff member doesn't wear
+// spectacles - see _wearsGlasses) for whoever admin just picked on
+// StaffEnrollListPage and saves all of them as reference embeddings (not
+// one blended average - see saveFaceEmbedding) so a punch only has to be
+// close to ONE of them, not a compromise of all of them. Admin answers the
+// spectacles question and taps "I'm Ready" to start; after that it's
+// hands-off - a timer polls takePicture() every ~1s (same still-photo
+// pipeline the punch screen uses) and auto-accepts the first attempt per
+// prompt that clears face-detected + eyes-open + quality gate (blur/
+// exposure, see isTooBlurry/isExposureUnusable) and, for prompts that are
+// supposed to be a genuinely new head angle, a pose-diverse-enough check
+// too (see _isDiverseEnough / _EnrollPrompt.poseDiverse) - someone who
+// doesn't actually move for the "turn left" prompt just keeps getting told
+// to change their angle instead of silently recording two near-identical
+// shots. Re-running this (e.g. staff grew a beard, lighting keeps failing
+// them) just overwrites the old embeddings - saveFaceEmbedding is a plain
+// update, not append.
 class FaceEnrollCapturePage extends StatefulWidget {
   const FaceEnrollCapturePage({super.key});
   @override
@@ -36,20 +39,65 @@ class _ShotPose {
   final double faceHeight;
 }
 
+// One capture slot. [poseDiverse] marks the prompts that establish a NEW
+// head angle (first-of-each-direction) - only those get checked against
+// _isDiverseEnough below. Everything else (repeat frontal shots,
+// expression/spectacles/lighting variety) intentionally holds roughly the
+// SAME head pose as whatever came before it, so gating those on pose delta
+// would just reject them as "already captured" despite being exactly the
+// kind of same-pose-different-condition sample the 25-shot breakdown asks
+// for. [requiresGlasses] prompts only appear in the session when the staff
+// member said they wear spectacles (see _wearsGlasses).
+class _EnrollPrompt {
+  const _EnrollPrompt(this.text, {this.poseDiverse = false, this.requiresGlasses = false});
+  final String text;
+  final bool poseDiverse;
+  final bool requiresGlasses;
+}
+
 class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
-  static const _prompts = [
-    'Look straight at the camera',
-    'Turn your head slightly left',
-    'Turn your head slightly right',
-    'Tilt your chin up a little',
-    'Tilt your chin down a little',
-    'Move a little closer to the camera',
-    'Move a little farther from the camera',
-    'Turn left and tilt your chin up',
-    'Turn right and tilt your chin down',
-    'Turn your head further to the left',
+  // 25 diverse shots: 5 frontal, 4 slight-left/right, 4 slight-up/down,
+  // 3 normal expression, 3 different expression, 3 with spectacles (if
+  // applicable - dropped to leave 22 when the staff member doesn't wear
+  // any), 3 lighting variations (lighting itself isn't something the app
+  // can control - these are instructions for the staff member/admin to
+  // physically move; each shot still goes through the same quality gates
+  // as every other prompt).
+  static const _allPrompts = [
+    _EnrollPrompt('Look straight at the camera', poseDiverse: true),
+    _EnrollPrompt('Look straight at the camera, relax your face'),
+    _EnrollPrompt('Look straight at the camera again'),
+    _EnrollPrompt('Keep looking straight, chin level'),
+    _EnrollPrompt('One more, straight at the camera'),
+    _EnrollPrompt('Turn your head slightly left', poseDiverse: true),
+    _EnrollPrompt('Hold that left turn'),
+    _EnrollPrompt('Turn your head slightly right', poseDiverse: true),
+    _EnrollPrompt('Hold that right turn'),
+    _EnrollPrompt('Tilt your chin up a little', poseDiverse: true),
+    _EnrollPrompt('Hold your chin up'),
+    _EnrollPrompt('Tilt your chin down a little', poseDiverse: true),
+    _EnrollPrompt('Hold your chin down'),
+    _EnrollPrompt('Normal expression, look straight'),
+    _EnrollPrompt('Normal expression, relax'),
+    _EnrollPrompt('Normal expression, one more'),
+    _EnrollPrompt('Now smile naturally'),
+    _EnrollPrompt('Try a different expression'),
+    _EnrollPrompt('One more expression'),
+    _EnrollPrompt('Put on your spectacles, look straight', requiresGlasses: true),
+    _EnrollPrompt('Hold still with your spectacles', requiresGlasses: true),
+    _EnrollPrompt('One more with your spectacles', requiresGlasses: true),
+    _EnrollPrompt('If possible, move to brighter lighting'),
+    _EnrollPrompt('If possible, move to dimmer or normal lighting'),
+    _EnrollPrompt('One more shot, any lighting'),
   ];
-  static final _totalShots = _prompts.length;
+
+  // Built when "I'm Ready" is tapped, locking in whatever the spectacles
+  // toggle was set to at that moment (see _wearsGlasses) - 25 prompts if
+  // yes, 22 if no.
+  List<_EnrollPrompt> _prompts = const [];
+  int _totalShots = 0;
+  bool? _wearsGlasses;
+
   static const _pollInterval  = Duration(milliseconds: 1000);
   static const _tickDuration  = Duration(milliseconds: 700);
   static const _nextShotDelay = Duration(milliseconds: 1300);
@@ -117,8 +165,31 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
   }
 
   void _startScanning() {
+    final wearsGlasses = _wearsGlasses ?? false;
+    _prompts = _allPrompts.where((p) => !p.requiresGlasses || wearsGlasses).toList();
+    _totalShots = _prompts.length;
     setState(() { _ready = true; _message = 'Hold still...'; });
     _pollTimer = Timer.periodic(_pollInterval, (_) => _autoCapture());
+  }
+
+  // Live count shown on the pre-ready screen, reacting to the spectacles
+  // toggle before it's locked in by _startScanning - 25 total prompts if
+  // yes, 22 (glasses prompts dropped) if no or not yet answered.
+  int get _plannedShotCount =>
+      _allPrompts.where((p) => !p.requiresGlasses || (_wearsGlasses ?? false)).length;
+
+  Widget _glassesChoiceButton(String label, bool value) {
+    final selected = _wearsGlasses == value;
+    return OutlinedButton(
+      onPressed: () => setState(() => _wearsGlasses = value),
+      style: OutlinedButton.styleFrom(
+        backgroundColor: selected ? AppColors.amber : Colors.transparent,
+        foregroundColor: selected ? AppColors.navyDark : Colors.white70,
+        side: BorderSide(color: selected ? AppColors.amber : Colors.white24),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      ),
+      child: Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
+    );
   }
 
   @override
@@ -162,6 +233,18 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
         return;
       }
 
+      // Quality gate - reject rather than silently bank a frame that's too
+      // dark/bright/blurry to make a good reference embedding from (spec:
+      // enrollment must not count blurry/over/underexposed samples).
+      if (await svc.isExposureUnusable(photo.path)) {
+        setState(() { _busy = false; _message = 'Lighting is too dark or too bright - please adjust'; });
+        return;
+      }
+      if (await svc.isTooBlurry(photo.path, face)) {
+        setState(() { _busy = false; _message = 'Image is blurry - please hold still'; });
+        return;
+      }
+
       final currentPose = _ShotPose(face.headEulerAngleY ?? 0, face.headEulerAngleX ?? 0, face.boundingBox.height);
       final lastSeen = _lastSeenPose;
       _lastSeenPose = currentPose;
@@ -174,7 +257,13 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
         return;
       }
 
-      if (!_isDiverseEnough(currentPose)) {
+      // Only prompts that establish a NEW head angle are pose-gated - a
+      // repeat frontal/expression/spectacles/lighting shot is SUPPOSED to
+      // hold roughly the same pose as what came before it, so gating those
+      // too would reject exactly the same-pose-different-condition samples
+      // this 25-shot breakdown is asking for. See _EnrollPrompt.poseDiverse.
+      final currentPrompt = _prompts[_embeddings.length];
+      if (currentPrompt.poseDiverse && !_isDiverseEnough(currentPose)) {
         setState(() { _busy = false; _message = 'That angle is already captured - please change your angle or distance'; });
         return;
       }
@@ -317,15 +406,24 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
         Text('Shot $shotNo of $_totalShots', style: const TextStyle(
           color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
         const SizedBox(height: 4),
-        Text(_prompts[(shotNo - 1).clamp(0, _prompts.length - 1)],
+        Text(_prompts[(shotNo - 1).clamp(0, _prompts.length - 1)].text,
           style: const TextStyle(color: Colors.white60, fontSize: 13, fontFamily: 'Poppins')),
       ] else ...[
         const Text('Set Up Face Punch', style: TextStyle(
           color: Colors.white, fontSize: 18, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
         const SizedBox(height: 4),
-        Text('$_totalShots quick shots for $_employeeName - line up in the circle, then tap ready',
+        Text('$_plannedShotCount quick shots for $_employeeName - line up in the circle, then tap ready',
           textAlign: TextAlign.center,
           style: const TextStyle(color: Colors.white60, fontSize: 13, fontFamily: 'Poppins')),
+        const SizedBox(height: 12),
+        Text('Does $_employeeName normally wear spectacles?', style: const TextStyle(
+          color: Colors.white70, fontSize: 12, fontFamily: 'Poppins')),
+        const SizedBox(height: 6),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          _glassesChoiceButton('Yes', true),
+          const SizedBox(width: 10),
+          _glassesChoiceButton('No', false),
+        ]),
       ],
       const SizedBox(height: 16),
       Center(
@@ -365,7 +463,7 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
         child: _ready
             ? Text(_message, textAlign: TextAlign.center, style: const TextStyle(color: AppColors.amber, fontSize: 13))
             : ElevatedButton(
-                onPressed: controller == null || !controller.value.isInitialized ? null : _startScanning,
+                onPressed: controller == null || !controller.value.isInitialized || _wearsGlasses == null ? null : _startScanning,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.amber, foregroundColor: AppColors.navyDark,
                   padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),

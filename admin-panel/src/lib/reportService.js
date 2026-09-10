@@ -379,3 +379,69 @@ export async function getInventoryForReport() {
 
   return rows;
 }
+
+// ── Staff Attendance (Kiosk) ────────────────────────────────────────────────
+// One row per (employee, date) from employee_attendance - the day-level P/A/L
+// status written either by the Kiosk's face/QR/code punches (see
+// SUPABASE_QR_PUNCH.sql, SUPABASE_MULTI_SHIFT_MIGRATION.sql) or by admin's
+// Mark Attendance / approved leave (staffLeaveService.js). employee_shifts is
+// folded in per (employee, date) to surface first check-in, last check-out,
+// how many separate punches made up the day, and total hours worked - a
+// multi-shift day would otherwise only show through the day-level row's own
+// single check_in_at/check_out_at, which record_face_punch/redeem_* leave
+// null after the first punch.
+const STAFF_ATTENDANCE_STATUS_LABELS = { P: "Present", A: "Absent", L: "Leave" };
+
+export async function getStaffAttendanceForReport() {
+  const [attRes, shiftRes, empRes] = await Promise.all([
+    supabase
+      .from("employee_attendance")
+      .select("employee_id, date, status, check_in_at, check_out_at, punch_method, is_late, late_minutes")
+      .order("date", { ascending: false }),
+    supabase
+      .from("employee_shifts")
+      .select("employee_id, date, check_in_at, check_out_at, punch_method"),
+    supabase
+      .from("employees")
+      .select("id, emp_code, name, designation, department"),
+  ]);
+  if (attRes.error) throw attRes.error;
+  if (shiftRes.error) throw shiftRes.error;
+  if (empRes.error) throw empRes.error;
+
+  const empMap = {};
+  for (const e of (empRes.data || [])) empMap[e.id] = e;
+
+  const shiftsByKey = {};
+  for (const s of (shiftRes.data || [])) {
+    (shiftsByKey[`${s.employee_id}|${s.date}`] ??= []).push(s);
+  }
+
+  return (attRes.data || []).map(row => {
+    const emp = empMap[row.employee_id] || {};
+    const shifts = (shiftsByKey[`${row.employee_id}|${row.date}`] || [])
+      .slice()
+      .sort((a, b) => (a.check_in_at || "").localeCompare(b.check_in_at || ""));
+    const firstIn = shifts[0]?.check_in_at || row.check_in_at || "";
+    const lastOut = shifts.length ? shifts[shifts.length - 1].check_out_at : row.check_out_at;
+    const hoursWorked = shifts.reduce((sum, s) => {
+      if (!s.check_in_at || !s.check_out_at) return sum;
+      return sum + (new Date(s.check_out_at) - new Date(s.check_in_at)) / 3600000;
+    }, 0);
+    return {
+      employeeId:  row.employee_id,
+      empCode:     emp.emp_code || "",
+      name:        emp.name || "Unknown",
+      designation: emp.designation || "",
+      department:  emp.department || "",
+      date:        row.date,
+      status:      STAFF_ATTENDANCE_STATUS_LABELS[row.status] || row.status,
+      checkIn:     firstIn || "",
+      checkOut:    lastOut || "",
+      shiftCount:  shifts.length || (row.check_in_at ? 1 : 0),
+      hoursWorked: hoursWorked ? Math.round(hoursWorked * 100) / 100 : "",
+      punchMethod: row.punch_method || shifts[0]?.punch_method || "",
+      punctuality: row.is_late === true ? `Late by ${row.late_minutes} min` : row.is_late === false ? "On Time" : "",
+    };
+  });
+}

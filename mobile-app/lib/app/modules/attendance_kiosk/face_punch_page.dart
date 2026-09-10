@@ -7,6 +7,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/services/face_recognition_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/services/native_ui_service.dart';
+import '../../../core/utils/punctuality.dart';
 import '../../routes/app_routes.dart';
 
 enum _Stage { camera, processing, error }
@@ -110,9 +111,37 @@ class _FacePunchPageState extends State<FacePunchPage> {
         return; // keep polling silently, no need to error out over a blink
       }
 
+      // Quality gate (spec: reject rather than force recognition through a
+      // bad frame) - same silent-retry treatment as the detection/eyes
+      // checks above, not a hard error, since these resolve themselves the
+      // moment the next poll gets a better frame.
+      if (await svc.isExposureUnusable(photo.path)) {
+        _busy = false;
+        if (mounted) setState(() => _message = 'Lighting is too dark or too bright - please adjust');
+        return;
+      }
+      if (await svc.isTooBlurry(photo.path, face)) {
+        _busy = false;
+        if (mounted) setState(() => _message = 'Image is blurry - please hold still');
+        return;
+      }
+
       // A real face just cleared detection - this is the actual verification step.
       if (!mounted) return;
       setState(() { _stage = _Stage.processing; _message = 'Verifying...'; });
+
+      // Liveness / anti-spoofing - a photo or phone/tablet screen held up to
+      // the camera can pass face-similarity matching just fine, this is the
+      // dedicated check that catches that instead of trusting embedding
+      // similarity alone. Runs before the (more expensive) 1-to-many
+      // embedding match below, and a fail is a hard error (not a silent
+      // retry) with the same code-fallback offered as an unrecognized face,
+      // since a genuine live person mis-scored here deserves a way out too.
+      final liveness = await svc.livenessScore(photo.path, face);
+      if (liveness == null || liveness < FaceRecognitionService.kLivenessRealThreshold) {
+        _showError('Liveness verification failed. Please try again.', offerCode: true);
+        return;
+      }
 
       final liveEmbedding = await svc.getEmbedding(photo.path, face);
       if (liveEmbedding == null) {
@@ -194,7 +223,9 @@ class _FacePunchPageState extends State<FacePunchPage> {
             ' Check out from your app first.', offerCode: false);
         return;
       }
-      await NativeUiService.showToast('$bestName checked in at ${DateFormat('h:mm a').format(time)}');
+      final punctuality = punctualityLabel(result['isLate'] as bool?, result['lateMinutes'] as int?);
+      final suffix = punctuality != null ? ' - $punctuality' : '';
+      await NativeUiService.showToast('$bestName checked in at ${DateFormat('h:mm a').format(time)}$suffix');
       if (mounted) Get.back();
     } catch (e, st) {
       debugPrint('Face punch failed: $e\n$st');

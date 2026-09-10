@@ -263,7 +263,30 @@ class SupabaseService {
     return {
       'status': row['o_status'] as String,
       'time':   DateTime.parse(row['o_check_in_at'] as String).toLocal(),
+      // Only meaningful when status is 'checked_in' - null on 'already_in'
+      // and null on any shift after the day's first (see
+      // SUPABASE_KIOSK_SETTINGS.sql - lateness is only judged on arrival).
+      'isLate':      row['o_is_late'] as bool?,
+      'lateMinutes': row['o_late_minutes'] as int?,
     };
+  }
+
+  // Kiosk settings - expected start time / grace period (for the late-vs-
+  // on-time judgement above) and whether the admin PIN has been configured.
+  // Never the PIN hash itself - see kiosk_pin_service.dart.
+  static Future<Map<String, dynamic>> fetchKioskPublicSettings() async {
+    final res = await client.rpc('get_kiosk_public_settings') as List;
+    final row = res.first as Map;
+    return {
+      'expectedStartTime': row['o_expected_start_time'] as String?, // "HH:MM:SS"
+      'lateGraceMinutes':  row['o_late_grace_minutes'] as int?,
+      'pinIsSet':          row['o_pin_is_set'] as bool? ?? false,
+    };
+  }
+
+  static Future<bool> verifyKioskAdminPin(String pin) async {
+    final res = await client.rpc('verify_kiosk_admin_pin', params: {'p_pin': pin});
+    return res as bool? ?? false;
   }
 
   // Staff-initiated checkout from their own app (My Attendance) - the
@@ -333,6 +356,57 @@ class SupabaseService {
       'employeeName': row['o_employee_name'] as String? ?? 'Staff',
       'status':       row['o_status'] as String,
       'checkInAt':    DateTime.parse(row['o_check_in_at'] as String).toLocal(),
+      'isLate':       row['o_is_late'] as bool?,
+      'lateMinutes':  row['o_late_minutes'] as int?,
+    };
+  }
+
+  // QR-code punch - the third check-in method, inverted from the override
+  // code above: the KIOSK mints an anonymous one-time code (generateQrSession)
+  // and shows it as a QR, the STAFF MEMBER's own Teacher app scans it and
+  // redeems it as themselves (redeemQrSession, passing their own already-known
+  // employeeId - the QR itself carries no identity). checkQrSession is the
+  // kiosk's poll to detect the moment a scan claims its on-screen code. See
+  // SUPABASE_QR_PUNCH.sql.
+
+  static Future<Map<String, dynamic>> generateQrSession() async {
+    final res = await client.rpc('generate_qr_session') as List;
+    final row = res.first as Map;
+    return {
+      'code':      row['o_code'] as String,
+      'expiresAt': DateTime.parse(row['o_expires_at'] as String).toLocal(),
+    };
+  }
+
+  static Future<Map<String, dynamic>> checkQrSession(String code) async {
+    final res = await client.rpc('check_qr_session', params: {'p_code': code}) as List;
+    if (res.isEmpty) return {'claimedAt': null, 'employeeName': null, 'checkInAt': null, 'isLate': null, 'lateMinutes': null};
+    final row = res.first as Map;
+    final claimedAt = row['o_claimed_at'] as String?;
+    final checkInAt = row['o_check_in_at'] as String?;
+    return {
+      'claimedAt':    claimedAt != null ? DateTime.parse(claimedAt).toLocal() : null,
+      'employeeName': row['o_employee_name'] as String?,
+      'checkInAt':    checkInAt != null ? DateTime.parse(checkInAt).toLocal() : null,
+      'isLate':       row['o_is_late'] as bool?,
+      'lateMinutes':  row['o_late_minutes'] as int?,
+    };
+  }
+
+  static Future<Map<String, dynamic>> redeemQrSession(String code, String employeeId, String date, DateTime checkInAt) async {
+    final res = await client.rpc('redeem_qr_session', params: {
+      'p_code': code,
+      'p_employee_id': employeeId,
+      'p_date': date,
+      'p_check_in_at': checkInAt.toUtc().toIso8601String(),
+    }) as List;
+    final row = res.first as Map;
+    return {
+      'status':       row['o_status'] as String,
+      'employeeName': row['o_employee_name'] as String? ?? 'Staff',
+      'checkInAt':    DateTime.parse(row['o_check_in_at'] as String).toLocal(),
+      'isLate':       row['o_is_late'] as bool?,
+      'lateMinutes':  row['o_late_minutes'] as int?,
     };
   }
 

@@ -5,6 +5,7 @@ import '../modules/auth/controllers/login_controller.dart';
 import '../modules/teacher/dashboard/teacher_home.dart';
 import '../modules/teacher/attendance/teacher_attendance_page.dart';
 import '../modules/teacher/my_attendance/teacher_my_attendance_page.dart';
+import '../modules/teacher/my_attendance/scan_attendance_qr_page.dart';
 import '../modules/teacher/students/teacher_students_page.dart';
 import '../modules/teacher/exams/teacher_exams_page.dart';
 import '../modules/teacher/homework/teacher_homework_page.dart';
@@ -35,6 +36,7 @@ class AppPagesTeacher {
     GetPage(name: Routes.teacherHome,     page: () => const TeacherHome()),
     GetPage(name: Routes.teacherAttend,   page: () => const TeacherAttendancePage()),
     GetPage(name: Routes.teacherMyAttend, page: () => const TeacherMyAttendancePage()),
+    GetPage(name: Routes.teacherQrScan,   page: () => const ScanAttendanceQrPage()),
     GetPage(name: Routes.teacherStudents, page: () => const TeacherStudentsPage()),
     GetPage(name: Routes.teacherMarks,    page: () => const TeacherExamsPage()),
     GetPage(name: Routes.teacherHomework, page: () => const TeacherHomeworkPage()),

@@ -77,7 +77,7 @@ export async function rejectLeaveRequest(requestId, adminNote) {
 export async function getEmployeeAttendanceForDate(date) {
   const { data, error } = await supabase
     .from("employee_attendance")
-    .select("employee_id, status, check_in_at, check_out_at, punch_method")
+    .select("employee_id, status, check_in_at, check_out_at, punch_method, is_late, late_minutes")
     .eq("date", date);
   if (error) throw error;
   return data || [];
@@ -112,6 +112,37 @@ export async function saveEmployeeAttendanceForDate(records) {
     .from("employee_attendance")
     .upsert(records, { onConflict: "employee_id,date" });
   if (error) throw error;
+}
+
+// ── Live "Who's In" status for today ─────────────────────────────────────────
+// One row per active employee: whether they've punched in today, whether
+// they're currently checked in (an employee_shifts row with no check_out_at
+// yet) vs already checked out, and the day's late/on-time flag. Separate
+// from getEmployeeAttendanceForDate/getEmployeeShiftsForDate above (which
+// serve Mark Attendance's editable grid) - this is read-only and merges
+// straight onto the employee list for a live front-desk-style view.
+export async function getLiveStaffStatus(date) {
+  const [attRes, shiftRes] = await Promise.all([
+    supabase
+      .from("employee_attendance")
+      .select("employee_id, status, check_in_at, check_out_at, punch_method, is_late, late_minutes")
+      .eq("date", date),
+    supabase
+      .from("employee_shifts")
+      .select("employee_id, check_in_at, check_out_at, punch_method")
+      .eq("date", date)
+      .order("check_in_at"),
+  ]);
+  if (attRes.error) throw attRes.error;
+  if (shiftRes.error) throw shiftRes.error;
+
+  const attByEmployee = {};
+  for (const row of attRes.data || []) attByEmployee[row.employee_id] = row;
+
+  const shiftsByEmployee = {};
+  for (const row of shiftRes.data || []) (shiftsByEmployee[row.employee_id] ??= []).push(row);
+
+  return { attByEmployee, shiftsByEmployee };
 }
 
 export async function getEmployeeAttendanceHistory(employeeId, fromDate, toDate) {

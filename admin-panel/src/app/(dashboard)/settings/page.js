@@ -13,7 +13,7 @@ import {
   GraduationCap, Lock, ChevronDown, ChevronUp, Pencil,
   AlertCircle, LogOut, SlidersHorizontal, LayoutGrid,
   Download, FileSpreadsheet, MessageSquare, CalendarRange, Layers, ScrollText, Award, Smartphone,
-  Link2, KeyRound,
+  Link2, KeyRound, Fingerprint,
 } from "lucide-react";
 import YearPlanningTab from "./YearPlanningTab";
 import RulesRegulationsTab from "./RulesRegulationsTab";
@@ -21,6 +21,7 @@ import UsersRolesTab from "./UsersRolesTab";
 import ExamsTab from "./ExamsTab";
 import AppUpdateTab from "./AppUpdateTab";
 import ImpersonationLogTab from "./ImpersonationLogTab";
+import KioskSettingsTab from "./KioskSettingsTab";
 import DateInputDMY from "@/components/DateInputDMY";
 import {
   isNonEmpty, isValidEmail, isValidPhone, isValidPincode, isValidName,
@@ -2469,6 +2470,7 @@ const TABS = [
   { key:"rules",      label:"Rules & Regulations",icon:ScrollText   },
   { key:"appupdate",  label:"App Update",         icon:Smartphone   },
   { key:"impersonation", label:"Access Codes",    icon:KeyRound     },
+  { key:"kiosk",      label:"Kiosk",              icon:Fingerprint  },
 ];
 
 export default function SettingsPage() {
@@ -2521,6 +2523,7 @@ export default function SettingsPage() {
       {tab === "rules"      && <RulesRegulationsTab/>}
       {tab === "appupdate"  && <AppUpdateTab/>}
       {tab === "impersonation" && <ImpersonationLogTab/>}
+      {tab === "kiosk"      && <KioskSettingsTab/>}
     </div>
   );
 }

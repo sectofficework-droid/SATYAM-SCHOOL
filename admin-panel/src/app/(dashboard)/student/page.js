@@ -1322,7 +1322,8 @@ export default function StudentPage() {
               return (
                 <div
                   key={student.enrollment}
-                  className={`bg-white rounded-2xl border border-gray-100 border-l-4 ${a.border} shadow-sm hover:shadow-md transition-shadow overflow-hidden`}
+                  onClick={() => router.push(`/student/${student.enrollment}?session=${student.session}`)}
+                  className={`bg-white rounded-2xl border border-gray-100 border-l-4 ${a.border} shadow-sm hover:shadow-md transition-shadow overflow-hidden cursor-pointer`}
                 >
                   {/* ── Header strip ── */}
                   <div className={`bg-gradient-to-r ${a.hdrFrom} ${a.hdrTo} px-5 py-2 flex items-center justify-between`}>
@@ -1407,7 +1408,7 @@ export default function StudentPage() {
                         </div>
                       );
                     })()}
-                    <div className="flex flex-col gap-1.5 px-3 pb-3 pt-1.5 border-t border-gray-50">
+                    <div className="flex flex-col gap-1.5 px-3 pb-3 pt-1.5 border-t border-gray-50" onClick={(e) => e.stopPropagation()}>
                       {isPromoted ? (
                         <Link href={`/student/${student.enrollment}?session=${student.session}`}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-school-navy text-white">
@@ -1528,7 +1529,7 @@ export default function StudentPage() {
                     </div>
 
                     {/* ── Column 3: IDs & Password ── */}
-                    <div className={`px-5 py-4 ${a.idBg} space-y-3 border-r border-gray-100`}>
+                    <div className={`px-5 py-4 ${a.idBg} space-y-3 border-r border-gray-100`} onClick={(e) => e.stopPropagation()}>
                       <IdRow label="Aadhar" value={student.aadhar} />
                       <IdRow label="UDISE"  value={student.udise}  />
                       <IdRow label="PEN No" value={student.pen}    />
@@ -1704,7 +1705,7 @@ export default function StudentPage() {
                     })()}
 
                     {/* ── Column 6: Actions ── */}
-                    <div className="px-4 py-4 flex flex-col gap-2">
+                    <div className="px-4 py-4 flex flex-col gap-2" onClick={(e) => e.stopPropagation()}>
 
                       {isPromoted ? (
                         /* ── Already promoted — show badge + View only ── */

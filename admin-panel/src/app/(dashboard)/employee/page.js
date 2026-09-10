@@ -25,10 +25,12 @@ import {
   ClipboardList, IndianRupee, AlertCircle, Download,
   CheckCircle2, TrendingDown, FileSpreadsheet,
   CalendarCheck, ShieldAlert, ListChecks, Trash2, KeyRound, Copy,
+  RefreshCw, LogIn, LogOut, Clock3, Radio,
 } from "lucide-react";
 import {
   getPendingLeaveRequests, approveLeaveRequest, rejectLeaveRequest,
   getEmployeeAttendanceForDate, saveEmployeeAttendanceForDate, getEmployeeShiftsForDate,
+  getLiveStaffStatus,
 } from "@/lib/staffLeaveService";
 import {
   getDailyTasks, addDailyTask, updateDailyTask, deactivateDailyTask, getCompletionStatus,
@@ -1636,7 +1638,7 @@ function AttendanceSection({ employees, salaries, setAttendanceSummary }) {
 // day directly (Mark Attendance sub-tab) or automatically when a leave
 // request is approved (Leave Requests sub-tab, status 'L').
 function LeaveAttendanceSection({ employees }) {
-  const [subView, setSubView] = useState("requests"); // "requests" | "mark"
+  const [subView, setSubView] = useState("requests"); // "requests" | "mark" | "live"
   const [pendingCount, setPendingCount] = useState(0);
 
   const refreshPendingCount = useCallback(() => {
@@ -1649,9 +1651,175 @@ function LeaveAttendanceSection({ employees }) {
       <div className="flex items-center gap-1.5 bg-white rounded-xl border border-gray-100 shadow-sm p-1.5 w-fit">
         <SubTabButton active={subView === "requests"} onClick={() => setSubView("requests")} icon={ShieldAlert} label="Leave Requests" badge={pendingCount} />
         <SubTabButton active={subView === "mark"} onClick={() => setSubView("mark")} icon={CalendarCheck} label="Mark Attendance" />
+        <SubTabButton active={subView === "live"} onClick={() => setSubView("live")} icon={Radio} label="Live Status" />
       </div>
       {subView === "requests" && <LeaveRequestsTab onChange={refreshPendingCount} />}
       {subView === "mark" && <MarkStaffAttendanceTab employees={employees} />}
+      {subView === "live" && <LiveStatusTab employees={employees} />}
+    </div>
+  );
+}
+
+// ── Live "Who's In" - a read-only, always-today snapshot of the kiosk's
+// punches, separate from Mark Attendance's editable grid above. Meant to be
+// left open at the front desk; auto-refreshes every 60s in addition to the
+// manual Refresh button. ─────────────────────────────────────────────────
+function LiveStatusTab({ employees }) {
+  const [attByEmployee, setAttByEmployee] = useState({});
+  const [shiftsByEmployee, setShiftsByEmployee] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+
+  const today = new Date().toISOString().slice(0, 10);
+  const activeEmployees = employees.filter(e => e.status !== "Inactive");
+
+  const load = useCallback(() => {
+    getLiveStaffStatus(today)
+      .then(({ attByEmployee, shiftsByEmployee }) => {
+        setAttByEmployee(attByEmployee);
+        setShiftsByEmployee(shiftsByEmployee);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today]);
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(load, 60000);
+    return () => clearInterval(interval);
+  }, [load]);
+
+  const rows = activeEmployees.map(e => {
+    const att = attByEmployee[e.id];
+    const shifts = shiftsByEmployee[e.id] || [];
+    const openShift = shifts.find(s => !s.check_out_at);
+    let state;
+    if (!att) state = "not_arrived";
+    else if (att.status === "L") state = "leave";
+    else if (att.status === "A") state = "absent";
+    else if (openShift) state = "checked_in";
+    else state = "checked_out";
+    return {
+      employee: e, att, shifts, state,
+      firstIn: shifts[0]?.check_in_at || att?.check_in_at || null,
+    };
+  }).filter(r => !search || r.employee.name.toLowerCase().includes(search.toLowerCase()));
+
+  const counts = {
+    checkedIn:  rows.filter(r => r.state === "checked_in").length,
+    checkedOut: rows.filter(r => r.state === "checked_out").length,
+    notArrived: rows.filter(r => r.state === "not_arrived").length,
+    absent:     rows.filter(r => r.state === "absent").length,
+    leave:      rows.filter(r => r.state === "leave").length,
+    late:       rows.filter(r => r.att?.is_late).length,
+  };
+
+  const STATE_STYLE = {
+    checked_in:  { label: "Checked In",  bg: "bg-green-50",  text: "text-green-700",  border: "border-green-200",  icon: LogIn  },
+    checked_out: { label: "Checked Out", bg: "bg-gray-50",    text: "text-gray-500",   border: "border-gray-200",   icon: LogOut },
+    not_arrived: { label: "Not Arrived", bg: "bg-amber-50",   text: "text-amber-700",  border: "border-amber-200",  icon: Clock3 },
+    absent:      { label: "Absent",      bg: "bg-red-50",     text: "text-red-700",    border: "border-red-200",    icon: X      },
+    leave:       { label: "On Leave",    bg: "bg-orange-50",  text: "text-orange-700", border: "border-orange-200", icon: Calendar },
+  };
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-40 gap-3">
+      <div className="w-8 h-8 border-2 border-school-navy/20 border-t-school-navy rounded-full animate-spin" />
+      <span className="text-sm text-gray-500">Loading...</span>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col sm:flex-row gap-3 sm:items-center">
+        <div className="relative flex-1 sm:max-w-xs">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input type="text" placeholder="Search staff by name" value={search} onChange={e => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-school-navy" />
+        </div>
+        <span className="text-sm text-gray-500 ml-auto">{fmtPunchDateLabel(today)}</span>
+        <button onClick={load} className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
+          <RefreshCw className="w-3 h-3" />Refresh
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+        <LiveSummaryCard label="Checked In" count={counts.checkedIn} color="green" />
+        <LiveSummaryCard label="Checked Out" count={counts.checkedOut} color="gray" />
+        <LiveSummaryCard label="Not Arrived" count={counts.notArrived} color="amber" />
+        <LiveSummaryCard label="Absent" count={counts.absent} color="red" />
+        <LiveSummaryCard label="On Leave" count={counts.leave} color="orange" />
+        <LiveSummaryCard label="Late Today" count={counts.late} color="red" />
+      </div>
+
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        {rows.length === 0 ? (
+          <div className="flex items-center justify-center h-32 text-sm text-gray-400">No staff match &quot;{search}&quot;</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100 text-left text-xs text-gray-500 uppercase tracking-wide">
+                <th className="px-4 py-2.5 font-semibold">Staff</th>
+                <th className="px-3 py-2.5 font-semibold">Status</th>
+                <th className="px-3 py-2.5 font-semibold">First Check-In</th>
+                <th className="px-3 py-2.5 font-semibold">Shifts Today</th>
+                <th className="px-3 py-2.5 font-semibold">Punctuality</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {rows.map(r => {
+                const st = STATE_STYLE[r.state];
+                const Icon = st.icon;
+                return (
+                  <tr key={r.employee.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-2.5">
+                      <p className="font-medium text-gray-800">{r.employee.name}</p>
+                      <p className="text-xs text-gray-400">{r.employee.designation || r.employee.type}</p>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border ${st.bg} ${st.text} ${st.border}`}>
+                        <Icon className="w-3 h-3" />{st.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-gray-600">{fmtPunchTime(r.firstIn) || <span className="text-gray-300">—</span>}</td>
+                    <td className="px-3 py-2.5 text-gray-500">{r.shifts.length || "—"}</td>
+                    <td className="px-3 py-2.5">
+                      {r.att?.is_late ? (
+                        <span className="text-xs font-semibold text-red-600">Late by {r.att.late_minutes} min</span>
+                      ) : r.att?.is_late === false ? (
+                        <span className="text-xs font-semibold text-green-600">On time</span>
+                      ) : (
+                        <span className="text-gray-300">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function fmtPunchDateLabel(iso) {
+  return new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { weekday: "long", day: "2-digit", month: "short", year: "numeric" });
+}
+
+function LiveSummaryCard({ label, count, color }) {
+  const styles = {
+    green:  "bg-green-50 text-green-700",
+    gray:   "bg-gray-50 text-gray-600",
+    amber:  "bg-amber-50 text-amber-700",
+    red:    "bg-red-50 text-red-700",
+    orange: "bg-orange-50 text-orange-700",
+  };
+  return (
+    <div className={`rounded-2xl border border-gray-100 shadow-sm p-3 ${styles[color]}`}>
+      <span className="text-[10px] font-medium opacity-70 uppercase tracking-wide">{label}</span>
+      <div className="text-xl font-bold mt-0.5">{count}</div>
     </div>
   );
 }
@@ -2441,7 +2609,8 @@ export default function EmployeePage() {
                 const done   = docsDone(emp);
                 const docsOk = done === (emp.documents || []).length;
                 return (
-                  <tr key={emp.id} className="hover:bg-gray-50/50 transition-colors">
+                  <tr key={emp.id} onClick={() => setViewEmp(emp)}
+                    className="hover:bg-gray-50/50 transition-colors cursor-pointer">
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
                         <div className={`w-9 h-9 ${bg} rounded-xl flex items-center justify-center flex-shrink-0 overflow-hidden`}>
@@ -2478,7 +2647,7 @@ export default function EmployeePage() {
                         {emp.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3.5">
+                    <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-1">
                         <button onClick={() => setViewEmp(emp)}
                           className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-gray-700">

@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/supabase_service.dart';
+import '../../../core/utils/punctuality.dart';
 import '../../routes/app_routes.dart';
 
 enum _Stage { code, confirm, saving, success, error }
@@ -33,6 +34,7 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
 
   String? _code;
   String? _employeeName;
+  String? _punctuality;
   DateTime? _generatedAt;
   DateTime? _maxTime;
   int _offsetMinutes = 0; // minutes back from _maxTime
@@ -102,6 +104,7 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
       setState(() {
         _stage = _Stage.success;
         _employeeName = result['employeeName'] as String;
+        _punctuality = punctualityLabel(result['isLate'] as bool?, result['lateMinutes'] as int?);
       });
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted) Get.until((r) => r.settings.name == Routes.kioskHome);
@@ -122,7 +125,7 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
     setState(() {
       _busy = false; _stage = _Stage.code; _message = '';
       _codeCtrl.clear();
-      _code = null; _employeeName = null; _generatedAt = null; _maxTime = null; _offsetMinutes = 0;
+      _code = null; _employeeName = null; _punctuality = null; _generatedAt = null; _maxTime = null; _offsetMinutes = 0;
     });
   }
 
@@ -134,7 +137,7 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
         _Stage.code    => _buildCodeEntry(),
         _Stage.confirm => _buildConfirm(),
         _Stage.saving  => _buildMessage(spinner: true, text: 'Punching in...'),
-        _Stage.success => _buildMessage(icon: Icons.check_rounded, iconColor: AppColors.green, text: '$_employeeName is checked in'),
+        _Stage.success => _buildMessage(icon: Icons.check_rounded, iconColor: AppColors.green, text: '$_employeeName is checked in${_punctuality != null ? "\n$_punctuality" : ""}'),
         _Stage.error   => _buildMessage(icon: Icons.close_rounded, iconColor: AppColors.red, text: _message, retry: _startOver),
       },
     ),

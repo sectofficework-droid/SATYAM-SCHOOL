@@ -99,6 +99,13 @@ class _KioskHomePageState extends State<KioskHomePage> {
               ]),
             ),
           ),
+          const SizedBox(height: 20),
+          TextButton.icon(
+            onPressed: () => Get.toNamed(Routes.kioskQrPunch),
+            icon: const Icon(Icons.qr_code_scanner_rounded, color: Colors.white60, size: 18),
+            label: const Text('Scan Staff QR instead', style: TextStyle(
+              color: Colors.white60, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Poppins')),
+          ),
           const Spacer(flex: 2),
         ]),
       ),
