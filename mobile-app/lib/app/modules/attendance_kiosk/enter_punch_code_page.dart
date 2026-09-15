@@ -3,23 +3,27 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/services/native_ui_service.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/utils/punctuality.dart';
 import '../../routes/app_routes.dart';
 
-enum _Stage { code, confirm, saving, success, error }
+enum _Stage { code, saving, success, error }
 
 // The fallback for when face-scan can't complete a punch - wrong match
 // ("Not me" on face_punch_page.dart) or no match at all. Admin generates a
 // 6-digit code from the staff member's profile in the admin panel
 // (generate_punch_code, authenticated-only - the kiosk itself can never
 // mint a code, only redeem one), staff types it here. lookup_punch_code
-// resolves who it belongs to without consuming it, so this can show a
-// name-confirmation + time-adjust step before committing; redeem_punch_code
-// re-validates and actually records the punch. The time slider is bounded
-// to [code generation time, now] server-side too - this UI just mirrors
-// that bound so the slider can't even be dragged somewhere the backend
-// would reject.
+// resolves who it belongs to without consuming it, so a native dialog (see
+// NativeUiService.confirmPunchCode) shows a name-confirmation + time-adjust
+// step before committing; redeem_punch_code re-validates and actually
+// records the punch. This screen is only ever reached straight from
+// face_punch_page.dart's on-device face pipeline, so - like that screen's
+// own confirm step - the confirmation can't be a Flutter-painted widget
+// (see MainActivity.kt for why); the time slider there is bounded to [code
+// generation time, now] server-side too, mirrored so it can't be dragged
+// somewhere the backend would reject.
 class EnterPunchCodePage extends StatefulWidget {
   const EnterPunchCodePage({super.key});
   @override
@@ -35,9 +39,8 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
   String? _code;
   String? _employeeName;
   String? _punctuality;
-  DateTime? _generatedAt;
   DateTime? _maxTime;
-  int _offsetMinutes = 0; // minutes back from _maxTime
+  int _offsetMinutes = 0; // minutes back from _maxTime, chosen via the native confirm dialog
 
   @override
   void dispose() {
@@ -59,16 +62,28 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
         setState(() { _busy = false; _message = 'That code is invalid or has expired. Ask admin for a new one.'; });
         return;
       }
+      final employeeName = result['employeeName'] as String;
+      final generatedAt = result['generatedAt'] as DateTime;
       final maxTime = DateTime.now();
-      setState(() {
-        _busy = false;
-        _stage = _Stage.confirm;
-        _code = code;
-        _employeeName = result['employeeName'] as String;
-        _generatedAt = result['generatedAt'] as DateTime;
-        _maxTime = maxTime;
-        _offsetMinutes = 0;
-      });
+      final span = maxTime.difference(generatedAt).inMinutes;
+      final maxOffsetMinutes = span < 0 ? 0 : span;
+      setState(() => _busy = false);
+
+      final confirm = await NativeUiService.confirmPunchCode(
+        name: employeeName,
+        maxTimeMillis: maxTime.millisecondsSinceEpoch,
+        maxOffsetMinutes: maxOffsetMinutes,
+      );
+      if (!mounted) return;
+      if (!confirm.confirmed) {
+        _startOver();
+        return;
+      }
+      _code = code;
+      _employeeName = employeeName;
+      _maxTime = maxTime;
+      _offsetMinutes = confirm.offsetMinutes;
+      await _punchIn();
     } catch (e, st) {
       debugPrint('Punch code lookup failed: $e\n$st');
       if (!mounted) return;
@@ -77,11 +92,6 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
   }
 
   DateTime get _chosenTime => _maxTime!.subtract(Duration(minutes: _offsetMinutes));
-
-  int get _maxOffsetMinutes {
-    final span = _maxTime!.difference(_generatedAt!).inMinutes;
-    return span < 0 ? 0 : span;
-  }
 
   Future<void> _punchIn() async {
     final code = _code;
@@ -125,7 +135,7 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
     setState(() {
       _busy = false; _stage = _Stage.code; _message = '';
       _codeCtrl.clear();
-      _code = null; _employeeName = null; _punctuality = null; _generatedAt = null; _maxTime = null; _offsetMinutes = 0;
+      _code = null; _employeeName = null; _punctuality = null; _maxTime = null; _offsetMinutes = 0;
     });
   }
 
@@ -135,7 +145,6 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
     body: SafeArea(
       child: switch (_stage) {
         _Stage.code    => _buildCodeEntry(),
-        _Stage.confirm => _buildConfirm(),
         _Stage.saving  => _buildMessage(spinner: true, text: 'Punching in...'),
         _Stage.success => _buildMessage(icon: Icons.check_rounded, iconColor: AppColors.green, text: '$_employeeName is checked in${_punctuality != null ? "\n$_punctuality" : ""}'),
         _Stage.error   => _buildMessage(icon: Icons.close_rounded, iconColor: AppColors.red, text: _message, retry: _startOver),
@@ -189,48 +198,6 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
                 : const Text('Continue', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
           ),
         ),
-      ]),
-    ),
-  );
-
-  Widget _buildConfirm() => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(32),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Icon(Icons.person_rounded, color: AppColors.amber, size: 48),
-        const SizedBox(height: 12),
-        Text(_employeeName ?? '', textAlign: TextAlign.center, style: const TextStyle(
-          color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800, fontFamily: 'Poppins')),
-        const SizedBox(height: 24),
-        const Text('Check-in time', style: TextStyle(color: Colors.white60, fontSize: 12, fontFamily: 'Poppins')),
-        Text(DateFormat('h:mm a').format(_chosenTime), style: const TextStyle(
-          color: AppColors.amber, fontSize: 32, fontWeight: FontWeight.w800, fontFamily: 'Poppins')),
-        if (_maxOffsetMinutes > 0) ...[
-          Slider(
-            value: _offsetMinutes.toDouble(),
-            min: 0,
-            max: _maxOffsetMinutes.toDouble(),
-            divisions: _maxOffsetMinutes,
-            activeColor: AppColors.amber,
-            onChanged: (v) => setState(() => _offsetMinutes = v.round()),
-          ),
-          const Text('Drag to adjust if this took a few minutes', style: TextStyle(
-            color: Colors.white38, fontSize: 11, fontFamily: 'Poppins')),
-        ],
-        const SizedBox(height: 24),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          TextButton(
-            onPressed: _startOver,
-            child: const Text('Not Me', style: TextStyle(color: Colors.white60, fontSize: 15, fontWeight: FontWeight.w700)),
-          ),
-          const SizedBox(width: 16),
-          ElevatedButton(
-            onPressed: _busy ? null : _punchIn,
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.green, foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12)),
-            child: const Text('Punch In', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-          ),
-        ]),
       ]),
     ),
   );
