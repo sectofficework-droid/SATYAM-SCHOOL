@@ -3,12 +3,14 @@ import supabase from "@/lib/supabase";
 import { getCalendarEvents } from "@/lib/calendarService";
 import { isWorkingDay } from "@/lib/attendanceRules";
 
-// Runs every 30 min through a working-hours window (see vercel.json) rather
-// than once at a fixed time, since the actual cutoff (Settings -> Kiosk) is
-// admin-configurable and a Vercel cron schedule isn't. auto_mark_absent_staff
+// Runs once daily at 09:00 UTC / 2:30pm IST (see vercel.json) - Vercel's Hobby
+// plan only allows daily crons, so this can no longer poll every 30 min through
+// the working-hours window like it used to. The fixed time is set to fall after
+// the school day's last period, since the actual cutoff (Settings -> Kiosk) is
+// admin-configurable and a single fixed cron time isn't - auto_mark_absent_staff
 // itself no-ops until that configured cutoff has passed and the feature is
-// enabled, and only fills in employees with no attendance row yet today, so
-// firing this repeatedly is safe.
+// enabled, so firing after the latest plausible cutoff each day is what keeps
+// this correct with only one run.
 export async function GET(request) {
   const authHeader = request.headers.get("authorization");
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
