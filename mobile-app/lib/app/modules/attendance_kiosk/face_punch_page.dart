@@ -11,7 +11,6 @@ import '../../../core/services/native_ui_service.dart';
 import '../../../core/utils/punctuality.dart';
 import '../../../core/utils/scan_trace.dart';
 import '../../routes/app_routes.dart';
-import 'scan_debug_hud.dart';
 
 enum _Stage { camera, processing, error }
 
@@ -29,15 +28,19 @@ enum _Stage { camera, processing, error }
 // Flutter's own framework, not fixable by changing what Flutter paints.
 // A native AlertDialog is composited entirely outside Flutter's engine.
 //
-// No shutter button: a self-rescheduling timer polls roughly every 1s
+// No shutter button: a self-rescheduling timer polls roughly every 200ms
 // while idle on the camera stage - "roughly" because the next poll is only
-// armed ~1s AFTER the previous one fully finishes (see _scheduleNextPoll),
-// not on a fixed period. It used to be a plain Timer.periodic, which kept
-// firing into a busy poll every second even while one attempt was still
-// running; overlapping fires didn't do anything (a re-entrancy guard just
-// skipped them) but they were also evidence the pipeline was still chewing
-// on the previous frame well past its 1s budget, which read to a bystander
-// as the camera "restarting" over and over.
+// armed 200ms AFTER the previous one fully finishes (see
+// _scheduleNextPoll), not on a fixed period. It used to be a plain
+// Timer.periodic, which kept firing into a busy poll every second even
+// while one attempt was still running; overlapping fires didn't do
+// anything (a re-entrancy guard just skipped them) but they were also
+// evidence the pipeline was still chewing on the previous frame well past
+// its budget, which read to a bystander as the camera "restarting" over
+// and over. The very first poll of a fresh camera session fires
+// immediately, not after one interval's wait - someone already framed and
+// ready the instant the screen opens shouldn't sit through a dead pause
+// before the first attempt even starts (see _initCamera's call into this).
 //
 // Each poll analyzes the MOST RECENT frame from a continuously running
 // CameraController.startImageStream() (see _latestFrame), not a fresh
@@ -58,6 +61,36 @@ enum _Stage { camera, processing, error }
 // is never recorded silently. A "Face not recognized" error offers a way
 // out via an admin-issued numeric code (enter_punch_code_page.dart)
 // instead of just leaving someone stuck.
+//
+// Scanning doesn't start the instant the screen opens: the camera
+// initializes and shows a live preview immediately, but polling only
+// begins once the person taps "Start Scan" on a centered popup prompt
+// over that preview (see _ready/_startScanning/_buildReadyPopup) - giving
+// them a moment to actually get in frame instead of the earliest poll
+// capturing them still mid-walk-up/turning their head, which only hurts
+// match/liveness quality.
+//
+// A single failed attempt (liveness or 1-to-many match came back
+// negative) doesn't drop straight to the hard error screen: up to 2 are
+// silently absorbed with a brief on-screen warning while scanning keeps
+// running (see _handleScanFailure/_failedAttempts) - momentary bad
+// angles/lighting are common and shouldn't force someone to explicitly
+// retry for something the next poll might just clear on its own. Only
+// the 3rd consecutive failure escalates to the full error screen (message
+// + auto-return home), matching how camera/system-level errors already
+// behaved.
+//
+// The 1-to-many match itself (SupabaseService.matchFaceEmbedding, see
+// SUPABASE_FACE_MATCH_RPC.sql) runs server-side: this sends just the one
+// live 192-float embedding and Postgres compares it against every enrolled
+// person's references itself, returning only a name + two similarity
+// scores. An earlier version of this screen instead downloaded EVERY
+// enrolled person's full reference set to the phone on every attempt
+// (fetchAllFaceEmbeddings) and compared client-side - measured taking
+// 6-11+ seconds on real kiosk network conditions, sometimes timing out
+// outright (SESSION-2026-09-15), and only getting worse as more staff
+// enroll. No more reason to prefetch anything in parallel with camera
+// setup either - there's no bulk download left to hide the latency of.
 class FacePunchPage extends StatefulWidget {
   const FacePunchPage({super.key});
   @override
@@ -66,7 +99,14 @@ class FacePunchPage extends StatefulWidget {
 
 class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserver {
   static const _matchMargin = 0.05;
-  static const _pollInterval = Duration(milliseconds: 1000);
+  // Was 1000ms; tightened once the stream-based poll itself was measured
+  // cheap (22-400ms, SESSION-2026-09-13-6) - the old value meant someone
+  // already framed and ready could wait up to a full second for the next
+  // poll to even look. Safe to shorten because _scheduleNextPoll only ever
+  // arms the NEXT poll after the previous one fully finishes - a smaller
+  // number here can't cause overlapping polls, just a shorter idle gap
+  // between them.
+  static const _pollInterval = Duration(milliseconds: 200);
   static const ringSize = 320.0;
   static const frameSize = 300.0;
 
@@ -78,9 +118,24 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
   bool _busy = false;
   bool _offerCode = false;
 
+  // Gates the poll loop behind an explicit "Start Scan" tap - see the
+  // class-level comment. Set true once, on the first tap; a later retry
+  // ("Try Again" from the error screen) does NOT reset it back to false,
+  // since that tap already IS the person's "I'm ready" signal.
+  bool _ready = false;
+
+  // Consecutive scan attempts that reached a conclusive (not "no face
+  // yet"/blink/blur/exposure - those retry silently forever) failure -
+  // liveness, unreadable embedding, or no match. See
+  // _handleScanFailure/the class-level comment. Reset whenever a fresh
+  // scanning session starts (_startScanning, _reinitCamera).
+  int _failedAttempts = 0;
+  static const _maxAttempts = 3;
+
   // Updated on every frame the live stream delivers (many times a second);
-  // read by _autoCapture at most once a second. This - not takePicture() -
-  // is now where each poll's frame comes from; see the class-level comment.
+  // read by _autoCapture at most once per _pollInterval. This - not
+  // takePicture() - is now where each poll's frame comes from; see the
+  // class-level comment.
   CameraImage? _latestFrame;
 
   // Computed once per camera generation in _initCamera (the kiosk is bolted
@@ -182,12 +237,25 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
       // below - computed once per camera generation, not per frame, since
       // this kiosk is bolted down in a fixed portrait orientation (see the
       // class-level comment) rather than something a handheld app would
-      // need to recompute as the device rotates. Standard formula for a
-      // portrait host app (matches google_mlkit's own example apps):
-      // front-facing sensors are mirrored, so compensate the other way.
-      _rotationDegrees = front.lensDirection == CameraLensDirection.front
-          ? (360 - front.sensorOrientation) % 360
-          : front.sensorOrientation;
+      // need to recompute as the device rotates.
+      //
+      // The value ML Kit wants is the sensor-orientation-compensated-for-
+      // device-rotation angle: (sensorOrientation ± deviceRotationDegrees) %
+      // 360, "+" for front cameras / "-" for back (Google's own ML Kit
+      // camera sample). With this kiosk pinned at deviceRotationDegrees=0,
+      // BOTH reduce to just sensorOrientation directly - front and back
+      // alike. A previous version of this formula instead complemented the
+      // front-camera case to (360 - sensorOrientation) % 360, which happened
+      // to be numerically invisible on BlueStacks (sensorOrientation=0,
+      // where the complement is also 0) but is 180 DEGREES WRONG on a real
+      // phone (sensorOrientation=270 measured on a OnePlus Nord -> the old
+      // formula produced 90 instead of 270) - upside-down/mirror-flipped
+      // faces reaching both ML Kit (unreliable detection) and our own
+      // nv21ToImage crop (catastrophic liveness scores, ~0.13 vs the 0.45
+      // threshold, on the rare frame that still detected). Never caught
+      // until this, the first time this code ran on hardware with a
+      // genuinely nonzero sensorOrientation.
+      _rotationDegrees = front.sensorOrientation % 360;
       _mlkitRotation =
           InputImageRotationValue.fromRawValue(_rotationDegrees) ?? InputImageRotation.rotation0deg;
       _mirrorFrame = front.lensDirection == CameraLensDirection.front;
@@ -202,7 +270,11 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
       setState(() => _controller = controller);
       _tick = 0;
       _skipped = 0;
-      _scheduleNextPoll();
+      // Does NOT start polling here - see _ready/_startScanning and the
+      // class-level comment. If this is a reinit after the person already
+      // tapped "Start Scan" once (_ready already true), resume scanning
+      // immediately rather than making them tap it again.
+      if (_ready) _scheduleNextPoll(Duration.zero);
     } catch (e, st) {
       debugPrint('Camera init failed: $e\n$st');
       trace.log('CAMERA', 'gen$gen init FAILED: $e');
@@ -223,6 +295,7 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
   Future<void> _reinitCamera() async {
     ScanTrace.instance.log('CAMERA', 'reinit requested, disposing gen$_cameraGeneration');
     _returnTimer?.cancel();
+    _failedAttempts = 0;
     final old = _controller;
     _controller = null;
     _latestFrame = null;
@@ -259,19 +332,29 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
   // Arms a ONE-SHOT timer for the next poll, then re-arms itself only after
   // that poll's _autoCapture() has fully finished (success, failure, or
   // silent retry - `finally` covers all of them). This is what stops the
-  // pipeline being asked for a fresh photo once a second regardless of
-  // whether the previous photo is still being processed; the old
-  // Timer.periodic did exactly that; see the class-level comment above.
-  void _scheduleNextPoll() {
-    if (!mounted || _stage != _Stage.camera) return;
+  // pipeline being asked for a fresh photo regardless of whether the
+  // previous one is still being processed; the old Timer.periodic did
+  // exactly that; see the class-level comment above. [delay] defaults to
+  // _pollInterval - only _initCamera's very first call after a fresh
+  // camera session passes Duration.zero instead, every re-arm from within
+  // this method's own `finally` uses the default.
+  void _scheduleNextPoll([Duration? delay]) {
+    if (!mounted || !_ready || _stage != _Stage.camera) return;
     _pollTimer?.cancel();
-    _pollTimer = Timer(_pollInterval, () async {
+    _pollTimer = Timer(delay ?? _pollInterval, () async {
       try {
         await _autoCapture();
       } finally {
         _scheduleNextPoll();
       }
     });
+  }
+
+  // "Start Scan" tap - see _ready and the class-level comment.
+  void _startScanning() {
+    setState(() { _ready = true; _message = 'Position your face in the circle'; });
+    _failedAttempts = 0;
+    _scheduleNextPoll(Duration.zero);
   }
 
   Future<void> _autoCapture() async {
@@ -386,56 +469,44 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
       trace.log('LIVENESS', 'score=${liveness?.toStringAsFixed(3)} '
           'threshold=${FaceRecognitionService.kLivenessRealThreshold}');
       if (liveness == null || liveness < FaceRecognitionService.kLivenessRealThreshold) {
-        _showError('Liveness verification failed. Please try again.', offerCode: true);
+        _handleScanFailure('Liveness verification failed.', offerCode: true);
         return;
       }
 
       final liveEmbedding = await svc.getEmbedding(decoded, face);
       if (liveEmbedding == null) {
-        _showError('Could not read your face clearly. Please try again.', offerCode: false);
+        _handleScanFailure('Could not read your face clearly.', offerCode: false);
         return;
       }
 
-      final enrolled = await SupabaseService.fetchAllFaceEmbeddings().timeout(
-        const Duration(seconds: 10),
-        onTimeout: () => throw TimeoutException('fetchAllFaceEmbeddings timed out'),
+      // Server-side match (see SUPABASE_FACE_MATCH_RPC.sql /
+      // SupabaseService.matchFaceEmbedding) - sends just this one live
+      // embedding; Postgres compares it against every enrolled person's
+      // references itself and returns only the result, not their raw data.
+      final matchResult = await SupabaseService.matchFaceEmbedding(liveEmbedding).timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => throw TimeoutException('matchFaceEmbedding timed out'),
       );
-      if (enrolled.isEmpty) {
+      final enrolledCount = matchResult['enrolledCount'] as int;
+      if (enrolledCount == 0) {
         _showError('No staff have set up Face Punch yet. Ask admin.', offerCode: false);
         return;
       }
 
-      double bestSim = -1, secondSim = -1;
-      String? bestId, bestName;
-      for (final row in enrolled) {
-        final refs = (row['embeddings'] as List).cast<List<double>>();
-        // Best of that person's several reference shots, not one blended
-        // average - a live photo only has to be close to ONE of their
-        // enrolled angles/lighting conditions to match.
-        var sim = -1.0;
-        for (final ref in refs) {
-          final s = svc.cosineSimilarity(liveEmbedding, ref);
-          if (s > sim) sim = s;
-        }
-        if (sim > bestSim) {
-          secondSim = bestSim;
-          bestSim = sim;
-          bestId = row['id'] as String;
-          bestName = row['name'] as String?;
-        } else if (sim > secondSim) {
-          secondSim = sim;
-        }
-      }
+      final bestId = matchResult['id'] as String?;
+      final bestName = matchResult['name'] as String?;
+      final bestSim = matchResult['bestSimilarity'] as double;
+      final secondSim = matchResult['secondSimilarity'] as double;
 
       final matched = bestId != null &&
           bestSim >= FaceRecognitionService.kMatchThreshold &&
           (bestSim - secondSim) >= _matchMargin;
-      trace.log('MATCH', 'enrolled=${enrolled.length} best=${bestSim.toStringAsFixed(3)} '
+      trace.log('MATCH', 'enrolled=$enrolledCount best=${bestSim.toStringAsFixed(3)} '
           'second=${secondSim.toStringAsFixed(3)} matched=$matched '
           'attempt=${attempt.elapsedMilliseconds}ms');
 
       if (!matched) {
-        _showError('Face not recognized. Please try again or contact admin.', offerCode: true);
+        _handleScanFailure('Face not recognized.', offerCode: true);
         return;
       }
 
@@ -445,9 +516,18 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
       await controller.pausePreview();
       if (!mounted) return;
 
-      final confirmed = await NativeUiService.confirmPunch(bestName ?? 'Staff');
+      final confirmResult = await NativeUiService.confirmPunch(bestName ?? 'Staff');
       if (!mounted) return;
-      if (!confirmed) {
+      if (confirmResult == PunchConfirmResult.cancelled) {
+        // Awaited: the preview was paused above for the confirm dialog and
+        // is never implicitly resumed by GetX's route pop - see the "Not
+        // Me" branch below for why resumePreview matters even though this
+        // path closes the screen right after.
+        await controller.resumePreview();
+        if (mounted) Get.back();
+        return;
+      }
+      if (confirmResult == PunchConfirmResult.notMe) {
         // Awaited: the preview was paused above for the confirm dialog and
         // is never implicitly resumed by GetX's route pop, so without this
         // await+resume the camera comes back from Enter Code frozen on its
@@ -495,6 +575,26 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
     await _reinitCamera();
   }
 
+  // A CONCLUSIVE scan failure (liveness, unreadable embedding, or no
+  // match - never the silent no-face/blink/blur/exposure retries, which
+  // don't call this at all). The first _maxAttempts-1 are absorbed with a
+  // brief warning, staying on the camera stage so scanning just keeps
+  // going - see the class-level comment. Only the last one escalates to
+  // the full error screen via _showError.
+  void _handleScanFailure(String message, {required bool offerCode}) {
+    _failedAttempts++;
+    if (_failedAttempts < _maxAttempts) {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _stage = _Stage.camera;
+        _message = '$message (attempt $_failedAttempts of $_maxAttempts)';
+      });
+      return; // _scheduleNextPoll's own `finally` keeps polling going
+    }
+    _showError(message, offerCode: offerCode);
+  }
+
   void _showError(String message, {required bool offerCode}) {
     if (!mounted) return;
     setState(() { _busy = false; _stage = _Stage.error; _message = message; _offerCode = offerCode; });
@@ -515,9 +615,10 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
     backgroundColor: AppColors.navyDark,
     body: SafeArea(
       child: Stack(children: [
-        Positioned.fill(child: _stage == _Stage.error ? _buildError() : _buildScanning()),
-        // Debug builds only - ScanDebugHud renders nothing in release.
-        const ScanDebugHud(),
+        _stage == _Stage.error ? _buildError() : _buildScanning(),
+        // Centered modal over the live preview, not part of the normal
+        // scrolling layout - see _buildReadyPopup's own comment.
+        if (_stage != _Stage.error && !_ready) _buildReadyPopup(),
       ]),
     ),
   );
@@ -575,11 +676,61 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
       const SizedBox(height: 20),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32),
-        child: Text(_message, textAlign: TextAlign.center, style: TextStyle(
+        child: Text(_ready ? _message : '', textAlign: TextAlign.center, style: TextStyle(
           color: verifying ? AppColors.orange : AppColors.amber, fontSize: 14, fontFamily: 'Poppins')),
       ),
       const SizedBox(height: 40),
     ]);
+  }
+
+  // Centered modal prompt over the live preview, shown until the person
+  // taps Start Scan - see _ready and the class-level comment on why
+  // scanning doesn't just start the instant this screen opens. A popup
+  // (dark scrim + centered card) rather than inline text/button below the
+  // preview, so it reads as a clear "waiting for you" prompt instead of
+  // blending into the rest of the screen.
+  Widget _buildReadyPopup() {
+    final controller = _controller;
+    final canStart = controller != null && controller.value.isInitialized;
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withValues(alpha: .6),
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 40),
+            padding: const EdgeInsets.fromLTRB(28, 28, 28, 24),
+            decoration: BoxDecoration(
+              color: AppColors.navy,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white12),
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.face_retouching_natural_rounded, color: AppColors.amber, size: 40),
+              const SizedBox(height: 12),
+              const Text('Ready to scan?', style: TextStyle(
+                color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800, fontFamily: 'Poppins')),
+              const SizedBox(height: 8),
+              const Text('Line up in the circle, then tap Start Scan',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white60, fontSize: 13, fontFamily: 'Poppins')),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: canStart ? _startScanning : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.amber, foregroundColor: AppColors.navyDark,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  ),
+                  child: const Text('Start Scan', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                ),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildError() => Stack(children: [

@@ -158,7 +158,16 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Align(
           alignment: Alignment.topLeft,
-          child: IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white70), onPressed: () => Get.back()),
+          child: IconButton(
+            icon: const Icon(Icons.close_rounded, color: Colors.white70),
+            // Straight to kiosk home, not Get.back() - this screen is only
+            // ever reached from face_punch_page.dart's face-scan pipeline
+            // (still on the stack underneath, never popped to get here), so
+            // a plain back() would land back on that screen and resume
+            // scanning. Someone closing out of code entry meant to abandon
+            // the whole punch attempt, not go rescan their face.
+            onPressed: () => Get.until((r) => r.settings.name == Routes.kioskHome),
+          ),
         ),
         const Icon(Icons.password_rounded, color: AppColors.amber, size: 48),
         const SizedBox(height: 16),
@@ -173,10 +182,24 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
           autofocus: true,
           textAlign: TextAlign.center,
           keyboardType: TextInputType.number,
+          // Defensive, not the actual fix (see `filled: false` below for
+          // that) - just opts this numeric PIN-style field out of
+          // autofill/suggestion inference on general principle.
+          autofillHints: const [],
+          enableSuggestions: false,
+          autocorrect: false,
           inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
           style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: 12),
           decoration: const InputDecoration(
             counterText: '',
+            // The app's global ThemeData.inputDecorationTheme (app_theme.dart)
+            // sets filled: true / fillColor: AppColors.card (solid white) for
+            // every TextField by default - fine for the rest of the app's
+            // light-themed forms, but never overridden here, so this field on
+            // a dark kiosk screen was silently getting a solid white box with
+            // white text inside it: invisible while typing, not just a
+            // styling mismatch. filled: false opts this one field out.
+            filled: false,
             enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: Colors.white24)),
             focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: AppColors.amber)),
           ),

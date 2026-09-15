@@ -7,12 +7,21 @@ import 'package:flutter/services.dart';
 // on every test device/SDK version tried. A native AlertDialog/Toast is
 // composited entirely outside Flutter's engine, sidestepping whatever
 // Flutter-side state the ML pipeline was corrupting.
+// Punch In (record the match), Not Me (wrong match - fall back to
+// enter_punch_code_page.dart), or Cancel (abort, straight back to kiosk
+// home - no code fallback offered, unlike Not Me).
+enum PunchConfirmResult { confirmed, notMe, cancelled }
+
 class NativeUiService {
   static const _channel = MethodChannel('com.satyamstars.attendance/native_ui');
 
-  static Future<bool> confirmPunch(String name) async {
-    final result = await _channel.invokeMethod<bool>('confirmPunch', {'name': name});
-    return result ?? false;
+  static Future<PunchConfirmResult> confirmPunch(String name) async {
+    final result = await _channel.invokeMethod<String>('confirmPunch', {'name': name});
+    return switch (result) {
+      'confirmed' => PunchConfirmResult.confirmed,
+      'cancelled' => PunchConfirmResult.cancelled,
+      _ => PunchConfirmResult.notMe,
+    };
   }
 
   // enter_punch_code_page.dart's confirm step - only ever reached straight

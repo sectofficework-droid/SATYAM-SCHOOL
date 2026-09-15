@@ -1,0 +1,9 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Student app has no camera-using feature (QR scan is teacher-only,
+         face-scan is the attendance-kiosk flavor) - drop the permission
+         main/AndroidManifest.xml declares for those, so the student app
+         doesn't request a permission it never uses. -->
+    <uses-permission android:name="android.permission.CAMERA" tools:node="remove"/>
+    <uses-feature android:name="android.hardware.camera" tools:node="remove"/>
+</manifest>

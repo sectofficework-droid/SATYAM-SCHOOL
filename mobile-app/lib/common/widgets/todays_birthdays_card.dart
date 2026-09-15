@@ -102,7 +102,7 @@ class _TodaysBirthdaysCardState extends State<TodaysBirthdaysCard> {
             ])
           else
             SizedBox(
-              height: 82,
+              height: 90,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: people.length,
