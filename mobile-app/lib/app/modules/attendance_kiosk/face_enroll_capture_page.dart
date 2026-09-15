@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/face_recognition_service.dart';
 import '../../../core/services/supabase_service.dart';
@@ -15,17 +16,26 @@ enum _Stage { camera, saving, success, error }
 // one blended average - see saveFaceEmbedding) so a punch only has to be
 // close to ONE of them, not a compromise of all of them. Admin answers the
 // spectacles question and taps "I'm Ready" to start; after that it's
-// hands-off - a timer polls takePicture() every ~1s (same still-photo
-// pipeline the punch screen uses) and auto-accepts the first attempt per
-// prompt that clears face-detected + eyes-open + quality gate (blur/
-// exposure, see isTooBlurry/isExposureUnusable) and, for prompts that are
-// supposed to be a genuinely new head angle, a pose-diverse-enough check
-// too (see _isDiverseEnough / _EnrollPrompt.poseDiverse) - someone who
-// doesn't actually move for the "turn left" prompt just keeps getting told
-// to change their angle instead of silently recording two near-identical
-// shots. Re-running this (e.g. staff grew a beard, lighting keeps failing
-// them) just overwrites the old embeddings - saveFaceEmbedding is a plain
-// update, not append.
+// hands-off - a self-rescheduling poll reads the MOST RECENT frame off a
+// continuously running CameraController.startImageStream() (same mechanism
+// as face_punch_page.dart's kiosk polling - see that file's class comment
+// for why: CameraController.takePicture() itself was measured taking
+// 4-7 seconds per call on this app's camera, which is what made this
+// screen's camera look like it kept freezing/restarting between shots,
+// SESSION-2026-09-13-*) and auto-accepts the first attempt per prompt that
+// clears face-detected + eyes-open + quality gate (blur/exposure, see
+// isTooBlurry/isExposureUnusable) and, for prompts that are supposed to be
+// a genuinely new head angle, a pose-diverse-enough check too (see
+// _isDiverseEnough / _EnrollPrompt.poseDiverse) - someone who doesn't
+// actually move for the "turn left" prompt just keeps getting told to
+// change their angle instead of silently recording two near-identical
+// shots. The camera itself never stops or reinitializes between shots -
+// the person can freely rotate through every prompted angle in front of a
+// single continuous live preview, exactly like looking in a mirror, while
+// this polls in the background for a stable, diverse-enough, in-focus
+// frame to bank. Re-running this (e.g. staff grew a beard, lighting keeps
+// failing them) just overwrites the old embeddings - saveFaceEmbedding is
+// a plain update, not append.
 class FaceEnrollCapturePage extends StatefulWidget {
   const FaceEnrollCapturePage({super.key});
   @override
@@ -112,9 +122,9 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
   static const _minSizeRatioDelta = 0.12;
 
   // A shot only gets accepted once two consecutive polls (~1s apart) land
-  // on nearly the same pose - one still frame mid-head-turn is blurry and
-  // makes for a worse reference embedding than waiting a second for
-  // someone to actually settle into the pose the prompt asked for.
+  // on nearly the same pose - one frame mid-head-turn is blurry and makes
+  // for a worse reference embedding than waiting a second for someone to
+  // actually settle into the pose the prompt asked for.
   static const _stabilityAngleDeg = 2.5;
   static const _stabilitySizeRatioDelta = 0.04;
 
@@ -131,6 +141,19 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
   final List<_ShotPose> _poses = [];
   _ShotPose? _lastSeenPose;
   bool _busy = false;
+
+  // Updated on every frame the live stream delivers; read by _autoCapture
+  // at most once a second. See face_punch_page.dart's matching field for
+  // why this replaced takePicture().
+  CameraImage? _latestFrame;
+
+  // Computed once per camera init - see face_punch_page.dart's matching
+  // fields/comment for the rotation formula and why front-camera frames
+  // need mirroring for both ML Kit and our own nv21ToImage conversion to
+  // agree on the same coordinate space.
+  int _rotationDegrees = 0;
+  InputImageRotation _mlkitRotation = InputImageRotation.rotation0deg;
+  bool _mirrorFrame = false;
 
   @override
   void initState() {
@@ -153,7 +176,15 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
         (c) => c.lensDirection == CameraLensDirection.front,
         orElse: () => cameras.first,
       );
-      final controller = CameraController(front, ResolutionPreset.medium, enableAudio: false);
+      // ImageFormatGroup.nv21 (Android): camera_android_camerax converts
+      // each stream frame to a single, already-destrided NV21 buffer for us
+      // (see FaceRecognitionService.nv21ToImage's doc comment) - the same
+      // format ML Kit's InputImage.fromBytes expects on Android, so this
+      // one setting serves both this page's own conversion AND detection.
+      final controller = CameraController(
+        front, ResolutionPreset.medium, enableAudio: false,
+        imageFormatGroup: ImageFormatGroup.nv21,
+      );
       await controller.initialize();
       if (!mounted) return;
 
@@ -163,6 +194,22 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       // the front camera has no flash hardware to begin with - but it is
       // not what fixes the latency.
       await controller.setFlashMode(FlashMode.off);
+
+      // See face_punch_page.dart's matching comment for the full derivation
+      // and the real-device bug this fixes: with the device pinned at
+      // deviceRotationDegrees=0 (this screen is likewise used in a fixed
+      // portrait orientation), the value ML Kit/nv21ToImage need is just
+      // sensorOrientation directly, for front and back cameras alike - NOT
+      // its (360 - sensorOrientation) complement, which is 180 degrees wrong
+      // whenever sensorOrientation isn't 0 (invisible on BlueStacks, which
+      // reports 0; wrong on real hardware).
+      _rotationDegrees = front.sensorOrientation % 360;
+      _mlkitRotation =
+          InputImageRotationValue.fromRawValue(_rotationDegrees) ?? InputImageRotation.rotation0deg;
+      _mirrorFrame = front.lensDirection == CameraLensDirection.front;
+
+      _latestFrame = null;
+      await controller.startImageStream((image) => _latestFrame = image);
 
       setState(() => _controller = controller);
     } catch (e, st) {
@@ -177,7 +224,7 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
     _prompts = _allPrompts.where((p) => !p.requiresGlasses || wearsGlasses).toList();
     _totalShots = _prompts.length;
     setState(() { _ready = true; _message = 'Hold still...'; });
-    _pollTimer = Timer.periodic(_pollInterval, (_) => _autoCapture());
+    _scheduleNextPoll();
   }
 
   // Live count shown on the pre-ready screen, reacting to the spectacles
@@ -203,8 +250,32 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
   @override
   void dispose() {
     _pollTimer?.cancel();
-    _controller?.dispose();
+    final controller = _controller;
+    if (controller != null && controller.value.isStreamingImages) {
+      // Best-effort - dispose() below tears this down regardless, but
+      // stopping explicitly first avoids a stream callback landing on a
+      // controller mid-dispose (see face_punch_page.dart's _reinitCamera).
+      controller.stopImageStream().catchError((e) => debugPrint('Stopping image stream failed (ignoring): $e'));
+    }
+    controller?.dispose();
     super.dispose();
+  }
+
+  // Arms a ONE-SHOT timer for the next poll, then re-arms itself only after
+  // that poll's _autoCapture() has fully finished - see
+  // face_punch_page.dart's matching method for why this (not
+  // Timer.periodic) is what keeps the camera from ever looking like it's
+  // "catching up" on a backlog of fires.
+  void _scheduleNextPoll() {
+    if (!mounted || _stage != _Stage.camera) return;
+    _pollTimer?.cancel();
+    _pollTimer = Timer(_pollInterval, () async {
+      try {
+        await _autoCapture();
+      } finally {
+        _scheduleNextPoll();
+      }
+    });
   }
 
   bool _isDiverseEnough(_ShotPose pose) {
@@ -224,18 +295,29 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
   Future<void> _autoCapture() async {
     final controller = _controller;
     if (controller == null || !controller.value.isInitialized || _employeeId.isEmpty || _busy || !_ready || _stage != _Stage.camera) return;
-    _busy = true;
 
+    // The stream delivers frames continuously from the moment
+    // startImageStream() is called in _initCamera, so _latestFrame is only
+    // null for a brief window right at startup before the first one has
+    // arrived - not a failure, just too early.
+    final frame = _latestFrame;
+    if (frame == null || frame.planes.isEmpty) return;
+
+    _busy = true;
     try {
-      final photo = await controller.takePicture();
       final svc = FaceRecognitionService.instance;
 
-      // Decoded ONCE and reused by detection/exposure/blur/embedding below,
-      // instead of each stage independently re-decoding the same photo -
-      // see FaceRecognitionService.decodeOriented's doc comment.
-      final decoded = await svc.decodeOriented(photo.path);
+      final inputImage = InputImage.fromBytes(
+        bytes: frame.planes.first.bytes,
+        metadata: InputImageMetadata(
+          size: Size(frame.width.toDouble(), frame.height.toDouble()),
+          rotation: _mlkitRotation,
+          format: InputImageFormat.nv21,
+          bytesPerRow: frame.planes.first.bytesPerRow,
+        ),
+      );
 
-      final face = await svc.detectSingleFace(photo.path, decoded);
+      final face = await svc.detectFaceFromInputImage(inputImage);
       if (!mounted) return;
       if (face == null) {
         setState(() { _busy = false; _message = 'Position your face in the circle'; });
@@ -245,6 +327,17 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
         setState(() { _busy = false; _message = 'Keep your eyes open'; });
         return;
       }
+
+      // A face is genuinely present - NOW pay for the NV21->RGB conversion,
+      // reused by every stage below same as the old JPEG path's single
+      // decodeOriented() call.
+      final decoded = svc.nv21ToImage(
+        nv21: frame.planes.first.bytes,
+        width: frame.width,
+        height: frame.height,
+        rotationDegrees: _rotationDegrees,
+        mirror: _mirrorFrame,
+      );
 
       // Quality gate - reject rather than silently bank a frame that's too
       // dark/bright/blurry to make a good reference embedding from (spec:
@@ -295,7 +388,7 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       if (!mounted) return;
 
       if (_embeddings.length < _totalShots) {
-        // Stays busy through the pause - otherwise the next periodic tick
+        // Stays busy through the pause - otherwise the next scheduled poll
         // could fire mid-delay and race this one into taking two photos
         // for what's supposed to be one shot.
         setState(() => _message = 'Hold still...');

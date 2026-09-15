@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/mark-staff-absent",
-      "schedule": "*/30 3-9 * * *"
+      "schedule": "0 9 * * *"
     }
   ]
 }

@@ -53,11 +53,15 @@ class MainActivity : FlutterActivity() {
                             .setCancelable(false)
                             .setPositiveButton("Yes, Punch In") { dialog, _ ->
                                 dialog.dismiss()
-                                result.success(true)
+                                result.success("confirmed")
                             }
                             .setNegativeButton("Not Me · Enter Code") { dialog, _ ->
                                 dialog.dismiss()
-                                result.success(false)
+                                result.success("notMe")
+                            }
+                            .setNeutralButton("Cancel") { dialog, _ ->
+                                dialog.dismiss()
+                                result.success("cancelled")
                             }
                             .show()
                     }

@@ -204,9 +204,36 @@ class SupabaseService {
     }).eq('id', employeeId);
   }
 
-  // Every enrolled staff member's reference embeddings, for the kiosk's
-  // 1-to-many "whose face is this" match - inactive staff are excluded so a
-  // former employee's old enrollment can't still clock someone in.
+  // Server-side 1-to-many match (see SUPABASE_FACE_MATCH_RPC.sql) - the
+  // kiosk's actual per-punch match path. Sends just this one live 192-float
+  // embedding and gets back a name + two similarity scores; Postgres does
+  // the comparison against every enrolled person's references itself
+  // instead of the phone downloading all of them first (which is still
+  // what fetchAllFaceEmbeddings below does, for the two callers - the
+  // enrollment duplicate-check and the admin enrollment picker - where that
+  // was never the bottleneck). Was measured taking 6-11+ seconds on real
+  // kiosk network conditions, sometimes timing out outright, before this
+  // existed (SESSION-2026-09-15).
+  static Future<Map<String, dynamic>> matchFaceEmbedding(List<double> liveEmbedding) async {
+    final res = await client.rpc('match_face_embedding', params: {
+      'p_embedding': liveEmbedding,
+    }) as List;
+    final row = res.first as Map;
+    return {
+      'id': row['o_employee_id'] as String?,
+      'name': row['o_employee_name'] as String?,
+      'bestSimilarity': (row['o_best_similarity'] as num?)?.toDouble() ?? -1.0,
+      'secondSimilarity': (row['o_second_similarity'] as num?)?.toDouble() ?? -1.0,
+      'enrolledCount': (row['o_enrolled_count'] as num?)?.toInt() ?? 0,
+    };
+  }
+
+  // Every enrolled staff member's reference embeddings - used by the
+  // enrollment screen's own duplicate-face check and the admin enrollment
+  // picker (both lower-volume, less time-pressured than the kiosk's
+  // per-punch match above, which uses matchFaceEmbedding instead).
+  // Inactive staff are excluded so a former employee's old enrollment can't
+  // still clock someone in.
   static Future<List<Map<String, dynamic>>> fetchAllFaceEmbeddings() async {
     final res = await client
         .from('employees')

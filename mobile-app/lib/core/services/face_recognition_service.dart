@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' show Rect;
 
@@ -17,32 +16,26 @@ import '../utils/scan_trace.dart';
 // of this — detection, embedding, matching — runs offline; nothing is sent
 // to a server to identify who this is.
 //
-// Two capture paths feed this service, each suited to a different caller:
+// Both face_punch_page's ~1s kiosk polling and face_enroll_capture_page's
+// 25-shot enrollment sequence feed this from the SAME source: the most
+// recent frame off a continuously running CameraController.startImageStream()
+// (NV21, converted by nv21ToImage() below). This replaced an original
+// still-photo design (CameraController.takePicture() per attempt) after
+// takePicture() itself was measured taking 4-7 seconds per call on this
+// app's camera (confirmed on both BlueStacks and the real kiosk tablet, and
+// unaffected by flash mode, 3A lock, or swapping the native Android camera
+// engine - see SESSION-2026-09-13-1 through -6 for the full history, first
+// on face_punch_page, later carried over to face_enroll_capture_page too).
+// A live preview frame is exactly what a still capture is NOT: already
+// flowing continuously at the camera's native frame rate with no "capture a
+// high-quality photo" round trip to wait on - which is also what makes the
+// camera itself never need to stop/reinitialize between shots.
 //
-//  - Still-photo (CameraController.takePicture(), then decodeOriented()
-//    below decoding the resulting JPEG) - used by face_enroll_capture_page
-//    for its deliberate 25-shot enrollment sequence. ML Kit + the `image`
-//    package both handle JPEG EXIF orientation for you, which is why this
-//    was the ONLY path originally (see SESSION-2026-09-09 through
-//    2026-09-13-1 for the history) - a manual YUV420->RGB conversion and
-//    sensor-rotation calc is easy to get subtly wrong and was judged not
-//    worth the risk for a screen with no repeated-latency pressure.
-//  - Live camera stream (CameraController.startImageStream(), NV21 frames
-//    converted by nv21ToImage() below) - used by face_punch_page's
-//    automatic ~1s kiosk polling. Added in SESSION-2026-09-13-5 after
-//    takePicture() itself was measured taking 4-7 seconds per call on this
-//    app's camera (confirmed on both BlueStacks and the real kiosk tablet,
-//    and unaffected by flash mode, 3A lock, or swapping the native Android
-//    camera engine - see that session for what was ruled out first). A
-//    live preview frame is exactly what a still capture is NOT: already
-//    flowing continuously at the camera's native frame rate with no
-//    "capture a high-quality photo" round trip to wait on.
-//
-// One frame/photo is decoded ONCE per attempt and the resulting img.Image
-// is threaded through every stage below - detection, exposure/blur gating,
-// liveness, embedding. The still-photo path used to decode the same JPEG
-// five separate times per ~1s poll, all synchronous Dart work on the main
-// isolate; that was long enough to stall Flutter's own frame painting,
+// One frame is decoded ONCE per attempt and the resulting img.Image is
+// threaded through every stage below - detection, exposure/blur gating,
+// liveness, embedding. The old still-photo path used to decode the same
+// JPEG five separate times per ~1s poll, all synchronous Dart work on the
+// main isolate; that was long enough to stall Flutter's own frame painting,
 // which is what made the camera preview look "frozen" during a scan even
 // though the native camera session was fine (SESSION-2026-09-13-1/2).
 class FaceRecognitionService {
@@ -51,10 +44,23 @@ class FaceRecognitionService {
 
   // Cosine similarity a live punch embedding must clear against the stored
   // enrollment embedding to be accepted as a match. Was 0.75 (conservative
-  // guess); lowered to 0.6 after real-device testing showed legitimate
-  // staff getting false-rejected too often. Retune further if false
-  // accepts (wrong person matched) start showing up instead.
-  static const double kMatchThreshold = 0.6;
+  // guess), lowered to 0.6 after real-device testing showed legitimate
+  // staff getting false-rejected too often - then raised here to 0.72
+  // after 0.6 turned out to let OTHER people match as the one enrolled
+  // staff member (SESSION-2026-09-15, real-device testing with a single
+  // enrollee): the correct person's own live score swung as wide as
+  // 0.26-0.77 across consecutive frames of the same short attempt, so 0.6
+  // sat squarely inside that spread - exactly where both a marginal
+  // legitimate frame AND a false accept are most likely to land. 0.72
+  // still clears every legitimate match actually observed that session
+  // (best was 0.77) while cutting off the 0.5-0.6 band. This does trade
+  // away some convenience - expect more retries for genuine staff until
+  // enrollment quality/lighting variance is separately improved - and
+  // still isn't independently verified against real impostor attempts
+  // (no second enrolled staff member existed to test against). Retune
+  // upward again if false accepts persist, downward if legitimate staff
+  // start getting rejected too often.
+  static const double kMatchThreshold = 0.72;
 
   static const int _inputSize = 112; // MobileFaceNet's expected crop size
   static const double _eyeOpenThreshold   = 0.4;
@@ -103,56 +109,13 @@ class FaceRecognitionService {
   // builds (where ScanTrace.step is a straight pass-through) run exactly the
   // code they ran before this instrumentation was added.
 
-  // Counts decodes within one scan attempt. face_punch_page resets this at
-  // the top of each poll, so the log line reads "decode #1 .. #5" per
-  // attempt - making it obvious at a glance that the same JPEG is being
-  // decoded from scratch by five separate stages.
-  int decodesThisAttempt = 0;
-
-  void resetDecodeCounter() => decodesThisAttempt = 0;
-
-  // Single funnel for "read the JPEG off disk and decode it", so the cost
-  // and the repetition are both measurable. Behaviourally identical to the
-  // inline readAsBytes/decodeImage pairs it replaced.
-  Future<img.Image?> _decode(String imagePath, String caller) async {
-    final sw = Stopwatch()..start();
-    final bytes = await File(imagePath).readAsBytes();
-    final readMs = sw.elapsedMilliseconds;
-    final image = img.decodeImage(bytes);
-    decodesThisAttempt++;
-    ScanTrace.instance.log('DECODE',
-        '#$decodesThisAttempt $caller ${bytes.length ~/ 1024}KB '
-        'read ${readMs}ms decode ${sw.elapsedMilliseconds - readMs}ms '
-        '-> ${image == null ? 'FAILED' : '${image.width}x${image.height}'}');
-    return image;
-  }
-
-  // Decodes+orients [imagePath] ONCE, for the caller to reuse across every
-  // stage of one scan attempt. Was previously implicit: detectSingleFace,
-  // isExposureUnusable, isTooBlurry, livenessScore and getEmbedding each
-  // did their own independent readAsBytes+decodeImage of the *same* JPEG -
-  // five full decodes per ~1s poll, all on the main isolate, which is what
-  // made the camera preview look frozen (Flutter can't paint while that
-  // runs) even though the native camera session was fine. Call this once
-  // per attempt and pass the result into every stage below instead.
-  //
-  // Null means the file couldn't be decoded - callers below each keep
-  // their original fail-safe behaviour for that case (a hard reject, not a
-  // free pass), matching what happened when their own inline decode used
-  // to fail.
-  Future<img.Image?> decodeOriented(String imagePath) async {
-    final image = await _decode(imagePath, 'capture');
-    if (image == null) return null;
-    return img.bakeOrientation(image);
-  }
-
   // Converts one live-preview frame (NV21, single interleaved-VU plane -
   // request this via CameraController(..., imageFormatGroup:
   // ImageFormatGroup.nv21), which on Android makes camera_android_camerax
   // hand back a clean, already-destrided NV21 buffer rather than raw
   // YUV_420_888 planes with sensor-specific row padding to account for) into
-  // an upright, RGB img.Image ready for the same exposure/blur/liveness/
-  // embedding stages the still-photo path uses.
+  // an upright, RGB img.Image ready for the exposure/blur/liveness/embedding
+  // stages below.
   //
   // [rotationDegrees] must be the SAME rotation passed to ML Kit's
   // InputImageMetadata for this frame (see face_punch_page.dart's
@@ -199,14 +162,15 @@ class FaceRecognitionService {
     return oriented;
   }
 
-  // Stream-frame counterpart to detectSingleFace: runs ML Kit directly on
-  // an already-built InputImage (from InputImage.fromBytes - see
-  // face_punch_page.dart) rather than reading+decoding a file. No
-  // exposure-corrected-copy step here (that trick writes a temporary JPEG
-  // for ML Kit to re-read, which only makes sense for the file-based path)
-  // - a live stream frame already reflects the camera's continuously
-  // running auto-exposure, and isExposureUnusable below remains as the
-  // independent safety net for a genuinely bad frame either way.
+  // Runs ML Kit directly on an already-built InputImage (from
+  // InputImage.fromBytes - see face_punch_page.dart/
+  // face_enroll_capture_page.dart) rather than reading+decoding a file. A
+  // live stream frame already reflects the camera's continuously running
+  // auto-exposure, and isExposureUnusable below remains as the independent
+  // safety net for a genuinely bad frame either way. "Largest" detected
+  // face wins when more than one is found, so a bystander in the
+  // background can't accidentally get picked over the person actually
+  // using the kiosk.
   Future<Face?> detectFaceFromInputImage(InputImage input) =>
       ScanTrace.instance.step('detectFaceFromInputImage', () => _detectFaceFromInputImage(input));
 
@@ -219,9 +183,6 @@ class FaceRecognitionService {
         (b.boundingBox.width * b.boundingBox.height).compareTo(a.boundingBox.width * a.boundingBox.height));
     return faces.first;
   }
-
-  Future<Face?> detectSingleFace(String imagePath, img.Image? decoded) =>
-      ScanTrace.instance.step('detectSingleFace', () => _detectSingleFace(imagePath, decoded));
 
   Future<bool> isExposureUnusable(img.Image? decoded) =>
       ScanTrace.instance.step('isExposureUnusable', () => _isExposureUnusable(decoded));
@@ -245,77 +206,6 @@ class FaceRecognitionService {
     ScanTrace.instance.log('PRELOAD', 'models + detector ready in ${sw.elapsedMilliseconds}ms');
   }
 
-  // Returns the largest detected face in the photo at [imagePath], or null
-  // if no face was found. "Largest" so a bystander in the background of a
-  // punch selfie can't accidentally get picked over the person actually
-  // taking it. [decoded] is the same decodeOriented() result every other
-  // stage of this attempt uses - only needed here to decide whether an
-  // exposure-corrected copy should be handed to ML Kit instead of the
-  // original file; null (decode failed) just skips that correction and
-  // lets ML Kit try the original file directly, same as before this
-  // shared-decode refactor when _exposureCorrectedCopy's own decode failed.
-  //
-  // Detection runs on an exposure-corrected copy when the shot is badly
-  // over/underexposed (see _exposureCorrectedCopy) - a washed-out
-  // highlight or a near-black frame both erase the contrast a detector
-  // needs to find facial contours at all, regardless of how good the
-  // detector otherwise is. The correction only changes pixel brightness,
-  // never geometry, so the returned Face's boundingBox is still valid
-  // pixel coordinates against the original file for getEmbedding to crop.
-  Future<Face?> _detectSingleFace(String imagePath, img.Image? decoded) async {
-    final correctedPath = decoded == null ? null : await _exposureCorrectedCopy(imagePath, decoded);
-    try {
-      final input = InputImage.fromFilePath(correctedPath ?? imagePath);
-      final sw = Stopwatch()..start();
-      final faces = await _faceDetector.processImage(input);
-      ScanTrace.instance.log('MLKIT',
-          'processImage ${sw.elapsedMilliseconds}ms -> ${faces.length} face(s)'
-          '${correctedPath != null ? ' (on exposure-corrected copy)' : ''}');
-      if (faces.isEmpty) return null;
-      faces.sort((a, b) =>
-          (b.boundingBox.width * b.boundingBox.height).compareTo(a.boundingBox.width * a.boundingBox.height));
-      return faces.first;
-    } finally {
-      if (correctedPath != null) {
-        try { await File(correctedPath).delete(); } catch (_) {}
-      }
-    }
-  }
-
-  // Null (use the original photo as-is) unless the shot is bright/dark
-  // enough that a detector would plausibly struggle with it, in which case
-  // returns the path to a gamma-corrected copy. [image] is the caller's
-  // already-decoded+oriented frame (see decodeOriented) - this no longer
-  // decodes its own copy. Any failure here (disk full, encode error,
-  // whatever) just falls back to the original file rather than blocking
-  // detection entirely.
-  Future<String?> _exposureCorrectedCopy(String imagePath, img.Image image) async {
-    try {
-      final gamma = _exposureGammaFor(image);
-      if (gamma == null) return null;
-
-      final corrected = img.adjustColor(image, gamma: gamma);
-      final correctedPath = '$imagePath.exposure.jpg';
-      await File(correctedPath).writeAsBytes(img.encodeJpg(corrected, quality: 90));
-      return correctedPath;
-    } catch (e) {
-      debugPrint('Exposure correction skipped: $e');
-      return null;
-    }
-  }
-
-  // Gamma > 1 darkens (recovers a blown-out highlight back into a
-  // detectable range); gamma < 1 brightens (pulls a near-black frame up).
-  // Untested against real staff yet - if detection still fails at the
-  // extremes, or starts mis-firing in normal light, these thresholds/gamma
-  // values are the first thing to retune.
-  double? _exposureGammaFor(img.Image image) {
-    final meanLuminance = _averageLuminance(image);
-    if (meanLuminance > 190) return 1.8;
-    if (meanLuminance < 55) return 0.6;
-    return null;
-  }
-
   double _averageLuminance(img.Image image) {
     var sum = 0.0;
     var count = 0;
@@ -330,12 +220,11 @@ class FaceRecognitionService {
     return count == 0 ? 128 : sum / count;
   }
 
-  // Hard reject bounds, distinct from _exposureGammaFor's soft-correct
-  // range above - a near-black or near-blown-out frame has lost real detail
-  // that gamma correction can only stretch, not restore, so past these
-  // points the honest answer is "ask for another shot", not "quietly patch
-  // it up and hope the detector/recognizer copes". Untested against real
-  // staff yet; retune first if legitimate shots keep getting rejected.
+  // A near-black or near-blown-out frame has lost real detail no amount of
+  // downstream processing can restore, so past these points the honest
+  // answer is "ask for another shot", not "quietly try to cope". Untested
+  // against real staff yet; retune first if legitimate shots keep getting
+  // rejected.
   static const double kMinUsableLuminance = 20.0;
   static const double kMaxUsableLuminance = 235.0;
 
@@ -458,8 +347,8 @@ class FaceRecognitionService {
   // scales (2.7x and 4.0x of its bounding box, centered on it) - a printed
   // photo or phone/tablet screen shows different texture/moiré artifacts at
   // different crop scales than a real face does, which is what these models
-  // are actually trained to pick up on (ML Kit's detectSingleFace already
-  // answered "is there a face here", this answers "is it real").
+  // are actually trained to pick up on (ML Kit's detectFaceFromInputImage
+  // already answered "is there a face here", this answers "is it real").
   //
   // Returns the averaged real-face probability (compare against
   // kLivenessRealThreshold), or null if either crop/inference failed - kept
