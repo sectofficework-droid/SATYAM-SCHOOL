@@ -24,9 +24,13 @@ Set-Location $PSScriptRoot
 
 $adb = Get-Command adb -ErrorAction SilentlyContinue
 if (-not $adb) {
-  $fallback = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-  if (Test-Path $fallback) { $adb = $fallback } else {
-    Write-Error "adb not found on PATH or at $fallback"
+  $fallbacks = @(
+    "$env:ANDROID_HOME\platform-tools\adb.exe",
+    "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+  )
+  $found = $fallbacks | Where-Object { Test-Path $_ } | Select-Object -First 1
+  if ($found) { $adb = $found } else {
+    Write-Error "adb not found on PATH or at any of: $($fallbacks -join ', ')"
     exit 1
   }
 } else {
@@ -40,7 +44,13 @@ if (-not $devices) {
 }
 
 Write-Host "Building $Flavor ($BuildType) APK..."
-flutter build apk --flavor $Flavor "--$BuildType"
+# -t is required: --flavor only picks the Android-side product flavor
+# (package name/icon/label), NOT which Dart entry point gets compiled.
+# Without it, flutter defaults to lib/main.dart, which this codebase wires
+# to delegate to the teacher entry point - so a `student`/`attendance`
+# build would silently ship running teacher's code under the wrong app's
+# name/icon.
+flutter build apk --flavor $Flavor -t "lib/main_$Flavor.dart" "--$BuildType"
 if ($LASTEXITCODE -ne 0) { Write-Error "flutter build apk failed."; exit 1 }
 
 $apkPath = "build/app/outputs/flutter-apk/app-$Flavor-$BuildType.apk"
