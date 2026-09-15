@@ -156,6 +156,14 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       final controller = CameraController(front, ResolutionPreset.medium, enableAudio: false);
       await controller.initialize();
       if (!mounted) return;
+
+      // See the matching comment in face_punch_page.dart's _initCamera:
+      // tried as a fix for takePicture() latency, measured and DISPROVEN
+      // (SESSION-2026-09-13-4.md). Left in as a harmless default override -
+      // the front camera has no flash hardware to begin with - but it is
+      // not what fixes the latency.
+      await controller.setFlashMode(FlashMode.off);
+
       setState(() => _controller = controller);
     } catch (e, st) {
       debugPrint('Camera init failed: $e\n$st');
@@ -222,7 +230,12 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       final photo = await controller.takePicture();
       final svc = FaceRecognitionService.instance;
 
-      final face = await svc.detectSingleFace(photo.path);
+      // Decoded ONCE and reused by detection/exposure/blur/embedding below,
+      // instead of each stage independently re-decoding the same photo -
+      // see FaceRecognitionService.decodeOriented's doc comment.
+      final decoded = await svc.decodeOriented(photo.path);
+
+      final face = await svc.detectSingleFace(photo.path, decoded);
       if (!mounted) return;
       if (face == null) {
         setState(() { _busy = false; _message = 'Position your face in the circle'; });
@@ -236,11 +249,11 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       // Quality gate - reject rather than silently bank a frame that's too
       // dark/bright/blurry to make a good reference embedding from (spec:
       // enrollment must not count blurry/over/underexposed samples).
-      if (await svc.isExposureUnusable(photo.path)) {
+      if (await svc.isExposureUnusable(decoded)) {
         setState(() { _busy = false; _message = 'Lighting is too dark or too bright - please adjust'; });
         return;
       }
-      if (await svc.isTooBlurry(photo.path, face)) {
+      if (await svc.isTooBlurry(decoded, face)) {
         setState(() { _busy = false; _message = 'Image is blurry - please hold still'; });
         return;
       }
@@ -268,7 +281,7 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
         return;
       }
 
-      final embedding = await svc.getEmbedding(photo.path, face);
+      final embedding = await svc.getEmbedding(decoded, face);
       if (!mounted) return;
       if (embedding == null) {
         setState(() { _busy = false; _message = 'Could not read your face clearly, hold still'; });

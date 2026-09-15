@@ -7,6 +7,8 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image/image.dart' as img;
 import 'package:tflite_flutter/tflite_flutter.dart';
 
+import '../utils/scan_trace.dart';
+
 // On-device face-scan attendance: ML Kit locates/crops the face and reports
 // eye-open probabilities (used for a cheap blink-liveness check); a bundled
 // MobileFaceNet TFLite model (assets/models/mobilefacenet.tflite, 112x112
@@ -15,22 +17,44 @@ import 'package:tflite_flutter/tflite_flutter.dart';
 // of this — detection, embedding, matching — runs offline; nothing is sent
 // to a server to identify who this is.
 //
-// Deliberately still-photo based (CameraController.takePicture(), then
-// InputImage.fromFilePath / img.decodeImage on the JPEG) rather than a live
-// CameraImage frame stream: ML Kit + the `image` package both handle JPEG
-// EXIF orientation for you, whereas raw camera frames need manual
-// YUV420->RGB conversion and sensor-rotation math that's easy to get subtly
-// wrong and impossible to verify without a physical device in hand. A still
-// photo per attempt is a small UX cost for a lot more reliability.
+// Two capture paths feed this service, each suited to a different caller:
+//
+//  - Still-photo (CameraController.takePicture(), then decodeOriented()
+//    below decoding the resulting JPEG) - used by face_enroll_capture_page
+//    for its deliberate 25-shot enrollment sequence. ML Kit + the `image`
+//    package both handle JPEG EXIF orientation for you, which is why this
+//    was the ONLY path originally (see SESSION-2026-09-09 through
+//    2026-09-13-1 for the history) - a manual YUV420->RGB conversion and
+//    sensor-rotation calc is easy to get subtly wrong and was judged not
+//    worth the risk for a screen with no repeated-latency pressure.
+//  - Live camera stream (CameraController.startImageStream(), NV21 frames
+//    converted by nv21ToImage() below) - used by face_punch_page's
+//    automatic ~1s kiosk polling. Added in SESSION-2026-09-13-5 after
+//    takePicture() itself was measured taking 4-7 seconds per call on this
+//    app's camera (confirmed on both BlueStacks and the real kiosk tablet,
+//    and unaffected by flash mode, 3A lock, or swapping the native Android
+//    camera engine - see that session for what was ruled out first). A
+//    live preview frame is exactly what a still capture is NOT: already
+//    flowing continuously at the camera's native frame rate with no
+//    "capture a high-quality photo" round trip to wait on.
+//
+// One frame/photo is decoded ONCE per attempt and the resulting img.Image
+// is threaded through every stage below - detection, exposure/blur gating,
+// liveness, embedding. The still-photo path used to decode the same JPEG
+// five separate times per ~1s poll, all synchronous Dart work on the main
+// isolate; that was long enough to stall Flutter's own frame painting,
+// which is what made the camera preview look "frozen" during a scan even
+// though the native camera session was fine (SESSION-2026-09-13-1/2).
 class FaceRecognitionService {
   FaceRecognitionService._();
   static final FaceRecognitionService instance = FaceRecognitionService._();
 
   // Cosine similarity a live punch embedding must clear against the stored
-  // enrollment embedding to be accepted as a match. Started conservative;
-  // this is the number to retune first if real staff get false
-  // rejects/accepts once this is actually used on real devices.
-  static const double kMatchThreshold = 0.75;
+  // enrollment embedding to be accepted as a match. Was 0.75 (conservative
+  // guess); lowered to 0.6 after real-device testing showed legitimate
+  // staff getting false-rejected too often. Retune further if false
+  // accepts (wrong person matched) start showing up instead.
+  static const double kMatchThreshold = 0.6;
 
   static const int _inputSize = 112; // MobileFaceNet's expected crop size
   static const double _eyeOpenThreshold   = 0.4;
@@ -40,10 +64,11 @@ class FaceRecognitionService {
   // punch as a live person rather than a photo/screen spoof. The upstream
   // reference implementation has no threshold beyond a bare argmax over 3
   // classes - this floor exists so a near-tie (e.g. 34% real vs 33%/33%
-  // spoof classes) doesn't count as a pass. Untested against real spoof
-  // attempts yet; this is the number to retune first once that testing
-  // happens - see assets/models/LICENSE_MODELS.md.
-  static const double kLivenessRealThreshold = 0.6;
+  // spoof classes) doesn't count as a pass. Was 0.6; lowered to 0.45 after
+  // real-device testing showed legitimate live attempts getting rejected
+  // too often - see assets/models/LICENSE_MODELS.md. Retune upward if
+  // spoof attempts (photo/screen) start passing instead.
+  static const double kLivenessRealThreshold = 0.45;
   static const int _livenessInputSize = 80; // MiniFASNet's expected crop size
 
   Interpreter? _interpreter;
@@ -70,18 +95,165 @@ class FaceRecognitionService {
   Future<Interpreter> _liveness40() async =>
       _livenessInterpreter40 ??= await Interpreter.fromAsset('assets/models/spoof_model_scale_4_0.tflite');
 
+
+  // Every heavy entry point below is wrapped in a ScanTrace.step so a single
+  // scan attempt's cost shows up stage-by-stage in the log rather than as one
+  // opaque "the camera froze". The wrappers are thin on purpose: the real
+  // bodies are the untouched `_`-prefixed methods underneath them, so release
+  // builds (where ScanTrace.step is a straight pass-through) run exactly the
+  // code they ran before this instrumentation was added.
+
+  // Counts decodes within one scan attempt. face_punch_page resets this at
+  // the top of each poll, so the log line reads "decode #1 .. #5" per
+  // attempt - making it obvious at a glance that the same JPEG is being
+  // decoded from scratch by five separate stages.
+  int decodesThisAttempt = 0;
+
+  void resetDecodeCounter() => decodesThisAttempt = 0;
+
+  // Single funnel for "read the JPEG off disk and decode it", so the cost
+  // and the repetition are both measurable. Behaviourally identical to the
+  // inline readAsBytes/decodeImage pairs it replaced.
+  Future<img.Image?> _decode(String imagePath, String caller) async {
+    final sw = Stopwatch()..start();
+    final bytes = await File(imagePath).readAsBytes();
+    final readMs = sw.elapsedMilliseconds;
+    final image = img.decodeImage(bytes);
+    decodesThisAttempt++;
+    ScanTrace.instance.log('DECODE',
+        '#$decodesThisAttempt $caller ${bytes.length ~/ 1024}KB '
+        'read ${readMs}ms decode ${sw.elapsedMilliseconds - readMs}ms '
+        '-> ${image == null ? 'FAILED' : '${image.width}x${image.height}'}');
+    return image;
+  }
+
+  // Decodes+orients [imagePath] ONCE, for the caller to reuse across every
+  // stage of one scan attempt. Was previously implicit: detectSingleFace,
+  // isExposureUnusable, isTooBlurry, livenessScore and getEmbedding each
+  // did their own independent readAsBytes+decodeImage of the *same* JPEG -
+  // five full decodes per ~1s poll, all on the main isolate, which is what
+  // made the camera preview look frozen (Flutter can't paint while that
+  // runs) even though the native camera session was fine. Call this once
+  // per attempt and pass the result into every stage below instead.
+  //
+  // Null means the file couldn't be decoded - callers below each keep
+  // their original fail-safe behaviour for that case (a hard reject, not a
+  // free pass), matching what happened when their own inline decode used
+  // to fail.
+  Future<img.Image?> decodeOriented(String imagePath) async {
+    final image = await _decode(imagePath, 'capture');
+    if (image == null) return null;
+    return img.bakeOrientation(image);
+  }
+
+  // Converts one live-preview frame (NV21, single interleaved-VU plane -
+  // request this via CameraController(..., imageFormatGroup:
+  // ImageFormatGroup.nv21), which on Android makes camera_android_camerax
+  // hand back a clean, already-destrided NV21 buffer rather than raw
+  // YUV_420_888 planes with sensor-specific row padding to account for) into
+  // an upright, RGB img.Image ready for the same exposure/blur/liveness/
+  // embedding stages the still-photo path uses.
+  //
+  // [rotationDegrees] must be the SAME rotation passed to ML Kit's
+  // InputImageMetadata for this frame (see face_punch_page.dart's
+  // _sensorRotationDegrees) - ML Kit reports Face.boundingBox in the
+  // rotated-to-upright coordinate space, so this image and that box only
+  // line up if both were rotated the same way. [mirror] should be true for
+  // a front camera - the sensor sees a mirror image of what the person
+  // sees in the preview (which Android/CameraX mirror back for display),
+  // and matching that here keeps left/right consistent with what a live
+  // photo (takePicture, mirrored by the same camera) would have produced.
+  //
+  // Math is the standard BT.601 YUV->RGB conversion, full-pixel (no chroma
+  // interpolation) - a 4:2:0 frame only has one U/V sample per 2x2 luma
+  // block, so all 4 of those pixels use the same chroma sample. Plenty
+  // accurate for face detection/recognition; this is not a photography
+  // pipeline.
+  img.Image nv21ToImage({
+    required Uint8List nv21,
+    required int width,
+    required int height,
+    required int rotationDegrees,
+    required bool mirror,
+  }) {
+    final image = img.Image(width: width, height: height, numChannels: 3);
+    final frameSize = width * height;
+    for (var y = 0; y < height; y++) {
+      final yRowStart = y * width;
+      final uvRowStart = frameSize + (y >> 1) * width;
+      for (var x = 0; x < width; x++) {
+        final yValue = nv21[yRowStart + x] & 0xff;
+        final uvIndex = uvRowStart + (x & ~1);
+        final v = (nv21[uvIndex] & 0xff) - 128;
+        final u = (nv21[uvIndex + 1] & 0xff) - 128;
+
+        final r = (yValue + 1.370705 * v).round().clamp(0, 255);
+        final g = (yValue - 0.337633 * u - 0.698001 * v).round().clamp(0, 255);
+        final b = (yValue + 1.732446 * u).round().clamp(0, 255);
+        image.setPixelRgb(x, y, r, g, b);
+      }
+    }
+
+    var oriented = rotationDegrees == 0 ? image : img.copyRotate(image, angle: rotationDegrees);
+    if (mirror) oriented = img.flipHorizontal(oriented);
+    return oriented;
+  }
+
+  // Stream-frame counterpart to detectSingleFace: runs ML Kit directly on
+  // an already-built InputImage (from InputImage.fromBytes - see
+  // face_punch_page.dart) rather than reading+decoding a file. No
+  // exposure-corrected-copy step here (that trick writes a temporary JPEG
+  // for ML Kit to re-read, which only makes sense for the file-based path)
+  // - a live stream frame already reflects the camera's continuously
+  // running auto-exposure, and isExposureUnusable below remains as the
+  // independent safety net for a genuinely bad frame either way.
+  Future<Face?> detectFaceFromInputImage(InputImage input) =>
+      ScanTrace.instance.step('detectFaceFromInputImage', () => _detectFaceFromInputImage(input));
+
+  Future<Face?> _detectFaceFromInputImage(InputImage input) async {
+    final sw = Stopwatch()..start();
+    final faces = await _faceDetector.processImage(input);
+    ScanTrace.instance.log('MLKIT', 'processImage(stream) ${sw.elapsedMilliseconds}ms -> ${faces.length} face(s)');
+    if (faces.isEmpty) return null;
+    faces.sort((a, b) =>
+        (b.boundingBox.width * b.boundingBox.height).compareTo(a.boundingBox.width * a.boundingBox.height));
+    return faces.first;
+  }
+
+  Future<Face?> detectSingleFace(String imagePath, img.Image? decoded) =>
+      ScanTrace.instance.step('detectSingleFace', () => _detectSingleFace(imagePath, decoded));
+
+  Future<bool> isExposureUnusable(img.Image? decoded) =>
+      ScanTrace.instance.step('isExposureUnusable', () => _isExposureUnusable(decoded));
+
+  Future<bool> isTooBlurry(img.Image? decoded, Face face) =>
+      ScanTrace.instance.step('isTooBlurry', () => _isTooBlurry(decoded, face));
+
+  Future<double?> livenessScore(img.Image? decoded, Face face) =>
+      ScanTrace.instance.step('livenessScore', () => _livenessScore(decoded, face));
+
+  Future<List<double>?> getEmbedding(img.Image? decoded, Face face) =>
+      ScanTrace.instance.step('getEmbedding', () => _getEmbedding(decoded, face));
+
   Future<void> preload() async {
+    final sw = Stopwatch()..start();
     await _model();
     await _liveness27();
     await _liveness40();
     // ignore: unnecessary_statements
     _faceDetector;
+    ScanTrace.instance.log('PRELOAD', 'models + detector ready in ${sw.elapsedMilliseconds}ms');
   }
 
   // Returns the largest detected face in the photo at [imagePath], or null
   // if no face was found. "Largest" so a bystander in the background of a
   // punch selfie can't accidentally get picked over the person actually
-  // taking it.
+  // taking it. [decoded] is the same decodeOriented() result every other
+  // stage of this attempt uses - only needed here to decide whether an
+  // exposure-corrected copy should be handed to ML Kit instead of the
+  // original file; null (decode failed) just skips that correction and
+  // lets ML Kit try the original file directly, same as before this
+  // shared-decode refactor when _exposureCorrectedCopy's own decode failed.
   //
   // Detection runs on an exposure-corrected copy when the shot is badly
   // over/underexposed (see _exposureCorrectedCopy) - a washed-out
@@ -90,11 +262,15 @@ class FaceRecognitionService {
   // detector otherwise is. The correction only changes pixel brightness,
   // never geometry, so the returned Face's boundingBox is still valid
   // pixel coordinates against the original file for getEmbedding to crop.
-  Future<Face?> detectSingleFace(String imagePath) async {
-    final correctedPath = await _exposureCorrectedCopy(imagePath);
+  Future<Face?> _detectSingleFace(String imagePath, img.Image? decoded) async {
+    final correctedPath = decoded == null ? null : await _exposureCorrectedCopy(imagePath, decoded);
     try {
       final input = InputImage.fromFilePath(correctedPath ?? imagePath);
+      final sw = Stopwatch()..start();
       final faces = await _faceDetector.processImage(input);
+      ScanTrace.instance.log('MLKIT',
+          'processImage ${sw.elapsedMilliseconds}ms -> ${faces.length} face(s)'
+          '${correctedPath != null ? ' (on exposure-corrected copy)' : ''}');
       if (faces.isEmpty) return null;
       faces.sort((a, b) =>
           (b.boundingBox.width * b.boundingBox.height).compareTo(a.boundingBox.width * a.boundingBox.height));
@@ -108,16 +284,13 @@ class FaceRecognitionService {
 
   // Null (use the original photo as-is) unless the shot is bright/dark
   // enough that a detector would plausibly struggle with it, in which case
-  // returns the path to a gamma-corrected copy. Any failure here (decode
-  // error, disk full, whatever) just falls back to the original file
-  // rather than blocking detection entirely.
-  Future<String?> _exposureCorrectedCopy(String imagePath) async {
+  // returns the path to a gamma-corrected copy. [image] is the caller's
+  // already-decoded+oriented frame (see decodeOriented) - this no longer
+  // decodes its own copy. Any failure here (disk full, encode error,
+  // whatever) just falls back to the original file rather than blocking
+  // detection entirely.
+  Future<String?> _exposureCorrectedCopy(String imagePath, img.Image image) async {
     try {
-      final bytes = await File(imagePath).readAsBytes();
-      var image = img.decodeImage(bytes);
-      if (image == null) return null;
-      image = img.bakeOrientation(image);
-
       final gamma = _exposureGammaFor(image);
       if (gamma == null) return null;
 
@@ -166,11 +339,9 @@ class FaceRecognitionService {
   static const double kMinUsableLuminance = 20.0;
   static const double kMaxUsableLuminance = 235.0;
 
-  Future<bool> isExposureUnusable(String imagePath) async {
-    final bytes = await File(imagePath).readAsBytes();
-    final image = img.decodeImage(bytes);
-    if (image == null) return true; // unreadable - treat as unusable, not a free pass
-    final lum = _averageLuminance(image);
+  Future<bool> _isExposureUnusable(img.Image? decoded) async {
+    if (decoded == null) return true; // unreadable - treat as unusable, not a free pass
+    final lum = _averageLuminance(decoded);
     return lum < kMinUsableLuminance || lum > kMaxUsableLuminance;
   }
 
@@ -184,18 +355,15 @@ class FaceRecognitionService {
   // Runs on [face]'s cropped region specifically, not the whole frame, so a
   // blurry background behind a sharp face doesn't wrongly reject a shot
   // that's actually fine to use.
-  Future<bool> isTooBlurry(String imagePath, Face face) async {
-    final bytes = await File(imagePath).readAsBytes();
-    var image = img.decodeImage(bytes);
-    if (image == null) return true;
-    image = img.bakeOrientation(image);
+  Future<bool> _isTooBlurry(img.Image? decoded, Face face) async {
+    if (decoded == null) return true;
 
     final box = face.boundingBox;
-    final x = box.left.clamp(0, image.width - 1).toInt();
-    final y = box.top.clamp(0, image.height - 1).toInt();
-    final w = box.width.clamp(1, image.width - x).toInt();
-    final h = box.height.clamp(1, image.height - y).toInt();
-    final crop = img.copyCrop(image, x: x, y: y, width: w, height: h);
+    final x = box.left.clamp(0, decoded.width - 1).toInt();
+    final y = box.top.clamp(0, decoded.height - 1).toInt();
+    final w = box.width.clamp(1, decoded.width - x).toInt();
+    final h = box.height.clamp(1, decoded.height - y).toInt();
+    final crop = img.copyCrop(decoded, x: x, y: y, width: w, height: h);
     final gray = img.grayscale(crop);
     return _laplacianVariance(gray) < kMinSharpnessVariance;
   }
@@ -246,19 +414,16 @@ class FaceRecognitionService {
   // light. Applied identically on both the enrollment and punch paths
   // (this one function serves both), so it doesn't bias the match either
   // way, just removes absolute-brightness differences before they can.
-  Future<List<double>?> getEmbedding(String imagePath, Face face) async {
-    final bytes = await File(imagePath).readAsBytes();
-    var image = img.decodeImage(bytes);
-    if (image == null) return null;
-    image = img.bakeOrientation(image); // apply EXIF rotation so crop coords match ML Kit's
+  Future<List<double>?> _getEmbedding(img.Image? decoded, Face face) async {
+    if (decoded == null) return null;
 
     final box = face.boundingBox;
-    final x = box.left.clamp(0, image.width - 1).toInt();
-    final y = box.top.clamp(0, image.height - 1).toInt();
-    final w = box.width.clamp(1, image.width - x).toInt();
-    final h = box.height.clamp(1, image.height - y).toInt();
+    final x = box.left.clamp(0, decoded.width - 1).toInt();
+    final y = box.top.clamp(0, decoded.height - 1).toInt();
+    final w = box.width.clamp(1, decoded.width - x).toInt();
+    final h = box.height.clamp(1, decoded.height - y).toInt();
 
-    final cropped = img.copyCrop(image, x: x, y: y, width: w, height: h);
+    final cropped = img.copyCrop(decoded, x: x, y: y, width: w, height: h);
     final resized = _normalizeLighting(img.copyResize(cropped, width: _inputSize, height: _inputSize));
 
     final input = List.generate(
@@ -280,7 +445,9 @@ class FaceRecognitionService {
     final output = List.generate(1, (_) => List.filled(embeddingSize, 0.0));
 
     final interpreter = await _model();
+    final sw = Stopwatch()..start();
     interpreter.run(input, output);
+    ScanTrace.instance.log('TFLITE', 'mobilefacenet run ${sw.elapsedMilliseconds}ms');
 
     return _l2Normalize(output[0]);
   }
@@ -298,14 +465,11 @@ class FaceRecognitionService {
   // kLivenessRealThreshold), or null if either crop/inference failed - kept
   // as a raw score rather than a bool so the caller can log/display it the
   // same way match similarity is handled, not hidden behind an opaque cutoff.
-  Future<double?> livenessScore(String imagePath, Face face) async {
-    final bytes = await File(imagePath).readAsBytes();
-    var image = img.decodeImage(bytes);
-    if (image == null) return null;
-    image = img.bakeOrientation(image);
+  Future<double?> _livenessScore(img.Image? decoded, Face face) async {
+    if (decoded == null) return null;
 
-    final p27 = await _runLivenessModel(await _liveness27(), image, face.boundingBox, 2.7);
-    final p40 = await _runLivenessModel(await _liveness40(), image, face.boundingBox, 4.0);
+    final p27 = await _runLivenessModel(await _liveness27(), decoded, face.boundingBox, 2.7);
+    final p40 = await _runLivenessModel(await _liveness40(), decoded, face.boundingBox, 4.0);
     if (p27 == null || p40 == null) return null;
 
     // Upstream label convention: class index 1 = real face (0 and 2 are
@@ -338,7 +502,9 @@ class FaceRecognitionService {
     );
 
     final output = List.generate(1, (_) => List.filled(3, 0.0));
+    final sw = Stopwatch()..start();
     interpreter.run(input, output);
+    ScanTrace.instance.log('TFLITE', 'minifasnet@$scale run ${sw.elapsedMilliseconds}ms');
     return _softmax(output[0]);
   }
 

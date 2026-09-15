@@ -72,8 +72,8 @@ This is recorded as fact, not fixed. Full detail + risk in
 | Node | v24.18.0 |
 | npm | 11.16.0 |
 | git | 2.55.0.windows.3 |
-| Flutter | 3.47.0 (stable) |
-| Dart | 3.13.0 |
+| Flutter | 3.47.4 (stable) — **updated 2026-09-13**, was 3.47.0 |
+| Dart | 3.13.3 — **updated 2026-09-13**, was 3.13.0 |
 | Next.js | 14.2.35 (from `admin-panel/package.json`) |
 | React | ^18 |
 | Supabase project | `hxkowdaugkkumvzyfsai.supabase.co` |
@@ -353,6 +353,152 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
+**Session 2026-09-13 (6 sessions) — KIOSK FACE-SCAN FREEZE FIXED AND
+VERIFIED.** Both root causes (redundant decoding, and separately
+`takePicture()`'s inherent multi-second latency) are fixed and confirmed
+on-device. Idle poll cycle time went from 4.5-7.4s to 22-400ms (roughly
+100-300x), verified over a 13-minute, 178-tick live run with zero skips
+and zero camera reinitializations. Full detail:
+`ai-context\archive\SESSION-2026-09-13-1.md` (diagnosis + instrumentation),
+`archive\-2.md` (decode/poll fix applied), `archive\-3.md` (on-device
+confirmation + new `takePicture()` finding — all three archived, retention
+cap, superseded in detail by -4/-5/-6 below), `ai-context\SESSION-2026-09-13-4.md`
+(flash-mode disproven), `-5.md` (3A-lock + engine-swap disproven, stream rewrite
+implemented but unverified at the time), `-6.md` (VERIFIED on-device —
+freeze fixed, confirmed), plain-English mirror
+`work-log\LOG-2026-09-13.md`. Summary:
+- User reported the attendance kiosk's face scan freezing and the camera
+  restarting repeatedly. **Distinct from the 2026-09-09 freeze** (that was
+  the un-resumed `pausePreview` on route pop, fixed); this one needs no
+  navigation at all.
+- Likely cause, **from code reading only — still not confirmed on a
+  device**: `_autoCapture()` polled every 1000ms and ran the whole
+  recognition pipeline on the main isolate, decoding the same JPEG **five
+  separate times** per attempt (`_exposureCorrectedCopy`,
+  `isExposureUnusable`, `isTooBlurry`, `livenessScore`, `getEmbedding`). The
+  UI isolate can't paint while that runs, so the preview looks frozen;
+  meanwhile the timer kept re-arming `takePicture()` once a second
+  regardless of whether the last attempt had finished.
+- Added debug-only instrumentation (session 1: new
+  `core/utils/scan_trace.dart` and `attendance_kiosk/scan_debug_hud.dart`,
+  plus logging in `face_punch_page.dart` and
+  `face_recognition_service.dart`): per-stage timings, a per-attempt decode
+  counter, camera-generation/lifecycle tracking, and a main-isolate stall
+  watch whose timer lateness measures the freeze directly. All gated on
+  `kDebugMode`; release behaviour unchanged.
+- **Fix applied (session 2), user chose to proceed without device
+  confirmation first**: `FaceRecognitionService.decodeOriented()` decodes
+  the photo once per attempt now, shared across all five recognition calls
+  (`face_punch_page.dart` and `face_enroll_capture_page.dart` both updated);
+  the poll went from `Timer.periodic` to a self-rescheduling one-shot timer
+  (`_scheduleNextPoll`) that only asks for the next photo once the current
+  attempt has fully finished. Items 2 (move the `image`-package work off the
+  main isolate) and 4 (reconsider still-photo-per-poll) from the original
+  4-item proposal are **not done** — still open if the fix above isn't enough.
+- `flutter analyze` clean; attendance debug APK builds all sessions.
+- **Confirmed on-device (session 3)**: a device connected mid-thread
+  (`emulator-5554` via BlueStacks). Installed and ran ~225s / 21 poll ticks
+  live: decode count 1/attempt (was 5) every time, no overlapping polls, only
+  3 brief one-time main-isolate stalls (287/457/446ms, none repeating — the
+  old recurring-stall pattern is gone), camera stayed on one generation the
+  whole run including a full match → confirm dialog → declined ("Not Me",
+  no production data written) → Enter Code → clean resume (exercises the
+  2026-09-09 Bug 1 fix — still working), and one gracefully-handled
+  disposed-controller race on page close (exactly the benign race the code's
+  own comment describes). One live face was genuinely matched against an
+  enrolled staff member (liveness 0.992, similarity 0.624 vs 0.6 threshold).
+- **New finding, not part of the original diagnosis**:
+  `CameraController.takePicture()` itself took 3.6-5.8s per call (avg
+  ~5.5s across 20 calls) — 100x the ~50ms the fix reduced decode time to,
+  and the actual dominant cost of every poll cycle now. This is a native
+  camera-plugin call, doesn't show up as a Dart-side stall.
+- **Flash-mode theory tried (session 4) and DISPROVEN**: this project
+  resolves to `camera_android_camerax` (CameraX), and the `camera` package
+  defaults every controller to `FlashMode.auto`, which on CameraX can stall
+  a still capture on a precapture metering sequence. Added an explicit
+  `setFlashMode(FlashMode.off)` in both `face_punch_page.dart` and
+  `face_enroll_capture_page.dart`, rebuilt, reinstalled, re-measured: **no
+  change** (still 3996-5830ms across 7 calls, statistically identical to
+  before). Left the call in anyway (harmless — this camera has no flash
+  hardware) but corrected the code comments to say plainly it didn't fix
+  the latency. Also confirmed the plugin doesn't expose CameraX's capture-
+  mode setting at all (the other documented cause of slow CameraX stills),
+  so that lever isn't available without forking the plugin.
+- **User confirmed (session 5) the latency reproduces identically on a
+  real Android device**, not just BlueStacks — explicitly authorized
+  continued iteration on the emulator rather than waiting for hardware.
+- **3A focus/exposure lock tried (session 5): DISPROVEN.** First attempt
+  crashed camera init entirely on BlueStacks' camera (unsupported —
+  `IllegalArgumentException: None of the specified AF/AE/AWB MeteringPoints
+  is supported on this camera`) — fixed by wrapping in try/catch,
+  falling back to auto on failure rather than taking down the whole
+  camera (a real risk for whatever the physical tablet's camera supports
+  too). Where it DID succeed (see engine swap below), made no difference.
+- **Camera engine swap tried (session 5): DISPROVEN, reverted.** Forced
+  `camera_android` (legacy Camera2) via a direct pubspec dependency
+  instead of the default `camera_android_camerax`. Measured WORSE
+  (4572-7380ms, avg ~6.5s vs CameraX's ~5.5s) even with focus/exposure
+  genuinely locked this time (no exception on this engine) — conclusively
+  rules out 3A convergence as the cause. Also broke preview rotation
+  (displayed ~90° rotated). Reverted; `camera_android_camerax` confirmed
+  restored via `.flutter-plugins-dependencies`.
+- **Conclusion from 3 disproven theories (flash/lock/engine)**: the delay
+  is inherent to requesting a full-quality still photo on this camera,
+  not any configuration of it. **User explicitly approved the remaining
+  fix**: replace `takePicture()` with reading frames from the camera's
+  live preview stream, which carries none of that capture-pipeline cost.
+- **Stream rewrite implemented (session 5), NOT YET VERIFIED**:
+  `CameraController` now requests NV21 frames
+  (`imageFormatGroup: ImageFormatGroup.nv21`); `startImageStream` keeps
+  `_latestFrame` continuously updated; the existing, already-proven
+  `_scheduleNextPoll` timer cadence (unchanged) reads that instead of
+  calling `takePicture()`. `FaceRecognitionService` gained `nv21ToImage()`
+  (NV21→RGB conversion + rotation/mirror, done ONCE per attempt and only
+  after ML Kit confirms a face is present) and
+  `detectFaceFromInputImage()`. Rotation/mirror computed once per camera
+  generation (kiosk is bolted down in fixed portrait — never needs
+  per-frame device-orientation tracking). `flutter analyze` clean,
+  `flutter build apk --flavor attendance` succeeds.
+- `face_enroll_capture_page.dart` is UNCHANGED — still uses the
+  still-photo path (`takePicture`/`decodeOriented`); both capture paths
+  now coexist in `FaceRecognitionService` by design.
+- **VERIFIED on-device (session 6)** — device reconnected same day. Two
+  live runs on BlueStacks, ~14 minutes combined, 180 poll ticks, **0
+  skips, 0 camera reinitializations**, camera stayed on one generation
+  throughout both:
+  - **Idle "no-face" cycle time: 4,500-7,400ms → 22-400ms (~100-300x
+    faster)** — this is the number that maps directly to the reported
+    "camera freezing" symptom, and it's fixed.
+  - **Rotation/mirror correctness confirmed** — the single biggest
+    remaining risk from session 5. Two live face detections both produced
+    a taller-than-wide box (100x132, 158x205 — correct upright aspect
+    ratio, not sideways). Two live match attempts against the real
+    enrolled staff database scored 0.581 and 0.601 similarity
+    (`kMatchThreshold = 0.6`) — both close misses (one below threshold,
+    one above threshold but short of the 0.05 distinctiveness margin
+    against the runner-up), which is strong evidence the geometry is
+    correct: a wrong rotation/mirror would produce near-random, much
+    lower scores, not consistent near-threshold results.
+  - **New finding, NOT part of this bug, NOT fixed**:
+    `SupabaseService.fetchAllFaceEmbeddings()` itself takes ~5.8-6.2s over
+    the network — this was always true, previously masked by
+    `takePicture()`'s own comparable-magnitude delay. Only affects the
+    brief "Verifying..." window AFTER a face is found, not the idle
+    camera freeze that was reported. Flagged for the user's awareness;
+    not started, not scoped, needs its own explicit go-ahead if pursued.
+  - Did not force a full confirmed-match + native-dialog + recorded-punch
+    cycle this session — that downstream logic is unchanged code, already
+    verified working against the JPEG path in `SESSION-2026-09-13-3.md`;
+    today's genuinely new code (stream capture, NV21 conversion, rotation)
+    is what needed verifying, and now has been.
+  - **Recommended, not blocking**: a sanity check on the real physical
+    kiosk tablet before this reaches production, since every measurement
+    in this whole investigation was taken on the BlueStacks emulator. The
+    rotation formula is standard and the evidence above is reassuring, but
+    this specific device's `sensorOrientation=0` (unusual — real hardware
+    typically reports 90/270) wasn't representative of what a real front
+    camera will report.
+
 **Session 2026-09-09** — Multi-shift attendance feature finished: Flutter
 apps (kiosk + teacher) and admin panel wired up to the `employee_shifts`
 backend, merged to `main`. Full detail:
@@ -465,18 +611,56 @@ anonymous client. Read-only finding, recorded per §J14 — nothing fixed at
 the time (fixed in the very next checkpoint, above).
 
 Prior checkpoints (archived, retention cap — §D, latest 3 non-archived
-above): `ai-context\archive\SESSION-2026-08-21-1.md` (finished + verified
-live an in-progress refactor — Add Student form extracted into a shared
-`AddStudentForm.js`; built, shipped, and live-verified a new permanent-delete
-feature for students; pushed to `origin/debiprasad`, later merged into
-`main` via the 2026-08-28 checkpoint above), `ai-context\archive\SESSION-2026-08-20-1.md`
-(found, root-caused, fixed, and shipped a real authentication bypass —
-sidebar Logout never actually signed out — merged to `main` at `9a2cfb3`),
-and `ai-context\archive\SESSION-2026-08-19-2.md` (read-only secrets-hygiene
-check).
+above — now `SESSION-2026-09-13-4/5/6.md`): `ai-context\archive\SESSION-2026-08-21-1.md`
+(finished + verified live an in-progress refactor — Add Student form
+extracted into a shared `AddStudentForm.js`; built, shipped, and
+live-verified a new permanent-delete feature for students; pushed to
+`origin/debiprasad`, later merged into `main` via the 2026-08-28 checkpoint
+above), `ai-context\archive\SESSION-2026-08-20-1.md` (found, root-caused,
+fixed, and shipped a real authentication bypass — sidebar Logout never
+actually signed out — merged to `main` at `9a2cfb3`),
+`ai-context\archive\SESSION-2026-08-19-2.md` (read-only secrets-hygiene
+check), `ai-context\archive\SESSION-2026-09-07-1.md` (Play Store listing
+assets session), `ai-context\archive\SESSION-2026-09-09-1.md` (multi-shift
+attendance feature, merged to main), and
+`ai-context\archive\SESSION-2026-09-13-1.md` /`-2.md`/`-3.md` (kiosk
+face-scan freeze: diagnosis+instrumentation, the decode/poll fix, and its
+first on-device confirmation — superseded in detail by `-4`/`-5`/`-6`
+above, which is the full fixed-and-verified story; archived only for
+space, not because they're wrong).
 
 ## Next step
-**2026-09-09, current:**
+**2026-09-13, current:**
+0. **KIOSK FACE-SCAN FREEZE IS FIXED AND VERIFIED (session 6)** — no
+   action required on this specific item. Idle poll cycles went from
+   4.5-7.4s to 22-400ms, verified over a 13-minute/178-tick live run with
+   zero skips and zero camera reinitializations; rotation/mirror
+   correctness confirmed via face-box geometry and two near-threshold live
+   match scores. See `ai-context\SESSION-2026-09-13-6.md` for full detail.
+0a. **Recommended before production, not blocking**: a sanity check on the
+    real physical kiosk tablet — every measurement in this investigation
+    was taken on the BlueStacks emulator, whose reported
+    `sensorOrientation=0` is atypical (real hardware usually reports
+    90/270), so the rotation formula hasn't been exercised against a
+    representative value yet. If a real scan on the actual tablet looks
+    right (upright face, working matches), this is fully done.
+0b. **Nothing needs to change in `face_enroll_capture_page.dart`** —
+    deliberately left on the still-photo path; not part of this bug.
+0c. **New, separate, OPTIONAL item surfaced during verification, not yet
+    discussed with the user**: `SupabaseService.fetchAllFaceEmbeddings()`
+    itself takes ~5.8-6.2s over the network during an actual match attempt
+    (previously invisible, masked by `takePicture()`'s own similar-sized
+    delay). Only affects the brief post-detection "Verifying..." window,
+    not the idle-camera freeze that was reported. Needs the user's explicit
+    interest and go-ahead before any work starts on it — it is a
+    network/query performance question, unrelated to anything in this
+    thread's camera work.
+0d. **Everything in this thread (`SESSION-2026-09-13-1` through `-6`) is
+    still staged, not committed** — the user has not been asked to commit
+    yet; that's their call per §A9 once they're satisfied with the fix
+    (and, if desired, the real-tablet sanity check in 0a).
+
+**2026-09-09 (prior):**
 0. **Install the new build on the real physical kiosk device** — the
    currently-installed build has been non-functional for check-ins since
    the prior session's backend migration went live; this is the priority
