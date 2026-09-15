@@ -1,0 +1,15 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Teacher app only scans QR codes (mobile_scanner) and uploads files
+         (s3_upload_service) - it has no audio, phone-state, or face-scan/
+         tflite code paths. These come from library manifests bundled in
+         because pubspec.yaml declares camera/tflite_flutter/
+         google_mlkit_face_detection once for the whole project, not
+         per-flavor, so every flavor's AAR set includes them regardless. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove"/>
+    <!-- Library declares this without required="false", which would exclude
+         cameraless devices from the Play Store listing even though the
+         plain "camera" feature above is already marked optional. -->
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" tools:node="replace"/>
+</manifest>
