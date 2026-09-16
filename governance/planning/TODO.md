@@ -520,8 +520,26 @@ password-change flows, PDF generation utilities.
 - Payments: Razorpay package installed, not connected (per `PLAN.md`/
   `governance\documentation\PROJECT_CONTEXT.md` — known, deliberate, Phase-2-equivalent item).
 - Push notifications (FCM) — not implemented; in-app only.
+- **PENDING — Teacher app Play Store closed testing, started 2026-09-16.**
+  Store listing, content rating (Everyone/All ages), target audience (18+),
+  data safety, and government/financial/health/ads declarations all
+  completed and submitted to Google for review (`com.satyamstars.teacher`,
+  AAB v1.0.0/versionCode 1, closed testing track "Alpha", targeted to India).
+  Blocked on Play Console's own production-access requirements, not on
+  anything in this repo:
+  - Needs **≥12 testers opted in** to the closed test — currently 0 opted in
+    (only 1 email, `sectofficework@gmail.com`, is on the "Teacher App
+    Testers" list, not yet accepted/installed).
+  - Needs the closed test to **run ≥14 days** with those testers active
+    before "Apply for production" unlocks on the Dashboard.
+  Next action needed from the user: gather ≥12 tester Gmail addresses, add
+  them to the tester email list, share the Play Console opt-in link, get
+  them to install/open the app, then wait out the 14-day window.
+  Student and attendance-kiosk apps not yet started on this path — still
+  APK-via-S3 only, per the item below.
 - Mobile app not yet on Play Store — APK distribution via S3 + in-app update
-  checker only.
+  checker only. (Teacher app now in progress, see item above; student and
+  attendance-kiosk apps not started.)
 
 ---
 
