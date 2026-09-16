@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getAttendanceOverviewForDate, sendBulkAttendanceReminders } from "@/lib/attendanceService";
 import { getCalendarEvents } from "@/lib/calendarService";
 import { isWorkingDay } from "@/lib/attendanceRules";
+import { withDiagnostics } from "@/lib/apiDiagnostics";
+import logger from "@/lib/logger";
 
 // Runs daily via Vercel Cron (see vercel.json - scheduled for 07:00 UTC =
 // 12:30pm IST, comfortably before the 1:00pm cutoff) and nags every class
@@ -10,7 +12,7 @@ import { isWorkingDay } from "@/lib/attendanceRules";
 // share sendBulkAttendanceReminders so the message shape and same-day dedup
 // (in case a teacher was already manually reminded before this ran) stay
 // identical between the automatic and manual paths.
-export async function GET(request) {
+export const GET = withDiagnostics(async function GET(request) {
   const authHeader = request.headers.get("authorization");
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -29,6 +31,7 @@ export async function GET(request) {
     const result = await sendBulkAttendanceReminders(workingRows, today);
     return NextResponse.json({ date: today, ...result });
   } catch (e) {
+    logger.error("Attendance reminders cron failed", { stack: e?.stack, message: e?.message });
     return NextResponse.json({ error: e.message || "Failed" }, { status: 500 });
   }
-}
+});

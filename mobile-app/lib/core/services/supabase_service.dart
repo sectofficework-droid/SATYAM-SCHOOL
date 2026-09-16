@@ -872,6 +872,15 @@ class SupabaseService {
     await client.from('queries_suggestions').insert(data);
   }
 
+  // Diagnostic Reports (AGENTS.md §L, REQ-HYG-006) ────────────────────────────
+
+  /// Submits a "Report a Problem" entry and returns its id (shown to the
+  /// reporter as a short reference, e.g. the first 8 chars).
+  static Future<String> submitDiagnosticReport(Map<String, dynamic> data) async {
+    final res = await client.from('diagnostic_reports').insert(data).select('id').single();
+    return res['id'] as String;
+  }
+
   static Future<List<Map<String, dynamic>>> fetchMyQueries(String userId) async {
     final res = await client
         .from('queries_suggestions')

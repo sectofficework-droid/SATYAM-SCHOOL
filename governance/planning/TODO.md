@@ -237,6 +237,115 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       in the repo; all verification is manual/local.
       **2026-09-04: user chose to skip for now**, same reasoning as
       REQ-HYG-001. Left open, not closed.
+- [~] **REQ-HYG-006 — No centralized diagnostic/observability logging.**
+      Added 2026-09-16 when `AGENTS.md`/`RULEBOOK.md` §L (mandatory
+      debugging & diagnostic logging) was merged in.
+      **Phase 1 (foundation) SHIPPED 2026-09-16** — plan approved via
+      "code it", implemented same session. **Admin panel:**
+      `src/lib/logger.js` (structured JSON, session/diagnostic IDs,
+      redaction, 200-entry ring buffer) + `src/lib/apiDiagnostics.js`
+      (`withDiagnostics` wrapper, applied to all 6 API routes) +
+      `src/components/DiagnosticsInit.jsx` (global `window.onerror`/
+      `onunhandledrejection` capture, mounted in root layout) +
+      `src/app/error.js`/`global-error.js` (React error-boundary screens
+      showing a diagnostic ID instead of a raw crash). **Mobile
+      app:** `lib/core/utils/diagnostic_logger.dart` (same structured
+      design, zero new dependencies — `path_provider`/`package_info_plus`
+      already present) + `lib/app_bootstrap.dart` wired with
+      `runZonedGuarded` + `FlutterError.onError` +
+      `PlatformDispatcher.instance.onError`, covering all 3 flavors from
+      one shared function. Verified: `npm run lint` clean, `flutter
+      analyze` clean, a debug APK for the Teacher flavor builds
+      successfully end-to-end. **Explicitly NOT in Phase 1** (see the
+      original plan in session log 2026-09-16-1): any third-party
+      error-tracking service.
+      **Phase 1.5 (centralized retrieval) SHIPPED 2026-09-16, same
+      session, on user request ("in app they will report log; not view
+      the log; retrieved from admin panel").** New table
+      `diagnostic_reports` (`mobile-app/SUPABASE_DIAGNOSTIC_REPORTS.sql` —
+      **NOT yet run against production**, needs the user to apply it in
+      the SQL Editor before anything actually lands in it). RLS
+      **enabled** (deliberate deviation from this project's usual
+      "disable RLS + full anon grants" convention — reuses the
+      `public.is_admin_user()` helper from
+      `SUPABASE_LOCK_CALENDAR_EVENTS.sql` instead, since REQ-SEC-002 is
+      exactly the pattern this avoids repeating): `anon`+`authenticated`
+      can INSERT their own report, only `is_admin_user()` can SELECT/
+      UPDATE. Replaced the mobile apps' local-only "Diagnostic Log"
+      viewer (`diagnostic_log_page.dart`, deleted) with
+      `lib/common/widgets/report_problem_dialog.dart` — a "Report a
+      Problem" dialog (optional one-line description, submits the recent
+      buffer, shows a short Ref #) wired into the same 3 entry points
+      (Teacher Settings row, Student profile button, kiosk PIN-gated
+      long-press). Admin panel's `logger.error()`/`fatal()` now also
+      insert into the same table automatically (no manual report needed
+      there) via a new `submitReport()` in `src/lib/logger.js`; the
+      now-redundant `DiagnosticLogButton.jsx` (local-browser-only
+      download) was removed since the new `/diagnostics` admin-panel page
+      (`src/lib/diagnosticsService.js` + `src/app/(dashboard)/
+      diagnostics/page.js`, new Sidebar nav item) supersedes it with a
+      complete, centralized view. **AI-agent access**: this project's
+      Supabase MCP connection can query `diagnostic_reports` directly —
+      documented in `AGENTS.md`'s project section and `CLAUDE.md` so a
+      future session queries it before asking for repro steps, per §L12.
+      Verified: `npm run lint` clean, `flutter analyze` clean (2 real bugs
+      caught and fixed pre-ship in the first `flutter analyze` pass on
+      the mobile-app changes — see session log). **NOT verified: any
+      on-device/in-browser trigger of a real error, and the migration has
+      not been run against production** — no device/emulator, running dev
+      server, or DB-apply step happened this session; §L10 sign-off and
+      "does a report actually reach the table" both still need a manual
+      pass once the migration is applied.
+      **Phase 1.6 (auto-submit + master download) SHIPPED 2026-09-16, same
+      session, on user correction** ("whatever log is it should be auto
+      submitted to master admin; include log report download in master or
+      above admin"). Mobile apps no longer require the "Report a Problem"
+      tap to reach the table — `diagnostic_logger.dart`'s `error()`/
+      `fatal()` now auto-submit too (mirroring the admin panel), reading
+      the app name from `AppConfig.lockedRole`; the "Report a Problem"
+      dialog stays as a secondary channel for issues that don't throw a
+      catchable exception (e.g. "button does nothing") and for adding a
+      user description. Admin panel: `/diagnostics` page got a "Download"
+      button exporting the current filtered list as JSON, gated
+      `role !== "normal_admin"` (senior_admin/management — same gate this
+      project already uses for impersonation; flagged to the user that
+      "master" was interpreted this way, not `management`-only, in case
+      that needs narrowing). Verified: `npm run lint` clean, `flutter
+      analyze` clean, a debug Teacher-flavor APK builds end-to-end. Same
+      NOT-verified items as Phase 1.5 above (migration not applied,
+      no live device/browser trigger).
+      **Phase 1.7 (cost/privacy safety rails) SHIPPED 2026-09-16, same
+      session, on user request** — asked "if many users log will come does
+      it take lot space... exceeding free limit?"; checked the actual
+      Supabase DB via MCP (`pg_database_size` + `pg_stat_user_tables`) —
+      19 MB total, `diagnostic_reports` didn't exist yet, biggest table
+      ~200 bytes/row, so storage size itself was never the real risk. The
+      real risk: nothing stopped a repeating error from auto-submitting
+      every single occurrence. Then, separately: "logging is specifically
+      kept for development purpose not to collect what users do" — so
+      auto-submission needed to be an explicit, admin-controlled,
+      default-OFF switch, not always-on. Shipped both: new
+      `diagnostic_settings` table (single row, `enabled boolean default
+      false`, RLS mirrors `diagnostic_reports`' `is_admin_user()` pattern
+      — added to the same not-yet-applied migration file) gates
+      auto-submission in both `logger.js` and `diagnostic_logger.dart`
+      (checked once at startup client-side, live-checked per call
+      server-side since there's no long-lived process to cache it in); a
+      5-minute per-message cooldown + a 20-per-session hard cap in both
+      loggers, independent of the switch, so a looping bug can't flood
+      the table even while logging is on. **The manual "Report a
+      Problem" flow is deliberately NOT gated by the switch** — that's
+      explicit per-incident consent, not passive collection, so it always
+      works. Admin panel `/diagnostics` page got a "Logging: ON/OFF"
+      toggle (same senior_admin/management gate as Download) plus a
+      banner when off. Retention: rather than a 3rd Vercel Cron (the
+      Hobby-tier project already has 2, its likely cap), added lazy
+      cleanup — `getDiagnosticReports()` deletes anything older than 90
+      days as a side effect of the page loading; no new infrastructure.
+      Verified: `npm run lint` clean, `flutter analyze` clean, a debug
+      Teacher-flavor APK builds end-to-end. Same NOT-verified items still
+      apply (migration not applied, no live trigger) — this phase adds no
+      new unverified surface beyond that.
 - [x] **REQ-HYG-003 — `schema_dump.json` tracked in git. DELETED 2026-09-04**
       (user confirmed OK) at repo root,
       contained a leftover API-error debug artifact

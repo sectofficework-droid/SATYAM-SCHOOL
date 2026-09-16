@@ -3,6 +3,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../common/widgets/s3_image.dart';
+import '../../../../common/widgets/report_problem_dialog.dart';
 
 class StudentProfilePage extends StatelessWidget {
   const StudentProfilePage({super.key});
@@ -75,6 +76,18 @@ class StudentProfilePage extends StatelessWidget {
             ]),
 
             const SizedBox(height: 16),
+
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.bug_report_rounded),
+                label: const Text('Report a Problem'),
+                onPressed: () => showReportProblemDialog(context,
+                  app: 'student', userType: 'student',
+                  userId: profile['id']?.toString(), userName: name),
+              ),
+            ),
+            const SizedBox(height: 12),
 
             SizedBox(
               width: double.infinity,

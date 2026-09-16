@@ -24,6 +24,7 @@ import {
   BookMarked,
   BookOpen,
   BookOpenCheck,
+  Bug,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import useStore from "@/lib/store";
@@ -47,6 +48,7 @@ const navItems = [
   { href: "/question-papers", label: "Question Bank", icon: FileText, orgs: ["school"] },
   { href: "/tasks", label: "Task Management", icon: ClipboardList, orgs: ["school"] },
   { href: "/super-admin", label: "Super Admin", icon: ShieldCheck, orgs: ["school"] },
+  { href: "/diagnostics", label: "Diagnostics", icon: Bug, orgs: ["school"] },
 
   // SEF (Satyam Education Foundation)
   { href: "/sef/dashboard", label: "Dashboard", icon: LayoutDashboard, orgs: ["sef"] },

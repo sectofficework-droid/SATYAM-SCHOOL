@@ -3,6 +3,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../common/widgets/s3_image.dart';
+import '../../../../common/widgets/report_problem_dialog.dart';
 
 class TeacherProfilePage extends StatelessWidget {
   const TeacherProfilePage({super.key});
@@ -127,6 +128,13 @@ class TeacherProfilePage extends StatelessWidget {
                   icon: Icons.lock_reset_rounded, label: 'Change Password',
                   subtitle: 'Requires your current password',
                   onTap: () => _openChangePassword(context),
+                ),
+                _ActionRow(
+                  icon: Icons.bug_report_rounded, label: 'Report a Problem',
+                  subtitle: 'Send a diagnostic report to support',
+                  onTap: () => showReportProblemDialog(context,
+                    app: 'teacher', userType: 'teacher',
+                    userId: profile['id']?.toString(), userName: name),
                 ),
               ]),
               const SizedBox(height: 24),

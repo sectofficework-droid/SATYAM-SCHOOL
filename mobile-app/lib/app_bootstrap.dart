@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -5,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/theme/app_theme.dart';
 import 'core/services/auth_service.dart';
 import 'core/app_config.dart';
+import 'core/utils/diagnostic_logger.dart';
 import 'app/routes/app_routes.dart';
 
 const _supabaseUrl = 'https://hxkowdaugkkumvzyfsai.supabase.co';
@@ -20,22 +24,45 @@ Future<void> runSatyamApp({
   required UserRole role,
   required List<GetPage> pages,
 }) async {
-  WidgetsFlutterBinding.ensureInitialized();
-  AppConfig.lockedRole = role;
+  // Global error capture (AGENTS.md §L7) - runZonedGuarded catches async
+  // errors outside Flutter's own error zone; FlutterError.onError and
+  // PlatformDispatcher.onError catch framework/platform errors that would
+  // otherwise only print to the console and be lost once the app restarts.
+  await runZonedGuarded(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    AppConfig.lockedRole = role;
 
-  SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-  ));
+    await DiagnosticLogger.instance.init();
 
-  await Supabase.initialize(url: _supabaseUrl, publishableKey: _supabaseKey);
+    FlutterError.onError = (FlutterErrorDetails details) {
+      DiagnosticLogger.instance.error(
+        details.exceptionAsString(),
+        {'stack': details.stack?.toString(), 'library': details.library},
+      );
+      FlutterError.presentError(details);
+    };
+    PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+      DiagnosticLogger.instance.fatal(error.toString(), {'stack': stack.toString()});
+      return true;
+    };
 
-  // Register and initialise AuthService (restores session from secure storage)
-  final authService = Get.put(AuthService());
-  await authService.initSession();
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+    SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+    ));
 
-  runApp(SatyamSchoolApp(pages: pages));
+    await Supabase.initialize(url: _supabaseUrl, publishableKey: _supabaseKey);
+    unawaited(DiagnosticLogger.instance.refreshEnabledFlag());
+
+    // Register and initialise AuthService (restores session from secure storage)
+    final authService = Get.put(AuthService());
+    await authService.initSession();
+
+    runApp(SatyamSchoolApp(pages: pages));
+  }, (Object error, StackTrace stack) {
+    DiagnosticLogger.instance.fatal(error.toString(), {'stack': stack.toString(), 'source': 'runZonedGuarded'});
+  });
 }
 
 class SatyamSchoolApp extends StatefulWidget {

@@ -8,6 +8,14 @@
 > phase/approvals/environment and points there for detail, per §B ("map
 > existing docs instead of duplicating").
 >
+> **Size discipline (added 2026-09-16, `AGENTS.md`/`RULEBOOK.md` §D):** this
+> file is a curated snapshot, not an archive. "Code status" and "Last
+> checkpoint" below carry the current checkpoint in full, plus at most one
+> prior checkpoint's short summary; anything older is a single-line pointer
+> to its `ai-context\SESSION-*.md`/`work-log\LOG-*.md` file. Trimmed from
+> 723 lines to this on 2026-09-16 — nothing was deleted, the detail this
+> removed already lives in the linked session/log files.
+>
 > **Location note:** this file lives in `governance\` (ROOT-level, NOT
 > inside `Scratch/`) per `RULEBOOK.md` §B, which is now PART I's own
 > default (updated 2026-08-19 — no longer an exception layered on top of
@@ -36,7 +44,10 @@ was not touched to create it.
 gap**: no DESIGN FIXED / RELEASE approval was ever formally recorded before
 go-live. This scaffold is documenting the system as it actually is, not
 re-approving it. Treat all existing behavior as intentional per §J1 unless
-you tell me otherwise.
+you tell me otherwise. **Gating for ongoing work:** per `AGENTS.md` §F's
+"Already-running / OPERATE-mode projects" rule (added 2026-09-16), day-to-day
+changes are gated by §J12B's PATCH/MINOR/MAJOR classification, not a re-run
+of the DISCOVERY→RELEASE ladder.
 
 ## Approvals on record
 | Gate | Status | Note |
@@ -58,13 +69,15 @@ you tell me otherwise.
 | Locked rule | Reality | Where |
 |---|---|---|
 | TypeScript | JavaScript only, no TypeScript | `admin-panel/` entire codebase |
-| RLS mandatory | RLS **disabled** on every new mobile-app table (`student_attendance`, `homework`, `exams`, `exam_marks`, etc.) — and, **live-confirmed 2026-08-21**, `students`/`employees`/`admin_users` are ALSO fully readable by a completely unauthenticated client (public anon key, no session) despite `SUPABASE_SETUP.sql`'s narrower `auth.uid()`-based policies existing on paper | `mobile-app/SUPABASE_APP_AUTH.sql`; live test detail in `planning\SECURITY-THREAT-MODEL.md` F2 |
-| "DO NOT... use public S3 buckets" | Mobile app's photo bucket is public-read, plain `Image.network`, no presigning | `mobile-app/lib/common/widgets/s3_image.dart`, `documentation\PROJECT_CONTEXT.md:67` |
-| `users` table with `password_hash` | `app_password` stored as **plaintext TEXT**, same hardcoded default value for every account (redacted from every doc, tracked or not — the exact value only exists in `mobile-app/SUPABASE_APP_AUTH.sql` itself, which is production code, already in git history independent of this doc set), compared with `=` | `mobile-app/SUPABASE_APP_AUTH.sql` |
+| RLS mandatory | RLS **disabled** on every new mobile-app table (`student_attendance`, `homework`, `exams`, `exam_marks`, etc.) — and, **live-confirmed 2026-08-21**, `students`/`employees`/`admin_users` were ALSO fully readable by a completely unauthenticated client (public anon key, no session) despite `SUPABASE_SETUP.sql`'s narrower `auth.uid()`-based policies existing on paper. **`students`/`admin_users` fixed 2026-09-04** (RLS re-enabled, `anon` grants revoked, live-verified). `employees` + ~22 other tables still exposed this way — see REQ-SEC-002 in TODO.md. | `mobile-app/SUPABASE_APP_AUTH.sql`; live test detail in `planning\SECURITY-THREAT-MODEL.md` F2 |
+| "DO NOT... use public S3 buckets" | Mobile app's photo bucket is public-read, plain `Image.network`, no presigning. **Decided 2026-09-04: keep as-is** — a deliberate tradeoff (CORS history), not an oversight. | `mobile-app/lib/common/widgets/s3_image.dart`, `documentation\PROJECT_CONTEXT.md:67` |
+| `users` table with `password_hash` | `app_password` was stored as plaintext TEXT, compared with `=`. **Fixed 2026-08-21** — hashed with bcrypt, admin panel's view/copy replaced with a Reset-Password action. | `mobile-app/SUPABASE_APP_AUTH.sql`, `mobile-app/SUPABASE_HASH_APP_PASSWORD.sql` |
 | Firebase Cloud Messaging | Not implemented — in-app notifications only | `documentation\PROJECT_CONTEXT.md:69` |
 
-This is recorded as fact, not fixed. Full detail + risk in
-`planning\SECURITY-THREAT-MODEL.md`.
+This is recorded as fact, not fixed-everywhere. Full detail + risk in
+`planning\SECURITY-THREAT-MODEL.md`; current REQ-SEC-001..004 status is also
+summarized in `AGENTS.md`'s project section (corrected 2026-09-16 — it had
+gone stale, see that file's note).
 
 ## Environment (REAL, verified 2026-08-18)
 | Tool | Version |
@@ -77,7 +90,7 @@ This is recorded as fact, not fixed. Full detail + risk in
 | Next.js | 14.2.35 (from `admin-panel/package.json`) |
 | React | ^18 |
 | Supabase project | `hxkowdaugkkumvzyfsai.supabase.co` |
-| Git remote | `https://github.com/sectofficework-droid/SATYAM-SCHOOL.git`, branch `debiprasad` tracking `origin/debiprasad` |
+| Git remote | `https://github.com/sectofficework-droid/SATYAM-SCHOOL.git`, branch `main` (repo now works directly on `main`; the earlier `debiprasad` working branch was merged in and is no longer the day-to-day branch as of the 2026-09-13 session) |
 | Hosting | Vercel (admin-panel, confirmed Production deployments in `Scratch/refdocs/vercel production.png`) |
 | Android SDK | **New 2026-08-21** — was entirely absent before this session (`flutter doctor` showed no SDK at all). Installed via `winget install Google.AndroidCLI` (Google's official lightweight CLI, not full Android Studio) at `C:\Users\bkdeb\AppData\Local\Android\Sdk`; `android sdk install` used to pull `platform-tools`, `platforms/android-35`+`36`, `build-tools/35.0.0`+`36.1.0`, `cmdline-tools/latest`, and `ndk/28.2.13676358` (the exact version this project's Gradle build requested). `flutter doctor`'s Android toolchain check still shows `[!]`/license-status-unknown even though the license file's hash matches the correct standard value and a real debug APK build succeeds — cosmetic doctor-check gap with this newer tool, not an actual blocker (see SESSION-2026-08-21-3.md if this resurfaces). |
 
@@ -85,154 +98,43 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Updated 2026-08-24 — see `ai-context\SESSION-2026-08-24-1.md` for full
-detail. Flagged gap: `debiprasad` has since been merged to `main` (commit
-`2fc2570`) and the repo now works directly on `main` — but four feature
-commits between 2026-08-21 and 2026-08-24 (`886c6a3`, `f87a2ce`, `7c96bad`,
-`c0e11c1`, `d2f409c`) shipped with no governance log entry at all. Not
-backfilled this session (out of scope for what was asked) — the "three
-shipped changes" section immediately below is the last state this file
-actually attests to; treat everything after it as real but undocumented
-until a future session reconstructs it from `git log`.**
+Current, verified via `git log`/`git status` 2026-09-16: `main` at `b997c2f`
+("Log Teacher app Play Store closed-testing session..."), in sync with
+`origin/main`, working tree otherwise clean (routine untracked local-only
+items: `.claude/settings.local.json`, `.vercel/`, screenshot working files —
+none of these are code). Production (Vercel) tracks `main`.
 
-**2026-08-24 addition — bulk student import (commit `7bd8cef`, on `main`,
-pushed):** new Student-module "Import Basic Details" tool (insert-only, 8
-fields, auto enrollment no) and new Super Admin "Replace Full Details" tool
-(matches by enrollment no, overwrites via `updateStudent()`). New
-`students.data_status` column ('Complete'/'Incomplete') drives a filter
-chip + badge on the student list. **Migration
-`mobile-app/SUPABASE_STUDENT_BASIC_IMPORT.sql` has NOT been run against
-production yet** — feature is shipped in code but non-functional until the
-user runs it. Verified: dev server compiled `/student` and `/super-admin`
-clean, no errors. Not verified: an actual import run, or mobile login for a
-basic-imported student (both need the migration first, then a manual
-pass — see SESSION-2026-08-24-1.md's Next steps).
+**Known governance gaps, flagged not backfilled:** four feature commits
+between 2026-08-21 and 2026-08-24 (`886c6a3`, `f87a2ce`, `7c96bad`,
+`c0e11c1`, `d2f409c`), and the 2026-09-05/06 Play Store signing +
+privacy-policy work, both shipped with no `governance\` session-log entry.
+Real work, just undocumented — reconstruct from `git log` only if a task
+specifically needs that detail.
 
-**Updated 2026-08-28 (on `debiprasad`, that branch's next update after the
-2026-08-24 entry above): new "Admin Access Code" impersonation module,
-recorded there as shipped to BOTH `debiprasad` AND `main` (merged + pushed
-— reaches Production).** Full detail: `ai-context\SESSION-2026-08-28-1.md`,
-plain-English mirror `work-log\LOG-2026-08-28.md`. Summary:
-- Management/senior_admin can generate a one-time, 10-minute, single-use
-  code (student or employee detail view in the admin panel) that logs
-  straight into that person's mobile-app account — no password touched.
-  New tables `impersonation_codes`/`impersonation_audit_log` + 3 RPCs
-  (`mobile-app/SUPABASE_IMPERSONATION.sql`, applied to production via the
-  Supabase dashboard — same reason as always, DDL can't go through the
-  service-role key/PostgREST path, only DML can).
-- **Found and fixed a real privilege-escalation bug same session**: the
-  migration's internal helper functions had no auth check of their own and
-  were reachable by anyone holding just the public anon key (Postgres
-  grants EXECUTE to PUBLIC by default; the migration never revoked it).
-  Live-confirmed exploitable, then closed via
-  `mobile-app/SUPABASE_FIX_IMPERSONATION_GRANTS.sql` (also applied to
-  production, also verified closed afterward).
-- Also deleted the two standing QA test accounts (`ADMIN TESTSTUDENT`
-  enrollment `0049` / `ADMIN TESTSTAFF` `EMP030`) this session, at the
-  user's request — see `LOG-2026-08-28.md` §1. Those accounts no longer
-  exist.
-- **Not yet done**: the mobile-app login-screen change ("Have an Admin
-  Access Code?") has only been verified via direct RPC calls + static
-  analysis, not by actually running the app on a device/emulator.
-
-**2026-09-04 note (this merge):** `main`'s own history at the time of this
-merge did not yet contain the 2026-08-28 impersonation work above as a
-merge commit here in `BOOTSTRAP.md`, even though `debiprasad`'s copy of
-this file asserted it had already reached `main` — a documentation gap
-consistent with the undocumented-commits pattern flagged in the 2026-08-24
-entry. Not investigated further here; the code-level merge for *this*
-session's changes (REQ-BUG-010..013, REQ-SEC-002 calendar continuation) is
-what actually happened via this commit.
-
-Earlier state (2026-08-21, `debiprasad` only at that time), unchanged since:
-1. **Add Student form extraction** — the ~1,400-line Add Student form moved
-   out of `student/add/page.js` into a shared `components/AddStudentForm.js`
-   (`variant="page"` | `"modal"`). Student list now opens Add Student as a
-   modal in-place; `/student/add` still works standalone. Verified live for
-   both entry points via `claude-in-chrome`.
-2. **Permanent student delete (new feature)** — `studentService.js`'s
-   `deleteStudentPermanently()` + a "Permanently Delete" button/confirm-modal
-   in Super Admin → Update Student, gated to `senior_admin`/`management`
-   (`normal_admin` already can't reach `/super-admin`). Requires typing the
-   exact enrollment number to confirm. Clears `student_promotions`,
-   `transfer_certificates`, `fee_payments` first (their FKs to
-   `students(id)` don't cascade), then deletes `students` (cascades the
-   rest). Verified live — deleted two test students created during (1)'s
-   verification, confirmed count back to the real 48-student baseline.
-
-3. **REQ-SEC-001 fixed and shipped** — `students`/`employees.app_password`
-   hashed with bcrypt (`mobile-app/SUPABASE_HASH_APP_PASSWORD.sql`,
-   **applied directly to production** via the Supabase SQL Editor this
-   session, not just written). Verified after: 75/75 rows backed up +
-   re-hashed, all 4 RPCs confirmed present. Admin panel's password
-   view/copy replaced with a Reset Password action for both students and
-   employees, hashed server-side via two new admin-only RPCs. Bundled: a
-   new per-student in-app notice mechanism (`student_alerts`, mirrors the
-   pre-existing `teacher_alerts`) so a password reset produces a
-   "Password Reset" popup in the mobile app — teacher side needed no
-   rebuild (already polled `teacher_alerts`); student side needed a Dart
-   change + rebuild, done — a debug APK was built successfully this
-   session and handed to the user for device install, **not yet installed
-   or visually confirmed** as of this snapshot. Along the way, the Android
-   SDK toolchain was installed on this machine (previously entirely
-   absent) — see Environment table below.
-
-Also this session: a "Vercel seems stale" report turned out to be the user
-checking the wrong URL (no actual issue — resolved: user confirmed they use
-`debiprasad`'s Preview deployment day-to-day, merge-to-`main` only on
-explicit ask, not needed every session); a read-only repo-wide secrets scan
-found nothing leaked in tracked files (one hardcoded Supabase key in
-`mobile-app/lib/app_bootstrap.dart` confirmed to be the intentionally-public
-anon key, not a real secret) — but a separate, live (not file-based) RLS
-check requested right after that found `students`/`employees`/`admin_users`
-were all fully readable with zero authentication (item 3 above fixes the
-`app_password` exposure specifically; the broader RLS/anon-grant picture,
-REQ-SEC-002, is still open).
-
-Full detail: `ai-context\SESSION-2026-08-21-1.md`,
-`ai-context\SESSION-2026-08-21-2.md` (RLS finding),
-`ai-context\SESSION-2026-08-21-3.md` (REQ-SEC-001 fix).
-
-Git state (2026-08-21 items, superseded by 2026-08-28 below): `cd5d755`/
-`10c3395` (items 1-2) and `bc74ac0` (item 3) — all landed and pushed since.
-
-**Current git state (2026-08-28):** `debiprasad` at `9441547` ("Add admin
-access-code module..."), pushed. `main` at `594f2b5` ("Merge branch
-'debiprasad': admin access-code module"), pushed — this is what reaches
-Production, and is the first merge-to-`main` since `9a2cfb3` (2026-08-20).
-Both branches in sync with their remotes. Currently checked out:
-`debiprasad`, clean except the recurring, pre-existing, uncommitted local
-change to `.claude/settings.local.json`, plus one disposable local git
-stash (`flutter pub get` lockfile churn from running `flutter analyze` on
-`main` mid-session) left in place rather than fighting a blocked
-`stash drop`.
-
-REQ-SEC-001 is now fixed (see item 3). REQ-SEC-002/003/004 (below) are
-unaffected — still exactly as they were.
-
-**2026-09-09 addition — multi-shift attendance, Flutter + admin panel
-(commit `1c8e08a`, merged to `main`, pushed):** wired the kiosk/teacher app
-and admin panel up to the multi-shift `employee_shifts` backend that a
-prior, unlogged session had already applied to production. Found and fixed
-two real bugs while verifying end-to-end on BlueStacks: a camera-freeze in
-the kiosk's "Not Me" → Enter Code → back flow (user caught this live), and
-a wrong-role grant — **none of the three Flutter apps ever sign in through
-real Supabase Auth, so every request from any of them, including the
-teacher app's own checkout, executes as `anon`, never `authenticated`** —
-the prior session's grants only covered `authenticated`, silently breaking
-checkout and the new shift list. Fixed live + reflected in the migration
-file. Also made and self-corrected a mistake: test-data cleanup on a real
-employee's record deleted one genuinely real, pre-existing attendance row
-along with the test rows — caught same session, restored from values
-already captured earlier. Full detail:
-`ai-context\SESSION-2026-09-09-1.md`, plain-English mirror
-`work-log\LOG-2026-09-09.md`. **Current git state:** `debiprasad` and
-`main` both at `1c8e08a`, in sync, pushed. **Still not done: the real
-physical kiosk device needs the new build installed** — it's been
-non-functional for check-ins since the prior session's backend migration
-went live (old installed build still does the now-blocked direct table
-write); this session's fix is what repairs it, but only once actually
-installed.
+Prior checkpoints (one line each — full detail in the linked files):
+- **2026-09-09** — multi-shift attendance wired end-to-end (kiosk/teacher/
+  admin), two real bugs found+fixed live (camera-freeze on route-pop,
+  `anon`-vs-`authenticated` grant gap affecting every Flutter↔Supabase call
+  project-wide, not just this feature). Merged to `main` at `1c8e08a`. →
+  `ai-context\SESSION-2026-09-09-1.md` (archived), `work-log\LOG-2026-09-09.md`.
+- **2026-08-28** — Admin Access Code impersonation module; found + fixed a
+  privilege-escalation bug in the same migration same session (default
+  PUBLIC execute grant); deleted 2 standing QA test accounts. Merged
+  `debiprasad`→`main`. → `ai-context\SESSION-2026-08-28-1.md` (archived),
+  `work-log\LOG-2026-08-28.md`.
+- **2026-08-24** — bulk student import (Basic Details + Replace Full
+  Details tools, `data_status` tracking). Commit `7bd8cef`. Migration
+  `SUPABASE_STUDENT_BASIC_IMPORT.sql` — confirm it has since been run
+  against production before trusting this feature end-to-end. →
+  `ai-context\SESSION-2026-08-24-1.md` (archived), `work-log\LOG-2026-08-24.md`.
+- **2026-08-21 (3 sessions)** — live-confirmed RLS exploit on
+  `students`/`employees`/`admin_users`; REQ-SEC-001 fixed + shipped
+  (bcrypt); Add Student form extracted to a shared component + permanent
+  student-delete feature shipped. → `ai-context\archive\SESSION-2026-08-21-1.md`
+  /`-2.md`/`-3.md`.
+- **2026-08-20** — real auth bypass found + fixed (sidebar Logout never
+  actually signed out). Merged to `main` at `9a2cfb3`. →
+  `ai-context\archive\SESSION-2026-08-20-1.md`.
 
 ## Continuity folder — no git-ignore exception needed (RULEBOOK.md §0.8/§0.9)
 History: on 2026-08-19, `ai-context\`/`work-log\` were first tracked via a
@@ -329,395 +231,226 @@ decision — superseding both the restore note and the 2026-08-18 "no more
 prefix for that depth, verified working for `SSIS-AIO.bat`'s menu logic and
 its Flutter-app dependencies; not re-run end-to-end this session.
 
-<details><summary>2026-08-18 note (partially superseded — kept for history)</summary>
-
-Root now holds only: `AGENTS.md`, `.gitignore`, `PROJECT_CONTEXT.md`,
-`README.md`, `admin-panel\`, `mobile-app\`, `schema_dump.json` (pending
-removal OK, see TODO REQ-HYG-003), `refdocs\` (git-ignored, per the user,
-same as `Scratch\`), `Scratch\`. **No more `.bat` files at root** — moved
-into `Scratch\SATYAM-SCHOOL\` per the user (Part 9); their internal
-`admin-panel`/`mobile-app` paths were updated for the new depth
-(`%~dp0..\..\` prefix), NOT verified by actually running them. The 8
-reference images/PDF that were tracked in git history and are now inside
-`refdocs\` will drop out of git tracking on the next commit (expected,
-correct effect of gitignoring the folder — not data loss, just no longer
-tracked going forward). The two governance prompt `.md` files now live in
-`Scratch\`; the original discovery `.txt` now lives in
-`Scratch\SATYAM-SCHOOL\ai-context\`; loose reference images/PDF now live in
-`refdocs\`.
-
-</details>
-
 If a link in an older note still says "(root)" for any of these, it's
 stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Session 2026-09-13 (6 sessions) — KIOSK FACE-SCAN FREEZE FIXED AND
-VERIFIED.** Both root causes (redundant decoding, and separately
-`takePicture()`'s inherent multi-second latency) are fixed and confirmed
-on-device. Idle poll cycle time went from 4.5-7.4s to 22-400ms (roughly
-100-300x), verified over a 13-minute, 178-tick live run with zero skips
-and zero camera reinitializations. Full detail:
-`ai-context\archive\SESSION-2026-09-13-1.md` (diagnosis + instrumentation),
-`archive\-2.md` (decode/poll fix applied), `archive\-3.md` (on-device
-confirmation + new `takePicture()` finding — all three archived, retention
-cap, superseded in detail by -4/-5/-6 below), `ai-context\SESSION-2026-09-13-4.md`
-(flash-mode disproven), `-5.md` (3A-lock + engine-swap disproven, stream rewrite
-implemented but unverified at the time), `-6.md` (VERIFIED on-device —
-freeze fixed, confirmed), plain-English mirror
-`work-log\LOG-2026-09-13.md`. Summary:
-- User reported the attendance kiosk's face scan freezing and the camera
-  restarting repeatedly. **Distinct from the 2026-09-09 freeze** (that was
-  the un-resumed `pausePreview` on route pop, fixed); this one needs no
-  navigation at all.
-- Likely cause, **from code reading only — still not confirmed on a
-  device**: `_autoCapture()` polled every 1000ms and ran the whole
-  recognition pipeline on the main isolate, decoding the same JPEG **five
-  separate times** per attempt (`_exposureCorrectedCopy`,
-  `isExposureUnusable`, `isTooBlurry`, `livenessScore`, `getEmbedding`). The
-  UI isolate can't paint while that runs, so the preview looks frozen;
-  meanwhile the timer kept re-arming `takePicture()` once a second
-  regardless of whether the last attempt had finished.
-- Added debug-only instrumentation (session 1: new
-  `core/utils/scan_trace.dart` and `attendance_kiosk/scan_debug_hud.dart`,
-  plus logging in `face_punch_page.dart` and
-  `face_recognition_service.dart`): per-stage timings, a per-attempt decode
-  counter, camera-generation/lifecycle tracking, and a main-isolate stall
-  watch whose timer lateness measures the freeze directly. All gated on
-  `kDebugMode`; release behaviour unchanged.
-- **Fix applied (session 2), user chose to proceed without device
-  confirmation first**: `FaceRecognitionService.decodeOriented()` decodes
-  the photo once per attempt now, shared across all five recognition calls
-  (`face_punch_page.dart` and `face_enroll_capture_page.dart` both updated);
-  the poll went from `Timer.periodic` to a self-rescheduling one-shot timer
-  (`_scheduleNextPoll`) that only asks for the next photo once the current
-  attempt has fully finished. Items 2 (move the `image`-package work off the
-  main isolate) and 4 (reconsider still-photo-per-poll) from the original
-  4-item proposal are **not done** — still open if the fix above isn't enough.
-- `flutter analyze` clean; attendance debug APK builds all sessions.
-- **Confirmed on-device (session 3)**: a device connected mid-thread
-  (`emulator-5554` via BlueStacks). Installed and ran ~225s / 21 poll ticks
-  live: decode count 1/attempt (was 5) every time, no overlapping polls, only
-  3 brief one-time main-isolate stalls (287/457/446ms, none repeating — the
-  old recurring-stall pattern is gone), camera stayed on one generation the
-  whole run including a full match → confirm dialog → declined ("Not Me",
-  no production data written) → Enter Code → clean resume (exercises the
-  2026-09-09 Bug 1 fix — still working), and one gracefully-handled
-  disposed-controller race on page close (exactly the benign race the code's
-  own comment describes). One live face was genuinely matched against an
-  enrolled staff member (liveness 0.992, similarity 0.624 vs 0.6 threshold).
-- **New finding, not part of the original diagnosis**:
-  `CameraController.takePicture()` itself took 3.6-5.8s per call (avg
-  ~5.5s across 20 calls) — 100x the ~50ms the fix reduced decode time to,
-  and the actual dominant cost of every poll cycle now. This is a native
-  camera-plugin call, doesn't show up as a Dart-side stall.
-- **Flash-mode theory tried (session 4) and DISPROVEN**: this project
-  resolves to `camera_android_camerax` (CameraX), and the `camera` package
-  defaults every controller to `FlashMode.auto`, which on CameraX can stall
-  a still capture on a precapture metering sequence. Added an explicit
-  `setFlashMode(FlashMode.off)` in both `face_punch_page.dart` and
-  `face_enroll_capture_page.dart`, rebuilt, reinstalled, re-measured: **no
-  change** (still 3996-5830ms across 7 calls, statistically identical to
-  before). Left the call in anyway (harmless — this camera has no flash
-  hardware) but corrected the code comments to say plainly it didn't fix
-  the latency. Also confirmed the plugin doesn't expose CameraX's capture-
-  mode setting at all (the other documented cause of slow CameraX stills),
-  so that lever isn't available without forking the plugin.
-- **User confirmed (session 5) the latency reproduces identically on a
-  real Android device**, not just BlueStacks — explicitly authorized
-  continued iteration on the emulator rather than waiting for hardware.
-- **3A focus/exposure lock tried (session 5): DISPROVEN.** First attempt
-  crashed camera init entirely on BlueStacks' camera (unsupported —
-  `IllegalArgumentException: None of the specified AF/AE/AWB MeteringPoints
-  is supported on this camera`) — fixed by wrapping in try/catch,
-  falling back to auto on failure rather than taking down the whole
-  camera (a real risk for whatever the physical tablet's camera supports
-  too). Where it DID succeed (see engine swap below), made no difference.
-- **Camera engine swap tried (session 5): DISPROVEN, reverted.** Forced
-  `camera_android` (legacy Camera2) via a direct pubspec dependency
-  instead of the default `camera_android_camerax`. Measured WORSE
-  (4572-7380ms, avg ~6.5s vs CameraX's ~5.5s) even with focus/exposure
-  genuinely locked this time (no exception on this engine) — conclusively
-  rules out 3A convergence as the cause. Also broke preview rotation
-  (displayed ~90° rotated). Reverted; `camera_android_camerax` confirmed
-  restored via `.flutter-plugins-dependencies`.
-- **Conclusion from 3 disproven theories (flash/lock/engine)**: the delay
-  is inherent to requesting a full-quality still photo on this camera,
-  not any configuration of it. **User explicitly approved the remaining
-  fix**: replace `takePicture()` with reading frames from the camera's
-  live preview stream, which carries none of that capture-pipeline cost.
-- **Stream rewrite implemented (session 5), NOT YET VERIFIED**:
-  `CameraController` now requests NV21 frames
-  (`imageFormatGroup: ImageFormatGroup.nv21`); `startImageStream` keeps
-  `_latestFrame` continuously updated; the existing, already-proven
-  `_scheduleNextPoll` timer cadence (unchanged) reads that instead of
-  calling `takePicture()`. `FaceRecognitionService` gained `nv21ToImage()`
-  (NV21→RGB conversion + rotation/mirror, done ONCE per attempt and only
-  after ML Kit confirms a face is present) and
-  `detectFaceFromInputImage()`. Rotation/mirror computed once per camera
-  generation (kiosk is bolted down in fixed portrait — never needs
-  per-frame device-orientation tracking). `flutter analyze` clean,
-  `flutter build apk --flavor attendance` succeeds.
-- `face_enroll_capture_page.dart` is UNCHANGED — still uses the
-  still-photo path (`takePicture`/`decodeOriented`); both capture paths
-  now coexist in `FaceRecognitionService` by design.
-- **VERIFIED on-device (session 6)** — device reconnected same day. Two
-  live runs on BlueStacks, ~14 minutes combined, 180 poll ticks, **0
-  skips, 0 camera reinitializations**, camera stayed on one generation
-  throughout both:
-  - **Idle "no-face" cycle time: 4,500-7,400ms → 22-400ms (~100-300x
-    faster)** — this is the number that maps directly to the reported
-    "camera freezing" symptom, and it's fixed.
-  - **Rotation/mirror correctness confirmed** — the single biggest
-    remaining risk from session 5. Two live face detections both produced
-    a taller-than-wide box (100x132, 158x205 — correct upright aspect
-    ratio, not sideways). Two live match attempts against the real
-    enrolled staff database scored 0.581 and 0.601 similarity
-    (`kMatchThreshold = 0.6`) — both close misses (one below threshold,
-    one above threshold but short of the 0.05 distinctiveness margin
-    against the runner-up), which is strong evidence the geometry is
-    correct: a wrong rotation/mirror would produce near-random, much
-    lower scores, not consistent near-threshold results.
-  - **New finding, NOT part of this bug, NOT fixed**:
-    `SupabaseService.fetchAllFaceEmbeddings()` itself takes ~5.8-6.2s over
-    the network — this was always true, previously masked by
-    `takePicture()`'s own comparable-magnitude delay. Only affects the
-    brief "Verifying..." window AFTER a face is found, not the idle
-    camera freeze that was reported. Flagged for the user's awareness;
-    not started, not scoped, needs its own explicit go-ahead if pursued.
-  - Did not force a full confirmed-match + native-dialog + recorded-punch
-    cycle this session — that downstream logic is unchanged code, already
-    verified working against the JPEG path in `SESSION-2026-09-13-3.md`;
-    today's genuinely new code (stream capture, NV21 conversion, rotation)
-    is what needed verifying, and now has been.
-  - **Recommended, not blocking**: a sanity check on the real physical
-    kiosk tablet before this reaches production, since every measurement
-    in this whole investigation was taken on the BlueStacks emulator. The
-    rotation formula is standard and the evidence above is reassuring, but
-    this specific device's `sensorOrientation=0` (unusual — real hardware
-    typically reports 90/270) wasn't representative of what a real front
-    camera will report.
+**Current — Session 2026-09-16 (governance clarity pass).** Reviewed
+`AGENTS.md` against `RULEBOOK.md`/the master template and applied fixes:
+(1) added a rule-ID quick index to all three files (theme-grouped, since
+~60 rule IDs were hard to navigate); (2) added a §D rule capping
+`BOOTSTRAP.md`'s size (this file was 723 lines, well past "curated
+snapshot" — trimmed to this, per that new rule); (3) added a §D rule
+requiring at least a one-line checkpoint update even for changes too small
+for a full SESSION file (logging had been silently skipped at least twice
+per the "known governance gaps" note above); (4) added a §J5 rule that
+tool-mediated DB access (e.g. an MCP database server — this repo's
+`.mcp.json` connects one directly to the production Supabase project) is
+held to the same approval bar as a manual query; (5) added a §F rule
+clarifying that OPERATE-mode projects are gated by §J12B's PATCH/MINOR/
+MAJOR classification, not a full DISCOVERY→RELEASE re-run per change; (6)
+added a sync-verification note (dated, in all three files) since none
+existed before to catch the three-way copy drifting; (7) found and fixed a
+real accuracy bug while doing this: `AGENTS.md`'s project section still
+listed all of REQ-SEC-001..004 as open, but `TODO.md` shows only
+REQ-SEC-002 is — REQ-SEC-001/004 are fixed, REQ-SEC-003 was a deliberate
+accepted-risk decision. Corrected. All edits verified word-for-word
+identical across `AGENTS.md` §A/§D/§F/§H/§J, `governance\RULEBOOK.md` PART
+I, and `Scratch\AI PROJECT PROMPT PRODUCTION GRADE.md`. Nothing in
+`admin-panel\`/`mobile-app\` touched. Full detail:
+`ai-context\SESSION-2026-09-16-1.md`. Earlier the same day (separate,
+unrelated piece of work): Teacher app Play Store closed-testing submission
+completed, 11/11 checklist items — see `work-log\LOG-2026-09-16.md`
+(first entry).
 
-**Session 2026-09-09** — Multi-shift attendance feature finished: Flutter
-apps (kiosk + teacher) and admin panel wired up to the `employee_shifts`
-backend, merged to `main`. Full detail:
-`ai-context\SESSION-2026-09-09-1.md`, plain-English mirror
-`work-log\LOG-2026-09-09.md`. Summary:
-- Kiosk/teacher app now call `record_face_punch`/`record_check_out`/
-  `redeem_punch_code` RPCs instead of the old broken direct
-  `employee_attendance` writes; an "already checked in" punch attempt now
-  shows a clear blocking message. Teacher app's My Attendance banner and
-  the admin panel's Mark Attendance tab both list every shift of the day.
-- **Two real bugs found and fixed during live BlueStacks verification**:
-  (1) kiosk camera froze after backing out of the Enter Code screen a
-  certain way — paused preview was never resumed on route-pop, user caught
-  this live; (2) the prior session's RPC/table grants covered
-  `authenticated` only, but **none of the three Flutter apps sign in
-  through real Supabase Auth — every request from any of them runs as
-  `anon`** — this silently broke the teacher app's checkout and the new
-  shift list. Fixed live in Supabase + reflected in the migration file.
-  Generalizes past just `employees` (the existing REQ-SEC-002 note) to
-  every Flutter↔Supabase call project-wide — noted in `TODO.md`.
-- **Mistake made and self-corrected same session**: test-data cleanup on a
-  real employee's record deleted a genuinely real, unrelated attendance row
-  along with the test rows — caught immediately after, restored from
-  values already captured earlier in the session. Nothing lost, but
-  recorded plainly rather than glossed over.
-- Merged `debiprasad` → `main` at the user's request ("its testing; merge
-  to main") — confirmed first via `git merge-base` that this was a clean
-  fast-forward (main had zero commits debiprasad lacked), not a real
-  3-way merge, so no risk to either branch's other work. Both branches now
-  at `1c8e08a`, pushed.
-- **Not done: the real physical kiosk device still needs the new build
-  installed** — it's been broken for actual check-ins since the prior
-  session's backend migration went live; this is the priority next step.
+**Same-day follow-up:** two more rule-book sections were added — **§K
+(ENGINEERING EXECUTION STANDARDS)** and **§L (MANDATORY DEBUGGING &
+DIAGNOSTIC LOGGING)** — merged in from two separate prompts the user
+supplied, then mirrored/aligned across all four governance-rule copies now
+in play: the standalone universal `RULEBOOK.md` at
+`D:\Project\SSIS SCHOOL\RULEBOOK.md` (outside this repo, not a git repo
+itself), plus this repo's own `AGENTS.md`, `governance\RULEBOOK.md`, and
+`Scratch\AI PROJECT PROMPT PRODUCTION GRADE.md` — all four now verified
+byte-identical for §D/§F/§H/J5/§K/§L via `md5sum`. §K/§L are now part of
+the "copied verbatim into `AGENTS.md`" set (was §A/§D/§F/§H/§J, now
++§K/§L) — every cross-reference to that set across all four files was
+updated to match. **New gap found while merging §L:** neither
+`admin-panel\` nor `mobile-app\` has the centralized/structured/
+correlation-ID'd diagnostic logging §L now mandates — tracked as
+**REQ-HYG-006** in `planning\TODO.md`, not fixed, not scoped yet at that
+point. `CLAUDE.md` was also updated to surface this gap up front (so a
+future Claude Code session doesn't assume log evidence exists that isn't
+there — that note should now be revisited given the same-day Phase 1 work
+below).
 
-Prior checkpoint: **Session 2026-09-07** — Play Store publishing continued (store-listing
-assets + reviewer test accounts). Full detail:
-`ai-context\SESSION-2026-09-07-1.md`, plain-English mirror
-`work-log\LOG-2026-09-07.md`. Summary:
-- Wrote store listing descriptions, icon, feature graphics, and 8
-  on-device screenshots for both Teacher and Student apps (all sitting
-  untracked in `mobile-app/`, nothing uploaded to Play Console yet).
-- 3 of the 8 screenshots contained real identifiable data (a real
-  enrolled child's name/photo/enrollment no, a real staff member's name,
-  a full real class roster) — user explicitly ruled out dummy data, so
-  fixed via pixel-level redaction (`ffmpeg drawbox`) instead; un-redacted
-  originals deleted, never shared.
-- **Created two new reviewer test accounts directly in production
-  Supabase** for Google's App Access requirement (the prior QA accounts,
-  enrollment `0049`/`EMP030`, were deleted 2026-08-28): teacher `EMP900`
-  and student enrollment `9001`, both placed in the pre-existing, verified
-  -empty "ADMIN QA" class/Section A. Verified via the real
-  `teacher_login`/`student_login` RPCs directly (not just row inserts).
-  Password given to the user in-chat only — **not recorded in any
-  governance file**, per §J6.
-- **Confirmed this is a new Play Console developer account** — both apps
-  now need 12+ opted-in closed testers for 14 consecutive days before
-  either can reach Production. Flagged as the timeline's long pole.
-- **REQ-SEC-002 figure corrected** — Supabase's live security advisor
-  reports **73 tables** with RLS disabled (not ~25 as previously estimated
-  from static grep of `mobile-app/SUPABASE_*.sql` alone); includes
-  `employees`, `fee_payments`, and most admin-panel-only tables. `students`
-  and `admin_users` remain correctly locked per the 2026-09-04 partial fix.
-  Not acted on this session — flagged only, added to `TODO.md`.
-- **Flagged, not backfilled:** the 2026-09-05/06 Play Store signing +
-  privacy-policy work (real keystore generated, `build.gradle.kts` wired,
-  privacy policy deployed and live) happened with zero `governance\` log
-  entries — same undocumented-work pattern as the 2026-08-21→24 gap already
-  on record below. See top of `SESSION-2026-09-07-1.md`.
+**Same-day, third follow-up — REQ-HYG-006 Phase 1 implemented.** User
+confirmed the plan (bundled with a clarifying question on which task
+"code it" meant, since none was pending), then "code it" a second time on
+the plan itself. Shipped: admin-panel structured logger + global
+error/API capture + error boundaries (`src/lib/logger.js`,
+`src/lib/apiDiagnostics.js` wired into all 6 API routes,
+`src/components/DiagnosticsInit.jsx`, `src/app/error.js`/`global-error.js`);
+mobile-app structured logger + `runZonedGuarded`/`FlutterError.onError`/
+`PlatformDispatcher.onError` wired once in `app_bootstrap.dart` (covers
+all 3 flavors). Zero new dependencies either side. Verified: `npm run
+lint` clean, `flutter analyze` clean, a debug Teacher-flavor APK builds
+end-to-end.
 
-Prior checkpoint: (2026-09-04 merge) — merged `debiprasad` into `main`
-(REQ-BUG-010..013: calendar ordering tiebreaker, teacher-calendar Sunday
-legend, Design 2 ID card photo/font fixes, calendar delete error handling;
-plus recording the already-applied REQ-SEC-002 `school_calendar_events`
-RLS lock). Full detail: `work-log\LOG-2026-09-04.md` session 2.
+**Same-day, fourth follow-up — REQ-HYG-006 Phase 1.5, centralized
+retrieval.** User redirected the retrieval model: mobile testers *report*
+a problem (they don't read/view a log), and both the admin panel and an
+AI agent retrieve it centrally — asked for a plan, user confirmed with
+"code it". Shipped: new Supabase table `diagnostic_reports`
+(`mobile-app/SUPABASE_DIAGNOSTIC_REPORTS.sql`, **not yet run against
+production**) with RLS enabled (reuses `public.is_admin_user()`, a
+deliberate deviation from this project's usual "disable RLS" convention
+since that convention is exactly REQ-SEC-002). Mobile apps' local
+"Diagnostic Log" viewer replaced with `report_problem_dialog.dart`
+("Report a Problem", same 3 entry points). Admin panel's logger now
+auto-submits every captured error to the same table (no manual step);
+the now-redundant floating download button was removed in favor of a new
+`/diagnostics` admin-panel page. `AGENTS.md`/`CLAUDE.md` both updated
+telling a future session to query `diagnostic_reports` via this project's
+Supabase MCP connection *before* asking for repro steps. Verified:
+`npm run lint` clean, `flutter analyze` clean (2 real bugs caught and
+fixed in the mobile-app changes before they shipped — see session log).
+**Same-day, fifth follow-up — REQ-HYG-006 Phase 1.6, corrected on user
+feedback.** User: "whatever log is it should be auto submitted to master
+admin; include log report download in master or above admin ... is it
+alligned" — no, it wasn't yet, so fixed both gaps directly (small enough
+not to need a fresh plan round): mobile apps' `error()`/`fatal()` now
+auto-submit to `diagnostic_reports` themselves (mirrors the admin panel;
+"Report a Problem" stays as a secondary, description-adding channel, not
+the only path in); admin panel's `/diagnostics` page got a "Download"
+button (exports the current filtered list as JSON), gated
+`role !== "normal_admin"` — interpreted "master or above admin" as this
+project's existing senior_admin/management gate, flagged to the user in
+case "master" meant `management` specifically. Verified: `npm run lint`
+clean, `flutter analyze` clean, a debug Teacher-flavor APK builds
+end-to-end again after the change.
 
-Prior checkpoint: `governance\ai-context\SESSION-2026-08-28-1.md` — built and shipped
-the "Admin Access Code" impersonation module (management/senior_admin can
-log into any student/teacher's mobile-app account without their password,
-via a one-time 10-minute code + full audit log), found and fixed a real
-privilege-escalation bug in it the same session (internal helper functions
-reachable by anyone via Postgres's default PUBLIC execute grant — closed
-via explicit REVOKEs), merged `debiprasad` into `main` and pushed both
-(first merge to `main` since 2026-08-20, per that session's own record —
-see the 2026-09-04 note under "Code status" above on the discrepancy with
-what this file otherwise shows). Also deleted the two standing QA
-test accounts at the user's request. Not yet done: live device test of the
-new mobile-app login-screen UI.
+**Same-day, sixth follow-up — REQ-HYG-006 Phase 1.7, cost/privacy safety
+rails.** User asked whether many users' logs could blow past Supabase's
+free-tier limits. Checked the real database via Supabase MCP instead of
+guessing: 19 MB total, `diagnostic_reports` not yet created, ~200
+bytes/row on the biggest existing table — storage was never the actual
+risk. The real gap: no throttling, so a looping bug could auto-submit
+unboundedly. Fixed with a 5-min-per-message cooldown + 20/session cap in
+both loggers. Separately, user clarified the deeper intent: "logging is
+specifically kept for development purpose not to collect what users do"
+— added a `diagnostic_settings` single-row switch (default OFF, RLS
+gated the same way as `diagnostic_reports`) that both loggers check
+before auto-submitting; a toggle + status banner added to `/diagnostics`.
+Manual "Report a Problem" deliberately stays ungated (explicit consent,
+not passive collection). Retention: lazy cleanup (delete >90 days) on
+`/diagnostics` page load instead of a 3rd Vercel Cron, since the project's
+2 existing crons are likely already at the Hobby-tier cap. Verified:
+`npm run lint` clean, `flutter analyze` clean, a debug Teacher-flavor APK
+builds end-to-end.
 
-Prior checkpoint: `governance\ai-context\SESSION-2026-08-24-1.md` — shipped the bulk
-student import feature (Basic Details import + Replace Full Details
-import + Complete/Incomplete tracking), committed `7bd8cef`, pushed to
-`origin\main`. Flagged (not fixed) a 3-day governance gap — see "Code
-status" above. Migration not yet run against production; functional
-verification still pending the user.
+**NOT verified, all four follow-ups:** an actual on-device/in-browser
+error trigger (no device/emulator or running dev server this session —
+full §L10 sign-off still pending), and the migration itself hasn't been
+run against production yet, so no report can actually reach the table
+until that happens. Full detail: `ai-context\SESSION-2026-09-16-1.md`.
+Everything in this file is staged, not committed.
 
-Prior checkpoint: `governance\ai-context\SESSION-2026-08-21-3.md` — fixed and shipped
-REQ-SEC-001 (plaintext `app_password`): wrote a real plan this time
-(superseding the 2026-08-18 reverted attempt), got explicit "code" approval,
-implemented, and **ran the migration directly against production** via the
-Supabase SQL Editor (user's own logged-in browser session) — verified after,
-not just assumed. Also installed the Android SDK toolchain on this machine
-(previously entirely absent) to build and hand off a real debug APK for the
-paired student-side in-app notification feature. Committed as `bc74ac0`,
-pushed since.
+**Prior — Session 2026-09-13 (6 sessions) — kiosk face-scan freeze fixed
+and verified on-device.** Root cause was redundant JPEG decoding (5x per
+attempt) plus `takePicture()`'s inherent multi-second latency; fixed by
+decoding once per attempt and switching to a live preview-stream capture
+(`startImageStream`) instead of `takePicture()`. Verified over a
+13-minute, 178-tick live run: idle poll cycle time 4,500-7,400ms →
+22-400ms (~100-300x faster), zero skips, zero camera reinitializations,
+rotation/mirror correctness confirmed via face-box geometry and two
+near-threshold live match scores. **Recommended, not blocking:** a sanity
+check on the real physical kiosk tablet — every measurement was taken on
+the BlueStacks emulator, whose `sensorOrientation=0` is atypical for real
+hardware. New, separate, not-yet-discussed finding:
+`fetchAllFaceEmbeddings()` takes ~5.8-6.2s over the network (masked
+previously by `takePicture()`'s similar delay) — only affects the
+post-detection "Verifying..." window, needs its own go-ahead if pursued.
+Full detail: `ai-context\SESSION-2026-09-13-4.md`/`-5.md`/`-6.md` (+
+`archive\-1.md`/`-2.md`/`-3.md` for the diagnosis/instrumentation/first
+on-device pass), `work-log\LOG-2026-09-13.md`. Still staged, not
+committed.
 
-Prior checkpoint: `governance\ai-context\SESSION-2026-08-21-2.md` — user
-asked to "check RLS on students and employees tables." Live-confirmed
-`students`/`employees`/`admin_users` all fully readable by a completely
-anonymous client. Read-only finding, recorded per §J14 — nothing fixed at
-the time (fixed in the very next checkpoint, above).
-
-Prior checkpoints (archived, retention cap — §D, latest 3 non-archived
-above — now `SESSION-2026-09-13-4/5/6.md`): `ai-context\archive\SESSION-2026-08-21-1.md`
-(finished + verified live an in-progress refactor — Add Student form
-extracted into a shared `AddStudentForm.js`; built, shipped, and
-live-verified a new permanent-delete feature for students; pushed to
-`origin/debiprasad`, later merged into `main` via the 2026-08-28 checkpoint
-above), `ai-context\archive\SESSION-2026-08-20-1.md` (found, root-caused,
-fixed, and shipped a real authentication bypass — sidebar Logout never
-actually signed out — merged to `main` at `9a2cfb3`),
-`ai-context\archive\SESSION-2026-08-19-2.md` (read-only secrets-hygiene
-check), `ai-context\archive\SESSION-2026-09-07-1.md` (Play Store listing
-assets session), `ai-context\archive\SESSION-2026-09-09-1.md` (multi-shift
-attendance feature, merged to main), and
-`ai-context\archive\SESSION-2026-09-13-1.md` /`-2.md`/`-3.md` (kiosk
-face-scan freeze: diagnosis+instrumentation, the decode/poll fix, and its
-first on-device confirmation — superseded in detail by `-4`/`-5`/`-6`
-above, which is the full fixed-and-verified story; archived only for
-space, not because they're wrong).
+Earlier checkpoints, one line each (full detail in the linked files):
+- **2026-09-09** — multi-shift attendance shipped + merged to `main`. →
+  `ai-context\SESSION-2026-09-09-1.md` (archived), `work-log\LOG-2026-09-09.md`.
+- **2026-09-07** — Play Store store-listing assets (descriptions,
+  screenshots, reviewer test accounts) for Teacher/Student apps; confirmed
+  a new Play Console developer account needs 12+ opted-in closed testers
+  for 14 consecutive days before either app reaches Production; corrected
+  REQ-SEC-002's real scope to 73 RLS-disabled tables (not ~25). →
+  `ai-context\archive\SESSION-2026-09-07-1.md`, `work-log\LOG-2026-09-07.md`.
+- **2026-09-04** — merged `debiprasad`→`main` (calendar/ID-card bug fixes;
+  REQ-SEC-002 partial fix on `students`/`admin_users`; REQ-SEC-004 fixed;
+  REQ-SEC-003 decided as accepted-risk). → `work-log\LOG-2026-09-04.md`
+  session 2.
+- **2026-08-28** — Admin Access Code impersonation module + same-session
+  privilege-escalation fix; deleted 2 standing QA test accounts. →
+  `ai-context\SESSION-2026-08-28-1.md` (archived), `work-log\LOG-2026-08-28.md`.
+- **2026-08-24** — bulk student import feature shipped, 3-day governance
+  gap flagged (not backfilled). → `ai-context\SESSION-2026-08-24-1.md`
+  (archived), `work-log\LOG-2026-08-24.md`.
+- **2026-08-21 (3 sessions)** — RLS exploit live-confirmed (finding);
+  REQ-SEC-001 fixed + shipped (bcrypt); Add Student form extraction +
+  permanent student-delete shipped. →
+  `ai-context\archive\SESSION-2026-08-21-1.md`/`-2.md`/`-3.md`.
+- **2026-08-20** — real auth bypass (Logout never signed out) found +
+  fixed, merged to `main`. → `ai-context\archive\SESSION-2026-08-20-1.md`.
+- **2026-08-19** — read-only secrets-hygiene check, nothing leaked in
+  tracked files. → `ai-context\archive\SESSION-2026-08-19-2.md`.
 
 ## Next step
-**2026-09-13, current:**
-0. **KIOSK FACE-SCAN FREEZE IS FIXED AND VERIFIED (session 6)** — no
-   action required on this specific item. Idle poll cycles went from
-   4.5-7.4s to 22-400ms, verified over a 13-minute/178-tick live run with
-   zero skips and zero camera reinitializations; rotation/mirror
-   correctness confirmed via face-box geometry and two near-threshold live
-   match scores. See `ai-context\SESSION-2026-09-13-6.md` for full detail.
-0a. **Recommended before production, not blocking**: a sanity check on the
-    real physical kiosk tablet — every measurement in this investigation
-    was taken on the BlueStacks emulator, whose reported
-    `sensorOrientation=0` is atypical (real hardware usually reports
-    90/270), so the rotation formula hasn't been exercised against a
-    representative value yet. If a real scan on the actual tablet looks
-    right (upright face, working matches), this is fully done.
-0b. **Nothing needs to change in `face_enroll_capture_page.dart`** —
-    deliberately left on the still-photo path; not part of this bug.
-0c. **New, separate, OPTIONAL item surfaced during verification, not yet
-    discussed with the user**: `SupabaseService.fetchAllFaceEmbeddings()`
-    itself takes ~5.8-6.2s over the network during an actual match attempt
-    (previously invisible, masked by `takePicture()`'s own similar-sized
-    delay). Only affects the brief post-detection "Verifying..." window,
-    not the idle-camera freeze that was reported. Needs the user's explicit
-    interest and go-ahead before any work starts on it — it is a
-    network/query performance question, unrelated to anything in this
-    thread's camera work.
-0d. **Everything in this thread (`SESSION-2026-09-13-1` through `-6`) is
-    still staged, not committed** — the user has not been asked to commit
-    yet; that's their call per §A9 once they're satisfied with the fix
-    (and, if desired, the real-tablet sanity check in 0a).
+Open items, most recent first (superseded/completed items removed — see
+the checkpoint list above for what already shipped):
 
-**2026-09-09 (prior):**
-0. **Install the new build on the real physical kiosk device** — the
-   currently-installed build has been non-functional for check-ins since
-   the prior session's backend migration went live; this is the priority
-   item. See `LOG-2026-09-09.md`.
-0a. Give the checkout flow one more real-device test after installing —
-    only verified on BlueStacks this session, whose webcam doesn't fully
-    represent the kiosk's real front camera.
-
-**2026-09-07 (prior):**
-0. Data Safety form + content rating questionnaire in Play Console.
-0a. Start recruiting 12+ closed-testing testers now — confirmed new
-    developer account, 14-day clock only starts once they're opted in; the
-    timeline's long pole (see `LOG-2026-09-07.md`).
-0b. Create both Play Console listings, upload the signed AABs, set tracks.
-0c. REQ-SEC-002 corrected scope (73 tables, not ~25) needs the user's
-    priority decision — not fixed yet, see `TODO.md`.
-
-**2026-09-04 (prior merge):**
-0. Click through the calendar and ID-card fixes just merged (Sunday legend
-   on the teacher calendar, Design 2 ID card print with a long class name
-   like "11TH - COMMERCE") — none of the 5 commits in this merge were
-   click-tested in a running app/browser this session. See
-   `work-log\LOG-2026-09-04.md` session 2, next steps 1/1b/1c.
-0a. Continue REQ-SEC-002 for `employees` and the remaining ~22 tables
-    (see TODO.md).
-
-**Carried over from 2026-08-28 (unchanged, not re-verified this session):**
-1. **Live-verify the new mobile-app login UI** — build+install a debug APK
-   and actually try "Have an Admin Access Code?" on a device/emulator; only
-   verified via direct RPC calls + static analysis so far (see
-   `SESSION-2026-08-28-1.md`).
-
-**Carried over from 2026-08-24 (unchanged, not re-verified this session):**
-1a. Manually verify the bulk-import flow end-to-end (both tools,
-    badge/filter, bogus-enrollment-no error path, mobile login) — see
-    `SESSION-2026-08-24-1.md`. `mobile-app/SUPABASE_STUDENT_BASIC_IMPORT.sql`
-    still needs to be run against production first if not already done.
-1b. Decide whether/when to backfill the governance gap flagged above
-    (four undocumented feature commits, 2026-08-21 → 2026-08-24).
-2. **Install the handed-off debug APK on an actual device and verify the
-   password-reset popup live** — reset a test student's password from the
-   admin panel, open the app, confirm the "Password Reset" notice appears
-   via the existing on-open popup system. Not yet done as of this
-   checkpoint — the APK was built and verified to compile/run (web-target
-   smoke test), but the actual popup UX has not been visually confirmed on
-   a real device/emulator.
-3. Once confirmed, `DROP TABLE _app_password_backup_20260821;` in Supabase
-   (holds the pre-migration plaintext values — cleanup step noted in the
-   migration file itself, not yet run since verification isn't complete).
-4. REQ-SEC-002 (broader anon/RLS over-exposure — `students`/`employees`/
-   `admin_users` plus the ~25 mobile-app tables) is still open — this
-   session only fixed the `app_password` piece of it (REQ-SEC-001). Needs
-   its own plan/decision same as before.
-5. REQ-SEC-003/004 unchanged — still each needs its own decision from the
-   user before any work starts on them.
-6. User needs to prioritize REQ-BUG-001..009 — none fixed yet, all just
-   recorded.
-7. The 2026-08-20 logout fix still hasn't been independently re-checked
-   against the live Vercel Production URL (carried over, still open, low
-   priority).
+1. **REQ-SEC-002 (only remaining open security item)** — `employees` +
+   ~22 other tables (73 total per Supabase's live advisor) still have RLS
+   disabled / broad `anon` grants; `employees` specifically is blocked on
+   REQ-SEC-004-style RPC rework since the mobile app reads/writes it
+   directly with the anon key. Needs your priority decision — see
+   `planning\TODO.md`.
+1a. **REQ-HYG-006 (Phase 1 through 1.7 shipped 2026-09-16, not fully
+    verified)** — **run `mobile-app\SUPABASE_DIAGNOSTIC_REPORTS.sql` in
+    the Supabase SQL Editor first** — nothing reports anywhere until that
+    migration is applied. **Auto-submission defaults to OFF** (the new
+    `diagnostic_settings` switch) — turn it on from `/diagnostics` when
+    you actually want to catch errors automatically; it stays off
+    otherwise by design. After the migration: needs a real
+    on-device/in-browser error-trigger pass (§L10) to close out, plus a
+    decision on whether/when to do the still-not-started Phase 2
+    (request-ID threading through Supabase calls) — see
+    `planning\TODO.md`.
+2. **Real-device sanity check for the kiosk fix (2026-09-13, not
+   blocking)** — every measurement so far was on BlueStacks; a real-tablet
+   scan would close out the "recommended, not blocking" item from that
+   session.
+3. **Install the fixed build on the real physical kiosk device
+   (2026-09-09 finding, carried forward)** — confirm whether this has
+   since been done; if not, check-ins on the physical device may still be
+   using an old build.
+4. **Live-verify the Admin Access Code mobile-app login UI (2026-08-28,
+   carried forward)** — only verified via direct RPC calls + static
+   analysis so far, not an actual device run of "Have an Admin Access
+   Code?".
+5. **Manually verify the bulk-import flow end-to-end (2026-08-24, carried
+   forward)** — both tools, badge/filter, bogus-enrollment-no error path,
+   mobile login; confirm `SUPABASE_STUDENT_BASIC_IMPORT.sql` has been run
+   against production.
+6. **`DROP TABLE _app_password_backup_20260821;`** — cleanup step noted in
+   the REQ-SEC-001 migration itself; not run yet since full verification
+   of the password-reset UX wasn't confirmed complete as of that session.
+7. **REQ-HYG-001/002** — no automated tests for `admin-panel/`, no CI
+   pipeline. User chose to skip for now (2026-09-04) — left open, not
+   closed, see `TODO.md`.
+8. **Teacher app Play Store closed testing** — submitted 2026-09-16,
+   11/11 checklist items done; now blocked on the 12-tester/14-day clock.
+   See `work-log\LOG-2026-09-16.md`.
+9. **Governance gaps not backfilled** — the four undocumented commits
+   (2026-08-21→24) and the 2026-09-05/06 Play Store signing/privacy-policy
+   work (see "Code status" above). Decide whether/when to reconstruct
+   session logs for these, or accept the gap as-is.

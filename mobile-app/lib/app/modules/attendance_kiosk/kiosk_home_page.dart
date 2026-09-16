@@ -4,6 +4,7 @@ import 'package:get/get.dart';
 import 'package:intl/intl.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../routes/app_routes.dart';
+import '../../../common/widgets/report_problem_dialog.dart';
 import 'admin_pin_dialog.dart';
 
 // Idle screen for the attendance kiosk - no login, just a live clock and
@@ -45,10 +46,16 @@ class _KioskHomePageState extends State<KioskHomePage> {
             alignment: Alignment.topRight,
             child: IconButton(
               icon: const Icon(Icons.settings_outlined, color: Colors.white54, size: 22),
-              tooltip: 'Set up / update staff face (admin only)',
+              tooltip: 'Set up / update staff face (admin only) — long-press to report a problem',
               onPressed: () async {
                 final unlocked = await showAdminPinGate(context);
                 if (unlocked) Get.toNamed(Routes.kioskEnrollList);
+              },
+              onLongPress: () async {
+                final unlocked = await showAdminPinGate(context);
+                if (unlocked && context.mounted) {
+                  showReportProblemDialog(context, app: 'attendance', userType: 'kiosk_admin');
+                }
               },
             ),
           ),

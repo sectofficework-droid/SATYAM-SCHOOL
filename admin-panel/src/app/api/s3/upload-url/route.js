@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import s3, { S3_BUCKET } from "@/lib/s3";
+import { withDiagnostics } from "@/lib/apiDiagnostics";
 
 function isAllowedKey(key) {
   return typeof key === "string" && (key.startsWith("students/") || key.startsWith("employees/") || key.startsWith("app/") || key.startsWith("gr-book/") || key.startsWith("sef-students/") || key.startsWith("sef-employees/"));
 }
 
-export async function POST(request) {
+export const POST = withDiagnostics(async function POST(request) {
   const { key, contentType } = await request.json();
 
   if (!isAllowedKey(key)) {
@@ -23,4 +24,4 @@ export async function POST(request) {
   const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 300 });
 
   return NextResponse.json({ uploadUrl });
-}
+});

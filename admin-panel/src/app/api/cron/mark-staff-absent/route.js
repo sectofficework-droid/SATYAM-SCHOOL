@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import supabase from "@/lib/supabase";
 import { getCalendarEvents } from "@/lib/calendarService";
 import { isWorkingDay } from "@/lib/attendanceRules";
+import { withDiagnostics } from "@/lib/apiDiagnostics";
+import logger from "@/lib/logger";
 
 // Runs once daily at 09:00 UTC / 2:30pm IST (see vercel.json) - Vercel's Hobby
 // plan only allows daily crons, so this can no longer poll every 30 min through
@@ -11,7 +13,7 @@ import { isWorkingDay } from "@/lib/attendanceRules";
 // itself no-ops until that configured cutoff has passed and the feature is
 // enabled, so firing after the latest plausible cutoff each day is what keeps
 // this correct with only one run.
-export async function GET(request) {
+export const GET = withDiagnostics(async function GET(request) {
   const authHeader = request.headers.get("authorization");
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -30,6 +32,7 @@ export async function GET(request) {
     if (error) throw error;
     return NextResponse.json({ date: today, marked: data ?? 0 });
   } catch (e) {
+    logger.error("Mark staff absent cron failed", { stack: e?.stack, message: e?.message });
     return NextResponse.json({ error: e.message || "Failed" }, { status: 500 });
   }
-}
+});

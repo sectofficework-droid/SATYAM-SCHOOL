@@ -1,5 +1,6 @@
 import "./globals.css";
 import PWARegister from "@/components/PWARegister";
+import DiagnosticsInit from "@/components/DiagnosticsInit";
 
 export const metadata = {
   title: "Satyam Stars International School",
@@ -36,6 +37,7 @@ export default function RootLayout({ children }) {
       </head>
       <body className="antialiased">
         <PWARegister />
+        <DiagnosticsInit />
         {children}
       </body>
     </html>

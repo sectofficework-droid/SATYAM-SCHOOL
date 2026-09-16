@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import s3, { S3_BUCKET } from "@/lib/s3";
+import { withDiagnostics } from "@/lib/apiDiagnostics";
 
 const CORS = {
   "Access-Control-Allow-Origin":  "*",
@@ -17,7 +18,7 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS });
 }
 
-export async function GET(request) {
+export const GET = withDiagnostics(async function GET(request) {
   const params = new URL(request.url).searchParams;
   const key = params.get("key");
   const filename = params.get("filename");
@@ -50,4 +51,4 @@ export async function GET(request) {
   }
 
   return NextResponse.json({ viewUrl }, { headers: CORS });
-}
+});

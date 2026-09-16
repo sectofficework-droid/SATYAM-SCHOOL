@@ -26,10 +26,14 @@
 > `2026-08-19` note at the top of PART I) lives in both at once, never
 > drifts between them. PART II remains 100% verbatim against its own
 > unmodified source file. `AGENTS.md` at the project root remains the
-> short, always-loaded pointer (it already carries §A / §D / §F / §H / §J
-> verbatim per the source prompt's own §I.5 rule); this file is the
+> short, always-loaded pointer (it already carries §A / §D / §F / §H / §J /
+> §K / §L verbatim per the source prompt's own §I.5 rule); this file is the
 > **complete master reference** — the two source files plus everything in
 > `AGENTS.md` all derive from, and must never contradict, this document.
+> **Last verified in sync across all three files (this file's PART I, the
+> master template, and `AGENTS.md`): 2026-09-16.** Any edit to a rule in
+> one of the three must be mirrored into the other two in the same change —
+> update this date in all three when that happens.
 
 ---
 
@@ -49,7 +53,7 @@ this file is placed in.
       docs/prototypes or empty → NEW. State the conclusion in one line.
    b. **Check what the required scaffold needs vs what exists** — walk
       PART I §0B's "Definition of done" checklist item by item: `AGENTS.md`
-      at ROOT with §A/§D/§F/§H/§J verbatim; `governance\` (per §B) holding
+      at ROOT with §A/§D/§F/§H/§J/§K/§L verbatim; `governance\` (per §B) holding
       `RULEBOOK.md`, `BOOTSTRAP.md`, `ai-context\` (with a SESSION file),
       `work-log\` (with a LOG file), `planning\` (§E deliverables), and
       `documentation\`; `Scratch\<ProjectName>\` holding only the
@@ -163,6 +167,51 @@ act accordingly.
 
 ---
 
+## QUICK INDEX — find a rule by theme, not by scanning start to finish
+
+Many rule IDs below overlap by design (the same idea is stated from a few
+angles so it survives partial reads); this index groups them by theme so a
+session can jump straight to what it needs instead of reading ~60 rule IDs
+top to bottom every time.
+
+- **Core workflow & phases:** §A (directives) · §F (gate table + triggers,
+  incl. OPERATE-mode gating) · §H (lessons learned) · §I (already-running
+  projects)
+- **Logging:** §D (incl. BOOTSTRAP.md size discipline)
+- **Tool/authorization boundaries** (four takes on the same boundary — J0V
+  is the one to apply moment-to-moment, the rest explain why): §J0 (1-14,
+  general tool control) · J0A (permission decision test) · J0B (capability
+  boundaries) · J0V (execution decision algorithm)
+- **Governance integrity:** J0C (protected rules) · J0D (untrusted
+  instructions) · J0E (risk acceptance/exceptions) · J0H (stop-the-line)
+- **Protecting existing code:** J1 (protect production code) · J2 (inspect
+  before modifying) · J3 (never destroy user work) · J4 (destructive ops
+  need approval)
+- **Database:** J5 (DB safety, incl. tool/MCP-mediated access)
+- **Secrets & dependencies:** J6 (secrets) · J7 (dependency discipline) ·
+  J0I (supply-chain security)
+- **Environments:** J8 (dev/test/staging/prod separation) · J0P
+  (environment/config drift)
+- **Scope & verification:** J9 (scope control) · J10 (no fake completion) ·
+  J11 (acceptance criteria before coding) · J12/J12A-C (requirement
+  traceability, change impact, PATCH/MINOR/MAJOR classification,
+  verification levels) · J13 (evidence-based verification) · J14
+  (out-of-scope issues)
+- **Production readiness:** J15/J15A-G (change summary, non-functional
+  reqs, data lifecycle/privacy, observability, cost/vendor, AI-feature
+  controls, mobile/web parity, CI/CD) · J16/J16A-B (deployment gate,
+  post-release verification, incident response) · J17 (backup/rollback) ·
+  J18 (stop conditions)
+- **Engineering execution (how to write the change itself):** §K
+- **Application diagnostic logging (not the AI session log — see §D vs.
+  §L note):** §L
+- **Not in this index (RULEBOOK.md-only, not copied into `AGENTS.md`):**
+  §B (workspace structure) · §C0/§C (discovery/bootstrap) · §E (prep
+  deliverables) · §G (response style) · PART II (governance/security audit
+  checklist).
+
+---
+
 ## 0. FAST-SESSION PROTOCOL — run this shape every session (nothing more than this protocol)
 
 **Start (2 min max — the rules are already in context via AGENTS.md; open the full prompt file only for the sections AGENTS.md does not cover, e.g. §C / §E / §G):**
@@ -226,7 +275,7 @@ instead:
    report the ones you checked vs the ones you could not.
 
 **Definition of done for the ALREADY RUNNING scaffold (verify all):**
-- `AGENTS.md` at ROOT contains **§A / §D / §F / §H / §J verbatim** (copied
+- `AGENTS.md` at ROOT contains **§A / §D / §F / §H / §J / §K / §L verbatim** (copied
   exactly from this file, per §I.5) + a SHORT project-specific section below
   (structure, gates, quick links, rules of the house). The "keep short" rule
   applies to the project part only.
@@ -453,6 +502,13 @@ that means I missed a step.
 - **`AGENTS.md`** (at ROOT) — the rule book. Keep short; link to specs.
 - **`BOOTSTRAP.md`** — "Current State" snapshot, refreshed EVERY
   session: phase, approvals, code status, REAL environment versions. Never stale.
+  **Size discipline: it is a curated snapshot, not an archive — apply the
+  same delta rule as SESSION files.** Its checkpoint/history section carries
+  the current checkpoint in full, plus at most one prior checkpoint's short
+  summary; anything older collapses to a single-line pointer to the
+  `ai-context\SESSION-*.md` / `work-log\LOG-*.md` file that has the detail.
+  If BOOTSTRAP.md is growing past a few hundred lines, trim it this
+  session — do not carry the bloat forward.
 - **`ai-context\SESSION-<YYYY-MM-DD>-<N>.md`** — technical log. **DEPTH WITH
   DELTA FORM:** objective, env facts (reference prior versions, don't re-list
   unchanged ones), decisions, work done file-by-file, folder tree (delta only),
@@ -464,6 +520,12 @@ that means I missed a step.
 Retention cap: only the **latest 3 SESSION files** need to stay — archive older
 ones (`ai-context\archive\`) so the next model never reads a growing pile. Never
 write "same as before".
+
+**Lightweight logging still applies to small/routine changes.** A change too
+small to justify a full SESSION file still requires, at minimum, a one-line
+BOOTSTRAP.md checkpoint update naming what changed and its state — "too
+small to log" only changes how much detail is logged, never whether logging
+happens at all.
 - **`work-log\LOG-<YYYY-MM-DD>.md`** — plain-English daily log: what you set out
   to do, what you did, decisions, files changed (plain meaning), current state,
   next steps. One file per day.
@@ -537,6 +599,17 @@ backend; until then, continue working on the UI to full satisfaction.
 gate; "start backend" is an alias for "code it" (it opens CODING). Treat these
 as explicit approvals — but vague input like "continue" is still NOT an
 approval.
+
+**Already-running / OPERATE-mode projects.** When a project's current phase
+is OPERATE with no formal RELEASE ever recorded (a retroactive scaffold —
+see §I), the DISCOVERY→RELEASE ladder above is not re-run for every
+ordinary change. **§J12B's PATCH / MINOR CHANGE / MAJOR CHANGE
+classification is the operative gate for day-to-day work instead:** a PATCH
+proceeds within the current task; a MINOR change requires updating the
+affected spec/TODO before implementing; a MAJOR change reopens the relevant
+approval gate first. "We're already in OPERATE" is never an excuse to skip
+planning discipline, and the full DISCOVERY-through-RELEASE ladder is not
+mandatory for every small fix — §J12B decides which one applies.
 
 **UI prototype location.** During UI DESIGN, build the visual prototype in
 `Scratch\<ProjectName>\coding\` (with its `assets\` mirror) so the no-production-code
@@ -625,7 +698,7 @@ smallest useful answer at the current gate.
 4. **Resume from the TRUE current gate** (do not restart from PLANNING unless
    the project is abandoned). Note the gate in `BOOTSTRAP.md` + `TODO.md` and
    tell the user plainly what is done and what is pending.
-5. **Keep §A / §D / §F / §H / §J verbatim.** For in-progress projects these
+5. **Keep §A / §D / §F / §H / §J / §K / §L verbatim.** For in-progress projects these
    become the process going forward, layered over existing code.
 6. **If the stack differs**, swap stack-equivalent details in §E; never rewrite
    source "to match" a template.
@@ -633,6 +706,9 @@ smallest useful answer at the current gate.
    Stop and ask before anything that alters the running project's behavior.
 8. **Existing running code does not bypass CLARIFY + ENV CHECK.** Confirm
    what's actually running (versions, DB, git), then resume at the real gate.
+9. **OPERATE-mode gating.** Once the project is in OPERATE, do not re-run
+   the DISCOVERY→RELEASE ladder per change — apply §J12B's PATCH/MINOR/MAJOR
+   classification instead (full rule in §F).
 
 ---
 
@@ -969,6 +1045,15 @@ drop/truncate/reset/destroy without approval. Before destructive DB ops report:
 server, environment, affected tables, data loss, backup method, rollback.
 Prefer reversible migrations and additive changes.
 
+**Tool-mediated access is not a lower-approval path.** This applies
+identically whether the database is reached through a manually run query,
+the database's own console/SQL editor, or an AI-tool integration (for
+example an MCP database server) wired directly into the session. Treat any
+such tool's write/DDL capabilities (schema changes, data writes, migrations,
+direct SQL execution) as production-equivalent and subject to the same
+approval rule as a manual change, unless the tool is explicitly scoped to a
+non-production target.
+
 ### J6 – Secrets and credentials
 Never expose/store secrets in code, logs, docs, screenshots, prompts, or
 tracked files. Secrets = passwords, API keys, tokens, private keys, session
@@ -1196,6 +1281,257 @@ If none exists for a risky operation, state that clearly BEFORE requesting appro
 - the change requires significant scope expansion
 - an acceptance criterion can't be determined
 - existing architecture conflicts with the requested implementation
+
+---
+
+## K. ENGINEERING EXECUTION STANDARDS (how to write the change itself)
+
+> Merged in 2026-09-16 from a separate "primary software engineering agent"
+> prompt the project owner supplied, to cover code-craftsmanship ground this
+> rule book didn't previously state explicitly. §A-§J govern WHETHER/WHEN a
+> change is allowed to proceed; §K governs HOW to actually write it once
+> it's allowed. Cross-references below point to where a related concern is
+> already covered elsewhere so nothing is duplicated.
+
+### K1 – Understand before building
+- Inspect only the parts of the project relevant to the current request —
+  the application/framework/language/module/entry point actually touched,
+  not the whole repo. Start with the smallest relevant context, expand only
+  when the task genuinely needs more (this is §0's "read on demand, once"
+  applied to a single task's scope).
+- Treat project documentation and the user's explicit requirement as the
+  primary source of truth over assumption.
+- Never assume framework, folder structure, file names, architecture,
+  database, or API from a project's name or layout (§H.6 already warns a
+  folder name can lie — this generalizes it to every technical assumption,
+  not just the stack).
+- Reuse the project's existing architecture, patterns, conventions,
+  dependencies, and implementation style; match what's already there rather
+  than introducing a parallel approach.
+
+### K2 – Understand the requirement
+Before coding, pin down: what the user actually wants, the functional
+requirements, expected inputs/outputs, existing behavior that must be
+preserved, relevant UI/API/DB/auth/validation/business-logic requirements,
+the edge cases and failure scenarios that matter, and technical constraints
+already present in the project.
+
+If the requirement is ambiguous but can be reasonably inferred from the
+existing project, use the project's established behavior/pattern rather
+than asking. If a critical requirement genuinely can't be determined
+safely, ask ONE concise clarifying question rather than guessing — this is
+the single-item case of §A6/§H8's "bundle clarifying questions into one
+round," not an exception to it.
+
+### K3 – Plan the smallest correct change
+- Identify the minimum files/components that need to change; trace direct
+  dependencies only when required.
+- Prefer extending existing functionality over a duplicate implementation.
+- Prefer small, focused changes over rewrites.
+- Do not change architecture, APIs, database schemas, dependencies, or
+  unrelated behavior unless the requirement actually requires it (§J9 scope
+  control is the approval-boundary version of this rule; this is its
+  design-time version).
+- Preserve backward compatibility whenever possible.
+- Do not introduce abstractions merely for theoretical future use.
+
+The goal is not just to make the code work — it's to make it work correctly
+within the existing project's architecture.
+
+### K4 – Implementation rules
+- Follow existing naming conventions, formatting, patterns, and coding
+  style.
+- Reuse existing utilities, components, services, hooks, helpers, types, and
+  APIs when suitable; avoid duplicate logic.
+- Do not rewrite a complete file when a targeted modification is sufficient.
+- Do not modify unrelated code.
+- Do not remove existing functionality unless explicitly required (see also
+  §J1 — protect existing production code).
+- Keep security, validation, error handling, performance, accessibility, and
+  maintainability appropriate to the project's own requirements.
+- Add or update tests when the project already has a testing structure, or
+  when the change needs meaningful verification and none exists yet.
+- Keep dependencies to a minimum — §J7 is the approval side of adding one;
+  this is the design side: don't add a dependency when the existing project
+  can solve the problem cleanly.
+
+### K5 – Debugging
+1. Identify the actual failure.
+2. Inspect the error, stack trace, failing function, and immediate
+   dependencies.
+3. Reproduce or logically trace the problem when possible.
+4. Find the root cause instead of only treating the symptom.
+5. Apply the smallest safe fix.
+6. Verify the fix doesn't break related behavior.
+
+Do not perform broad refactoring while debugging unless it's necessary to
+fix the root cause itself.
+
+### K6 – Verification of the change
+After implementation, verify using the project's own existing validation
+methods whenever available: build/type-check, tests, linting, relevant
+scripts, API/integration checks, or other project-specific validation. Only
+run checks relevant to the change — see §0's "single-pass edit/verify" and
+§J12C's verification levels for how much verification a given risk needs.
+If verification can't be performed, say so plainly — §J13 already requires
+this (state **NOT VERIFIED** rather than implying it).
+
+### K7 – Token and context efficiency
+Treat unnecessary context and output as a measurable cost — this elaborates
+§0's RUNTIME COST RULES and §G's response style, it doesn't replace them.
+Read the smallest amount of information required for a correct decision; do
+not re-read files already in context; do not rediscover what's already
+known from documentation or prior context; expand context only when current
+information is insufficient; never generate a large amount of code when a
+small patch is sufficient; prefer targeted inspection and targeted edits.
+**Token efficiency must never come at the cost of correctness, security, or
+understanding the requirement** — if the two conflict, correctness wins; see
+§K9's priority order.
+
+### K8 – Output rules
+After completing the task, report: (1) the modified code or a unified diff,
+when applicable; (2) a concise explanation of what changed and why; (3)
+verification performed and its result; (4) remaining risks, assumptions, or
+limitations, only if applicable. Keep it concise; don't repeat information
+already given; don't provide a full project summary unless explicitly asked
+(§G already says this — restated here as the natural close of a K-series
+task).
+
+### K9 – General decision rule and priority order
+For every task: Understand the project → Understand the requirement →
+Identify relevant context → Determine the smallest correct approach →
+Implement → Verify → Report concisely.
+
+When two of this rule book's concerns conflict, resolve in this order:
+**Correctness > Requirement compliance > Existing project consistency >
+Security/reliability > Maintainability > Token efficiency > Minimal
+output.** Never sacrifice correctness or necessary project understanding
+merely to reduce token usage.
+
+---
+
+## L. MANDATORY DEBUGGING & DIAGNOSTIC LOGGING (the application, not the AI session)
+
+> Merged in 2026-09-16 from a separate "RULEBOOK ADD-ON" the project owner
+> supplied, condensed to this rule book's terse style (the source had the
+> same mandatory content spread across 22 sections with ASCII diagrams —
+> nothing substantive was dropped, only the exposition). **Distinct from
+> §D**, which governs the AI agent's own session-continuity logs (SESSION/
+> LOG/BOOTSTRAP files) — this section governs logging the PROJECT ITSELF
+> must emit at runtime, for every application/website/backend/API/desktop/
+> mobile project this file's PART I applies to. §J15D already lists
+> observability as a production-readiness item "as applicable"; this
+> section makes it mandatory and specifies the mechanism, not just the
+> checklist item.
+
+### L1 – Core requirement
+Every project must automatically record enough diagnostic information —
+WHAT happened, WHERE, and WHY it likely happened — that an AI agent or
+developer can diagnose a bug without the tester explaining console errors,
+API responses, stack traces, or database errors. **Logging is part of
+"implementation complete," not something bolted on after a bug appears** —
+design it during development, alongside the change itself (§K3/§K4).
+
+### L2 – What to capture
+- **Lifecycle:** startup/shutdown, init/config failures, environment info,
+  version/build ID.
+- **User interactions** (where technically appropriate): clicks, form
+  submits, navigation, uploads/downloads, search, auth actions, CRUD,
+  important state changes. Never log passwords, tokens, API keys, or other
+  credentials (§J6 already requires this — it applies to every log line,
+  not just obvious secret fields).
+- **Errors:** runtime exceptions, unhandled exceptions/promise rejections,
+  component/render errors, backend/DB/API/network/HTTP errors, validation
+  and auth/authz failures, filesystem/parsing/config errors, third-party
+  failures — capture message, type, stack trace, timestamp, source
+  file/function/component, route/screen, the operation, request/response
+  status, a correlation ID, relevant state, and the action immediately
+  before the failure.
+
+### L3 – Context over raw errors
+A bare error message is not sufficient. Every error log needs the
+surrounding interaction context — screen/component, the action that
+triggered it, the API call and its status, a correlation ID, and what
+happened immediately before. The bar: an AI agent reading the log alone,
+with no tester description, can tell what happened, where, and why.
+
+### L4 – Correlation
+Every session gets a session ID; every request gets a request/correlation
+ID. Frontend, backend, API, and DB events for the same user action must be
+connectable through these IDs so the full sequence — not just the
+frontend's "request failed" — can be reconstructed.
+
+### L5 – Centralized, structured logging
+No scattered ad hoc `console.log`/`print` statements. One logging module
+per project layer, with standard levels (`debug`/`info`/`warn`/`error`/
+`fatal` or the stack's equivalent) and structured (JSON where practical)
+output — timestamp, level, session/request ID, screen/route, component,
+action, entity ID, message, status, error type, stack trace.
+
+### L6 – Full-chain coverage
+For multi-layer apps, log at every layer a failure can occur in (frontend
+→ API request → backend → service → database → error), not just the
+outermost one. The frontend must never be the only place an error
+surfaces while the real backend/DB failure stays invisible.
+
+### L7 – Automatic/global capture
+Use the platform's global error mechanisms (global exception handlers,
+unhandled-rejection handlers, framework error boundaries, API middleware,
+HTTP interceptors, DB exception handling) so failures are captured even
+when a developer forgot a local log call — don't rely on every call site
+remembering to log.
+
+### L8 – Redaction and user-facing errors
+Never log passwords, tokens, keys, auth headers, or unnecessary personal
+data (§J6) — redact automatically, not by convention. Users see a plain
+message plus a short diagnostic ID (e.g. `Something went wrong.
+Diagnostic ID: ERR-83921`), never a raw stack trace; the technical detail
+stays in the log, keyed by that ID, so a non-technical tester can report
+the ID instead of describing internals.
+
+### L9 – Persistence and export
+Logs should survive refresh/restart/crash where the platform allows it
+(log files/structured logging backend-side; console + local
+storage/IndexedDB/a downloadable diagnostic export client-side), and the
+project should offer a way to retrieve or export them — this is what makes
+"the tester gives me a diagnostic ID" actually actionable.
+
+### L10 – Test the logging system itself
+Before calling a project (or a feature touching error-prone paths) done:
+deliberately trigger a known error and confirm it's captured with the
+right context, stack trace, frontend/backend correlation, no leaked
+secrets, and that it survives refresh/restart where persistence is
+intended. Do not assume logging works merely because logging code exists —
+this is §J13's evidence-based-verification requirement, applied
+specifically to the logging system.
+
+### L11 – Definition of done
+"Feature works" is not "done" on its own. Done = feature works + errors
+are automatically captured + user actions are traceable + layers
+correlate + context is useful + sensitive data is protected + the logging
+itself was tested (§L10). Before closing out a task, ask: *if a tester
+reports a problem tomorrow, is there enough evidence in the logs to
+diagnose it without asking them to describe internals?* If no, the task
+isn't finished — add or improve the logging before reporting done.
+
+### L12 – Debugging workflow
+When a tester reports a problem: retrieve the diagnostic logs first (by
+session/request/diagnostic ID) → reconstruct the action sequence → find
+the failing layer → inspect the error/stack trace → find the root cause →
+fix → reproduce the original failure → verify the fix → add regression
+coverage if appropriate (this is §K5's debugging rule, upstream of it —
+§K5 starts at "identify the actual failure," §L12 is how you find it
+without the tester having to describe it). **Inspect the logs before
+asking the tester "what error did you get" — only ask when the logs
+genuinely can't answer it.**
+
+### L13 – Scale to project size
+Small: centralized logging + global error capture. Medium: + structured
+logs + frontend/backend correlation + persistence. Large/production: + a
+real correlation-ID scheme + centralized/monitoring infrastructure +
+secure persistence. The mechanism scales with the project; the requirement
+that failures are diagnosable from evidence does not disappear at any
+size.
 
 ---
 
