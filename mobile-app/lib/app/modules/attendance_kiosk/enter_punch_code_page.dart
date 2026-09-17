@@ -221,6 +221,16 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
                 : const Text('Continue', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
           ),
         ),
+        const SizedBox(height: 8),
+        // Alternative to typing an admin code - same QR flow reachable from
+        // kiosk home (qr_punch_page.dart), offered here too since "Not Me"
+        // lands someone on this screen without a code in hand yet.
+        TextButton.icon(
+          onPressed: _busy ? null : () => Get.toNamed(Routes.kioskQrPunch),
+          icon: const Icon(Icons.qr_code_scanner_rounded, color: Colors.white60, size: 18),
+          label: const Text('Scan QR Instead', style: TextStyle(
+            color: Colors.white60, fontSize: 13, fontWeight: FontWeight.w600, fontFamily: 'Poppins')),
+        ),
       ]),
     ),
   );

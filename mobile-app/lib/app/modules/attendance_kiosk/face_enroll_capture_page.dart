@@ -10,8 +10,8 @@ import '../../routes/app_routes.dart';
 
 enum _Stage { camera, saving, success, error }
 
-// Captures 25 diverse shots (22 if the staff member doesn't wear
-// spectacles - see _wearsGlasses) for whoever admin just picked on
+// Captures 8 diverse shots (9 if the staff member wears spectacles - see
+// _wearsGlasses) for whoever admin just picked on
 // StaffEnrollListPage and saves all of them as reference embeddings (not
 // one blended average - see saveFaceEmbedding) so a punch only has to be
 // close to ONE of them, not a compromise of all of them. Admin answers the
@@ -51,13 +51,13 @@ class _ShotPose {
 
 // One capture slot. [poseDiverse] marks the prompts that establish a NEW
 // head angle (first-of-each-direction) - only those get checked against
-// _isDiverseEnough below. Everything else (repeat frontal shots,
-// expression/spectacles/lighting variety) intentionally holds roughly the
-// SAME head pose as whatever came before it, so gating those on pose delta
-// would just reject them as "already captured" despite being exactly the
-// kind of same-pose-different-condition sample the 25-shot breakdown asks
-// for. [requiresGlasses] prompts only appear in the session when the staff
-// member said they wear spectacles (see _wearsGlasses).
+// _isDiverseEnough below. The normal-expression/smile/spectacles prompts
+// intentionally hold roughly the SAME (frontal) head pose as whatever came
+// before them, so gating those on pose delta would just reject them as
+// "already captured" despite being exactly the kind of same-pose-
+// different-condition sample this shot list asks for. [requiresGlasses]
+// prompts only appear in the session when the staff member said they wear
+// spectacles (see _wearsGlasses).
 class _EnrollPrompt {
   const _EnrollPrompt(this.text, {this.poseDiverse = false, this.requiresGlasses = false});
   final String text;
@@ -66,51 +66,51 @@ class _EnrollPrompt {
 }
 
 class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
-  // 25 diverse shots: 5 frontal, 4 slight-left/right, 4 slight-up/down,
-  // 3 normal expression, 3 different expression, 3 with spectacles (if
-  // applicable - dropped to leave 22 when the staff member doesn't wear
-  // any), 3 lighting variations (lighting itself isn't something the app
-  // can control - these are instructions for the staff member/admin to
-  // physically move; each shot still goes through the same quality gates
-  // as every other prompt).
+  // 8 distinct shots (9 if the staff member wears spectacles - see
+  // _wearsGlasses): one each of frontal, left, right, chin-up, chin-down,
+  // normal expression, smiling, and (conditionally) spectacles. Was 25/22,
+  // built from 3-5 near-duplicate repeats per category (e.g. 5 separate
+  // "look straight" prompts) - cut down because (a) it made enrollment take
+  // 2+ minutes, and (b) per real-data validation of REQ-BUG-014
+  // (governance/planning/TODO.md), MORE near-identical shots per person
+  // didn't meaningfully improve genuine-match scores once averaged into a
+  // centroid, but DID increase the odds of an outlier shot confusing two
+  // people - genuinely distinct poses/expressions, not repeat count, is
+  // what the centroid actually benefits from. Lighting variation is
+  // dropped entirely (nothing here can force the room to actually change
+  // lighting between prompts - those 3 slots in the old list mostly just
+  // recorded the same lighting three times).
   static const _allPrompts = [
     _EnrollPrompt('Look straight at the camera', poseDiverse: true),
-    _EnrollPrompt('Look straight at the camera, relax your face'),
-    _EnrollPrompt('Look straight at the camera again'),
-    _EnrollPrompt('Keep looking straight, chin level'),
-    _EnrollPrompt('One more, straight at the camera'),
     _EnrollPrompt('Turn your head slightly left', poseDiverse: true),
-    _EnrollPrompt('Hold that left turn'),
     _EnrollPrompt('Turn your head slightly right', poseDiverse: true),
-    _EnrollPrompt('Hold that right turn'),
     _EnrollPrompt('Tilt your chin up a little', poseDiverse: true),
-    _EnrollPrompt('Hold your chin up'),
     _EnrollPrompt('Tilt your chin down a little', poseDiverse: true),
-    _EnrollPrompt('Hold your chin down'),
     _EnrollPrompt('Normal expression, look straight'),
-    _EnrollPrompt('Normal expression, relax'),
-    _EnrollPrompt('Normal expression, one more'),
     _EnrollPrompt('Now smile naturally'),
-    _EnrollPrompt('Try a different expression'),
-    _EnrollPrompt('One more expression'),
     _EnrollPrompt('Put on your spectacles, look straight', requiresGlasses: true),
-    _EnrollPrompt('Hold still with your spectacles', requiresGlasses: true),
-    _EnrollPrompt('One more with your spectacles', requiresGlasses: true),
-    _EnrollPrompt('If possible, move to brighter lighting'),
-    _EnrollPrompt('If possible, move to dimmer or normal lighting'),
-    _EnrollPrompt('One more shot, any lighting'),
   ];
 
   // Built when "I'm Ready" is tapped, locking in whatever the spectacles
-  // toggle was set to at that moment (see _wearsGlasses) - 25 prompts if
-  // yes, 22 if no.
+  // toggle was set to at that moment (see _wearsGlasses) - 9 prompts if
+  // yes, 8 if no.
   List<_EnrollPrompt> _prompts = const [];
   int _totalShots = 0;
   bool? _wearsGlasses;
 
-  static const _pollInterval  = Duration(milliseconds: 1000);
-  static const _tickDuration  = Duration(milliseconds: 700);
-  static const _nextShotDelay = Duration(milliseconds: 1300);
+  // Was 1000/700/1300ms - each shot needs 2 consecutive stable polls before
+  // it counts (see _autoCapture's stability check below), so the poll
+  // interval alone used to cost ~2s of an enrollment session's time before
+  // a shot could even be accepted, on top of the tick+delay pause after
+  // it. Tightened to match face_punch_page's already-proven 200ms poll
+  // cadence (that page does MORE per poll - it runs the full match, not
+  // just detection/stability - so this page has headroom to poll at least
+  // as fast); the stability/quality gates themselves are UNCHANGED, so
+  // this only cuts wall-clock waiting, not what counts as an acceptable
+  // shot.
+  static const _pollInterval  = Duration(milliseconds: 300);
+  static const _tickDuration  = Duration(milliseconds: 350);
+  static const _nextShotDelay = Duration(milliseconds: 500);
 
   // How different a shot's pose must be from every prior shot to count as
   // a new angle rather than a repeat - degrees of head rotation, or a
@@ -208,8 +208,13 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
           InputImageRotationValue.fromRawValue(_rotationDegrees) ?? InputImageRotation.rotation0deg;
       _mirrorFrame = front.lensDirection == CameraLensDirection.front;
 
+      // startImageStream() is deferred to _startScanning(), not called here
+      // - see face_punch_page.dart's matching comment: attaching the image
+      // stream this early visibly caps the live preview's frame rate on
+      // real hardware for as long as the pre-ready "Set Up Face Punch"
+      // screen sits on screen, which is otherwise just an idle preview with
+      // no analysis work happening yet anyway.
       _latestFrame = null;
-      await controller.startImageStream((image) => _latestFrame = image);
 
       setState(() => _controller = controller);
     } catch (e, st) {
@@ -219,17 +224,23 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
     }
   }
 
-  void _startScanning() {
+  void _startScanning() async {
     final wearsGlasses = _wearsGlasses ?? false;
     _prompts = _allPrompts.where((p) => !p.requiresGlasses || wearsGlasses).toList();
     _totalShots = _prompts.length;
+    final controller = _controller;
+    if (controller != null && !controller.value.isStreamingImages) {
+      _latestFrame = null;
+      await controller.startImageStream((image) => _latestFrame = image);
+    }
+    if (!mounted) return;
     setState(() { _ready = true; _message = 'Hold still...'; });
     _scheduleNextPoll();
   }
 
   // Live count shown on the pre-ready screen, reacting to the spectacles
-  // toggle before it's locked in by _startScanning - 25 total prompts if
-  // yes, 22 (glasses prompts dropped) if no or not yet answered.
+  // toggle before it's locked in by _startScanning - 9 total prompts if
+  // yes, 8 (glasses prompt dropped) if no or not yet answered.
   int get _plannedShotCount =>
       _allPrompts.where((p) => !p.requiresGlasses || (_wearsGlasses ?? false)).length;
 
@@ -278,6 +289,17 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
     });
   }
 
+  // The poll loop calls this every ~300ms, and "Hold steady..." in
+  // particular can hold across many consecutive polls while someone
+  // settles into a pose - without this guard every one of those polls
+  // would rebuild the whole capture screen (camera preview included) to
+  // redraw identical text, visible as jank on the kiosk tablet for no
+  // visual benefit. See face_punch_page.dart's matching helper.
+  void _updateMessage(String msg) {
+    if (!mounted || _message == msg) return;
+    setState(() => _message = msg);
+  }
+
   bool _isDiverseEnough(_ShotPose pose) {
     final yaw = pose.yaw;
     final pitch = pose.pitch;
@@ -320,11 +342,13 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       final face = await svc.detectFaceFromInputImage(inputImage);
       if (!mounted) return;
       if (face == null) {
-        setState(() { _busy = false; _message = 'Position your face in the circle'; });
+        _busy = false;
+        _updateMessage('Position your face in the circle');
         return;
       }
       if (!svc.eyesOpen(face)) {
-        setState(() { _busy = false; _message = 'Keep your eyes open'; });
+        _busy = false;
+        _updateMessage('Keep your eyes open');
         return;
       }
 
@@ -343,11 +367,13 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       // dark/bright/blurry to make a good reference embedding from (spec:
       // enrollment must not count blurry/over/underexposed samples).
       if (await svc.isExposureUnusable(decoded)) {
-        setState(() { _busy = false; _message = 'Lighting is too dark or too bright - please adjust'; });
+        _busy = false;
+        _updateMessage('Lighting is too dark or too bright - please adjust');
         return;
       }
       if (await svc.isTooBlurry(decoded, face)) {
-        setState(() { _busy = false; _message = 'Image is blurry - please hold still'; });
+        _busy = false;
+        _updateMessage('Image is blurry - please hold still');
         return;
       }
 
@@ -359,18 +385,20 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
           (currentPose.pitch - lastSeen.pitch).abs() < _stabilityAngleDeg &&
           (currentPose.faceHeight - lastSeen.faceHeight).abs() / lastSeen.faceHeight < _stabilitySizeRatioDelta;
       if (!stable) {
-        setState(() { _busy = false; _message = 'Hold steady...'; });
+        _busy = false;
+        _updateMessage('Hold steady...');
         return;
       }
 
-      // Only prompts that establish a NEW head angle are pose-gated - a
-      // repeat frontal/expression/spectacles/lighting shot is SUPPOSED to
-      // hold roughly the same pose as what came before it, so gating those
-      // too would reject exactly the same-pose-different-condition samples
-      // this 25-shot breakdown is asking for. See _EnrollPrompt.poseDiverse.
+      // Only prompts that establish a NEW head angle are pose-gated - the
+      // expression/spectacles shots are SUPPOSED to hold roughly the same
+      // (frontal) pose as what came before them, so gating those too would
+      // reject exactly the same-pose-different-condition sample this shot
+      // list is asking for. See _EnrollPrompt.poseDiverse.
       final currentPrompt = _prompts[_embeddings.length];
       if (currentPrompt.poseDiverse && !_isDiverseEnough(currentPose)) {
-        setState(() { _busy = false; _message = 'That angle is already captured - please change your angle or distance'; });
+        _busy = false;
+        _updateMessage('That angle is already captured - please change your angle or distance');
         return;
       }
 

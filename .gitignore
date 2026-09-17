@@ -31,3 +31,10 @@ Thumbs.db
 
 # Claude Code local settings — machine-specific, causes spurious diffs
 .claude/
+
+# Vercel CLI project link metadata — machine-local, not meant to be tracked
+.vercel/
+
+# Built mobile APKs — distributed via S3 (see mobile-app/README), not git;
+# a signed release build is tens of MB and doesn't belong in repo history
+*.apk

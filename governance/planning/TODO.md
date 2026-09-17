@@ -625,6 +625,75 @@ exams, syllabus, leave, tasks, question bank/paper generation, dashboards,
 notices, calendar, birthdays, timetable, help desk, query, profile/
 password-change flows, PDF generation utilities.
 
+### found 2026-09-17 (attendance kiosk face-match reliability)
+- [ ] **REQ-BUG-014 — Face Punch occasionally matches the wrong enrolled
+      staff member (MINOR CHANGE per J12B — localized change to matching
+      behavior, no schema/scope change).** `match_face_embedding`
+      (`SUPABASE_FACE_MATCH_RPC.sql`) does a nearest-neighbor search across
+      EVERY stored enrollment shot of EVERY enrolled person (best single
+      shot wins, then best person overall) rather than comparing against one
+      stable per-person reference. Confirmed via Supabase query
+      (2026-09-17): 5 enrolled staff, 22-25 stored shots each (~116 vectors
+      total). `FaceRecognitionService.kMatchThreshold` (0.72) and
+      `_matchMargin` (0.05, `face_punch_page.dart`) were tuned with only ONE
+      enrolled staff member (see that file's own header comment,
+      SESSION-2026-09-15) and explicitly never validated against real
+      impostor attempts — with 5 people/~116 vectors now, a noisy/
+      badly-lit/badly-angled shot from the wrong person occasionally
+      outscoring the true match is the expected failure mode, not a random
+      bug. **Not yet a data-integrity problem**: the native confirm dialog
+      (shows matched name, offers "Not Me" before any punch is recorded —
+      `face_punch_page.dart:519-529`) is catching these per user report
+      2026-09-17 — currently a reliability/friction issue (repeat scans),
+      not corrupted attendance records. Two employees (Sunil Pradhan, Rudra
+      Prasad Muni) have `punch_method='face'` attendance rows from
+      2026-09-09 but no `face_embedding` on file now (checked via Supabase
+      query) — investigated, user confirmed this is unrelated (no
+      misidentification trail, just past enrollment churn).
+      **Approved fix direction (user chose "proper fix" over quick
+      threshold retune, 2026-09-17):** replace the per-shot nearest-neighbor
+      search in `match_face_embedding` with one L2-normalized centroid
+      (average-then-renormalize) per enrolled person, computed from their
+      stored shots, then compare the live embedding against just the 5
+      centroids instead of ~116 raw shots. Removes the root cause (more
+      shots per person inflating false-accept odds) rather than moving the
+      threshold. Server-side SQL-only change (`CREATE OR REPLACE FUNCTION`)
+      — no client rebuild needed for any of the 3 mobile flavors, no schema
+      migration (computed on the fly from existing `face_embedding` jsonb).
+      `kMatchThreshold`/`_matchMargin` will need re-validation against the 5
+      real enrolled staff after the change (centroid similarities behave
+      differently from best-of-many-shots similarities) before being
+      considered final.
+
+      **Implemented 2026-09-17.** `match_face_embedding` rewritten to
+      compare against a per-person averaged centroid and applied directly to
+      the live Supabase function (`CREATE OR REPLACE`, no client rebuild
+      needed for this part). Initial validation used only 3 shots x 5
+      people and wrongly concluded 0.72 could stay unchanged - **that
+      validation was too small and missed the real effect**: against all
+      135 stored shots across the (by then) 6 enrolled staff, only 56% of
+      genuine attempts cleared 0.72, which in production read as "only
+      recognizes the first/highest-scoring person, nobody else." Root
+      cause: centroid similarity for a genuine match sits on a
+      systematically lower scale than the old best-of-25-raw-shots
+      similarity did, and 0.72 was carried over unchanged.
+      **Corrected same day**: re-tuned against the full 135-shot dataset
+      (not a small sample) and lowered `kMatchThreshold` 0.72 → 0.65
+      (`face_recognition_service.dart`) - user chose recognition over
+      strictness given the native confirm dialog's "Not Me" step is the
+      real backstop against mix-ups and is confirmed working in practice.
+      Tradeoff at 0.65: 76% single-attempt genuine recognition (was 56%),
+      9 of 27 real cross-person mix-up cases in the dataset would now clear
+      the bar (was 2 of 27) - mitigated by the confirm-before-record step,
+      not eliminated. **This DOES require a new attendance-flavor APK
+      build + reinstall on the kiosk** (unlike the SQL-only RPC change) -
+      `kMatchThreshold` is compiled into the app, not server-controlled.
+      **Follow-up not yet done**: trimming each person's outlier/low-
+      quality enrollment shots before averaging (or re-enrolling the
+      worst-scoring staff) should raise genuine scores back up without
+      giving up recognition, letting the threshold move back up toward
+      0.72 properly - worth doing before headcount grows further.
+
 ## Backlog (deferred scope, not urgent)
 - Payments: Razorpay package installed, not connected (per `PLAN.md`/
   `governance\documentation\PROJECT_CONTEXT.md` — known, deliberate, Phase-2-equivalent item).

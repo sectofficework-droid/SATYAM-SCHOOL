@@ -262,19 +262,33 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
       trace.log('CAMERA', 'gen$gen sensorOrientation=${front.sensorOrientation} '
           'rotation=$_rotationDegrees mirror=$_mirrorFrame');
 
+      // startImageStream() is NOT called here, only in _startScanning() -
+      // CameraX attaches an ImageAnalysis use case the moment a stream
+      // subscriber exists, and on real hardware that visibly caps the live
+      // PREVIEW frame rate too (the capture session negotiates one frame
+      // rate shared across both use cases) - a 120Hz-refresh phone's
+      // preview looked and felt like ~30fps for the entire time the "Ready
+      // to scan?" popup sits on screen, before a single poll has even run.
+      // Deferring the stream to the moment scanning actually starts means
+      // the idle preview runs at the camera's native (fast, unthrottled)
+      // rate, at the cost of the analysis-attach latency (one frame, tens
+      // of ms) landing on "Start Scan" instead of screen-open - a trade
+      // very much worth making since the popup sits idle far longer than
+      // that attach ever takes.
       _latestFrame = null;
-      await trace.step('startImageStream', () => controller.startImageStream((image) => _latestFrame = image));
-
       trace.log('CAMERA', 'gen$gen ready, preview=${controller.value.previewSize}, '
-          'polling every ${_pollInterval.inMilliseconds}ms');
+          'image stream deferred until scanning starts');
       setState(() => _controller = controller);
       _tick = 0;
       _skipped = 0;
       // Does NOT start polling here - see _ready/_startScanning and the
       // class-level comment. If this is a reinit after the person already
-      // tapped "Start Scan" once (_ready already true), resume scanning
-      // immediately rather than making them tap it again.
-      if (_ready) _scheduleNextPoll(Duration.zero);
+      // tapped "Start Scan" once (_ready already true), the stream needs to
+      // come back too - not just the preview - before polling can resume.
+      if (_ready) {
+        await trace.step('startImageStream', () => controller.startImageStream((image) => _latestFrame = image));
+        _scheduleNextPoll(Duration.zero);
+      }
     } catch (e, st) {
       debugPrint('Camera init failed: $e\n$st');
       trace.log('CAMERA', 'gen$gen init FAILED: $e');
@@ -350,8 +364,17 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
     });
   }
 
-  // "Start Scan" tap - see _ready and the class-level comment.
-  void _startScanning() {
+  // "Start Scan" tap - see _ready and the class-level comment. Attaches the
+  // image stream here rather than at camera init - see _initCamera's
+  // matching comment for why the idle "Ready to scan?" preview is faster
+  // without it already attached.
+  void _startScanning() async {
+    final controller = _controller;
+    if (controller != null && !controller.value.isStreamingImages) {
+      _latestFrame = null;
+      await controller.startImageStream((image) => _latestFrame = image);
+    }
+    if (!mounted) return;
     setState(() { _ready = true; _message = 'Position your face in the circle'; });
     _failedAttempts = 0;
     _scheduleNextPoll(Duration.zero);
@@ -422,7 +445,7 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
       if (!svc.eyesOpen(face)) {
         _busy = false;
         trace.log('POLL', 'tick $_tick END eyes-closed in ${attempt.elapsedMilliseconds}ms');
-        if (mounted) setState(() => _message = 'Keep your eyes open');
+        _updateMessage('Keep your eyes open');
         return; // keep polling silently, no need to error out over a blink
       }
 
@@ -444,17 +467,28 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
       if (await svc.isExposureUnusable(decoded)) {
         _busy = false;
         trace.log('POLL', 'tick $_tick END bad-exposure in ${attempt.elapsedMilliseconds}ms');
-        if (mounted) setState(() => _message = 'Lighting is too dark or too bright - please adjust');
+        _updateMessage('Lighting is too dark or too bright - please adjust');
         return;
       }
       if (await svc.isTooBlurry(decoded, face)) {
         _busy = false;
         trace.log('POLL', 'tick $_tick END too-blurry in ${attempt.elapsedMilliseconds}ms');
-        if (mounted) setState(() => _message = 'Image is blurry - please hold still');
+        _updateMessage('Image is blurry - please hold still');
         return;
       }
 
-      // A real face just cleared detection - this is the actual verification step.
+      // A real face just cleared detection - this is the actual verification
+      // step. Nothing past this point reads another live frame (liveness +
+      // the server match both run on the single `decoded` frame already
+      // captured above), but the wait for them can run a couple of seconds
+      // - stopping the image-analysis stream for it lets CameraX drop back
+      // to a preview-only session instead of keeping the same throttled
+      // shared frame rate (preview + analysis) going for that whole wait,
+      // which is what made the "Verifying..." spinner look like it was
+      // fighting a stuttering background. Restarted in
+      // _resumeImageStreamIfNeeded before polling can resume - see that
+      // method's callers below.
+      if (controller.value.isStreamingImages) await controller.stopImageStream();
       if (!mounted) return;
       setState(() { _stage = _Stage.processing; _message = 'Verifying...'; });
 
@@ -469,13 +503,13 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
       trace.log('LIVENESS', 'score=${liveness?.toStringAsFixed(3)} '
           'threshold=${FaceRecognitionService.kLivenessRealThreshold}');
       if (liveness == null || liveness < FaceRecognitionService.kLivenessRealThreshold) {
-        _handleScanFailure('Liveness verification failed.', offerCode: true);
+        await _handleScanFailure('Liveness verification failed.', offerCode: true);
         return;
       }
 
       final liveEmbedding = await svc.getEmbedding(decoded, face);
       if (liveEmbedding == null) {
-        _handleScanFailure('Could not read your face clearly.', offerCode: false);
+        await _handleScanFailure('Could not read your face clearly.', offerCode: false);
         return;
       }
 
@@ -506,7 +540,7 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
           'attempt=${attempt.elapsedMilliseconds}ms');
 
       if (!matched) {
-        _handleScanFailure('Face not recognized.', offerCode: true);
+        await _handleScanFailure('Face not recognized.', offerCode: true);
         return;
       }
 
@@ -537,6 +571,11 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
         await Get.toNamed(Routes.kioskEnterCode);
         if (!mounted) return;
         await controller.resumePreview();
+        // Stream was stopped for verification (see the stopImageStream call
+        // above) and never restarted since this path skips
+        // _handleScanFailure entirely - polling can't resume without it.
+        await _resumeImageStreamIfNeeded();
+        if (!mounted) return;
         setState(() { _busy = false; _stage = _Stage.camera; _message = 'Position your face in the circle'; });
         return;
       }
@@ -581,9 +620,14 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
   // brief warning, staying on the camera stage so scanning just keeps
   // going - see the class-level comment. Only the last one escalates to
   // the full error screen via _showError.
-  void _handleScanFailure(String message, {required bool offerCode}) {
+  Future<void> _handleScanFailure(String message, {required bool offerCode}) async {
     _failedAttempts++;
     if (_failedAttempts < _maxAttempts) {
+      // The stream that got stopped going into _Stage.processing (see that
+      // stopImageStream call) needs to come back before _scheduleNextPoll's
+      // own `finally` resumes polling below - otherwise every poll would
+      // just skip on a permanently-null _latestFrame.
+      await _resumeImageStreamIfNeeded();
       if (!mounted) return;
       setState(() {
         _busy = false;
@@ -593,6 +637,13 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
       return; // _scheduleNextPoll's own `finally` keeps polling going
     }
     _showError(message, offerCode: offerCode);
+  }
+
+  Future<void> _resumeImageStreamIfNeeded() async {
+    final controller = _controller;
+    if (controller == null || controller.value.isStreamingImages) return;
+    _latestFrame = null;
+    await controller.startImageStream((image) => _latestFrame = image);
   }
 
   void _showError(String message, {required bool offerCode}) {
@@ -609,6 +660,18 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
   }
 
   void _retry() => _reinitCamera();
+
+  // The poll loop calls this every ~200ms; a bad-lighting/blink/blur
+  // condition often holds across several consecutive polls, and without
+  // this guard each of those polls would rebuild the whole scanning screen
+  // (camera preview + everything else in the Stack) purely to redraw the
+  // exact same text - visible as extra jank on the kiosk tablet for no
+  // visual benefit. Skipping the rebuild when the message hasn't actually
+  // changed costs nothing when it DOES need to (still just one setState).
+  void _updateMessage(String msg) {
+    if (!mounted || _message == msg) return;
+    setState(() => _message = msg);
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(

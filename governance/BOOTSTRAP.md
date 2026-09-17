@@ -98,11 +98,16 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-Current, verified via `git log`/`git status` 2026-09-16: `main` at `b997c2f`
+Last verified via `git log`/`git status` 2026-09-16: `main` at `b997c2f`
 ("Log Teacher app Play Store closed-testing session..."), in sync with
-`origin/main`, working tree otherwise clean (routine untracked local-only
-items: `.claude/settings.local.json`, `.vercel/`, screenshot working files —
-none of these are code). Production (Vercel) tracks `main`.
+`origin/main`. **As of 2026-09-17, the working tree has real uncommitted
+changes** (attendance kiosk face-recognition fixes — see "Last checkpoint"
+below and `ai-context\SESSION-2026-09-17-1.md`): `mobile-app/lib/core/
+services/face_recognition_service.dart`, `mobile-app/lib/app/modules/
+attendance_kiosk/face_enroll_capture_page.dart`, `mobile-app/
+SUPABASE_FACE_MATCH_RPC.sql`, plus `governance\planning\TODO.md`. Not
+committed — user has not asked. Production (Vercel) tracks `main`, unaffected
+(these changes are mobile-app + a Supabase function, not admin-panel).
 
 **Known governance gaps, flagged not backfilled:** four feature commits
 between 2026-08-21 and 2026-08-24 (`886c6a3`, `f87a2ce`, `7c96bad`,
@@ -236,147 +241,80 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-09-16 (governance clarity pass).** Reviewed
-`AGENTS.md` against `RULEBOOK.md`/the master template and applied fixes:
-(1) added a rule-ID quick index to all three files (theme-grouped, since
-~60 rule IDs were hard to navigate); (2) added a §D rule capping
-`BOOTSTRAP.md`'s size (this file was 723 lines, well past "curated
-snapshot" — trimmed to this, per that new rule); (3) added a §D rule
-requiring at least a one-line checkpoint update even for changes too small
-for a full SESSION file (logging had been silently skipped at least twice
-per the "known governance gaps" note above); (4) added a §J5 rule that
-tool-mediated DB access (e.g. an MCP database server — this repo's
-`.mcp.json` connects one directly to the production Supabase project) is
-held to the same approval bar as a manual query; (5) added a §F rule
-clarifying that OPERATE-mode projects are gated by §J12B's PATCH/MINOR/
-MAJOR classification, not a full DISCOVERY→RELEASE re-run per change; (6)
-added a sync-verification note (dated, in all three files) since none
-existed before to catch the three-way copy drifting; (7) found and fixed a
-real accuracy bug while doing this: `AGENTS.md`'s project section still
-listed all of REQ-SEC-001..004 as open, but `TODO.md` shows only
-REQ-SEC-002 is — REQ-SEC-001/004 are fixed, REQ-SEC-003 was a deliberate
-accepted-risk decision. Corrected. All edits verified word-for-word
-identical across `AGENTS.md` §A/§D/§F/§H/§J, `governance\RULEBOOK.md` PART
-I, and `Scratch\AI PROJECT PROMPT PRODUCTION GRADE.md`. Nothing in
-`admin-panel\`/`mobile-app\` touched. Full detail:
-`ai-context\SESSION-2026-09-16-1.md`. Earlier the same day (separate,
-unrelated piece of work): Teacher app Play Store closed-testing submission
-completed, 11/11 checklist items — see `work-log\LOG-2026-09-16.md`
-(first entry).
+**Current — Session 2026-09-17 (attendance kiosk face recognition
+reliability, REQ-BUG-014).** User reported Face Punch sometimes registered
+the wrong staff member. Root cause: `match_face_embedding`
+(`mobile-app/SUPABASE_FACE_MATCH_RPC.sql`) did nearest-neighbor matching
+over every individual stored enrollment shot (~116 vectors across 5+
+people) instead of one stable reference per person; the accept threshold
+had only ever been tuned against a single enrolled person. **Fix 1:**
+rewrote the RPC to compare against a per-person averaged centroid instead —
+applied directly to production via Supabase MCP (a deviation from this
+project's usual "write the SQL, human runs it" convention; disclosed to
+the user in-session, not a standing new precedent — see the session log).
+**Fix 2 (regression correction):** the change dropped genuine-match
+similarity scores onto a lower scale than the old threshold (0.72) was
+tuned for, causing "only recognizes the first/best-scoring person" —
+caught by re-validating against all 135 real stored shots (not the
+original too-small 3-shot sample), user chose to lower
+`kMatchThreshold` to 0.65 favoring recognition over strictness, trusting
+the already-confirmed-working "Not Me" confirm step as backstop. **Fix 3:**
+pursued further accuracy (with honest ceiling-setting first — this
+architecture, a phone camera + small on-device model, cannot reach
+commercial/Face-ID-grade zero-error recognition) and found a real,
+previously-unknown coordinate bug: ML Kit's face geometry is reported in
+un-mirrored space but was being used directly against the mirrored
+`decoded` image everywhere (blur check, liveness crop, embedding crop) —
+fixed, plus added proper eye-landmark-based face alignment before
+embedding (MobileFaceNet expects aligned input; this pipeline never
+aligned). **This requires all 6 currently-enrolled staff to re-enroll**
+(old embeddings are incompatible with the new crop method) — user said not
+to clear the stale data, so it remains until each person redoes
+enrollment. **Fix 4 (separate request, same session):** enrollment took
+2+ minutes (25/22 near-duplicate shots + padded internal delays) — cut to
+8/9 genuinely distinct shots and shortened internal timing constants,
+reasoned from the same real-data finding as Fix 1/2 (more near-duplicate
+shots didn't help matching, just added noise). All 3 app rebuilds this
+session were installed directly via `adb` on a physical OnePlus device
+(`AC2001`) connected over USB, not the app's normal S3 update path.
+**Explicitly NOT verified:** Fix 3 and Fix 4 have no historical photo data
+to check against (this app never stores photos, only embeddings) — unlike
+Fix 1/2, which WERE validated against real production data, Fix 3/4 need
+an actual person to re-enroll and test a live punch before their
+real-world effect is known. Full detail:
+`ai-context\SESSION-2026-09-17-1.md`, `work-log\LOG-2026-09-17.md`,
+`planning\TODO.md` REQ-BUG-014. Nothing committed.
 
-**Same-day follow-up:** two more rule-book sections were added — **§K
-(ENGINEERING EXECUTION STANDARDS)** and **§L (MANDATORY DEBUGGING &
-DIAGNOSTIC LOGGING)** — merged in from two separate prompts the user
-supplied, then mirrored/aligned across all four governance-rule copies now
-in play: the standalone universal `RULEBOOK.md` at
-`D:\Project\SSIS SCHOOL\RULEBOOK.md` (outside this repo, not a git repo
-itself), plus this repo's own `AGENTS.md`, `governance\RULEBOOK.md`, and
-`Scratch\AI PROJECT PROMPT PRODUCTION GRADE.md` — all four now verified
-byte-identical for §D/§F/§H/J5/§K/§L via `md5sum`. §K/§L are now part of
-the "copied verbatim into `AGENTS.md`" set (was §A/§D/§F/§H/§J, now
-+§K/§L) — every cross-reference to that set across all four files was
-updated to match. **New gap found while merging §L:** neither
-`admin-panel\` nor `mobile-app\` has the centralized/structured/
-correlation-ID'd diagnostic logging §L now mandates — tracked as
-**REQ-HYG-006** in `planning\TODO.md`, not fixed, not scoped yet at that
-point. `CLAUDE.md` was also updated to surface this gap up front (so a
-future Claude Code session doesn't assume log evidence exists that isn't
-there — that note should now be revisited given the same-day Phase 1 work
-below).
-
-**Same-day, third follow-up — REQ-HYG-006 Phase 1 implemented.** User
-confirmed the plan (bundled with a clarifying question on which task
-"code it" meant, since none was pending), then "code it" a second time on
-the plan itself. Shipped: admin-panel structured logger + global
-error/API capture + error boundaries (`src/lib/logger.js`,
-`src/lib/apiDiagnostics.js` wired into all 6 API routes,
-`src/components/DiagnosticsInit.jsx`, `src/app/error.js`/`global-error.js`);
-mobile-app structured logger + `runZonedGuarded`/`FlutterError.onError`/
-`PlatformDispatcher.onError` wired once in `app_bootstrap.dart` (covers
-all 3 flavors). Zero new dependencies either side. Verified: `npm run
-lint` clean, `flutter analyze` clean, a debug Teacher-flavor APK builds
-end-to-end.
-
-**Same-day, fourth follow-up — REQ-HYG-006 Phase 1.5, centralized
-retrieval.** User redirected the retrieval model: mobile testers *report*
-a problem (they don't read/view a log), and both the admin panel and an
-AI agent retrieve it centrally — asked for a plan, user confirmed with
-"code it". Shipped: new Supabase table `diagnostic_reports`
-(`mobile-app/SUPABASE_DIAGNOSTIC_REPORTS.sql`, **not yet run against
-production**) with RLS enabled (reuses `public.is_admin_user()`, a
-deliberate deviation from this project's usual "disable RLS" convention
-since that convention is exactly REQ-SEC-002). Mobile apps' local
-"Diagnostic Log" viewer replaced with `report_problem_dialog.dart`
-("Report a Problem", same 3 entry points). Admin panel's logger now
-auto-submits every captured error to the same table (no manual step);
-the now-redundant floating download button was removed in favor of a new
-`/diagnostics` admin-panel page. `AGENTS.md`/`CLAUDE.md` both updated
-telling a future session to query `diagnostic_reports` via this project's
-Supabase MCP connection *before* asking for repro steps. Verified:
-`npm run lint` clean, `flutter analyze` clean (2 real bugs caught and
-fixed in the mobile-app changes before they shipped — see session log).
-**Same-day, fifth follow-up — REQ-HYG-006 Phase 1.6, corrected on user
-feedback.** User: "whatever log is it should be auto submitted to master
-admin; include log report download in master or above admin ... is it
-alligned" — no, it wasn't yet, so fixed both gaps directly (small enough
-not to need a fresh plan round): mobile apps' `error()`/`fatal()` now
-auto-submit to `diagnostic_reports` themselves (mirrors the admin panel;
-"Report a Problem" stays as a secondary, description-adding channel, not
-the only path in); admin panel's `/diagnostics` page got a "Download"
-button (exports the current filtered list as JSON), gated
-`role !== "normal_admin"` — interpreted "master or above admin" as this
-project's existing senior_admin/management gate, flagged to the user in
-case "master" meant `management` specifically. Verified: `npm run lint`
-clean, `flutter analyze` clean, a debug Teacher-flavor APK builds
-end-to-end again after the change.
-
-**Same-day, sixth follow-up — REQ-HYG-006 Phase 1.7, cost/privacy safety
-rails.** User asked whether many users' logs could blow past Supabase's
-free-tier limits. Checked the real database via Supabase MCP instead of
-guessing: 19 MB total, `diagnostic_reports` not yet created, ~200
-bytes/row on the biggest existing table — storage was never the actual
-risk. The real gap: no throttling, so a looping bug could auto-submit
-unboundedly. Fixed with a 5-min-per-message cooldown + 20/session cap in
-both loggers. Separately, user clarified the deeper intent: "logging is
-specifically kept for development purpose not to collect what users do"
-— added a `diagnostic_settings` single-row switch (default OFF, RLS
-gated the same way as `diagnostic_reports`) that both loggers check
-before auto-submitting; a toggle + status banner added to `/diagnostics`.
-Manual "Report a Problem" deliberately stays ungated (explicit consent,
-not passive collection). Retention: lazy cleanup (delete >90 days) on
-`/diagnostics` page load instead of a 3rd Vercel Cron, since the project's
-2 existing crons are likely already at the Hobby-tier cap. Verified:
-`npm run lint` clean, `flutter analyze` clean, a debug Teacher-flavor APK
-builds end-to-end.
-
-**NOT verified, all four follow-ups:** an actual on-device/in-browser
-error trigger (no device/emulator or running dev server this session —
-full §L10 sign-off still pending), and the migration itself hasn't been
-run against production yet, so no report can actually reach the table
-until that happens. Full detail: `ai-context\SESSION-2026-09-16-1.md`.
-Everything in this file is staged, not committed.
-
-**Prior — Session 2026-09-13 (6 sessions) — kiosk face-scan freeze fixed
-and verified on-device.** Root cause was redundant JPEG decoding (5x per
-attempt) plus `takePicture()`'s inherent multi-second latency; fixed by
-decoding once per attempt and switching to a live preview-stream capture
-(`startImageStream`) instead of `takePicture()`. Verified over a
-13-minute, 178-tick live run: idle poll cycle time 4,500-7,400ms →
-22-400ms (~100-300x faster), zero skips, zero camera reinitializations,
-rotation/mirror correctness confirmed via face-box geometry and two
-near-threshold live match scores. **Recommended, not blocking:** a sanity
-check on the real physical kiosk tablet — every measurement was taken on
-the BlueStacks emulator, whose `sensorOrientation=0` is atypical for real
-hardware. New, separate, not-yet-discussed finding:
-`fetchAllFaceEmbeddings()` takes ~5.8-6.2s over the network (masked
-previously by `takePicture()`'s similar delay) — only affects the
-post-detection "Verifying..." window, needs its own go-ahead if pursued.
-Full detail: `ai-context\SESSION-2026-09-13-4.md`/`-5.md`/`-6.md` (+
-`archive\-1.md`/`-2.md`/`-3.md` for the diagnosis/instrumentation/first
-on-device pass), `work-log\LOG-2026-09-13.md`. Still staged, not
-committed.
+**Prior — Session 2026-09-16 (governance clarity pass + REQ-HYG-006
+diagnostic-logging system, 7 follow-ups).** Reviewed and fixed `AGENTS.md`/
+`RULEBOOK.md` governance gaps (rule-ID index, `BOOTSTRAP.md` size
+discipline, mandatory-logging rule, MCP-DB-access rule, OPERATE/§J12B
+gating clarification, 3-way sync verification, corrected a stale
+REQ-SEC-001..004 status block); added §K (engineering execution
+standards) and §L (mandatory diagnostic logging) rule sections, mirrored
+across all rule-book copies. Then built REQ-HYG-006 (the diagnostic
+logging §L itself mandates) end-to-end across 6 same-day follow-ups:
+structured loggers + global error capture for both admin-panel and
+mobile-app, a centralized `diagnostic_reports` Supabase table (migration
+written, **still not run against production**), auto-submission with a
+default-OFF `diagnostic_settings` kill switch + cooldown/session caps, and
+a `/diagnostics` admin-panel page (view/search/download, senior_admin+).
+Separately that day: Teacher app Play Store closed-testing fully
+submitted (11/11 checklist items) — see `work-log\LOG-2026-09-16.md`.
+**Not verified:** no on-device/in-browser error was ever actually
+triggered and watched get captured (§L10 sign-off still pending); the
+Supabase migration hasn't been applied yet, so nothing reaches the table
+until it is. Full detail: `ai-context\SESSION-2026-09-16-1.md`.
 
 Earlier checkpoints, one line each (full detail in the linked files):
+- **2026-09-13 (6 sessions)** — kiosk face-scan freeze fixed (redundant
+  JPEG decoding + `takePicture()` latency → single decode + live
+  preview-stream capture), verified over a 13-min on-device run
+  (4,500-7,400ms → 22-400ms per poll). Real-device (non-BlueStacks) sanity
+  check was flagged as recommended-not-blocking at the time — since done,
+  see the 2026-09-17 checkpoint above (same physical kiosk device used
+  repeatedly that session). → `ai-context\SESSION-2026-09-13-4.md`/`-5.md`/
+  `-6.md` (+ `archive\-1.md`/`-2.md`/`-3.md`), `work-log\LOG-2026-09-13.md`.
 - **2026-09-09** — multi-shift attendance shipped + merged to `main`. →
   `ai-context\SESSION-2026-09-09-1.md` (archived), `work-log\LOG-2026-09-09.md`.
 - **2026-09-07** — Play Store store-listing assets (descriptions,

@@ -43,24 +43,33 @@ class FaceRecognitionService {
   static final FaceRecognitionService instance = FaceRecognitionService._();
 
   // Cosine similarity a live punch embedding must clear against the stored
-  // enrollment embedding to be accepted as a match. Was 0.75 (conservative
-  // guess), lowered to 0.6 after real-device testing showed legitimate
-  // staff getting false-rejected too often - then raised here to 0.72
-  // after 0.6 turned out to let OTHER people match as the one enrolled
-  // staff member (SESSION-2026-09-15, real-device testing with a single
-  // enrollee): the correct person's own live score swung as wide as
-  // 0.26-0.77 across consecutive frames of the same short attempt, so 0.6
-  // sat squarely inside that spread - exactly where both a marginal
-  // legitimate frame AND a false accept are most likely to land. 0.72
-  // still clears every legitimate match actually observed that session
-  // (best was 0.77) while cutting off the 0.5-0.6 band. This does trade
-  // away some convenience - expect more retries for genuine staff until
-  // enrollment quality/lighting variance is separately improved - and
-  // still isn't independently verified against real impostor attempts
-  // (no second enrolled staff member existed to test against). Retune
-  // upward again if false accepts persist, downward if legitimate staff
-  // start getting rejected too often.
-  static const double kMatchThreshold = 0.72;
+  // enrollment reference to be accepted as a match. History:
+  //  - 0.75 (conservative guess), lowered to 0.6 (too many false rejects),
+  //    raised to 0.72 (SESSION-2026-09-15) after 0.6 let other people match
+  //    the one enrolled staff member - all tuned against a SINGLE enrolled
+  //    person, on the old "best of every raw stored shot" matcher
+  //    (REQ-BUG-014, governance/planning/TODO.md).
+  //  - REQ-BUG-014 fix (2026-09-17): match_face_embedding
+  //    (SUPABASE_FACE_MATCH_RPC.sql) switched from that per-shot nearest-
+  //    neighbor search to one averaged centroid per person, to stop a
+  //    single noisy shot from the WRONG person occasionally outscoring the
+  //    true match. That also moved genuine-match similarity onto a lower,
+  //    different scale (a blended average is never as close as the single
+  //    best individual shot was) - 0.72 carried over unchanged then failed
+  //    almost everyone except the one person whose enrollment happened to
+  //    score highest. Re-tuned properly this time against ALL 135 stored
+  //    shots across 6 real enrolled staff (not a guess, not a 1-person or
+  //    3-shot sample): at 0.72, only 56% of genuine attempts cleared it; at
+  //    0.65, 76% do, at the cost of 9 of 27 real cross-person mix-ups (found
+  //    in that same dataset) now also clearing it instead of 2. Chosen
+  //    deliberately favoring recognition over strictness here BECAUSE
+  //    face_punch_page's native confirm dialog (shows the matched name,
+  //    "Not Me" before anything is recorded) is the actual backstop against
+  //    those mix-ups, and is confirmed working in practice. Re-tune
+  //    downward only after enrollment-quality cleanup (trimming outlier
+  //    shots before averaging, or re-enrolling poorly-scoring staff) can
+  //    raise genuine scores back up without also giving up recognition.
+  static const double kMatchThreshold = 0.65;
 
   static const int _inputSize = 112; // MobileFaceNet's expected crop size
   static const double _eyeOpenThreshold   = 0.4;
@@ -82,24 +91,48 @@ class FaceRecognitionService {
   Interpreter? _livenessInterpreter40;
   FaceDetector? _detector;
 
+  // The actual native TFLite inference call (Interpreter.run) is
+  // synchronous C++ work - tens to low hundreds of ms per model, three
+  // models per verification attempt (mobilefacenet + both liveness scales).
+  // Called directly, that blocks Dart's UI isolate for the same stretch,
+  // which is what made the "Verifying..." spinner (a supposedly continuous
+  // animation) visibly stutter - it can't paint a new frame while the
+  // isolate it runs on is busy inside native code. IsolateInterpreter
+  // (tflite_flutter's own purpose-built wrapper for this) reconstructs the
+  // same loaded model from its native address inside a background isolate
+  // and runs it there instead, so run() below returns control to the UI
+  // isolate immediately and the spinner keeps animating while inference
+  // happens off it. One isolate per model, spun up once here and reused -
+  // Isolate.spawn itself has real one-time cost, not something to pay on
+  // every attempt.
+  IsolateInterpreter? _isolateInterpreter;
+  IsolateInterpreter? _isolateLivenessInterpreter27;
+  IsolateInterpreter? _isolateLivenessInterpreter40;
+
   FaceDetector get _faceDetector => _detector ??= FaceDetector(
     options: FaceDetectorOptions(
       performanceMode: FaceDetectorMode.accurate,
       enableClassification: true, // needed for eye-open probabilities
-      enableLandmarks: false,
+      enableLandmarks: true, // eye positions, for _alignedFaceCrop below
       enableContours: false,
       minFaceSize: 0.2,
     ),
   );
 
-  Future<Interpreter> _model() async =>
-      _interpreter ??= await Interpreter.fromAsset('assets/models/mobilefacenet.tflite');
+  Future<IsolateInterpreter> _model() async {
+    _interpreter ??= await Interpreter.fromAsset('assets/models/mobilefacenet.tflite');
+    return _isolateInterpreter ??= await IsolateInterpreter.create(address: _interpreter!.address);
+  }
 
-  Future<Interpreter> _liveness27() async =>
-      _livenessInterpreter27 ??= await Interpreter.fromAsset('assets/models/spoof_model_scale_2_7.tflite');
+  Future<IsolateInterpreter> _liveness27() async {
+    _livenessInterpreter27 ??= await Interpreter.fromAsset('assets/models/spoof_model_scale_2_7.tflite');
+    return _isolateLivenessInterpreter27 ??= await IsolateInterpreter.create(address: _livenessInterpreter27!.address);
+  }
 
-  Future<Interpreter> _liveness40() async =>
-      _livenessInterpreter40 ??= await Interpreter.fromAsset('assets/models/spoof_model_scale_4_0.tflite');
+  Future<IsolateInterpreter> _liveness40() async {
+    _livenessInterpreter40 ??= await Interpreter.fromAsset('assets/models/spoof_model_scale_4_0.tflite');
+    return _isolateLivenessInterpreter40 ??= await IsolateInterpreter.create(address: _livenessInterpreter40!.address);
+  }
 
 
   // Every heavy entry point below is wrapped in a ScanTrace.step so a single
@@ -184,6 +217,33 @@ class FaceRecognitionService {
     return faces.first;
   }
 
+  // ML Kit's Face.boundingBox/landmarks are reported against the raw
+  // rotated-to-upright frame ML Kit itself analyzed (see
+  // detectFaceFromInputImage - built straight from the sensor bytes, no
+  // mirroring) - NOT against `decoded` (nv21ToImage's output below), which
+  // is that same frame ADDITIONALLY flipped horizontally for the front
+  // camera ("matching what a live photo would have produced", per
+  // nv21ToImage's own doc comment). Every pixel-space use of a detected
+  // face's geometry against `decoded` needs that same flip applied to the
+  // geometry first, or it silently reads a horizontally-mirrored location
+  // instead of where the face actually is - a small, easy-to-miss offset
+  // for a well-centered kiosk face, but real noise on every blur/liveness/
+  // embedding computation regardless, and part of what was behind the
+  // embedding volatility noted in kMatchThreshold's history comment
+  // (found while implementing face alignment below, which made the bug
+  // impossible to ignore - REQ-BUG-014 follow-up, governance/planning/TODO.md).
+  // This kiosk only ever uses the front camera (both call sites' class-level
+  // comments), so the flip is unconditional here rather than a plumbed-
+  // through parameter.
+  Rect _toDecodedSpace(Rect box, int decodedWidth) =>
+      Rect.fromLTRB(decodedWidth - box.right, box.top, decodedWidth - box.left, box.bottom);
+
+  math.Point<int>? _landmarkToDecodedSpace(Face face, FaceLandmarkType type, int decodedWidth) {
+    final p = face.landmarks[type]?.position;
+    if (p == null) return null;
+    return math.Point<int>(decodedWidth - p.x, p.y);
+  }
+
   Future<bool> isExposureUnusable(img.Image? decoded) =>
       ScanTrace.instance.step('isExposureUnusable', () => _isExposureUnusable(decoded));
 
@@ -247,7 +307,7 @@ class FaceRecognitionService {
   Future<bool> _isTooBlurry(img.Image? decoded, Face face) async {
     if (decoded == null) return true;
 
-    final box = face.boundingBox;
+    final box = _toDecodedSpace(face.boundingBox, decoded.width);
     final x = box.left.clamp(0, decoded.width - 1).toInt();
     final y = box.top.clamp(0, decoded.height - 1).toInt();
     final w = box.width.clamp(1, decoded.width - x).toInt();
@@ -306,14 +366,14 @@ class FaceRecognitionService {
   Future<List<double>?> _getEmbedding(img.Image? decoded, Face face) async {
     if (decoded == null) return null;
 
-    final box = face.boundingBox;
-    final x = box.left.clamp(0, decoded.width - 1).toInt();
-    final y = box.top.clamp(0, decoded.height - 1).toInt();
-    final w = box.width.clamp(1, decoded.width - x).toInt();
-    final h = box.height.clamp(1, decoded.height - y).toInt();
+    final box = _toDecodedSpace(face.boundingBox, decoded.width);
+    final leftEye = _landmarkToDecodedSpace(face, FaceLandmarkType.leftEye, decoded.width);
+    final rightEye = _landmarkToDecodedSpace(face, FaceLandmarkType.rightEye, decoded.width);
+    final faceCrop = (leftEye != null && rightEye != null)
+        ? (_alignedFaceCrop(decoded, box, leftEye, rightEye) ?? _plainFaceCrop(decoded, box))
+        : _plainFaceCrop(decoded, box);
 
-    final cropped = img.copyCrop(decoded, x: x, y: y, width: w, height: h);
-    final resized = _normalizeLighting(img.copyResize(cropped, width: _inputSize, height: _inputSize));
+    final resized = _normalizeLighting(img.copyResize(faceCrop, width: _inputSize, height: _inputSize));
 
     final input = List.generate(
       1,
@@ -335,10 +395,75 @@ class FaceRecognitionService {
 
     final interpreter = await _model();
     final sw = Stopwatch()..start();
-    interpreter.run(input, output);
-    ScanTrace.instance.log('TFLITE', 'mobilefacenet run ${sw.elapsedMilliseconds}ms');
+    await interpreter.run(input, output);
+    ScanTrace.instance.log('TFLITE', 'mobilefacenet run ${sw.elapsedMilliseconds}ms (background isolate)');
 
     return _l2Normalize(output[0]);
+  }
+
+  img.Image _plainFaceCrop(img.Image decoded, Rect box) {
+    final x = box.left.clamp(0, decoded.width - 1).toInt();
+    final y = box.top.clamp(0, decoded.height - 1).toInt();
+    final w = box.width.clamp(1, decoded.width - x).toInt();
+    final h = box.height.clamp(1, decoded.height - y).toInt();
+    return img.copyCrop(decoded, x: x, y: y, width: w, height: h);
+  }
+
+  // Levels the eyes then crops around them - standard face-alignment
+  // preprocessing that most embedding models (MobileFaceNet included) are
+  // trained against, which the plain axis-aligned detector crop above
+  // never did. A raw crop feeds the model a meaningfully different input
+  // than the "canonical" upright, centered face it learned on, which is a
+  // likely source of the embedding-to-embedding score volatility already
+  // noted in kMatchThreshold's history comment (REQ-BUG-014 follow-up,
+  // governance/planning/TODO.md). [leftEye]/[rightEye] must already be in
+  // decoded-image space (see _landmarkToDecodedSpace) - which one ends up
+  // physically on which side after mirroring is NOT assumed here: the two
+  // points are reordered by their actual x position below, so the
+  // computed angle always reflects genuine head tilt rather than an
+  // artifact of ML Kit's left/right labeling surviving a horizontal flip.
+  //
+  // Changing this changes what a "reference embedding" even looks like -
+  // every already-enrolled staff member's stored shots were built from the
+  // OLD unaligned (and mirror-bugged) crop, so they're no longer directly
+  // comparable to a live embedding built this way. Everyone needs to
+  // re-enroll after this ships.
+  img.Image? _alignedFaceCrop(img.Image decoded, Rect box, math.Point<int> leftEye, math.Point<int> rightEye) {
+    var a = leftEye, b = rightEye;
+    if (a.x > b.x) { final t = a; a = b; b = t; }
+    final dx = (b.x - a.x).toDouble();
+    final dy = (b.y - a.y).toDouble();
+    final angleDeg = math.atan2(dy, dx) * 180 / math.pi;
+
+    // Expand generously around the eye midpoint (not the raw box) so the
+    // rotation pivot - img.copyRotate always rotates about the source
+    // image's own center - lines up with the eyes, and so the crop still
+    // fully contains the face once rotated (a merely box-sized crop can
+    // clip the chin/forehead after tilting).
+    final midX = (a.x + b.x) / 2;
+    final midY = (a.y + b.y) / 2;
+    final half = math.max(box.width, box.height) * 0.75;
+    if (half <= 0) return null;
+    final left = (midX - half).round().clamp(0, decoded.width - 1);
+    final top = (midY - half).round().clamp(0, decoded.height - 1);
+    final size = (half * 2).round();
+    final w = size.clamp(1, decoded.width - left);
+    final h = size.clamp(1, decoded.height - top);
+    if (w <= 1 || h <= 1) return null;
+
+    final expanded = img.copyCrop(decoded, x: left, y: top, width: w, height: h);
+    final rotated = img.copyRotate(expanded, angle: -angleDeg);
+
+    // The eye midpoint stayed at the image's own center through the
+    // rotation (copyRotate always rotates about center) - crop back down
+    // to roughly the original face-box scale around that same center, so
+    // this ends up framed like the old plain crop was (just leveled and
+    // properly centered), not padded with extra background.
+    final targetSize = math.max(box.width, box.height).round()
+        .clamp(1, math.min(rotated.width, rotated.height)).toInt();
+    final cx = ((rotated.width - targetSize) / 2).round();
+    final cy = ((rotated.height - targetSize) / 2).round();
+    return img.copyCrop(rotated, x: cx, y: cy, width: targetSize, height: targetSize);
   }
 
   // Liveness / anti-spoofing (MiniFASNet, dual-scale) - see
@@ -357,8 +482,9 @@ class FaceRecognitionService {
   Future<double?> _livenessScore(img.Image? decoded, Face face) async {
     if (decoded == null) return null;
 
-    final p27 = await _runLivenessModel(await _liveness27(), decoded, face.boundingBox, 2.7);
-    final p40 = await _runLivenessModel(await _liveness40(), decoded, face.boundingBox, 4.0);
+    final box = _toDecodedSpace(face.boundingBox, decoded.width);
+    final p27 = await _runLivenessModel(await _liveness27(), decoded, box, 2.7);
+    final p40 = await _runLivenessModel(await _liveness40(), decoded, box, 4.0);
     if (p27 == null || p40 == null) return null;
 
     // Upstream label convention: class index 1 = real face (0 and 2 are
@@ -370,7 +496,7 @@ class FaceRecognitionService {
     return (p27[realIndex] + p40[realIndex]) / 2.0;
   }
 
-  Future<List<double>?> _runLivenessModel(Interpreter interpreter, img.Image image, Rect box, double scale) async {
+  Future<List<double>?> _runLivenessModel(IsolateInterpreter interpreter, img.Image image, Rect box, double scale) async {
     final crop = _expandAndCrop(image, box, scale);
     if (crop == null) return null;
     final resized = img.copyResize(crop, width: _livenessInputSize, height: _livenessInputSize);
@@ -392,8 +518,8 @@ class FaceRecognitionService {
 
     final output = List.generate(1, (_) => List.filled(3, 0.0));
     final sw = Stopwatch()..start();
-    interpreter.run(input, output);
-    ScanTrace.instance.log('TFLITE', 'minifasnet@$scale run ${sw.elapsedMilliseconds}ms');
+    await interpreter.run(input, output);
+    ScanTrace.instance.log('TFLITE', 'minifasnet@$scale run ${sw.elapsedMilliseconds}ms (background isolate)');
     return _softmax(output[0]);
   }
 

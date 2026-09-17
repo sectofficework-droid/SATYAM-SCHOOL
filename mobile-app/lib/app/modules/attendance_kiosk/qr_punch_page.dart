@@ -5,6 +5,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/services/supabase_service.dart';
 import '../../../core/utils/punctuality.dart';
+import '../../routes/app_routes.dart';
 
 enum _Stage { loading, waiting, success, error }
 
@@ -90,7 +91,14 @@ class _QrPunchPageState extends State<QrPunchPage> {
         _punctuality = punctualityLabel(result['isLate'] as bool?, result['lateMinutes'] as int?);
       });
       _returnTimer = Timer(const Duration(seconds: 3), () {
-        if (mounted) Get.back();
+        // Get.until, not a plain Get.back() pop - this screen is reachable
+        // both directly from kiosk home (one push - either would work) and
+        // nested under Not Me -> Enter Code -> Scan QR Instead (a single
+        // pop would strand the person on the now-pointless code-entry
+        // screen instead of returning home). Matches how
+        // enter_punch_code_page.dart/face_enroll_capture_page.dart already
+        // return home on their own success paths.
+        if (mounted) Get.until((r) => r.settings.name == Routes.kioskHome);
       });
     } catch (e, st) {
       debugPrint('QR session poll failed: $e\n$st');
