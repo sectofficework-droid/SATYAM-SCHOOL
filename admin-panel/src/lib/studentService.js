@@ -861,33 +861,16 @@ export async function resetStudentPassword(studentId, newPassword) {
 // Irreversible. Most student-linked tables (enrollments, documents, siblings,
 // previous-school, attendance, exam marks) cascade automatically off
 // students(id). transfer_certificates, student_promotions, and fee_payments
-// have a direct FK to students(id) with no cascade, so they're cleared
+// have a direct FK to students(id) with no cascade, so the RPC clears them
 // explicitly first - otherwise Postgres blocks the students delete with a
 // foreign key violation whenever any of those rows exist for this student.
+// Role-checked server-side (senior_admin/management only) and atomic - see
+// admin_delete_student_permanently in mobile-app/SUPABASE_ADMIN_ROLE_ENFORCEMENT.sql
+// (REQ-SEC-005: the 4 deletes used to be separate client calls with no
+// server-side role check).
 export async function deleteStudentPermanently(studentId) {
-  const { error: promoErr } = await supabase
-    .from("student_promotions")
-    .delete()
-    .eq("student_id", studentId);
-  if (promoErr) throw promoErr;
-
-  const { error: tcErr } = await supabase
-    .from("transfer_certificates")
-    .delete()
-    .eq("student_id", studentId);
-  if (tcErr) throw tcErr;
-
-  const { error: feeErr } = await supabase
-    .from("fee_payments")
-    .delete()
-    .eq("student_id", studentId);
-  if (feeErr) throw feeErr;
-
-  const { error: stuErr } = await supabase
-    .from("students")
-    .delete()
-    .eq("id", studentId);
-  if (stuErr) throw stuErr;
+  const { error } = await supabase.rpc("admin_delete_student_permanently", { p_student_id: studentId });
+  if (error) throw error;
 }
 
 // ── Promote Student ───────────────────────────────────────────────────────────

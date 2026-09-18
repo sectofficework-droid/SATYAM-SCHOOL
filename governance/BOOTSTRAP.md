@@ -241,7 +241,55 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-09-17 (attendance kiosk face recognition
+**Current — Session 2026-09-19 (REQ-SEC-005, admin role-tier enforcement).**
+While closing out the Staff App Unification plan's CLARIFY question ("does
+per-role permission behavior really live only in Zustand?"), found the
+answer was worse than assumed: `normal_admin` vs `senior_admin`/`management`
+was enforced only in React components for several admin-panel actions, with
+no matching backend check. Worst instance: any authenticated admin
+(including `normal_admin`) could call `admin_users.update({role:
+'management'})` on their own row directly and self-promote — full
+privilege escalation, no server-side check at all. Also found: permanent
+student delete and the (not-yet-applied) `diagnostic_settings` toggle had
+the same gap. **Fixed and applied to production 2026-09-19** (user
+approved via explicit "code it"-equivalent after 4 rounds of upfront
+clarifying questions, then let the session run uninterrupted to
+completion): new migration `mobile-app/SUPABASE_ADMIN_ROLE_ENFORCEMENT.sql`
+adds 5 `SECURITY DEFINER` RPCs (`admin_has_role`, `admin_create_user`,
+`admin_update_user`, `admin_delete_user`, `admin_delete_student_permanently`)
+that check role server-side (management-only for senior_admin/management
+accounts and promotions; no self-role-change; no self-delete), then revokes
+the direct `admin_users` INSERT/UPDATE/DELETE and `students` DELETE grants
+so the RPCs are the only path. Also hardened: revoked the 5 new functions'
+default PUBLIC/anon execute grant (flagged by Supabase's own security
+advisor immediately after first applying). Fixed the pending
+(not-yet-applied) `SUPABASE_DIAGNOSTIC_REPORTS.sql`'s toggle policy the same
+way before it ever ships. **Live-verified** via 16 role-simulated test
+cases directly in Postgres (`set_config('request.jwt.claim.sub', ...)` +
+`SET LOCAL role`, all inside rolled-back transactions — no real data
+touched) covering every reject/allow path, plus 2 sanity checks that
+legitimate reads still work; all passed. Client code updated
+(`settings/UsersRolesTab.js`, `lib/studentService.js`'s
+`deleteStudentPermanently`) to call the new RPCs — `npm run lint` clean.
+**Deliberate, disclosed tradeoff:** applying the DB fix without deploying
+the client first means "Settings → Users & Roles" (create/edit/delete admin
+accounts) and "permanently delete a student" will error in the *live* admin
+panel for everyone, including management, until the staged client code is
+committed/pushed/deployed — user chose this explicitly (security over
+temporary inconvenience) over the alternative of leaving the two holes open
+longer. **Staged, not committed** per this file's standing rule — user
+chose not to auto-deploy this session. **Not fixed, separately tracked
+(already pre-existing, not part of this fix's scope):** `student_promotions`/
+`transfer_certificates`/`fee_payments` are still open to `anon` (REQ-SEC-002,
+much larger, deliberately not touched here); `admin_create_user`
+inherits the same pre-existing "account creation isn't fully wired to
+Supabase Auth" gap the original direct-insert code already had (confirmed
+via live test — not a regression, not fixed here, already tracked in
+`documentation/PROJECT_CONTEXT.md`'s roadmap); SEF salary/employee panel
+has the identical role-tier pattern, explicitly deferred to its own future
+session per user decision. Full detail: `planning/TODO.md` REQ-SEC-005.
+
+**Prior — Session 2026-09-17 (attendance kiosk face recognition
 reliability, REQ-BUG-014).** User reported Face Punch sometimes registered
 the wrong staff member. Root cause: `match_face_embedding`
 (`mobile-app/SUPABASE_FACE_MATCH_RPC.sql`) did nearest-neighbor matching
@@ -346,6 +394,16 @@ Earlier checkpoints, one line each (full detail in the linked files):
 Open items, most recent first (superseded/completed items removed — see
 the checkpoint list above for what already shipped):
 
+0. **REQ-FEAT-001 — Staff App unification (new 2026-09-18, planning only,
+   no code yet).** Evolve `mobile-app/` teacher flavor into one role-aware
+   Staff App (Teacher + Admin workspaces) per a full discovery spec, now
+   archived at `governance\ai-context\STAFF-APP-UNIFICATION-DISCOVERY.md`.
+   Working plan: `governance\planning\STAFF-APP-UNIFICATION-PLAN.md`.
+   **Blocked on your decision** — `admin_users` and `employees` have no
+   reliable link today (checked live: 0/4 match by email, 3/4 coincidental
+   name-matches that aren't safe to use for real authorization); see the
+   plan file's "Open decisions" for the options. Read the plan file first
+   next session before doing anything else on this item.
 1. **REQ-SEC-002 (only remaining open security item)** — `employees` +
    ~22 other tables (73 total per Supabase's live advisor) still have RLS
    disabled / broad `anon` grants; `employees` specifically is blocked on

@@ -96,7 +96,12 @@ CREATE POLICY "anyone can read the diagnostic logging switch" ON public.diagnost
   FOR SELECT TO anon, authenticated
   USING (true);
 
+-- senior_admin/management only (not just any admin_users membership) -
+-- matches this project's "above normal_admin" gate for sensitive toggles
+-- (diagnostics\page.js's own download gate, impersonation). Requires
+-- admin_has_role() from SUPABASE_ADMIN_ROLE_ENFORCEMENT.sql (REQ-SEC-005) -
+-- apply that migration first if it hasn't run yet.
 CREATE POLICY "admin staff toggle diagnostic logging" ON public.diagnostic_settings
   FOR UPDATE TO authenticated
-  USING (public.is_admin_user())
-  WITH CHECK (public.is_admin_user());
+  USING (public.admin_has_role(ARRAY['senior_admin','management']))
+  WITH CHECK (public.admin_has_role(ARRAY['senior_admin','management']));

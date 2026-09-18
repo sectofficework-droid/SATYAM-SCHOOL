@@ -227,6 +227,223 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       code change. Closing this item on that decision, not on a fix.
 
 ## IMPORTANT
+- [~] **REQ-SEC-005 — Role-tier gating (`normal_admin` vs `senior_admin`/
+      `management`) is enforced client-side only for several actions;
+      backend either checks admin membership only (not tier) or has no RLS
+      at all. Found 2026-09-18 while closing out the Staff App Unification
+      plan's CLARIFY question ("does per-role permission behavior really
+      live only in Zustand?").** Corrects a stale claim in
+      `governance\documentation\PROJECT_CONTEXT.md` (line ~273/320): grepped
+      the entire `admin-panel/` tree for `rolePermissions`/`permission`/
+      `hasPermission`/`canAccess` — **zero matches**. No Zustand
+      "rolePermissions matrix" exists in the current code at all (it may
+      have existed once, or the doc describes an aspirational table that
+      was never wired up — either way, treat that doc line as outdated).
+      What actually exists instead: five scattered
+      `authUser.role !== "normal_admin"` conditionals
+      (`super-admin\page.js:477,3266`, `employee\page.js:359`,
+      `student\page.js:748`, `diagnostics\page.js:88`,
+      `settings\page.js:2498`, `sef\super-admin\page.js:26,31`) that gate UI
+      visibility only. Checked what backs each one:
+      - **Correctly enforced server-side**: the Admin Access Code
+        impersonation RPCs (`create_impersonation_code`,
+        `redeem_impersonation_code`, `get_impersonation_audit_log` in
+        `mobile-app/SUPABASE_IMPERSONATION.sql`) explicitly check
+        `role IN ('management','senior_admin')` inside the
+        `SECURITY DEFINER` function body — a `normal_admin` calling these
+        directly (bypassing the UI) would get `Not authorized`. This is the
+        project's own correct pattern.
+      - **Not enforced server-side**: `SingleStudentTool`'s permanent
+        student delete (`super-admin\page.js:517` `handleDelete` →
+        `studentService.js:867` `deleteStudentPermanently`, four raw
+        `supabase.from(...).delete()` calls) and the diagnostics
+        download/logging-toggle (`diagnostics\page.js`, backed by
+        `SUPABASE_DIAGNOSTIC_REPORTS.sql`'s `diagnostic_settings`
+        RLS policy). Both tables' RLS policies use `is_admin_user()`
+        (`mobile-app/SUPABASE_LOCK_STUDENTS_ADMIN_USERS.sql:13-21`), which
+        only checks *membership* in `admin_users` (`EXISTS (SELECT 1 FROM
+        admin_users WHERE id = auth.uid())`) — it does not look at `role`
+        at all. **Concretely: a `normal_admin` session calling the Supabase
+        client directly (browser devtools, not through the UI) could
+        permanently delete a student record or flip the diagnostic-logging
+        switch, both of which the UI presents as senior_admin/management-
+        only.** Not tested live (would require an actual normal_admin
+        session + a disposable test student — not done without your
+        go-ahead), but the code path is unambiguous.
+      - **No gating of any kind**: the ~72 RLS-disabled tables already
+        tracked under REQ-SEC-002 (`fee_payments`, `employee_salaries`,
+        etc.) have no role-tier distinction because they have no admin-tier
+        check at all yet.
+      **Audit closed 2026-09-18 — all 10 files matching a
+      `senior_admin|normal_admin|management` grep across `admin-panel/src`
+      checked, not just the ones with an obvious gate:** `Header.jsx:43` is
+      only a display-label map (`ROLE_LABELS`), not a gate — no issue.
+      `impersonationService.js` and `ImpersonationLogTab.js` only reference/
+      display the already-correctly-gated impersonation RPCs — no issue.
+      No further gate sites exist beyond the ones listed above and in the
+      "scope widened" note below — this list is complete, not partial.
+      **Why this matters beyond the existing REQ-SEC-002 tracking:** this is
+      a different axis (which *tier* of already-authenticated admin can do
+      a thing), not just "is RLS on." Feeds directly into
+      `planning\STAFF-APP-UNIFICATION-PLAN.md` — that initiative must not
+      copy the admin panel's UI-only role gates into the mobile Admin
+      Workspace; anything gated by role tier needs a real backend check
+      (mirroring the impersonation RPC pattern), decided as part of that
+      plan's DESIGN FIXED, not assumed safe because "the button just isn't
+      shown."
+
+      **2026-09-18 — scope widened: found a more severe instance while
+      finishing the audit before drafting a fix.** `settings\UsersRolesTab.js`
+      (`admin_users` create/update/delete — Users & Roles tab) does 3 direct
+      `supabase.from("admin_users").{insert,update,delete}()` calls,
+      client-side-gated the same way (whole Settings page hidden for
+      `normal_admin`). Backing RLS (`SUPABASE_LOCK_STUDENTS_ADMIN_USERS.sql`
+      lines 42-53) grants INSERT/UPDATE/DELETE to any `is_admin_user()` —
+      **any authenticated admin, including `normal_admin`, can call
+      `admin_users.update({role:'management'}).eq('id', <own id>)` directly
+      and self-promote to the top tier.** No server-side check exists
+      anywhere in this path. This is a full, self-service privilege
+      escalation — more severe than the student-delete/diagnostics-toggle
+      gaps above (those let a lower tier perform one restricted action;
+      this one lets them permanently become the highest tier). Also found:
+      `sef\super-admin\page.js` (SEF salary/employee panel) follows the
+      identical UI-only-gate pattern; underlying `sefEmployeeService.js`
+      writes not yet individually audited.
+
+      **Fix plan (approved 2026-09-18, not yet implemented — audit +
+      write-up only so far; needs explicit "code it" per AGENTS.md §F
+      before any SQL/code change):**
+      Reuse the pattern already proven correct in this codebase (the
+      Admin Access Code impersonation RPCs) everywhere role-tier currently
+      matters: move the write to a `SECURITY DEFINER` RPC that checks role
+      before touching the table, then revoke `authenticated`'s direct
+      write grant so the RPC is the only path.
+      **User's policy decisions (2026-09-18):**
+      - Only `management` may create/edit/promote to `senior_admin` or
+        `management`. `senior_admin` may create/edit/delete `normal_admin`
+        rows only — not peers or superiors.
+      - No admin may change their **own** `role` via the update RPC
+        (blocks all self-escalation, not just to management) — self-edit of
+        `name`/`initials` stays allowed. Self-delete also blocked (extension
+        of the same principle, flagged explicitly here since it wasn't
+        asked in so many words: deleting your own account isn't an
+        escalation path, but blocking it is a natural, low-cost extension
+        of "no self-service identity changes").
+      **Implementation — approved 2026-09-18 (4 rounds of upfront
+      clarifying questions, then executed uninterrupted per user request:
+      "prepare properly... ask first to clarify... after starting don't
+      interrupt"), applied and verified 2026-09-19:**
+      - [x] **Step 1 — migration written and applied to production**
+            (`mobile-app/SUPABASE_ADMIN_ROLE_ENFORCEMENT.sql`, via
+            `mcp__supabase__apply_migration`, matching how every prior
+            REQ-SEC fix in this file was applied). Contains
+            `admin_has_role`, `admin_create_user`, `admin_update_user`,
+            `admin_delete_user`, `admin_delete_student_permanently` (all
+            `SECURITY DEFINER`, tier checks exactly as decided below), then
+            drops the 3 any-admin write policies on `admin_users` and
+            revokes `authenticated`'s direct INSERT/UPDATE/DELETE there,
+            and drops+replaces `students`' single `FOR ALL` policy with
+            separate SELECT/INSERT/UPDATE policies (unchanged behavior)
+            plus a `REVOKE DELETE ... FROM authenticated` (DELETE now only
+            via the RPC). **Correction found live, mid-implementation:**
+            `diagnostic_settings` doesn't exist in production yet (its own
+            migration, `SUPABASE_DIAGNOSTIC_REPORTS.sql`, was never applied
+            — matches this file's own REQ-HYG-006 note) — so instead of
+            tightening a live policy, fixed the *pending* migration file's
+            policy in place (now uses `admin_has_role(ARRAY['senior_admin',
+            'management'])` instead of `is_admin_user()`) so the flaw never
+            ships when that migration eventually runs.
+            **Follow-up hardening, same session:** Supabase's own security
+            advisor flagged all 5 new functions as callable by `anon`
+            (Postgres grants EXECUTE to PUBLIC by default on function
+            creation) — internal `auth.uid()`-based checks already rejected
+            anon (no JWT `sub` → caller role NULL → "Not authorized"), but
+            applied a second small migration
+            (`req_sec_005_harden_rpc_execute_grants`) revoking PUBLIC/anon
+            EXECUTE anyway, for defense in depth; folded into the tracked
+            `.sql` file so it reflects live state.
+      - [x] **Step 2 — client code updated** to call the new RPCs instead
+            of direct table writes: `settings\UsersRolesTab.js`'s 3 calls
+            (`saveUser`/`deleteUser`) now call
+            `admin_create_user`/`admin_update_user`/`admin_delete_user`;
+            `studentService.js`'s `deleteStudentPermanently` body now calls
+            `admin_delete_student_permanently` (its one call site,
+            `super-admin\page.js:522`, needed no change). `npm run lint`:
+            clean. **Staged, not committed** — user chose this explicitly
+            (see "Deployment status" below).
+      - [x] **Step 3 — order followed as planned**: migration (Step 1)
+            applied to production; client code (Step 2) staged but
+            deliberately not deployed this session (user's explicit choice,
+            see below) — the two are not both live at the same time, which
+            is the one sequencing risk this step existed to manage.
+      - [x] **Step 4 — verified live**, via 16 role-simulated test cases
+            run directly in Postgres (no real login credentials needed):
+            `set_config('request.jwt.claim.sub', '<real admin_users id>',
+            true)` + `SET LOCAL role = authenticated` inside a transaction,
+            always ended with `ROLLBACK` (confirmed after: `admin_users`
+            row count/roles and `students` row count both exactly
+            unchanged from before testing — zero side effects). Covered:
+            normal_admin self-promote (blocked), normal_admin editing a
+            higher tier (blocked), senior_admin promoting/editing/deleting
+            a senior_admin or management row (blocked, 3 cases),
+            senior_admin managing a normal_admin — create/edit/delete (all
+            3 succeed — the legitimate path), management promoting a
+            senior_admin (succeeds), management deleting their own account
+            (blocked), direct-table bypass of the RPC for both
+            `admin_users` UPDATE and `students` DELETE as `normal_admin`
+            (both correctly `permission denied` at the grant level, not
+            just app-level), `admin_delete_student_permanently` as
+            `normal_admin` (blocked) vs `senior_admin` (succeeds), and 2
+            sanity checks that unrelated legitimate reads
+            (`students`/`admin_users` SELECT as `normal_admin`) still work
+            unchanged. **One test-methodology mistake caught and
+            corrected in-session**: an early combined run showed 3 tests
+            (senior_admin deleting/creating a management-tier row)
+            appearing to bypass the tier check — turned out to be my own
+            test contamination (an earlier test in the same uncommitted
+            transaction had promoted that same senior_admin to management,
+            so by the time the later test ran, the check correctly saw them
+            as already-management) — re-ran those 3 in isolation with an
+            untouched senior_admin identity and all 3 passed correctly.
+            Recorded here per §J14 discipline: the fix logic was never
+            wrong, the first test run was.
+      **Genuine pre-existing gap surfaced by testing, not caused by this
+      fix, not fixed here:** `admin_create_user` (and the original
+      direct-insert code before it) cannot actually finish creating a
+      working admin account — `admin_users.id` is `NOT NULL` with no
+      default and must equal a real `auth.users.id`, and neither the old
+      code nor the new RPC ever creates that `auth.users` row first. Live
+      test confirmed: a correctly-authorized `senior_admin` creating a
+      `normal_admin` account passes every role check, then fails on `null
+      value in column "id"`. This matches `documentation/
+      PROJECT_CONTEXT.md`'s existing roadmap item #7 ("Admin-user creation
+      UI... create not wired") — not a regression, not silently expanded
+      into this fix's scope; left as its own separate, already-tracked gap.
+      **Deployment status (user decision, 2026-09-18):** apply the DB fix
+      immediately even though the client code isn't deployed yet, accepting
+      that "Settings → Users & Roles" (create/edit/delete admin accounts)
+      and "permanently delete a student" will error in the *live* admin
+      panel for everyone — including management — until the staged code
+      is committed/pushed/deployed. Chosen deliberately (security over
+      temporary inconvenience, both are low-frequency actions for this
+      school) over the alternative of leaving the two escalation paths open
+      longer. **Action still needed from the user:** review the staged
+      diff (`admin-panel/src/app/(dashboard)/settings/UsersRolesTab.js`,
+      `admin-panel/src/lib/studentService.js`, plus the governance doc
+      updates) and commit + push when ready to restore those two features
+      and close this item out fully.
+      **Deferred to a follow-up, out of scope for this fix (user decision,
+      2026-09-18):** SEF salary/employee panel writes
+      (`sefEmployeeService.js`) have the identical role-tier pattern but
+      need their own audit before committing to specific RPCs — tracked
+      here as a reminder, not started.
+      **Also explicitly not touched, per user-approved scope (2026-09-18):**
+      REQ-SEC-002's still-open `anon` exposure on `student_promotions`/
+      `transfer_certificates`/`fee_payments` — this fix's
+      `admin_delete_student_permanently` sidesteps it (SECURITY DEFINER
+      bypasses those tables' own grants/RLS regardless), but the underlying
+      ~72-table exposure remains exactly as large as REQ-SEC-002 already
+      describes it.
 - [ ] **REQ-HYG-001 — No automated tests for `admin-panel/`.** No `test`
       script, no test files. `mobile-app/test/widget_test.dart` is still
       Flutter's unmodified default counter test.
@@ -693,6 +910,21 @@ password-change flows, PDF generation utilities.
       worst-scoring staff) should raise genuine scores back up without
       giving up recognition, letting the threshold move back up toward
       0.72 properly - worth doing before headcount grows further.
+
+## FEATURE INITIATIVES (large, multi-session — own plan file, own mini gate checklist)
+- [ ] **REQ-FEAT-001 — Staff App unification: evolve `mobile-app/` teacher
+      flavor into one role-aware Staff App (Teacher workspace + Admin
+      workspace), added 2026-09-18.** Full discovery input archived at
+      `ai-context\STAFF-APP-UNIFICATION-DISCOVERY.md`; working plan at
+      `planning\STAFF-APP-UNIFICATION-PLAN.md` (read that file for current
+      status, not this line). MAJOR CHANGE per §J12B — reopens DESIGN FIXED
+      for the mobile identity/role model before any coding.
+      **2026-09-18: admin↔employee linkage decided** — explicit nullable
+      `employees.admin_user_id → admin_users(id)` FK, set manually per
+      person, no fuzzy matching (see plan file's "Decision record"). CLARIFY
+      still open (Zustand-permissions question); no migration written yet,
+      no code written, nothing committed. Scope is the **teacher flavor
+      only** — student/attendance-kiosk flavors untouched.
 
 ## Backlog (deferred scope, not urgent)
 - Payments: Razorpay package installed, not connected (per `PLAN.md`/

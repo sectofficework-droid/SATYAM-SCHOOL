@@ -108,11 +108,20 @@ export default function UsersRolesTab() {
 
     setUserSaveErr("");
     if (editId) {
-      const { error } = await supabase.from("admin_users").update({ name: form.name.trim(), initials: form.initials.trim().toUpperCase(), role: form.role }).eq("id", editId);
+      const { data, error } = await supabase.rpc("admin_update_user", {
+        p_target_id: editId,
+        p_name: form.name.trim(),
+        p_initials: form.initials.trim().toUpperCase(),
+        p_role: form.role,
+      });
       if (error) { setUserSaveErr("Failed to update: " + error.message); return; }
-      setUsers(prev => prev.map(u => u.id === editId ? { ...u, name: form.name.trim(), initials: form.initials.trim().toUpperCase(), role: form.role } : u));
+      setUsers(prev => prev.map(u => u.id === editId ? data : u));
     } else {
-      const { data, error } = await supabase.from("admin_users").insert({ name: form.name.trim(), initials: form.initials.trim().toUpperCase(), role: form.role }).select().single();
+      const { data, error } = await supabase.rpc("admin_create_user", {
+        p_name: form.name.trim(),
+        p_initials: form.initials.trim().toUpperCase(),
+        p_role: form.role,
+      });
       if (error) { setUserSaveErr("Failed to add: " + error.message); return; }
       setUsers(prev => [...prev, data]);
     }
@@ -124,7 +133,7 @@ export default function UsersRolesTab() {
 
   async function deleteUser(id) {
     if (!confirm("Remove this user's admin access? Their Supabase Auth account will remain.")) return;
-    const { error } = await supabase.from("admin_users").delete().eq("id", id);
+    const { error } = await supabase.rpc("admin_delete_user", { p_target_id: id });
     if (error) { alert("Failed to remove user: " + error.message); return; }
     setUsers(prev => prev.filter(u => u.id !== id));
   }
