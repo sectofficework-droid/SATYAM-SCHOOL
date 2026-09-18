@@ -227,7 +227,7 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       code change. Closing this item on that decision, not on a fix.
 
 ## IMPORTANT
-- [~] **REQ-SEC-005 — Role-tier gating (`normal_admin` vs `senior_admin`/
+- [x] **REQ-SEC-005 — Role-tier gating (`normal_admin` vs `senior_admin`/
       `management`) is enforced client-side only for several actions;
       backend either checks admin membership only (not tier) or has no RLS
       at all. Found 2026-09-18 while closing out the Staff App Unification
@@ -419,19 +419,16 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       PROJECT_CONTEXT.md`'s existing roadmap item #7 ("Admin-user creation
       UI... create not wired") — not a regression, not silently expanded
       into this fix's scope; left as its own separate, already-tracked gap.
-      **Deployment status (user decision, 2026-09-18):** apply the DB fix
-      immediately even though the client code isn't deployed yet, accepting
-      that "Settings → Users & Roles" (create/edit/delete admin accounts)
-      and "permanently delete a student" will error in the *live* admin
-      panel for everyone — including management — until the staged code
-      is committed/pushed/deployed. Chosen deliberately (security over
-      temporary inconvenience, both are low-frequency actions for this
-      school) over the alternative of leaving the two escalation paths open
-      longer. **Action still needed from the user:** review the staged
-      diff (`admin-panel/src/app/(dashboard)/settings/UsersRolesTab.js`,
-      `admin-panel/src/lib/studentService.js`, plus the governance doc
-      updates) and commit + push when ready to restore those two features
-      and close this item out fully.
+      **Deployment status:** applied the DB fix immediately (2026-09-18
+      decision) accepting a temporary breakage window for "Settings → Users
+      & Roles" and "permanently delete a student" in the live admin panel.
+      **Closed 2026-09-19** — user reviewed and explicitly asked to commit
+      and push (`4f3beaa`, "Enforce admin role-tier checks server-side
+      (REQ-SEC-005)"), pushed to `origin/main`. Vercel auto-deploys admin
+      panel on push to `main` (per `CLAUDE.md`); not separately watched
+      end-to-end this session — if either feature still errors after the
+      deploy finishes, that's a real regression to report, not expected
+      behavior.
       **Deferred to a follow-up, out of scope for this fix (user decision,
       2026-09-18):** SEF salary/employee panel writes
       (`sefEmployeeService.js`) have the identical role-tier pattern but
