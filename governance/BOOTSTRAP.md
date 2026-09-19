@@ -98,16 +98,40 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-Last verified via `git log`/`git status` 2026-09-16: `main` at `b997c2f`
-("Log Teacher app Play Store closed-testing session..."), in sync with
-`origin/main`. **As of 2026-09-17, the working tree has real uncommitted
-changes** (attendance kiosk face-recognition fixes — see "Last checkpoint"
-below and `ai-context\SESSION-2026-09-17-1.md`): `mobile-app/lib/core/
-services/face_recognition_service.dart`, `mobile-app/lib/app/modules/
-attendance_kiosk/face_enroll_capture_page.dart`, `mobile-app/
-SUPABASE_FACE_MATCH_RPC.sql`, plus `governance\planning\TODO.md`. Not
-committed — user has not asked. Production (Vercel) tracks `main`, unaffected
-(these changes are mobile-app + a Supabase function, not admin-panel).
+Last verified via `git status` 2026-09-19 (session 3): `main` still not
+in sync with the working tree — substantial uncommitted work has
+accumulated across sessions 2026-09-17 through 2026-09-19, none of it
+committed since the user hasn't asked. Current working-tree summary:
+- **Staged from an earlier session** (REQ-SEC-005/007 fixes):
+  `admin-panel/src/app/(dashboard)/settings/UsersRolesTab.js`,
+  `admin-panel/src/app/(dashboard)/super-admin/page.js`,
+  `mobile-app/SUPABASE_ADMIN_EMPLOYEE_LINK.sql`,
+  `mobile-app/SUPABASE_SALARY_PUNCHCODE_ROLE_ENFORCEMENT.sql`.
+- **Modified, not staged, this session (3)**:
+  `mobile-app/lib/app/modules/teacher/dashboard/teacher_home.dart` (Admin
+  Workspace nav tab), plus `UsersRolesTab.js` above got further edits on
+  top of its earlier staged version (employee-linking control).
+- **New, untracked, this session (3)** — the full Staff App Unification
+  phase-1 build: `governance\planning\STAFF-APP-DESIGN-FIXED.md`,
+  `STAFF-APP-UI-DESIGN.md`,
+  `mobile-app/SUPABASE_STAFF_APP_ADMIN_WORKSPACE.sql`,
+  `mobile-app/SUPABASE_ADMIN_EMPLOYEE_LINK_UI.sql`,
+  `mobile-app/lib/app/modules/teacher/admin_workspace/` (9 screens),
+  `mobile-app/lib/common/widgets/admin_workspace_common.dart`,
+  `mobile-app/lib/core/services/staff_admin_service.dart`. Also untracked
+  from an earlier session: `governance\ai-context\
+  STAFF-APP-UNIFICATION-DISCOVERY.md`,
+  `governance\documentation\AI_AGENT_PROJECT_OVERVIEW.md`.
+- Prior 2026-09-17 uncommitted work (kiosk face-recognition fixes —
+  `mobile-app/lib/core/services/face_recognition_service.dart`,
+  `mobile-app/lib/app/modules/attendance_kiosk/
+  face_enroll_capture_page.dart`, `mobile-app/SUPABASE_FACE_MATCH_RPC.sql`)
+  is presumably still uncommitted too — not re-verified this session,
+  check `git status` fresh before assuming.
+All of the above are DB migrations already applied live to production via
+Supabase MCP (not gated by a git commit) — only the client-side `.js`/
+`.dart` files and governance docs are what's sitting uncommitted. Production
+(Vercel) tracks `main`, unaffected by any of this until pushed.
 
 **Known governance gaps, flagged not backfilled:** four feature commits
 between 2026-08-21 and 2026-08-24 (`886c6a3`, `f87a2ce`, `7c96bad`,
@@ -241,120 +265,184 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-09-19 (REQ-SEC-005, admin role-tier enforcement).**
-While closing out the Staff App Unification plan's CLARIFY question ("does
-per-role permission behavior really live only in Zustand?"), found the
-answer was worse than assumed: `normal_admin` vs `senior_admin`/`management`
-was enforced only in React components for several admin-panel actions, with
-no matching backend check. Worst instance: any authenticated admin
-(including `normal_admin`) could call `admin_users.update({role:
-'management'})` on their own row directly and self-promote — full
-privilege escalation, no server-side check at all. Also found: permanent
-student delete and the (not-yet-applied) `diagnostic_settings` toggle had
-the same gap. **Fixed and applied to production 2026-09-19** (user
-approved via explicit "code it"-equivalent after 4 rounds of upfront
-clarifying questions, then let the session run uninterrupted to
-completion): new migration `mobile-app/SUPABASE_ADMIN_ROLE_ENFORCEMENT.sql`
-adds 5 `SECURITY DEFINER` RPCs (`admin_has_role`, `admin_create_user`,
-`admin_update_user`, `admin_delete_user`, `admin_delete_student_permanently`)
-that check role server-side (management-only for senior_admin/management
-accounts and promotions; no self-role-change; no self-delete), then revokes
-the direct `admin_users` INSERT/UPDATE/DELETE and `students` DELETE grants
-so the RPCs are the only path. Also hardened: revoked the 5 new functions'
-default PUBLIC/anon execute grant (flagged by Supabase's own security
-advisor immediately after first applying). Fixed the pending
-(not-yet-applied) `SUPABASE_DIAGNOSTIC_REPORTS.sql`'s toggle policy the same
-way before it ever ships. **Live-verified** via 16 role-simulated test
-cases directly in Postgres (`set_config('request.jwt.claim.sub', ...)` +
-`SET LOCAL role`, all inside rolled-back transactions — no real data
-touched) covering every reject/allow path, plus 2 sanity checks that
-legitimate reads still work; all passed. Client code updated
-(`settings/UsersRolesTab.js`, `lib/studentService.js`'s
-`deleteStudentPermanently`) to call the new RPCs — `npm run lint` clean.
-**Deliberate, disclosed tradeoff:** applying the DB fix without deploying
-the client first means "Settings → Users & Roles" (create/edit/delete admin
-accounts) and "permanently delete a student" will error in the *live* admin
-panel for everyone, including management, until the staged client code is
-committed/pushed/deployed — user chose this explicitly (security over
-temporary inconvenience) over the alternative of leaving the two holes open
-longer. **Staged, not committed** per this file's standing rule — user
-chose not to auto-deploy this session. **Not fixed, separately tracked
-(already pre-existing, not part of this fix's scope):** `student_promotions`/
-`transfer_certificates`/`fee_payments` are still open to `anon` (REQ-SEC-002,
-much larger, deliberately not touched here); `admin_create_user`
-inherits the same pre-existing "account creation isn't fully wired to
-Supabase Auth" gap the original direct-insert code already had (confirmed
-via live test — not a regression, not fixed here, already tracked in
-`documentation/PROJECT_CONTEXT.md`'s roadmap); SEF salary/employee panel
-has the identical role-tier pattern, explicitly deferred to its own future
-session per user decision. Full detail: `planning/TODO.md` REQ-SEC-005.
+**Current — Session 2026-09-19 (3) — Staff App Unification: DESIGN FIXED,
+UI DESIGN CONFIRMED, and both phase-1 AND phase-2 CODING done same
+session.**
+Continuation of session (2) below: user approved the DESIGN FIXED draft
+as-is, delegated UI DESIGN CONFIRMED review ("check ui design if
+everything ok confirm"), then said "code it" and asked to be left alone
+until the feature was complete ("i am here if anythng otherr questions...
+ask me out after you start working ill be out you need complete the feat
+witout interrupting"). Built the full phase-1 Admin Workspace:
+- **Backend**: `mobile-app/SUPABASE_STAFF_APP_ADMIN_WORKSPACE.sql`, ~30
+  new `SECURITY DEFINER` RPCs (one per phase-1 action, each re-deriving
+  admin tier server-side via a new `staff_admin_tier()` helper —
+  never trusting a client flag), plus `teacher_login` extended with an
+  additive `admin_role` field. Applied live via Supabase MCP across 6
+  migrations, advisor-checked clean.
+- **Admin-panel prerequisite**: `mobile-app/SUPABASE_ADMIN_EMPLOYEE_LINK_UI.sql`
+  + a "Link to employee" control added to Settings → Users & Roles
+  (management-only) — without this, `employees.admin_user_id` (added
+  2026-09-18) had no UI to ever set, so the feature would have shipped
+  unreachable. **Caught a real bug while building it**: this project's
+  default privileges auto-grant `EXECUTE` to `anon` for every function
+  `postgres` creates — the two new management-only RPCs were briefly
+  anon-callable (not an active exploit — `admin_has_role()`'s `auth.uid()`
+  check is always null for anon — but the grant itself was wrong) until an
+  explicit `REVOKE ... FROM anon` closed it, verified via a second advisor
+  pass.
+- **Mobile UI**: `mobile-app/lib/app/modules/teacher/admin_workspace/`
+  (9 new screens: Dashboard, Attendance, Punch Code, Inventory, Notices,
+  Queries, Question Papers/Documents, Syllabus Requests
+  [senior_admin/management only], Tasks) + new
+  `lib/core/services/staff_admin_service.dart`. `teacher_home.dart`
+  touched only to append one conditional "Admin" bottom-nav tab after the
+  existing 5 — verified the existing Teacher tabs/indices are untouched.
+- **Correctness pass, caught before shipping**: cross-checked every
+  status/enum value against the real admin-panel source instead of
+  assuming, and found two invented values that would have written data
+  nothing else in the system recognizes — attendance only has
+  Present/Absent (a "Late" state had been added, doesn't exist anywhere
+  else), and notice audience is `"All Students"` not `"Students"`. Also
+  corrected a wrong assumption inherited from the original feature
+  inventory: admin-panel "Question Papers" is actually the
+  `teacher_documents` table (uploaded files), unrelated to the
+  `question_papers`/`question_bank` paper-builder tables — fixed before
+  the mobile screen was built, not after.
+- **Verified**: `npm run lint` (admin-panel) clean; `flutter analyze`
+  clean (0 issues, after fixing 7 style/async-safety infos); a debug APK
+  for the teacher flavor builds successfully end-to-end
+  (`assembleTeacherDebug`, 43s).
+- **On-device tested same session, on BlueStacks** (`emulator-5554`).
+  With the user's permission, linked `EMP003` (their own employee record,
+  senior_admin) and set a temporary password to log in. Confirmed against
+  real live data: Admin tab/workspace appears, dashboard summary matched a
+  direct DB check exactly, Attendance's class picker + real roster +
+  Present/Absent toggle worked, Queries' list + reply sheet correctly
+  pre-filled from a real pending query. No crashes.
+- **Real bug caught by the user during that test, fixed same session**:
+  `EMP003` is `type = non-teaching`, and the first implementation pass had
+  always appended Admin Workspace as a 6th tab regardless of `isTeacher` —
+  missing the non-teaching case `STAFF-APP-DESIGN-FIXED.md` §4 had
+  actually specified (Admin Workspace should *replace* the Teacher tabs
+  for an admin-only account, not sit next to irrelevant ones like student
+  marks entry or Syllabus). Fixed: `teacher_home.dart` now branches on
+  `isTeacher` — Teacher+Admin combo keeps the untouched additive 6th tab;
+  admin-only gets Admin Workspace as the whole app, no bottom nav.
+  Re-verified on BlueStacks after rebuilding: works correctly, no
+  double-header, sub-navigation into modules still fine. Neither the
+  Teacher tab screens nor `AdminWorkspaceHome`'s own visual design were
+  touched by this fix — only the shell logic deciding when each is shown.
+  `flutter analyze` clean throughout.
+- User decided to keep the `EMP003` ↔ `admin_users` link permanently
+  (it's real, not just test scaffolding) — **user still needs to reset
+  the temporary password** via the admin panel before this account is
+  production-safe again.
+- **Deliberately out of scope, phase 1 only** (superseded by phase 2
+  below, same session): Employee/Student CRUD, Fees, Expenses, GR Book,
+  Documents (ID card/marksheet/bonafide/TC/NOC), Report generation, full
+  Syllabus CRUD, Settings, Super-Admin, Diagnostics, Salary,
+  impersonation-initiation.
 
-**Prior — Session 2026-09-17 (attendance kiosk face recognition
-reliability, REQ-BUG-014).** User reported Face Punch sometimes registered
-the wrong staff member. Root cause: `match_face_embedding`
-(`mobile-app/SUPABASE_FACE_MATCH_RPC.sql`) did nearest-neighbor matching
-over every individual stored enrollment shot (~116 vectors across 5+
-people) instead of one stable reference per person; the accept threshold
-had only ever been tuned against a single enrolled person. **Fix 1:**
-rewrote the RPC to compare against a per-person averaged centroid instead —
-applied directly to production via Supabase MCP (a deviation from this
-project's usual "write the SQL, human runs it" convention; disclosed to
-the user in-session, not a standing new precedent — see the session log).
-**Fix 2 (regression correction):** the change dropped genuine-match
-similarity scores onto a lower scale than the old threshold (0.72) was
-tuned for, causing "only recognizes the first/best-scoring person" —
-caught by re-validating against all 135 real stored shots (not the
-original too-small 3-shot sample), user chose to lower
-`kMatchThreshold` to 0.65 favoring recognition over strictness, trusting
-the already-confirmed-working "Not Me" confirm step as backstop. **Fix 3:**
-pursued further accuracy (with honest ceiling-setting first — this
-architecture, a phone camera + small on-device model, cannot reach
-commercial/Face-ID-grade zero-error recognition) and found a real,
-previously-unknown coordinate bug: ML Kit's face geometry is reported in
-un-mirrored space but was being used directly against the mirrored
-`decoded` image everywhere (blur check, liveness crop, embedding crop) —
-fixed, plus added proper eye-landmark-based face alignment before
-embedding (MobileFaceNet expects aligned input; this pipeline never
-aligned). **This requires all 6 currently-enrolled staff to re-enroll**
-(old embeddings are incompatible with the new crop method) — user said not
-to clear the stale data, so it remains until each person redoes
-enrollment. **Fix 4 (separate request, same session):** enrollment took
-2+ minutes (25/22 near-duplicate shots + padded internal delays) — cut to
-8/9 genuinely distinct shots and shortened internal timing constants,
-reasoned from the same real-data finding as Fix 1/2 (more near-duplicate
-shots didn't help matching, just added noise). All 3 app rebuilds this
-session were installed directly via `adb` on a physical OnePlus device
-(`AC2001`) connected over USB, not the app's normal S3 update path.
-**Explicitly NOT verified:** Fix 3 and Fix 4 have no historical photo data
-to check against (this app never stores photos, only embeddings) — unlike
-Fix 1/2, which WERE validated against real production data, Fix 3/4 need
-an actual person to re-enroll and test a live punch before their
-real-world effect is known. Full detail:
-`ai-context\SESSION-2026-09-17-1.md`, `work-log\LOG-2026-09-17.md`,
-`planning\TODO.md` REQ-BUG-014. Nothing committed.
+**Phase 2 (full admin-web parity), same session, immediately after the
+above.** After seeing phase 1 live, the user asked for a richer dashboard
+and, separately, full feature parity — explicitly including the 4 items
+just listed as excluded ("Include everything, no exceptions"). Built:
+dashboard redesign (categorized sections, richer cards — caught and fixed
+a real overflow bug on-device); ~35 more RPCs
+(`SUPABASE_STAFF_APP_ADMIN_WORKSPACE_PHASE2.sql`) covering Students (full
+CRUD + permanent delete + TC issuance, gated correctly unlike the
+admin-panel's own ungated version), Employees (full CRUD + password reset
++ Admin Access Code generation), Fees, Expenses, full Inventory CRUD,
+full Syllabus CRUD, GR Book, Users & Roles, Salary. **Second real bug
+caught via on-device testing**: a Dart↔SQL RPC parameter name mismatch
+(`p_target_id` vs the function's actual `p_student_id`) surfaced as
+"Could not load student."; audited every other new RPC call against live
+function signatures afterward to rule out the same class of bug
+elsewhere — this was the only one. Verified on BlueStacks with real data
+across Students (list + full detail), Employees list, GR Book, Expenses
+(including a delete-confirmation flow, canceled without touching data),
+Users & Roles (all 4 real accounts, self-delete protection correct).
+Deliberately NOT ported (disclosed, not silent): bulk Excel import (GR
+Book, Super-Admin bulk tools), PDF template generation (ID
+cards/marksheets/bonafide — a materially different, large undertaking
+from CRUD screens), Settings' deeper config tabs, a dedicated Reports
+module.
 
-**Prior — Session 2026-09-16 (governance clarity pass + REQ-HYG-006
-diagnostic-logging system, 7 follow-ups).** Reviewed and fixed `AGENTS.md`/
-`RULEBOOK.md` governance gaps (rule-ID index, `BOOTSTRAP.md` size
-discipline, mandatory-logging rule, MCP-DB-access rule, OPERATE/§J12B
-gating clarification, 3-way sync verification, corrected a stale
-REQ-SEC-001..004 status block); added §K (engineering execution
-standards) and §L (mandatory diagnostic logging) rule sections, mirrored
-across all rule-book copies. Then built REQ-HYG-006 (the diagnostic
-logging §L itself mandates) end-to-end across 6 same-day follow-ups:
-structured loggers + global error capture for both admin-panel and
-mobile-app, a centralized `diagnostic_reports` Supabase table (migration
-written, **still not run against production**), auto-submission with a
-default-OFF `diagnostic_settings` kill switch + cooldown/session caps, and
-a `/diagnostics` admin-panel page (view/search/download, senior_admin+).
-Separately that day: Teacher app Play Store closed-testing fully
-submitted (11/11 checklist items) — see `work-log\LOG-2026-09-16.md`.
-**Not verified:** no on-device/in-browser error was ever actually
-triggered and watched get captured (§L10 sign-off still pending); the
-Supabase migration hasn't been applied yet, so nothing reaches the table
-until it is. Full detail: `ai-context\SESSION-2026-09-16-1.md`.
+**Follow-up "fix all and close all todo" pass, same session**: EMP003's
+temp password reset; REQ-SEC-007 fully closed (applied the long-pending
+diagnostics migration + tier-gated RPC); REQ-SEC-008 closed (admin
+panel's TC issuance now gated via `admin_issue_tc`); **new finding
+REQ-SEC-009 found+fixed** (kiosk admin settings/PIN had zero role check
+and were anon-callable — full unauthenticated kiosk-PIN-takeover, worse
+than 007/008); three more low-severity findings disclosed not fixed as
+**REQ-SEC-010**. BlueStacks disconnected mid-pass, so no further on-device
+testing happened; bulk import/PDF generation/deeper Settings/Reports
+remain not built. Full detail: `planning\TODO.md` REQ-SEC-007/008/009/010.
+
+Full detail: `planning\STAFF-APP-UNIFICATION-PLAN.md`'s "What
+shipped" sections, `planning\STAFF-APP-DESIGN-FIXED.md`,
+`planning\STAFF-APP-UI-DESIGN.md`. **Nothing committed** — staged only,
+per this project's standing rule.
+
+**Prior — Session 2026-09-19 (2) — Staff App Unification: PLANNING
+approved, DESIGN FIXED drafted.** User asked to review
+`planning\STAFF-APP-FEATURE-INVENTORY.md`, surface anything pending, and
+get all needed decisions upfront before proceeding. Asked 4 questions,
+got answers: (1) inventory approved as-is — **PLANNING gate closed**; (2)
+REQ-SEC-007's diagnostics-download policy decided (`normal_admin` should
+not see full report content) — recorded in `TODO.md`, not yet implemented
+(table still not live); (3) traced the Documents module's TC/NOC
+write-path (previously flagged, not done) — found NOC isn't built
+anywhere (dead "Coming Soon" tab) and real TC issuance lives outside the
+`documents` module entirely (`student\[id]\tc\page.js` →
+`studentService.saveTransferCertificate()`), with **zero role gating on a
+real state-changing write** (flips student to "Left", deactivates
+enrollment) — filed as new **`TODO.md` REQ-SEC-008**, not fixed, flagged
+for priority decision; corrected the feature inventory's Documents section
+to match. (4) User chose to keep going same session — drafted
+**`planning\STAFF-APP-DESIGN-FIXED.md`**: `StaffRoleContext` shape +
+resolution mechanism (recommends resolving role at `teacher_login` time,
+embedded in its response — no new session mechanism, per the "no new auth
+system" non-negotiable), a binding backend-security pattern (every mobile
+Admin Workspace RPC must be `SECURITY DEFINER` + re-verify role
+server-side, regardless of how loosely the admin panel itself gates the
+same action — mobile runs as `anon` with RLS disabled project-wide, so
+copying the panel's laxness would mean zero enforcement), and a proposed
+per-module mobile-vs-admin-panel-only mapping for all 18 inventory
+modules (phase-1 mobile set: Dashboard read, Attendance, punch-code
+generation, inventory usage/checkout, Notice, Queries, Question Papers
+read, Syllabus approve/reject, Tasks — everything else stays admin-panel-
+only with a reason, including a "recommend never on mobile" flag on
+permanent student delete). **Explicitly flagged as a draft, not a
+decision** — DESIGN FIXED §5 lists 5 open questions for the user,
+including that the original 2026-09-18 33-section discovery spec's full
+text wasn't available this session (only the summarized non-negotiables
+in `ai-context\STAFF-APP-UNIFICATION-DISCOVERY.md` were), so this draft
+couldn't be checked against it line-by-line. **No code written, nothing
+committed** — this whole session was planning-doc work only, per the
+gate rules (`AGENTS.md` §F: no gate advances without its trigger phrase;
+CODING needs literal "code it," not given this session).
 
 Earlier checkpoints, one line each (full detail in the linked files):
+- **2026-09-19 (1)** — REQ-SEC-005: found and fixed a real privilege-
+  escalation hole (any admin could self-promote to `management` via a
+  direct `admin_users` update, no server-side check) plus 2 related gaps
+  (permanent student delete, pending diagnostics toggle); 5 new
+  `SECURITY DEFINER` RPCs, live-verified via 16 rolled-back-transaction
+  test cases, direct table grants revoked. Staged, not committed. →
+  `planning/TODO.md` REQ-SEC-005.
+- **2026-09-17** — attendance kiosk face-recognition reliability
+  (REQ-BUG-014): centroid-based matching, threshold retune, un-mirrored
+  ML Kit coordinate bug fixed + face alignment added (all 6 enrolled staff
+  need to re-enroll), enrollment flow shortened. Fix 3/4 not yet verified
+  against a live re-enrollment. → `ai-context\SESSION-2026-09-17-1.md`,
+  `work-log\LOG-2026-09-17.md`, `TODO.md` REQ-BUG-014.
+- **2026-09-16** — governance clarity pass (rule-book fixes, §K/§L added)
+  + REQ-HYG-006 diagnostic-logging system built end-to-end (migration
+  **still not applied** to production); Teacher app Play Store
+  closed-testing submitted (11/11). → `ai-context\SESSION-2026-09-16-1.md`,
+  `work-log\LOG-2026-09-16.md`.
 - **2026-09-13 (6 sessions)** — kiosk face-scan freeze fixed (redundant
   JPEG decoding + `takePicture()` latency → single decode + live
   preview-stream capture), verified over a 13-min on-device run
@@ -394,16 +482,50 @@ Earlier checkpoints, one line each (full detail in the linked files):
 Open items, most recent first (superseded/completed items removed — see
 the checkpoint list above for what already shipped):
 
-0. **REQ-FEAT-001 — Staff App unification (new 2026-09-18, planning only,
-   no code yet).** Evolve `mobile-app/` teacher flavor into one role-aware
-   Staff App (Teacher + Admin workspaces) per a full discovery spec, now
-   archived at `governance\ai-context\STAFF-APP-UNIFICATION-DISCOVERY.md`.
-   Working plan: `governance\planning\STAFF-APP-UNIFICATION-PLAN.md`.
-   **Blocked on your decision** — `admin_users` and `employees` have no
-   reliable link today (checked live: 0/4 match by email, 3/4 coincidental
-   name-matches that aren't safe to use for real authorization); see the
-   plan file's "Open decisions" for the options. Read the plan file first
-   next session before doing anything else on this item.
+0. **REQ-FEAT-001 — Staff App unification (phase-1 AND phase-2 CODING
+   done 2026-09-19, same day, on-device tested).** Phase 2 added same
+   session after the user reviewed phase 1 live and said "Include
+   everything, no exceptions" on full admin-web parity (including the 4
+   originally-excluded high-risk actions: permanent student delete, Users
+   & Roles account management, Salary, Admin Access Code generation).
+   Dashboard redesigned (richer, categorized sections). ~35 more RPCs
+   (`mobile-app/SUPABASE_STAFF_APP_ADMIN_WORKSPACE_PHASE2.sql`): Students
+   (full CRUD + permanent delete + TC issuance), Employees (full CRUD +
+   password reset + impersonation codes), Fees, Expenses, full Inventory
+   CRUD, full Syllabus CRUD, GR Book, Users & Roles, Salary. Two real bugs
+   caught and fixed via on-device BlueStacks testing this session (see
+   `planning\STAFF-APP-UNIFICATION-PLAN.md`'s two "What shipped"
+   sections for both). A few desktop-shaped workflows (bulk Excel import,
+   PDF template generation for ID cards/marksheets, Settings' deeper
+   config tabs, a dedicated Reports module) were deliberately not ported
+   — disclosed in the plan file, not silently dropped, and flagged for
+   the user to weigh in on. Original phase-1 checkpoint text below is
+   preserved as history. Evolved
+   `mobile-app/` teacher flavor into a role-aware Staff App (Teacher +
+   Admin workspaces). Discovery archived at
+   `governance\ai-context\STAFF-APP-UNIFICATION-DISCOVERY.md`. Working
+   plan: `governance\planning\STAFF-APP-UNIFICATION-PLAN.md` (see its
+   "What shipped 2026-09-19" section). **All gates through CODING are
+   closed**: CLARIFY, PLANNING, DESIGN FIXED
+   (`planning\STAFF-APP-DESIGN-FIXED.md`), UI DESIGN CONFIRMED
+   (`planning\STAFF-APP-UI-DESIGN.md`), and CODING (backend RPCs + 9
+   mobile screens + admin-panel employee-linking prerequisite, all built
+   and verified via lint/analyze/debug-APK-build). **Tested on BlueStacks
+   the same session** — with your permission, linked `EMP003` (your own
+   employee record) to its `admin_users` row and set a temporary password
+   to log in; verified the Admin tab appears, dashboard summary/Attendance/
+   Queries work correctly against real live data, no crashes. Not yet
+   independently clicked through: Notices/Inventory/Punch Code/Documents/
+   Syllabus/Tasks (same proven pattern, not separately exercised) or any
+   actual write action. **Decided 2026-09-19**: keeping the `EMP003` ↔ `admin_users` link (real,
+   not just test scaffolding) — **you still need to reset the password off
+   the temporary `TestPass2026!` value** via the admin panel's Employee →
+   Reset Password action before this account is production-safe again; not
+   done automatically, flagged here so it isn't forgotten. Two related findings,
+   tracked separately in `TODO.md`, not blocking this plan: REQ-SEC-007
+   (diagnostics-download policy — decided, not yet implemented) and
+   REQ-SEC-008 (Transfer Certificate issuance has zero role gating on a
+   real state-changing write; needs a priority call).
 1. **REQ-SEC-002 (only remaining open security item)** — `employees` +
    ~22 other tables (73 total per Supabase's live advisor) still have RLS
    disabled / broad `anon` grants; `employees` specifically is blocked on

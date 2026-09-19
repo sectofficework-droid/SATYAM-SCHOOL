@@ -200,15 +200,20 @@ export default function DiagnosticsPage() {
                   <p className="text-sm text-gray-700 mt-3 leading-relaxed whitespace-pre-wrap">{r.description}</p>
                 )}
 
-                <button
-                  onClick={() => setExpandedId(expanded ? null : r.id)}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-school-navy mt-3"
-                >
-                  {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                  {expanded ? "Hide" : "Show"} log entries
-                </button>
+                {r.log_entries !== undefined && (
+                  <button
+                    onClick={() => setExpandedId(expanded ? null : r.id)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-school-navy mt-3"
+                  >
+                    {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                    {expanded ? "Hide" : "Show"} log entries
+                  </button>
+                )}
+                {r.log_entries === undefined && (
+                  <p className="text-xs text-gray-400 mt-3 italic">Full log entries are visible to senior_admin/management only.</p>
+                )}
 
-                {expanded && (
+                {expanded && r.log_entries !== undefined && (
                   <pre className="mt-2 bg-gray-900 text-gray-100 text-[11px] rounded-xl p-4 overflow-x-auto max-h-96 overflow-y-auto">
                     {JSON.stringify(r.log_entries, null, 2)}
                   </pre>

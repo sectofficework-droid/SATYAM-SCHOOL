@@ -1692,16 +1692,13 @@ function SalaryPanel({ employees: propEmployees }) {
   function getSal(emp) { return emp.salary ?? 0; }
 
   async function loadPayments(m) {
-    const { data } = await supabase
-      .from("salary_payments")
-      .select("id, employee_id, amount, paid_on, paid_by")
-      .gte("month", m + "-01")
-      .lt("month", new Date(new Date(m + "-01").setMonth(new Date(m + "-01").getMonth() + 1)).toISOString().slice(0, 10));
+    const p_to = new Date(new Date(m + "-01").setMonth(new Date(m + "-01").getMonth() + 1)).toISOString().slice(0, 10);
+    const { data } = await supabase.rpc("admin_get_salary_payments", { p_from: m + "-01", p_to });
     setDbPayments(data || []);
   }
 
   async function loadAllPayments() {
-    const { data } = await supabase.from("salary_payments").select("id, employee_id, amount, paid_on, paid_by, month");
+    const { data } = await supabase.rpc("admin_get_salary_payments", {});
     setAllPayments(data || []);
   }
 
@@ -1744,7 +1741,7 @@ function SalaryPanel({ employees: propEmployees }) {
     const date    = new Date().toISOString().split("T")[0];
     const monthDate = month + "-01";
     try {
-      const { error } = await supabase.from("salary_payments").insert({ employee_id: emp.id, month: monthDate, amount, paid_on: date, paid_by: "Sunil Pradhan" });
+      const { error } = await supabase.rpc("admin_record_salary_payment", { p_employee_id: emp.id, p_month: monthDate, p_amount: amount, p_paid_on: date, p_paid_by: "Sunil Pradhan" });
       if (error) throw error;
       await addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount, date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId }).catch(() => {});
       await loadPayments(month);
@@ -1763,7 +1760,7 @@ function SalaryPanel({ employees: propEmployees }) {
     const monthDate = month + "-01";
     const rows = unpaidThisMonth.map(emp => ({ employee_id: emp.id, month: monthDate, amount: getSal(emp), paid_on: date, paid_by: "Sunil Pradhan" }));
     try {
-      const { error } = await supabase.from("salary_payments").insert(rows);
+      const { error } = await supabase.rpc("admin_record_salary_payments_bulk", { p_rows: rows });
       if (error) throw error;
       await Promise.allSettled(unpaidThisMonth.map(emp =>
         addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount: getSal(emp), date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId })

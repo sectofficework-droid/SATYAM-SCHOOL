@@ -46,6 +46,38 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
 ---
 
 ## 🛑 CRITICAL — needs an explicit decision before any fix is attempted
+- [x] **REQ-SEC-006 — `_app_password_backup_20260821` still holds every
+      student's/employee's original PLAINTEXT password, fully exposed to
+      anon (no login required). Found 2026-09-19 during a REQ-SEC-002
+      audit. DROPPED 2026-09-19.** This table was created by REQ-SEC-001's own migration
+      (below) on 2026-08-21 as a pre-hash backup — 75 rows (48 students +
+      27 employees), columns `id, source_table, old_password,
+      backed_up_at`. It was never locked down or dropped after the
+      migration completed. Confirmed via the REQ-SEC-002 audit's live
+      `get_advisors`/grants query: full anon SELECT/INSERT/UPDATE/DELETE,
+      RLS disabled, exactly the same as the other 75 exposed tables — except
+      this one's contents are literally the plaintext passwords REQ-SEC-001
+      was written specifically to stop exposing. **This is worse than the
+      original REQ-SEC-001 finding**: that fix only touched the live
+      `app_password` columns; this backup was left wide open the entire
+      time since, with no legitimate ongoing purpose (a one-time migration
+      artifact, not read by any app). Live-exploitable right now, no
+      credentials needed, same severity class as the original REQ-SEC-001
+      finding (arguably worse, since REQ-SEC-001 is otherwise closed and
+      users may reasonably believe this problem no longer exists).
+      **Decision (2026-09-19): drop the table entirely**, not just revoke
+      `anon` access — nothing reads it, and the migration it backed up for
+      (REQ-SEC-001, below) is complete and verified. **Before dropping**,
+      sanity-checked live: 0 non-bcrypt `app_password` rows remain on
+      `students`/`employees` (75/75 already hashed, matching the backup's
+      75-row count exactly) — confirmed nothing would be lost. Dropped via
+      `mcp__supabase__apply_migration` (`req_sec_006_drop_plaintext_
+      password_backup`), verified gone from
+      `information_schema.tables` immediately after. Low-risk/low-blast-
+      radius fix (unlike most of REQ-SEC-002's other 75 tables, which need
+      careful per-table policy design because the mobile apps read some of
+      them directly with the anon key) — this one had zero legitimate
+      readers, so no client code changes were needed either.
 - [x] **REQ-SEC-001 — Plaintext `app_password`. FIXED AND SHIPPED 2026-08-21.**
       Written up as a real plan this time (see below for the reverted
       2026-08-18 attempt this superseded), approved via "code", implemented,
@@ -189,6 +221,154 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       but the underlying architecture (no real per-user DB identity for any
       mobile client) is exactly what this item is already tracking. No
       severity/status change; recorded per §J14.
+      **2026-09-19 — full categorized audit, ground truth from live
+      Supabase (`get_advisors` + `pg_policies`/grants queries), not the
+      tracked `.sql` files.** Scope corrected again: **76 tables** now
+      flagged `rls_disabled_in_public` (up from ~72-73), confirming drift
+      is ongoing, not a one-time undercount. `students`/`admin_users`/
+      `school_calendar_events` correctly absent (already fixed). **Worse
+      variant found on 5 tables** (`employees`, `exam_marks`, `exams`,
+      `homework`, `student_attendance`) — real per-row policies exist for
+      these, but RLS itself was never turned on, so the policies do
+      nothing and access is fully open regardless; fixing these needs only
+      `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`, not new policy design.
+      **See REQ-SEC-006 above** for the single worst individual finding
+      from this same audit pass (a plaintext-password backup table,
+      already dropped). **73 of the remaining 75** tables grant full
+      DELETE/INSERT/SELECT/UPDATE to **both `anon` and `authenticated`** —
+      open to unauthenticated internet clients, not just logged-in
+      sessions. 3 exceptions already narrower: `admin_alerts`
+      (authenticated-only), `employee_attendance` (anon: SELECT only),
+      `employee_shifts` (both: SELECT only).
+      **Categorized by sensitivity:**
+      - *Financial (admin-only):* `fee_payments`, `employee_salaries`,
+        `salary_payments`, `expenses`, `fee_structures`,
+        `fee_reminder_templates`, `sef_fee_payments`, `sef_fee_structure`,
+        `sef_fee_reminder_template`.
+      - *Personal/document data:* `student_documents`,
+        `employee_documents` (admin-only); `teacher_documents`,
+        `leave_requests` (mobile-touched).
+      - *Academic integrity (admin-only):* `question_bank`,
+        `question_paper_items`, `question_papers`,
+        `official_exam_subject_config` — DELETE exposure on pre-exam
+        content already flagged in this file's header summary.
+      - *Academic (mobile-touched — needs a per-table carve-out, not a
+        blanket lock, same pattern as the `employees`/
+        `school_calendar_events` fixes already done):* `exam_marks`,
+        `exams`, `official_exams`, `official_exam_marks`, `homework`,
+        `syllabus`, `syllabus_edit_requests`, `syllabus_subtopics`,
+        `student_attendance`, `employee_attendance`, `timetables`,
+        `daily_tasks`, `daily_task_completions`, `task_assignees`,
+        `academic_years`, `class_subjects`, `notices`,
+        `queries_suggestions`, `school_profile`, `school_rules`,
+        `student_alerts`, `teacher_alerts`, `employees`,
+        `employee_shifts`, `attendance_edit_requests`, `app_versions`.
+      - *Low-sensitivity/operational (admin-only):* `roles`, `sections`,
+        `section_supporting_teachers`, `classes`, `document_types`,
+        `daily_task_targets`, `gr_book_imports`,
+        `helpdesk_admin_numbers`, `users` (unused legacy, known drift),
+        `timetable_entries`, `timetable_period_definitions` (both unused
+        legacy, known drift), `year_plan_events`, `assets`,
+        `asset_history`, `asset_checkouts`, `inventory_batches`,
+        `inventory_items`, `inventory_usages`, `student_enrollments`,
+        `student_previous_school`, `student_promotions`,
+        `student_siblings`, `student_inventory_assignments`,
+        `transfer_certificates`, `employee_subject_mappings`, and 5 more
+        `sef_*` tables (`sef_academic_years`, `sef_classes`, `sef_profile`,
+        `sef_rules`, `sef_students` — the latter holds real data, see the
+        SEF finding under REQ-SEC-005 above).
+      **Mobile-vs-admin split, confirmed by grepping every `.from('table')`
+      call across all of `mobile-app/lib`** (only 2 files touch Supabase
+      tables directly — `supabase_service.dart`, `diagnostic_logger.dart`,
+      both anon-key, no session, matching the known architecture): **29 of
+      76 tables are mobile-touched** (the "Academic (mobile-touched)" list
+      above); **47 are admin-panel-only**, including essentially every
+      financial and academic-integrity table — those 47 can be locked down
+      independently with a straightforward `is_admin_user()`-style policy,
+      no mobile carve-out needed, i.e. the same shape of fix already proven
+      3 times over (`students`, `admin_users`, `school_calendar_events`).
+      **Tranche 1 FIXED 2026-09-19** (user: "fix whatever possible before
+      working on new features"). Before writing any migration, re-verified
+      the mobile-touch list myself via a direct grep of every `.from()`
+      call across `mobile-app/lib` (not trusting the audit fork's list
+      blindly) — this caught a real miscategorization: the fork filed
+      `official_exam_subject_config` as admin-only, but
+      `supabase_service.dart:573,587` reads it directly (SELECT-only, both
+      call sites) — moved it into the mobile-touched set. **Also caught
+      before applying anything**: the "5 tables, just flip RLS on, trivial"
+      framing from the audit was wrong and would have been actively
+      harmful — their existing policies (`employees_own_profile`,
+      `marks_own_student`, etc.) all key off `auth.uid()` /
+      `employees.app_user_id = auth.uid()`, but per this project's own
+      confirmed architecture (2026-09-09 note above) no Flutter app ever
+      creates a real Supabase Auth session, so `auth.uid()` is always NULL
+      for every mobile request — enabling RLS with these policies as-is
+      would have silently locked the teacher and student apps out of
+      homework/exams/marks/attendance entirely. Re-filed all 5 into the
+      mobile-touched set instead of "fix now."
+      **Applied**: a single migration (`req_sec_002_lock_admin_only_tables`)
+      covering the **46 tables with zero mobile dependency** (confirmed,
+      not assumed) — `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` +
+      one `is_admin_user()`-gated `FOR ALL` policy + `REVOKE ALL ... FROM
+      anon` per table, via a `FOREACH` loop over an explicit table-name
+      array (avoids 46 near-identical hand-written blocks and the typo
+      risk that comes with them) — exact same pattern already proven on
+      `students`/`admin_users`/`school_calendar_events`. Untouched:
+      `authenticated`'s existing grant shape on every table (e.g.
+      `admin_alerts` keeps its narrower SELECT/UPDATE-only grant — the
+      policy only adds a row-check, it can't grant privileges that were
+      never there). Table list: `asset_checkouts`, `asset_history`,
+      `assets`, `classes`, `daily_task_targets`, `document_types`,
+      `employee_documents`, `employee_salaries`,
+      `employee_subject_mappings`, `expenses`, `fee_payments`,
+      `fee_reminder_templates`, `fee_structures`, `gr_book_imports`,
+      `helpdesk_admin_numbers`, `inventory_batches`, `inventory_items`,
+      `inventory_usages`, `question_bank`, `question_paper_items`,
+      `question_papers`, `roles`, `salary_payments`,
+      `section_supporting_teachers`, `sections`, `sef_academic_years`,
+      `sef_classes`, `sef_fee_payments`, `sef_fee_reminder_template`,
+      `sef_fee_structure`, `sef_profile`, `sef_rules`, `sef_students`,
+      `student_documents`, `student_enrollments`,
+      `student_inventory_assignments`, `student_previous_school`,
+      `student_promotions`, `student_siblings`, `tasks`,
+      `timetable_entries`, `timetable_period_definitions`,
+      `transfer_certificates`, `users`, `year_plan_events`,
+      `admin_alerts`. **Directly closes part of what REQ-SEC-005 explicitly
+      left open**: `student_promotions`/`transfer_certificates` are in this
+      list, so their `anon` exposure is now fixed too, not just sidestepped
+      by `admin_delete_student_permanently`'s `SECURITY DEFINER`.
+      **Verified live**: re-ran `get_advisors` after — `rls_disabled_in_
+      public` dropped from 76 to exactly **29** (every remaining flagged
+      table is a genuine mobile-touched one, confirmed against my own grep
+      list, zero surprises). Spot-checked via role-simulated queries
+      (same rolled-back-transaction technique as REQ-SEC-005): an
+      authenticated admin session still reads `fee_payments` (51 rows),
+      `question_bank` (2 rows), `student_promotions` (0 rows) normally;
+      `anon` gets `permission denied` on both `fee_payments` and
+      `question_bank`; `admin_delete_student_permanently` (REQ-SEC-005)
+      still succeeds now that `student_promotions`/`transfer_certificates`
+      have RLS enabled too (confirmed — `SECURITY DEFINER` bypasses RLS as
+      expected, not just assumed). No client code changes needed (nothing
+      legitimate was using direct anon access to any of these 46 tables),
+      so nothing to stage/deploy — this migration is fully live already.
+      **Not fixed — still needs its own dedicated session**: the **29
+      mobile-touched tables** (`academic_years`, `app_versions`,
+      `attendance_edit_requests`, `class_subjects`, `daily_task_
+      completions`, `daily_tasks`, `employee_attendance`,
+      `employee_shifts`, `employees`, `exam_marks`, `exams`, `homework`,
+      `leave_requests`, `notices`, `official_exam_marks`,
+      `official_exam_subject_config`, `official_exams`,
+      `queries_suggestions`, `school_profile`, `school_rules`,
+      `student_alerts`, `student_attendance`, `syllabus`,
+      `syllabus_edit_requests`, `syllabus_subtopics`, `task_assignees`,
+      `teacher_alerts`, `teacher_documents`, `timetables`) — each needs its
+      exact read/write pattern traced from `supabase_service.dart` before
+      a policy can be written (some need `anon` SELECT preserved, some
+      need specific write paths preserved, 5 of them need their existing
+      broken policies replaced outright) — genuinely slower, higher-risk
+      work than tranche 1, and this project has no automated tests to catch
+      a mistake before a real teacher/student notices. Recommend its own
+      session, not a rushed continuation of this one.
 - [x] **REQ-SEC-004 — `teacher_update_profile` has zero identity check.
       FIXED 2026-09-04.** Checked 2026-08-18: NOT fixable without an app
       rebuild, so deferred out of Stage 1. Unlike `teacher_change_password` (which verifies
@@ -429,11 +609,29 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       end-to-end this session — if either feature still errors after the
       deploy finishes, that's a real regression to report, not expected
       behavior.
-      **Deferred to a follow-up, out of scope for this fix (user decision,
-      2026-09-18):** SEF salary/employee panel writes
-      (`sefEmployeeService.js`) have the identical role-tier pattern but
-      need their own audit before committing to specific RPCs — tracked
-      here as a reminder, not started.
+      **SEF salary/employee follow-up — audited 2026-09-19, closed as not
+      applicable as scoped.** Queried `information_schema.tables` for
+      `sef_*`: only 8 SEF tables exist live (`sef_students`,
+      `sef_fee_payments`, `sef_profile`, `sef_academic_years`,
+      `sef_classes`, `sef_fee_structure`, `sef_fee_reminder_template`,
+      `sef_rules`) — **no** `sef_employees`/`sef_employee_attendance`/
+      `sef_salary_payments`/`sef_inventory_*` tables exist at all.
+      `sefEmployeeService.js`/`sefInventoryService.js` call these
+      non-existent tables directly with no RPC — opening Employee/Salary/
+      Inventory in `sef/super-admin/page.js` throws a live "relation does
+      not exist" error today. Matches `PROJECT_CONTEXT.md`'s documented
+      scope: SEF is deliberately Phase-1-only (Dashboard/Student/Fees/
+      Settings) — Employee/Salary/Inventory were coded client-side but
+      their tables were never provisioned. REQ-SEC-005's concern (UI-only
+      role gate, no backend check) doesn't apply — there's no real data
+      behind the gate yet. If those tables are provisioned later, building
+      the role-checked RPCs is new-feature work needing its own DESIGN
+      FIXED gate, not a retrofit of this fix.
+      **Side finding, feeds REQ-SEC-002 not REQ-SEC-005:** the 2 SEF tables
+      that DO hold real data — `sef_students`, `sef_fee_payments` — have
+      RLS disabled with full `anon` SELECT/INSERT/UPDATE/DELETE grants,
+      same pattern as REQ-SEC-002's existing ~72-73 table list. Not in that
+      list by name before now — add them there, don't track separately.
       **Also explicitly not touched, per user-approved scope (2026-09-18):**
       REQ-SEC-002's still-open `anon` exposure on `student_promotions`/
       `transfer_certificates`/`fee_payments` — this fix's
@@ -441,6 +639,227 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       bypasses those tables' own grants/RLS regardless), but the underlying
       ~72-table exposure remains exactly as large as REQ-SEC-002 already
       describes it.
+- [x] **REQ-SEC-007 — CLOSED 2026-09-19 (all 3 items fixed).** Role-tier/auth gaps in the same class as REQ-SEC-005,
+      not covered by that fix. Found 2026-09-19 during the Staff App
+      Unification full Admin Panel feature-inventory audit
+      (`planning\STAFF-APP-UNIFICATION-PLAN.md` spec §22).**
+      1. **Salary module in `super-admin`'s Management-Head branch —
+         FIXED 2026-09-19.** (`super-admin\page.js`, `MGMT_MODULES` "Salary"
+         tab, gated only by `isMgmt = authUser.role === "management"` for
+         which *tab shows*) — the underlying `salary_payments` insert/select
+         calls were plain `supabase.from("salary_payments")`, RLS
+         `is_admin_user()` (membership only, confirmed live via
+         `pg_policies` before fixing). A `senior_admin` (who never sees the
+         Salary tab) could have read/written salary data by calling
+         Supabase directly. **Fix applied**
+         (`mobile-app/SUPABASE_SALARY_PUNCHCODE_ROLE_ENFORCEMENT.sql`, 2
+         migrations via `mcp__supabase__apply_migration`): 3 new
+         `SECURITY DEFINER` RPCs (`admin_get_salary_payments`,
+         `admin_record_salary_payment`, `admin_record_salary_payments_bulk`),
+         each checking `admin_has_role(ARRAY['management'])` (reusing
+         REQ-SEC-005's helper — mirrors the existing `isMgmt` UI gate
+         exactly, not a new rule), then `salary_payments`' direct
+         SELECT/INSERT/UPDATE/DELETE grants revoked from `authenticated`.
+         Client (`super-admin\page.js`: `loadPayments`, `loadAllPayments`,
+         `payOne`, `payAll`) switched to call the RPCs. `npm run lint`
+         clean. Verified in a rolled-back transaction first (senior_admin
+         blocked from all 3 RPCs and from direct table access; management
+         succeeds; row counts unchanged before/after) — same discipline as
+         REQ-SEC-005's Step 4. **Staged, not committed** (DB fix is live;
+         admin-panel client code is not yet pushed — same temporary-window
+         pattern as REQ-SEC-005, awaiting your commit decision).
+      2. **`generate_punch_code` had no auth check at all — FIXED
+         2026-09-19.** Not originally part of this item; found adjacent
+         during the same audit (`employee\page.js` → `generate_punch_code`
+         RPC, `mobile-app/SUPABASE_PUNCH_OVERRIDE_CODE.sql:37`). Granted to
+         `authenticated` with zero internal check — not even
+         `is_admin_user()` membership, unlike every sibling RPC in this
+         project. Any Supabase-authenticated session (in practice: any
+         `admin_users` member today, but also any stray leftover
+         `auth.users` row from the abandoned "real Supabase Auth for
+         mobile" design — see `employees.app_user_id`) could mint a
+         face-punch override code for any employee. **Fix applied**: added
+         `IF NOT is_admin_user() THEN RAISE EXCEPTION 'Not authorized';
+         END IF;` — matches every sibling RPC, not a new rule (all admin
+         tiers can already do this via the UI unconditionally; only blocks
+         non-admin authenticated sessions). Advisor also flagged the
+         function's search_path as mutable (pre-existing, unrelated to the
+         auth fix) — closed in the same pass
+         (`req_sec_007_fix_punch_code_search_path`). No client change
+         needed (already called via `.rpc()`).
+      3. **Diagnostics download — still open, NOT fixed. Correction to my
+         own 2026-09-19 note above**: I initially wrote
+         "`diagnostic_reports`... already live" — **verified false**:
+         queried `pg_class`/`information_schema` directly, neither
+         `diagnostic_reports` nor `diagnostic_settings` exists in
+         production at all (matches `REQ-HYG-006`'s own note that the
+         migration was never applied — I just hadn't checked before
+         writing the first version of this entry). So there is **no
+         current live exploit** for this one, unlike the salary gap. But
+         the fix isn't as simple as mirroring REQ-SEC-005's pattern either:
+         `diagnostics\page.js`'s `canDownload` gate doesn't guard a
+         separate backend call — `getDiagnosticReports()` (all rows, full
+         `log_entries`) is fetched and rendered on-screen for **every**
+         admin tier unconditionally in `useEffect`, before any role check
+         runs; the "Download" button just repackages already-visible data
+         into a local file client-side. Tier-gating the download call
+         alone (e.g. an `admin_has_role`-gated RPC) would fix nothing real,
+         since the same data is already sitting on-screen for a
+         `normal_admin` regardless. Actually closing this needs a decision
+         I shouldn't make unilaterally (do not invent business rules): does
+         `normal_admin` view the report list/log content at all (current
+         apparent intent, per `CLAUDE.md`'s "Humans browse... senior_admin/
+         management only for the toggle and download" phrasing suggests
+         browsing was meant to be open) — in which case the size of this
+         "gap" is just "download" being cosmetically restricted while
+         viewing already isn't, and the fix is arguably to remove the
+         `canDownload` UI gate as pointless rather than backend-enforce it;
+         or should `normal_admin` not see full report content at all, which
+         would need restructuring the read path (e.g. a tier-gated RPC
+         returning full `log_entries` only to senior_admin/management, with
+         `normal_admin` seeing summary rows only) — a real, larger change.
+         **Decided 2026-09-19 (during Staff App Unification PLANNING
+         review):** `normal_admin` should NOT see full report content —
+         the larger of the two options. When the pending
+         `diagnostic_reports`/`diagnostic_settings` migration (REQ-HYG-006)
+         is built/applied, the read path needs a tier-gated RPC
+         (`admin_has_role`-style, mirroring REQ-SEC-005's pattern) that
+         returns full `log_entries` only to `senior_admin`/`management`,
+         with `normal_admin` seeing summary rows only (no full log
+         content) — replacing today's unconditional `getDiagnosticReports()`
+         fetch. **FIXED 2026-09-19.** Applied the previously-pending
+         `SUPABASE_DIAGNOSTIC_REPORTS.sql` (REQ-HYG-006 Phase 1.5 — the
+         table genuinely didn't exist until now) plus a new
+         `admin_get_diagnostic_reports()` RPC: senior_admin/management get
+         full rows (including `log_entries`), `normal_admin` gets summary
+         rows with `log_entries` omitted entirely. `diagnosticsService.js`'s
+         `getDiagnosticReports()` now calls the RPC instead of a direct
+         `.select("*")`; `diagnostics\page.js` updated to show "Full log
+         entries are visible to senior_admin/management only." instead of
+         a raw `undefined` when the field is absent. Advisor-verified: RPC
+         not anon-callable. `npm run lint` clean. **Not verified**: no
+         real on-device/in-browser error has been triggered and watched
+         land in the table yet (§L10 sign-off) — auto-submission also
+         still defaults OFF (`diagnostic_settings.enabled = false`), so
+         the table will stay empty until someone turns it on from
+         `/diagnostics` or a "Report a Problem" submission comes in. The
+         *security gap* this item tracked is closed; REQ-HYG-006's
+         broader "has this ever actually caught a real error" question is
+         separate and still open.
+- [x] **REQ-SEC-008 — CLOSED 2026-09-19.** Transfer Certificate issuance has zero role-tier
+      gating, client or server, and it's a real state-changing action (not
+      a read).** Found 2026-09-19 during the Staff App Unification feature
+      inventory's follow-up trace of the Documents module (the inventory
+      had flagged TC/NOC as "not traced line-by-line" — traced now).
+      **Correction to the feature inventory's original Documents-module
+      framing:** TC issuance is NOT part of the `documents` module at all —
+      that module's own "TC" tab is a literal "Coming Soon" placeholder
+      (`documents\page.js:1336-1346`, text: "Transfer Certificates are
+      generated per-student from each student's profile page in the
+      meantime"). The real, live TC issuance path is a separate route,
+      `student\[id]\tc\page.js`, calling `studentService.js`'s
+      `saveTransferCertificate()` (`studentService.js:986-1022`): inserts a
+      row into `transfer_certificates`, then updates the student's
+      `status` to `"Left"`, then (if an enrollment id is present)
+      deactivates the `student_enrollments` row. All three writes are
+      plain `supabase.from()` calls — no RPC, no `SECURITY DEFINER`, no
+      role check anywhere in `student\[id]\tc\page.js` (grepped for
+      `role`/tier keywords — zero matches beyond an unrelated "Class
+      Teacher" label string). Any authenticated admin tier, including
+      `normal_admin`, can issue a TC for any student today, which
+      immediately flips that student to "Left" status and deactivates
+      their fee enrollment — a real, irreversible-in-effect action (not
+      just a data leak like most of the zero-gating findings in
+      `planning\STAFF-APP-FEATURE-INVENTORY.md`). RLS on
+      `transfer_certificates` itself is unverified this pass — check
+      before assuming table-level defense exists.
+      **Also corrects the inventory:** NOC generation does not exist
+      anywhere in the codebase — `documents\page.js`'s NOC tab is the same
+      "Coming Soon" placeholder as TC, and no `noc_number`/NOC write path
+      was found project-wide. Treat NOC as "not built," not "built,
+      ungated," when scoping any mobile Admin Workspace action.
+      **FIXED 2026-09-19.** New `admin_issue_tc()` RPC (`SECURITY
+      DEFINER`, gated on `is_admin_user()` — matches the existing UI's own
+      intent of "no tier restriction," just now enforced server-side
+      instead of not at all) does the same three writes
+      (`transfer_certificates` insert, `students.status` → `Left`,
+      `student_enrollments` deactivate) atomically.
+      `studentService.js`'s `saveTransferCertificate()` now calls the RPC
+      instead of raw `.from()` writes; direct `authenticated` INSERT/
+      UPDATE grants on `transfer_certificates` revoked so the RPC is the
+      only path (verified no other call site writes to that table —
+      `grBookService.js`/`reportService.js` only `SELECT` from it).
+      Advisor-verified not anon-callable. `npm run lint` clean. Note: the
+      mobile Staff App's own TC-issuance RPC
+      (`staff_admin_issue_tc`, built the same session) already had this
+      exact gating from the start — this fix brings the pre-existing
+      admin-panel path up to the same standard, not the reverse.
+- [x] **REQ-SEC-009 — CLOSED 2026-09-19 (found and fixed same session).**
+      `get_kiosk_admin_settings`, `save_kiosk_settings`, and
+      `set_kiosk_admin_pin` had **zero internal role check** (no
+      `is_admin_user()`/`admin_has_role()` call at all) and were granted
+      to **`anon`** — any caller with just the public anon key, no login
+      of any kind, could read admin kiosk settings or, worse, **set a new
+      kiosk admin PIN outright**, taking over the physical attendance
+      kiosk's admin unlock. Worse than REQ-SEC-007/008 (those needed at
+      least some authenticated session). Found opportunistically while
+      building Settings → Kiosk Settings for the Staff App's mobile
+      parity pass, not part of a deliberate audit of this area. Verified
+      the mobile attendance kiosk itself is unaffected — it calls a
+      separate, deliberately public, read-only function
+      (`get_kiosk_public_settings`, no PIN hash exposed, no write
+      capability), confirmed via `mobile-app/lib` grep before touching
+      anything. Fixed: added `IF NOT is_admin_user() THEN RAISE
+      EXCEPTION...` to all three functions (matching the
+      `generate_punch_code`/REQ-SEC-007 fix pattern) and revoked the
+      `anon` grant from all three. `npm run lint` clean (no client code
+      needed changing — `kioskSettingsService.js` already called these
+      via `.rpc()`).
+- [ ] **REQ-SEC-010 — Found 2026-09-19, NOT fixed, disclosed.** Three more
+      functions surfaced during the REQ-SEC-009 sweep (queried every
+      `SECURITY DEFINER` function granted to `anon`, cross-checked each
+      manually) that are lower-severity or architecturally harder to fix
+      cleanly, left open rather than rushed:
+      1. **`get_all_birthdays()`** — returns full name/photo/DOB/class for
+         *every* student and staff member to any anon caller, no auth.
+         Real PII exposure, but it's an existing, currently-relied-on
+         mobile app feature (`supabase_service.dart:777`) — this is the
+         same class of issue REQ-SEC-002 already tracks (RLS disabled /
+         broad anon grants across ~72 tables), not a new isolated bug like
+         REQ-SEC-009's kiosk PIN gap. Folding it into REQ-SEC-002's scope
+         rather than fixing in isolation, since narrowing it risks
+         breaking the birthday-widget feature without the broader
+         REQ-SEC-002 remediation plan this project has already deferred.
+      2. **`auto_mark_absent_staff(p_date)`** — meant to be cron-only
+         (`admin-panel/src/app/api/cron/mark-staff-absent/route.js`, gated
+         by a `CRON_SECRET` bearer header at the Next.js route level) but
+         that route itself calls Supabase with the public anon key (not
+         `service_role`), so the `anon` DB grant is load-bearing for the
+         legitimate cron flow, not leftover cruft — revoking it would
+         break the daily job. Real gap: anyone with the anon key can call
+         this directly, bypassing `CRON_SECRET` entirely, and mark
+         real staff absent for a given date. Lower severity than
+         REQ-SEC-009 (data-integrity nuisance, not an admin-takeover or
+         PII leak; also a no-op unless `kiosk_settings.absent_cutoff_time`
+         is configured, which it isn't by default). Proper fix is moving
+         this one route to a `service_role` server-side client instead of
+         the shared anon-key client — not attempted here since it touches
+         how this project's server/cron client is structured project-wide
+         and I couldn't verify `SUPABASE_SERVICE_ROLE_KEY` is even
+         configured in this environment without risking a broken cron job.
+      3. **`verify_kiosk_admin_pin(p_pin)`** — no rate-limiting on PIN
+         verification attempts, and `set_kiosk_admin_pin` only requires 4+
+         characters — an anon caller can brute-force the kiosk admin PIN
+         with unlimited attempts against this RPC directly. Architecturally
+         hard to fix cleanly (the kiosk itself must remain anon-callable
+         by design, so this can't just be tier-gated like REQ-SEC-009's
+         functions; would need a rate-limit/lockout mechanism, new
+         infrastructure). Flagged, not attempted.
+      Not part of a deliberate full security audit — surfaced
+      opportunistically while fixing REQ-SEC-009; a real pass over all
+      ~45 `mobile-app/SUPABASE_*.sql` files' `anon` grants would very
+      likely find more of this same pattern and should be its own planned
+      piece of work, not squeezed into this session.
 - [ ] **REQ-HYG-001 — No automated tests for `admin-panel/`.** No `test`
       script, no test files. `mobile-app/test/widget_test.dart` is still
       Flutter's unmodified default counter test.
@@ -907,6 +1326,48 @@ password-change flows, PDF generation utilities.
       worst-scoring staff) should raise genuine scores back up without
       giving up recognition, letting the threshold move back up toward
       0.72 properly - worth doing before headcount grows further.
+      **Status check, 2026-09-19 (no code/data changed — read-only, per
+      §J14).** Confirmed via `git log` that no code has landed since the
+      2026-09-17 fix (`9884b21` remains the latest relevant commit) —
+      `kMatchThreshold` (0.65) and `_matchMargin` (0.05) unchanged, the
+      trimming follow-up genuinely hasn't started. **Enrollment has grown
+      a lot since**: 22 staff now enrolled (up from 6), 7-8 shots each (down
+      from 22-25 — matches the "cut to 8/9 distinct shots" capture-flow
+      change from the same 2026-09-17 session), 156 shots total. **Real
+      usage is too light to judge from outcomes alone**: only 13
+      `punch_method='face'` rows since 2026-09-17. **No ground truth exists
+      for "Not Me" rejections** — traced the confirm dialog's code: tapping
+      "Not Me" just routes to the Enter Code screen with no DB write and no
+      log, so there's no way to measure how often the kiosk shows the wrong
+      name; this is a structural gap (no rejection logging exists at all),
+      not a hole in this check. `diagnostic_reports`/`diagnostic_settings`
+      still don't exist in production (REQ-HYG-006's migration still not
+      applied), so no diagnostic data either.
+      **Outlier analysis run directly in SQL** (each person's centroid
+      compared against their own stored shots via cosine similarity — no
+      pgvector needed, array unnest + manual dot product) — concrete
+      trimming/re-enrollment candidates identified:
+      - **EMP017 (Manisha Biswal) — worst by far**: 3 of 7 shots score
+        0.25/0.34/0.46 against her own centroid — not minor noise, nearly
+        half her enrollment. Best candidate for **full re-enrollment**,
+        not just trimming a shot or two.
+      - **EMP013 (Priti Singh)**: 3 of 7 shots at 0.57/0.67/0.73 — same
+        pattern, milder.
+      - **EMP001 (Sunil Pradhan)**: 2 weak shots (0.53, 0.70).
+      - **EMP015 (Shivani Pradhan)**, **EMP021 (Barsha Pradhan)**: one
+        clear outlier shot each (0.52, 0.62) — otherwise tight (0.80-0.97).
+      - Remaining ~17 people look clean — no shot below ~0.69, most
+        centroids tight (0.85-0.97).
+      This gives a concrete starting list if/when the trimming follow-up is
+      picked up: re-enroll EMP017 outright, trim the specific flagged shots
+      for EMP013/EMP001/EMP015/EMP021, leave the other ~17 untouched.
+      **2026-09-19: user will re-enroll EMP017 (Manisha Biswal) on the
+      physical kiosk device** — this is a hands-on-device action, not
+      something doable remotely/in-session. Nothing to verify from this
+      session until that happens; re-check her shot-quality/centroid
+      numbers after re-enrollment to confirm it actually improved before
+      considering this closed. EMP013/EMP001/EMP015/EMP021's milder outlier
+      shots remain as a smaller optional follow-up, not yet actioned.
 
 ## FEATURE INITIATIVES (large, multi-session — own plan file, own mini gate checklist)
 - [ ] **REQ-FEAT-001 — Staff App unification: evolve `mobile-app/` teacher

@@ -9,11 +9,12 @@ export async function getDiagnosticReports() {
   // this page. Best-effort: never blocks or fails the page load.
   cleanupOldReports().catch(() => {});
 
-  const { data, error } = await supabase
-    .from("diagnostic_reports")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(200);
+  // Routed through admin_get_diagnostic_reports (TODO.md REQ-SEC-007 item
+  // 3, fixed 2026-09-19) instead of a direct select - normal_admin now
+  // gets summary rows only (no log_entries/stack traces), senior_admin/
+  // management get full content, matching the decision recorded when this
+  // gap was found.
+  const { data, error } = await supabase.rpc("admin_get_diagnostic_reports");
   if (error) throw error;
   return data || [];
 }

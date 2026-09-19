@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Check, UserPlus, X, Pencil, Trash2, Save } from "lucide-react";
+import { Check, UserPlus, X, Pencil, Trash2, Save, Smartphone } from "lucide-react";
 import supabase from "@/lib/supabase";
+import useStore from "@/lib/store";
 import { isValidName, isNonEmpty, hasNoErrors } from "@/lib/validators";
 
 // Standalone file (not defined inside settings/page.js) so it can be
@@ -69,6 +70,16 @@ const ROLE_COLORS = {
 const DB_ROLES = ["management", "senior_admin", "normal_admin"];
 
 export default function UsersRolesTab() {
+  const authUser = useStore(s => s.authUser);
+  // Linking an admin_users row to an employees row is what makes the Staff
+  // App's mobile Admin Workspace reachable for that person (Staff App
+  // Unification, STAFF-APP-DESIGN-FIXED.md §1) - management-only, same
+  // tier restriction as creating/editing senior_admin+management accounts
+  // (REQ-SEC-005), since it's a privilege-granting action, not ordinary
+  // data entry. Server-enforced in admin_set_employee_link regardless of
+  // what this flag hides/shows.
+  const isManagement = authUser?.role === "management";
+
   // ── Users (real DB data) ──
   const [users,    setUsers]    = useState([]);
   const [usersLoading, setUsersLoading] = useState(true);
@@ -77,6 +88,43 @@ export default function UsersRolesTab() {
   const [editId,   setEditId]   = useState(null);
   const [saved,    setSaved]    = useState(false);
   const [userSaveErr, setUserSaveErr] = useState("");
+
+  // ── Employee links (mobile Admin Workspace) ──
+  const [employeeLinks, setEmployeeLinks] = useState({}); // admin_user_id -> {employee_id, employee_name, emp_code}
+  const [linkingFor, setLinkingFor] = useState(null); // admin_user_id currently showing the search box
+  const [linkQuery, setLinkQuery] = useState("");
+  const [linkResults, setLinkResults] = useState([]);
+  const [linkBusy, setLinkBusy] = useState(false);
+
+  const loadEmployeeLinks = useCallback(async () => {
+    const { data, error } = await supabase.rpc("admin_get_employee_links");
+    if (error) return; // non-management callers get a permission error here - fine, just shows nothing
+    const map = {};
+    for (const row of data || []) map[row.admin_user_id] = row;
+    setEmployeeLinks(map);
+  }, []);
+
+  useEffect(() => { if (isManagement) loadEmployeeLinks(); }, [isManagement, loadEmployeeLinks]);
+
+  async function searchEmployeesForLink(q) {
+    setLinkQuery(q);
+    if (q.trim().length < 2) { setLinkResults([]); return; }
+    const { data } = await supabase
+      .from("employees")
+      .select("id, name, emp_code")
+      .or(`name.ilike.%${q.trim()}%,emp_code.ilike.%${q.trim()}%`)
+      .limit(10);
+    setLinkResults(data || []);
+  }
+
+  async function setLink(adminUserId, employeeId) {
+    setLinkBusy(true);
+    const { error } = await supabase.rpc("admin_set_employee_link", { p_admin_user_id: adminUserId, p_employee_id: employeeId });
+    setLinkBusy(false);
+    if (error) { alert("Failed to update link: " + error.message); return; }
+    setLinkingFor(null); setLinkQuery(""); setLinkResults([]);
+    loadEmployeeLinks();
+  }
 
   const blank = { name:"", initials:"", role:"normal_admin" };
   const [form, setForm] = useState(blank);
@@ -206,33 +254,72 @@ export default function UsersRolesTab() {
             <div className="px-5 py-8 text-center text-xs text-gray-400">No admin users found.</div>
           )}
           {users.map(u => (
-            <div key={u.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-gray-50 transition-colors">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-full bg-school-navy flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                  {u.initials || u.name.charAt(0)}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-800">{u.name}</p>
-                  <p className="text-xs text-gray-400 font-mono">{u.id.slice(0, 8)}…</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${ROLE_COLORS[u.role] || "bg-gray-100 text-gray-600"}`}>
-                  {ROLE_LABELS[u.role] || u.role}
-                </span>
-                {editMode && (
-                  <div className="flex gap-1">
-                    <button onClick={() => openEdit(u)}
-                      className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors">
-                      <Pencil className="w-3.5 h-3.5"/>
-                    </button>
-                    <button onClick={() => deleteUser(u.id)}
-                      className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors">
-                      <Trash2 className="w-3.5 h-3.5"/>
-                    </button>
+            <div key={u.id} className="px-5 py-3.5 hover:bg-gray-50 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-school-navy flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                    {u.initials || u.name.charAt(0)}
                   </div>
-                )}
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800">{u.name}</p>
+                    <p className="text-xs text-gray-400 font-mono">{u.id.slice(0, 8)}…</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className={`px-2.5 py-1 rounded-lg text-xs font-bold ${ROLE_COLORS[u.role] || "bg-gray-100 text-gray-600"}`}>
+                    {ROLE_LABELS[u.role] || u.role}
+                  </span>
+                  {editMode && (
+                    <div className="flex gap-1">
+                      <button onClick={() => openEdit(u)}
+                        className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors">
+                        <Pencil className="w-3.5 h-3.5"/>
+                      </button>
+                      <button onClick={() => deleteUser(u.id)}
+                        className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors">
+                        <Trash2 className="w-3.5 h-3.5"/>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
+
+              {/* Mobile Admin Workspace link - management only (server-enforced too) */}
+              {isManagement && (
+                <div className="mt-2 pl-12 flex items-center gap-2 text-xs">
+                  <Smartphone className="w-3.5 h-3.5 text-gray-400"/>
+                  {employeeLinks[u.id] ? (
+                    <>
+                      <span className="text-gray-500">Staff App: linked to <b className="text-gray-700">{employeeLinks[u.id].employee_name}</b> ({employeeLinks[u.id].emp_code})</span>
+                      <button disabled={linkBusy} onClick={() => setLink(u.id, null)}
+                        className="text-red-500 hover:underline disabled:opacity-50">Unlink</button>
+                    </>
+                  ) : linkingFor === u.id ? (
+                    <div className="flex-1 relative">
+                      <input autoFocus value={linkQuery} onChange={e => searchEmployeesForLink(e.target.value)}
+                        placeholder="Search employee by name or code…"
+                        className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs w-64 focus:outline-none focus:ring-2 focus:ring-school-navy"/>
+                      <button onClick={() => { setLinkingFor(null); setLinkQuery(""); setLinkResults([]); }}
+                        className="ml-2 text-gray-400 hover:text-gray-600">Cancel</button>
+                      {linkResults.length > 0 && (
+                        <div className="absolute z-10 mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                          {linkResults.map(e => (
+                            <button key={e.id} disabled={linkBusy} onClick={() => setLink(u.id, e.id)}
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 text-xs disabled:opacity-50">
+                              {e.name} <span className="text-gray-400">({e.emp_code})</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <span className="text-gray-400">Staff App: not linked</span>
+                      <button onClick={() => setLinkingFor(u.id)} className="text-school-navy hover:underline">Link to employee</button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

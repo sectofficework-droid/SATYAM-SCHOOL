@@ -15,6 +15,7 @@ import '../attendance/teacher_attendance_page.dart';
 import '../exams/teacher_exams_page.dart';
 import '../homework/teacher_homework_page.dart';
 import '../notices/teacher_notices_page.dart';
+import '../admin_workspace/admin_workspace_home.dart';
 import 'teacher_dashboard_tab.dart';
 
 class TeacherHome extends StatefulWidget {
@@ -27,12 +28,29 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
   int _tab = 0;
   List<Map<String, dynamic>> _recent = [];
 
-  static const _pages = [
-    TeacherDashboardTab(),
-    TeacherAttendancePage(embedded: true),
-    TeacherExamsPage(embedded: true),
-    TeacherHomeworkPage(embedded: true),
-    TeacherNoticesPage(embedded: true),
+  // Two independent dimensions (STAFF-APP-DESIGN-FIXED.md §1/§4) - teacher
+  // status and admin-link are never inferred from each other:
+  //   - isTeacher && hasAdminWorkspace  -> Teacher+Admin combo: existing 5
+  //     Teacher tabs stay exactly as-is, Admin Workspace is appended as a
+  //     6th tab (never inserted before the others, so every existing
+  //     index - including _noticesTabIndex below - stays correct).
+  //   - !isTeacher && hasAdminWorkspace -> admin-only (non-teaching)
+  //     linked account: the Teacher tabs/dashboard are irrelevant to this
+  //     person (nothing to teach), so Admin Workspace REPLACES them as
+  //     the entire app instead of sitting alongside them - see build()'s
+  //     early branch. Not an additive case like the one above.
+  //   - !hasAdminWorkspace (either isTeacher value) -> unchanged existing
+  //     behavior, the common case for every real account today.
+  bool get _isTeacher => AuthService.to.profile.value?['type'] == 'teaching';
+  bool get _hasAdminWorkspace => AuthService.to.profile.value?['admin_role'] != null;
+
+  List<Widget> get _pages => [
+    const TeacherDashboardTab(),
+    const TeacherAttendancePage(embedded: true),
+    const TeacherExamsPage(embedded: true),
+    const TeacherHomeworkPage(embedded: true),
+    const TeacherNoticesPage(embedded: true),
+    if (_hasAdminWorkspace) const AdminWorkspaceHome(embedded: true),
   ];
 
   static const _noticesTabIndex = 4;
@@ -140,11 +158,28 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
     final classLabel  = className.isEmpty ? '' : (sectionName.isEmpty ? className : '$className - $sectionName');
     final isSupportingTeacher = profile['is_supporting_teacher'] == true;
 
+    // Admin-only (non-teaching) linked account: Admin Workspace IS the
+    // app, not a tab within it - no Teacher tabs, no bottom nav (a single
+    // destination needs none; module-to-module navigation already goes
+    // through Get.to() push routes). Still reuses this same AppBar
+    // (greeting/notifications/profile/logout all still apply to an admin
+    // account) - nothing here is admin-specific enough to need its own.
+    if (!_isTeacher && _hasAdminWorkspace) {
+      return Scaffold(
+        body: const AdminWorkspaceHome(embedded: true),
+        appBar: _buildAppBar(profile, name, classLabel, isSupportingTeacher),
+      );
+    }
+
     return Scaffold(
       extendBody: true,
       body: _pages[_tab],
       appBar: _buildAppBar(profile, name, classLabel, isSupportingTeacher),
-      bottomNavigationBar: _AnimatedBottomNav(currentIndex: _tab, onTap: _setTab),
+      bottomNavigationBar: _AnimatedBottomNav(
+        currentIndex: _tab,
+        onTap: _setTab,
+        showAdminWorkspace: _hasAdminWorkspace,
+      ),
     );
   }
 
@@ -230,16 +265,20 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
 class _AnimatedBottomNav extends StatelessWidget {
   final int currentIndex;
   final void Function(int) onTap;
+  final bool showAdminWorkspace;
 
-  const _AnimatedBottomNav({required this.currentIndex, required this.onTap});
+  const _AnimatedBottomNav({required this.currentIndex, required this.onTap, this.showAdminWorkspace = false});
 
-  static const _items = [
+  static const _baseItems = [
     _NavItem(icon: Icons.home_outlined,          active: Icons.home_rounded,       label: 'Home'),
     _NavItem(icon: Icons.fact_check_outlined,    active: Icons.fact_check_rounded, label: 'Attendance'),
     _NavItem(icon: Icons.grading_outlined,       active: Icons.grading,            label: 'Marks'),
     _NavItem(icon: Icons.assignment_outlined,    active: Icons.assignment_rounded,  label: 'Homework'),
     _NavItem(icon: Icons.notifications_outlined, active: Icons.notifications_rounded, label: 'Notices'),
   ];
+  static const _adminItem = _NavItem(icon: Icons.admin_panel_settings_outlined, active: Icons.admin_panel_settings_rounded, label: 'Admin');
+
+  List<_NavItem> get _items => [..._baseItems, if (showAdminWorkspace) _adminItem];
 
   @override
   Widget build(BuildContext context) => Container(

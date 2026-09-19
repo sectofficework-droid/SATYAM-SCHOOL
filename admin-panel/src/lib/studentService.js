@@ -982,41 +982,28 @@ export async function updateStudentDocument(studentId, documentTypeId, fileUrl) 
 }
 
 // ── Transfer Certificate ──────────────────────────────────────────────────────
+// Routed through the admin_issue_tc RPC (TODO.md REQ-SEC-008, fixed
+// 2026-09-19) instead of direct table writes - the old version had zero
+// role gating of any kind (not even admin_users membership), so any
+// authenticated Supabase session could issue a TC for any student. The
+// RPC does the same three writes (transfer_certificates insert, students
+// status -> Left, student_enrollments deactivate) atomically server-side,
+// gated by is_admin_user() - matches the existing UI's own intent (no
+// tier restriction was ever shown), not a new restriction.
 
 export async function saveTransferCertificate(studentId, enrollmentId, tcData) {
-  const { data, error } = await supabase
-    .from("transfer_certificates")
-    .insert({
-      student_id:   studentId,
-      tc_number:    tcData.tcNumber,
-      issue_date:   tcData.tcDate,
-      leaving_date: tcData.leavingDate,
-      reason:       tcData.reason,
-      conduct:      tcData.conduct,
-      dues_cleared: tcData.duesCleared,
-      remarks:      tcData.remarks || null,
-      file_url:     tcData.fileUrl || null,
-    })
-    .select()
-    .single();
+  const { data, error } = await supabase.rpc("admin_issue_tc", {
+    p_student_id:    studentId,
+    p_enrollment_id: enrollmentId || null,
+    p_tc_number:     tcData.tcNumber,
+    p_issue_date:    tcData.tcDate,
+    p_leaving_date:  tcData.leavingDate,
+    p_reason:        tcData.reason,
+    p_conduct:       tcData.conduct,
+    p_dues_cleared:  tcData.duesCleared,
+    p_remarks:       tcData.remarks || null,
+    p_file_url:      tcData.fileUrl || null,
+  });
   if (error) throw error;
-
-  // Mark student as Left
-  await supabase
-    .from("students")
-    .update({ status: "Left", updated_at: new Date().toISOString() })
-    .eq("id", studentId);
-
-  // Deactivate the enrollment so student no longer appears in active fees list
-  if (enrollmentId) {
-    await supabase
-      .from("student_enrollments")
-      .update({
-        deactivate_reason: tcData.reason || "TC Issued",
-        deactivate_date:   tcData.leavingDate,
-      })
-      .eq("id", enrollmentId);
-  }
-
   return data;
 }
