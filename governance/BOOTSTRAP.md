@@ -98,40 +98,26 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-Last verified via `git status` 2026-09-19 (session 3): `main` still not
-in sync with the working tree — substantial uncommitted work has
-accumulated across sessions 2026-09-17 through 2026-09-19, none of it
-committed since the user hasn't asked. Current working-tree summary:
-- **Staged from an earlier session** (REQ-SEC-005/007 fixes):
-  `admin-panel/src/app/(dashboard)/settings/UsersRolesTab.js`,
-  `admin-panel/src/app/(dashboard)/super-admin/page.js`,
-  `mobile-app/SUPABASE_ADMIN_EMPLOYEE_LINK.sql`,
-  `mobile-app/SUPABASE_SALARY_PUNCHCODE_ROLE_ENFORCEMENT.sql`.
-- **Modified, not staged, this session (3)**:
-  `mobile-app/lib/app/modules/teacher/dashboard/teacher_home.dart` (Admin
-  Workspace nav tab), plus `UsersRolesTab.js` above got further edits on
-  top of its earlier staged version (employee-linking control).
-- **New, untracked, this session (3)** — the full Staff App Unification
-  phase-1 build: `governance\planning\STAFF-APP-DESIGN-FIXED.md`,
-  `STAFF-APP-UI-DESIGN.md`,
-  `mobile-app/SUPABASE_STAFF_APP_ADMIN_WORKSPACE.sql`,
-  `mobile-app/SUPABASE_ADMIN_EMPLOYEE_LINK_UI.sql`,
-  `mobile-app/lib/app/modules/teacher/admin_workspace/` (9 screens),
-  `mobile-app/lib/common/widgets/admin_workspace_common.dart`,
-  `mobile-app/lib/core/services/staff_admin_service.dart`. Also untracked
-  from an earlier session: `governance\ai-context\
-  STAFF-APP-UNIFICATION-DISCOVERY.md`,
-  `governance\documentation\AI_AGENT_PROJECT_OVERVIEW.md`.
-- Prior 2026-09-17 uncommitted work (kiosk face-recognition fixes —
-  `mobile-app/lib/core/services/face_recognition_service.dart`,
-  `mobile-app/lib/app/modules/attendance_kiosk/
-  face_enroll_capture_page.dart`, `mobile-app/SUPABASE_FACE_MATCH_RPC.sql`)
-  is presumably still uncommitted too — not re-verified this session,
-  check `git status` fresh before assuming.
-All of the above are DB migrations already applied live to production via
-Supabase MCP (not gated by a git commit) — only the client-side `.js`/
-`.dart` files and governance docs are what's sitting uncommitted. Production
-(Vercel) tracks `main`, unaffected by any of this until pushed.
+**Committed and pushed 2026-09-19** — `main` at `6f67b8e` ("Add Staff App
+Unification (Admin Workspace) + close REQ-SEC-005/007/008, fix new
+REQ-SEC-009"), pushed to `origin/main` at the user's explicit request
+("fix all push merge"). This repo works directly on `main` (no PR/branch
+flow), so the push is the merge. 42 files, all of session (2)/(3)'s Staff
+App work plus the earlier-staged REQ-SEC-005/007 client wiring. Working
+tree clean as of the push. Production (Vercel) auto-deploys from `main`,
+so the admin-panel changes (Users & Roles linking UI, TC issuance RPC
+call, diagnostics RPC call) are now live — **not verified in a live
+browser before pushing** (Chrome extension wasn't connected this
+session); verified via `npm run lint` (clean) and a manual diff review
+only. Watch for user-reported issues on Settings → Users & Roles, the
+student TC-issuance page, and `/diagnostics` specifically.
+
+Prior 2026-09-17 uncommitted work (kiosk face-recognition fixes —
+`mobile-app/lib/core/services/face_recognition_service.dart`,
+`mobile-app/lib/app/modules/attendance_kiosk/face_enroll_capture_page.dart`,
+`mobile-app/SUPABASE_FACE_MATCH_RPC.sql`) was **not** part of this push —
+check `git status` fresh before assuming it's still there or already
+landed some other way.
 
 **Known governance gaps, flagged not backfilled:** four feature commits
 between 2026-08-21 and 2026-08-24 (`886c6a3`, `f87a2ce`, `7c96bad`,

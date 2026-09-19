@@ -28,7 +28,19 @@ export const GET = withDiagnostics(async function GET(request) {
     if (!isWorkingDay(today, calendarEvents, null)) {
       return NextResponse.json({ date: today, marked: 0, reason: "non-working day" });
     }
-    const { data, error } = await supabase.rpc("auto_mark_absent_staff", { p_date: today });
+    // TODO.md REQ-SEC-010 item 2 (fixed 2026-09-19): auto_mark_absent_staff
+    // used to be callable by anyone with the public anon key - the
+    // CRON_SECRET check above only protects this HTTP route, not a direct
+    // Supabase call. The RPC now requires its own shared secret
+    // (MARK_ABSENT_CRON_SECRET, unrelated to CRON_SECRET - set this in
+    // Vercel's env vars, see the value recorded in this session's
+    // conversation/work log; not committed to git). Until that env var is
+    // set, this call fails closed (RPC raises "Not authorized") rather
+    // than silently running unauthenticated.
+    const { data, error } = await supabase.rpc("auto_mark_absent_staff", {
+      p_date: today,
+      p_secret: process.env.MARK_ABSENT_CRON_SECRET,
+    });
     if (error) throw error;
     return NextResponse.json({ date: today, marked: data ?? 0 });
   } catch (e) {

@@ -815,46 +815,63 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       `anon` grant from all three. `npm run lint` clean (no client code
       needed changing — `kioskSettingsService.js` already called these
       via `.rpc()`).
-- [ ] **REQ-SEC-010 — Found 2026-09-19, NOT fixed, disclosed.** Three more
-      functions surfaced during the REQ-SEC-009 sweep (queried every
-      `SECURITY DEFINER` function granted to `anon`, cross-checked each
-      manually) that are lower-severity or architecturally harder to fix
-      cleanly, left open rather than rushed:
+- [~] **REQ-SEC-010 — Found 2026-09-19. Items 2 and 3 FIXED same day
+      (user follow-up: "complete req 10"); item 1 deliberately left open,
+      explained below — not silently dropped.** Three functions surfaced
+      during the REQ-SEC-009 sweep (queried every `SECURITY DEFINER`
+      function granted to `anon`, cross-checked each manually):
       1. **`get_all_birthdays()`** — returns full name/photo/DOB/class for
          *every* student and staff member to any anon caller, no auth.
          Real PII exposure, but it's an existing, currently-relied-on
          mobile app feature (`supabase_service.dart:777`) — this is the
          same class of issue REQ-SEC-002 already tracks (RLS disabled /
          broad anon grants across ~72 tables), not a new isolated bug like
-         REQ-SEC-009's kiosk PIN gap. Folding it into REQ-SEC-002's scope
-         rather than fixing in isolation, since narrowing it risks
-         breaking the birthday-widget feature without the broader
-         REQ-SEC-002 remediation plan this project has already deferred.
-      2. **`auto_mark_absent_staff(p_date)`** — meant to be cron-only
-         (`admin-panel/src/app/api/cron/mark-staff-absent/route.js`, gated
-         by a `CRON_SECRET` bearer header at the Next.js route level) but
-         that route itself calls Supabase with the public anon key (not
-         `service_role`), so the `anon` DB grant is load-bearing for the
-         legitimate cron flow, not leftover cruft — revoking it would
-         break the daily job. Real gap: anyone with the anon key can call
-         this directly, bypassing `CRON_SECRET` entirely, and mark
-         real staff absent for a given date. Lower severity than
-         REQ-SEC-009 (data-integrity nuisance, not an admin-takeover or
-         PII leak; also a no-op unless `kiosk_settings.absent_cutoff_time`
-         is configured, which it isn't by default). Proper fix is moving
-         this one route to a `service_role` server-side client instead of
-         the shared anon-key client — not attempted here since it touches
-         how this project's server/cron client is structured project-wide
-         and I couldn't verify `SUPABASE_SERVICE_ROLE_KEY` is even
-         configured in this environment without risking a broken cron job.
-      3. **`verify_kiosk_admin_pin(p_pin)`** — no rate-limiting on PIN
-         verification attempts, and `set_kiosk_admin_pin` only requires 4+
-         characters — an anon caller can brute-force the kiosk admin PIN
-         with unlimited attempts against this RPC directly. Architecturally
-         hard to fix cleanly (the kiosk itself must remain anon-callable
-         by design, so this can't just be tier-gated like REQ-SEC-009's
-         functions; would need a rate-limit/lockout mechanism, new
-         infrastructure). Flagged, not attempted.
+         REQ-SEC-009's kiosk PIN gap. **Deliberately NOT fixed even after
+         "complete req 10"**: narrowing access here needs the same broader
+         remediation REQ-SEC-002 already requires (real per-request mobile
+         auth, which the "no new auth system" non-negotiable rules out as
+         an isolated patch) — CLAUDE.md's own standing instruction for
+         this exact class of finding is "don't fix opportunistically...
+         need their own approved plan," which is this project's rule, not
+         mine to override. Folding into REQ-SEC-002's scope.
+      2. **`auto_mark_absent_staff(p_date)` — FIXED 2026-09-19.** Was
+         anon-callable directly (bypassing the Next.js cron route's
+         `CRON_SECRET` header check entirely, since that route calls
+         Supabase with the anon key, not `service_role`). Rather than
+         switch to a `service_role` client (unverifiable whether
+         `SUPABASE_SERVICE_ROLE_KEY` is even configured in Vercel; risked
+         breaking the daily job if guessed wrong), added a dedicated
+         DB-side shared secret instead: new `cron_secrets` table (no
+         client grants at all, only `SECURITY DEFINER` functions touch
+         it), `auto_mark_absent_staff` now takes a `p_secret` param
+         checked against a bcrypt hash, raises `Not authorized` if it
+         doesn't match. Route
+         (`admin-panel/src/app/api/cron/mark-staff-absent/route.js`)
+         updated to pass `process.env.MARK_ABSENT_CRON_SECRET` — **a new
+         Vercel env var the user needs to set** (value given directly to
+         the user in-session, not recorded in any file); until set, the
+         cron fails closed (raises "Not authorized") rather than running
+         unauthenticated — a safe failure mode (worst case: staff don't
+         get auto-marked-absent for a few days, not a security hole).
+         Verified live: wrong secret → `Not authorized`; correct secret →
+         runs cleanly (returned 0, no-op since `absent_cutoff_time` isn't
+         configured — no real attendance rows touched).
+      3. **`verify_kiosk_admin_pin(p_pin)` — FIXED 2026-09-19.** Added a
+         simple fail-counter + lockout directly on `kiosk_settings`
+         (`pin_fail_count`, `pin_locked_until` columns — single-row table,
+         no new table needed): 5 wrong attempts locks verification for 15
+         minutes; a correct PIN or an admin PIN reset
+         (`set_kiosk_admin_pin`, already gated by REQ-SEC-009) clears the
+         counter. **Caught a real bug in my own fix while verifying it**:
+         both new functions initially used `SET search_path TO 'public'`
+         only, missing `'extensions'` (where `pgcrypto`'s `crypt()` lives
+         on this project) — every sibling password/PIN function in this
+         codebase uses `SET search_path TO 'public', 'extensions'`, I
+         missed it on the first pass. Caught immediately via a live test
+         call (`crypt(text,text) does not exist`), fixed before
+         considering this closed. Verified live afterward (rolled back,
+         no real lockout state left behind): a wrong PIN correctly
+         increments `pin_fail_count`.
       Not part of a deliberate full security audit — surfaced
       opportunistically while fixing REQ-SEC-009; a real pass over all
       ~45 `mobile-app/SUPABASE_*.sql` files' `anon` grants would very
