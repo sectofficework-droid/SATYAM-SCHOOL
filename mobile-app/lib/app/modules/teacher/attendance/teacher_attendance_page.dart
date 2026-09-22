@@ -65,12 +65,15 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
   Future<void> _loadAttendanceForDate() async {
     _countdownTimer?.cancel();
     setState(() => _attLoading = true);
-    final profile   = AuthService.to.profile.value ?? {};
-    final teacherId = profile['id'] as String?;
+    final profile     = AuthService.to.profile.value ?? {};
+    final teacherId   = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final className = profile['class_name'] as String? ?? '';
     final dateStr   = DateFormat('yyyy-MM-dd').format(_date);
 
-    final rows = await SupabaseService.fetchAttendanceForClassDate(className, dateStr);
+    final rows = (teacherId != null && sessionToken != null)
+        ? await SupabaseService.fetchAttendanceForClassDate(teacherId, sessionToken, className, dateStr)
+        : <Map<String, dynamic>>[];
     _status.clear();
     for (final r in rows) {
       _status[r['student_id'] as String] = r['status'] as String;
@@ -88,8 +91,8 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
 
     Map<String, dynamic>? pending;
     Map<String, dynamic>? approved;
-    if (teacherId != null) {
-      final requests = await SupabaseService.fetchMyEditRequests(teacherId);
+    if (teacherId != null && sessionToken != null) {
+      final requests = await SupabaseService.fetchMyEditRequests(teacherId, sessionToken);
       for (final r in requests) {
         if (r['class_name'] != className || r['date'] != dateStr) continue;
         if (r['status'] == 'Pending' && pending == null) pending = r;
@@ -138,16 +141,18 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
     setState(() => _saving = true);
     final profile   = AuthService.to.profile.value ?? {};
     final teacherId = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final className = profile['class_name'] as String? ?? '';
     final dateStr   = DateFormat('yyyy-MM-dd').format(_date);
     final records   = _students.map((s) => {
       'student_id': s['id'],
-      'date':       dateStr,
       'status':     _status[s['id'] as String] ?? 'P',
-      'class':      className,
-      'marked_by':  teacherId,
     }).toList();
-    await SupabaseService.saveAttendanceBatch(records);
+    if (teacherId != null && sessionToken != null) {
+      await SupabaseService.saveAttendanceBatch(
+        className: className, sessionToken: sessionToken, date: dateStr, employeeId: teacherId, records: records,
+      );
+    }
     _countdownTimer?.cancel();
     if (mounted) {
       setState(() {
@@ -218,11 +223,13 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
     setState(() => _requesting = true);
     final profile     = AuthService.to.profile.value ?? {};
     final teacherId   = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final className   = profile['class_name'] as String? ?? '';
     final sectionName = profile['section_name'] as String?;
-    if (teacherId != null) {
+    if (teacherId != null && sessionToken != null) {
       await SupabaseService.submitAttendanceEditRequest(
         teacherId: teacherId,
+        sessionToken: sessionToken,
         className: className,
         sectionName: sectionName,
         date: DateFormat('yyyy-MM-dd').format(_date),

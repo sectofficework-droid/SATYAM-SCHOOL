@@ -21,7 +21,10 @@ class _StudentAttendancePageState extends State<StudentAttendancePage> {
   Future<void> _load() async {
     final profile   = AuthService.to.profile.value ?? {};
     final studentId = profile['id'] as String? ?? '';
-    final records   = await SupabaseService.fetchStudentAttendance(studentId);
+    final sessionToken = AuthService.to.sessionToken;
+    final records = sessionToken != null
+        ? await SupabaseService.fetchStudentAttendance(studentId, sessionToken)
+        : <Map<String, dynamic>>[];
     if (mounted) setState(() { _records = records; _loading = false; });
   }
 

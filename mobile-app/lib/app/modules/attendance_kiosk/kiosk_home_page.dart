@@ -48,12 +48,12 @@ class _KioskHomePageState extends State<KioskHomePage> {
               icon: const Icon(Icons.settings_outlined, color: Colors.white54, size: 22),
               tooltip: 'Set up / update staff face (admin only) — long-press to report a problem',
               onPressed: () async {
-                final unlocked = await showAdminPinGate(context);
-                if (unlocked) Get.toNamed(Routes.kioskEnrollList);
+                final token = await showAdminPinGate(context);
+                if (token != null) Get.toNamed(Routes.kioskEnrollList, arguments: token);
               },
               onLongPress: () async {
-                final unlocked = await showAdminPinGate(context);
-                if (unlocked && context.mounted) {
+                final token = await showAdminPinGate(context);
+                if (token != null && context.mounted) {
                   showReportProblemDialog(context, app: 'attendance', userType: 'kiosk_admin');
                 }
               },

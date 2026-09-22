@@ -130,6 +130,9 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
 
   late final String _employeeId;
   late final String _employeeName;
+  // REQ-SEC-002 fast-track (2026-09-19): kiosk-admin session token, threaded
+  // through from the PIN dialog - required by every face-embedding call.
+  late final String _kioskToken;
 
   CameraController? _controller;
   Timer? _pollTimer;
@@ -161,6 +164,7 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
     final args = Get.arguments as Map? ?? {};
     _employeeId   = args['id'] as String? ?? '';
     _employeeName = args['name'] as String? ?? 'Staff';
+    _kioskToken   = args['token'] as String? ?? '';
     FaceRecognitionService.instance.preload();
     _initCamera();
   }
@@ -466,14 +470,14 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
       }
     }
 
-    await SupabaseService.saveFaceEmbedding(_employeeId, _embeddings);
+    await SupabaseService.saveFaceEmbedding(_kioskToken, _employeeId, _embeddings);
     if (!mounted) return;
     setState(() => _stage = _Stage.success);
     Timer(const Duration(seconds: 3), () { if (mounted) Get.until((r) => r.settings.name == Routes.kioskHome); });
   }
 
   Future<Map<String, dynamic>?> _findDuplicate(FaceRecognitionService svc) async {
-    final enrolled = await SupabaseService.fetchAllFaceEmbeddings();
+    final enrolled = await SupabaseService.fetchAllFaceEmbeddings(_kioskToken);
     double bestSim = -1;
     Map<String, dynamic>? best;
     for (final row in enrolled) {

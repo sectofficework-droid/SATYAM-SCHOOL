@@ -19,31 +19,49 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res as List);
   }
 
-  static Future<void> saveAttendanceBatch(List<Map<String, dynamic>> records) async {
-    // Records don't carry the row's own id (student_attendance.id), so an
-    // upsert with no onConflict target would try to INSERT every row and
-    // fail on the table's UNIQUE(student_id, date) constraint whenever a
-    // teacher re-saves attendance already marked for that day.
-    await client.from('student_attendance').upsert(records, onConflict: 'student_id,date');
+  // REQ-SEC-002 Category 3 Group B (2026-09-22): student_attendance moved
+  // from direct anon table access to session-token-gated RPCs, is_teacher_
+  // of_class-checked server-side (no "any class" feature exists here,
+  // unlike exams/homework/syllabus below - strictly the teacher's own
+  // assigned class). records: [{student_id, status}] - date/class/marked_by
+  // are no longer per-record, they're shared params the RPC applies to the
+  // whole batch (matches how this screen always builds them anyway).
+  static Future<void> saveAttendanceBatch({
+    required String className,
+    required String sessionToken,
+    required String date,
+    required String employeeId,
+    required List<Map<String, dynamic>> records,
+  }) async {
+    await client.rpc('save_attendance_batch', params: {
+      'p_employee_id': employeeId,
+      'p_session_token': sessionToken,
+      'p_class_name': className,
+      'p_date': date,
+      'p_records': records.map((r) => {'student_id': r['student_id'], 'status': r['status']}).toList(),
+    });
   }
 
   // Per-student statuses already submitted for a class+date - used to show
   // real prior marks (not a blank all-Present form) when a teacher reopens
   // a day they already marked.
-  static Future<List<Map<String, dynamic>>> fetchAttendanceForClassDate(String className, String date) async {
-    final res = await client.from('student_attendance').select('student_id, status').eq('class', className).eq('date', date);
+  static Future<List<Map<String, dynamic>>> fetchAttendanceForClassDate(String employeeId, String sessionToken, String className, String date) async {
+    final res = await client.rpc('fetch_attendance_for_class_date', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_class_name': className, 'p_date': date,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
   // Attendance edit-request workflow ─────────────────────────────────────────
 
-  static Future<List<Map<String, dynamic>>> fetchTeacherAlerts(String teacherId) async {
-    final res = await client
-        .from('teacher_alerts')
-        .select()
-        .eq('teacher_id', teacherId)
-        .order('created_at', ascending: false)
-        .limit(50);
+  // REQ-SEC-002 Category 3 Group A (2026-09-19): these 9 tables moved from
+  // direct anon table access to session-token-gated RPCs - every method
+  // below now takes a sessionToken (AuthService.to.sessionToken at the
+  // call site) alongside the id it always took.
+  static Future<List<Map<String, dynamic>>> fetchTeacherAlerts(String teacherId, String sessionToken) async {
+    final res = await client.rpc('fetch_teacher_alerts', params: {
+      'p_teacher_id': teacherId, 'p_session_token': sessionToken,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -51,32 +69,27 @@ class SupabaseService {
   // SUPABASE_HASH_APP_PASSWORD.sql). Currently only populated by
   // admin_reset_student_password, but not tied to that specifically - any
   // future targeted admin->student message can use the same table/row shape.
-  static Future<List<Map<String, dynamic>>> fetchStudentAlerts(String studentId) async {
-    final res = await client
-        .from('student_alerts')
-        .select()
-        .eq('student_id', studentId)
-        .order('created_at', ascending: false)
-        .limit(50);
+  static Future<List<Map<String, dynamic>>> fetchStudentAlerts(String studentId, String sessionToken) async {
+    final res = await client.rpc('fetch_student_alerts', params: {
+      'p_student_id': studentId, 'p_session_token': sessionToken,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
-  static Future<List<Map<String, dynamic>>> fetchMyEditRequests(String teacherId) async {
-    final res = await client
-        .from('attendance_edit_requests')
-        .select()
-        .eq('teacher_id', teacherId)
-        .order('created_at', ascending: false)
-        .limit(50);
+  static Future<List<Map<String, dynamic>>> fetchMyEditRequests(String teacherId, String sessionToken) async {
+    final res = await client.rpc('fetch_my_edit_requests', params: {
+      'p_teacher_id': teacherId, 'p_session_token': sessionToken,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
   // App update check ──────────────────────────────────────────────────────────
 
-  static Future<Map<String, dynamic>?> fetchLatestAppVersion() async {
+  static Future<Map<String, dynamic>?> fetchLatestAppVersion(String app) async {
     final res = await client
         .from('app_versions')
         .select()
+        .eq('app', app)
         .order('version_code', ascending: false)
         .limit(1);
     final rows = List<Map<String, dynamic>>.from(res);
@@ -85,29 +98,35 @@ class SupabaseService {
 
   static Future<void> submitAttendanceEditRequest({
     required String teacherId,
+    required String sessionToken,
     required String className,
     String? sectionName,
     required String date,
     String? reason,
   }) async {
-    await client.from('attendance_edit_requests').insert({
-      'teacher_id': teacherId,
-      'class_name': className,
-      'section_name': sectionName,
-      'date': date,
-      'reason': reason,
+    await client.rpc('submit_attendance_edit_request', params: {
+      'p_teacher_id': teacherId,
+      'p_session_token': sessionToken,
+      'p_class_name': className,
+      'p_section_name': sectionName,
+      'p_date': date,
+      'p_reason': reason,
     });
   }
 
-  // No limit - the Yearly attendance view needs the whole academic year's
-  // records, not just the most recent ones (a school year is well under a
-  // thousand rows per student, so fetching all of it is cheap).
-  static Future<List<Map<String, dynamic>>> fetchStudentAttendance(String studentId) async {
-    final res = await client
-        .from('student_attendance')
-        .select()
-        .eq('student_id', studentId)
-        .order('date', ascending: false);
+  // REQ-SEC-002 Category 3 Group C (2026-09-22): student_attendance's
+  // per-student full-year read moved to a session-token-gated RPC - own
+  // record only, not actually dual-shape despite the plan's stated
+  // uncertainty (only the student app calls this; teacher-side attendance
+  // is the separate saveAttendanceBatch/fetchAttendanceForClassDate pair,
+  // already covered by Group B). No limit - the Yearly attendance view
+  // needs the whole academic year's records, not just the most recent ones
+  // (a school year is well under a thousand rows per student, so fetching
+  // all of it is cheap).
+  static Future<List<Map<String, dynamic>>> fetchStudentAttendance(String studentId, String sessionToken) async {
+    final res = await client.rpc('fetch_my_attendance_history', params: {
+      'p_student_id': studentId, 'p_session_token': sessionToken,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -118,24 +137,24 @@ class SupabaseService {
 
   static Future<void> submitLeaveRequest({
     required String employeeId,
+    required String sessionToken,
     required String fromDate,
     required String toDate,
     required String reason,
   }) async {
-    await client.from('leave_requests').insert({
-      'employee_id': employeeId,
-      'from_date': fromDate,
-      'to_date': toDate,
-      'reason': reason,
+    await client.rpc('teacher_submit_leave_request', params: {
+      'p_employee_id': employeeId,
+      'p_session_token': sessionToken,
+      'p_from_date': fromDate,
+      'p_to_date': toDate,
+      'p_reason': reason,
     });
   }
 
-  static Future<List<Map<String, dynamic>>> fetchMyLeaveRequests(String employeeId) async {
-    final res = await client
-        .from('leave_requests')
-        .select()
-        .eq('employee_id', employeeId)
-        .order('created_at', ascending: false);
+  static Future<List<Map<String, dynamic>>> fetchMyLeaveRequests(String employeeId, String sessionToken) async {
+    final res = await client.rpc('fetch_my_leave_requests', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -187,21 +206,24 @@ class SupabaseService {
   // blended-together average would. supabase_flutter already decodes jsonb
   // into plain Lists, no manual jsonDecode needed.
 
-  static Future<void> saveFaceEmbedding(String employeeId, List<List<double>> embeddings) async {
-    await client.from('employees').update({
-      'face_embedding': embeddings,
-      'face_enrolled_at': DateTime.now().toUtc().toIso8601String(),
-    }).eq('id', employeeId);
+  // REQ-SEC-002 fast-track (2026-09-19): face_embedding is no longer
+  // anon-writable directly - goes through the PIN-token-gated RPC instead.
+  static Future<void> saveFaceEmbedding(String kioskToken, String employeeId, List<List<double>> embeddings) async {
+    await client.rpc('kiosk_save_face_embedding', params: {
+      'p_token': kioskToken,
+      'p_employee_id': employeeId,
+      'p_embeddings': embeddings,
+    });
   }
 
   // Clears a staff member's enrollment - the kiosk's "Registered" tab uses
   // this so admin can wipe a bad/duplicate enrollment and have them show up
   // under "Not Registered" again for a clean re-scan.
-  static Future<void> deleteFaceEmbedding(String employeeId) async {
-    await client.from('employees').update({
-      'face_embedding': null,
-      'face_enrolled_at': null,
-    }).eq('id', employeeId);
+  static Future<void> deleteFaceEmbedding(String kioskToken, String employeeId) async {
+    await client.rpc('kiosk_delete_face_embedding', params: {
+      'p_token': kioskToken,
+      'p_employee_id': employeeId,
+    });
   }
 
   // Server-side 1-to-many match (see SUPABASE_FACE_MATCH_RPC.sql) - the
@@ -234,12 +256,12 @@ class SupabaseService {
   // per-punch match above, which uses matchFaceEmbedding instead).
   // Inactive staff are excluded so a former employee's old enrollment can't
   // still clock someone in.
-  static Future<List<Map<String, dynamic>>> fetchAllFaceEmbeddings() async {
-    final res = await client
-        .from('employees')
-        .select('id, name, face_embedding')
-        .not('face_embedding', 'is', null)
-        .neq('status', 'Inactive');
+  // REQ-SEC-002 fast-track (2026-09-19): raw embeddings are no longer
+  // anon-readable directly (were - any anon caller could read every
+  // enrolled staff member's biometric data) - goes through the
+  // PIN-token-gated RPC instead.
+  static Future<List<Map<String, dynamic>>> fetchAllFaceEmbeddings(String kioskToken) async {
+    final res = await client.rpc('kiosk_get_face_embeddings', params: {'p_token': kioskToken}) as List;
     return List<Map<String, dynamic>>.from(res).map((row) {
       final raw = row['face_embedding'];
       final embeddings = raw is List
@@ -256,17 +278,12 @@ class SupabaseService {
   // Active staff for the kiosk's admin-facing enrollment picker, split into
   // "not registered" / "registered" by whether face_embedding is set - lets
   // admin pick a name instead of that staff member typing their own login.
-  static Future<List<Map<String, dynamic>>> fetchStaffForEnrollment() async {
-    final res = await client
-        .from('employees')
-        .select('id, name, face_embedding')
-        .neq('status', 'Inactive')
-        .order('name');
-    return List<Map<String, dynamic>>.from(res).map((row) => {
-      'id':         row['id'],
-      'name':       row['name'],
-      'registered': row['face_embedding'] != null,
-    }).toList();
+  // REQ-SEC-002 fast-track (2026-09-19): also moved behind the same
+  // PIN-token gate for consistency, even though this one only ever
+  // returned a name + registered boolean, not raw biometric data.
+  static Future<List<Map<String, dynamic>>> fetchStaffForEnrollment(String kioskToken) async {
+    final res = await client.rpc('kiosk_get_staff_for_enrollment', params: {'p_token': kioskToken}) as List;
+    return List<Map<String, dynamic>>.from(res);
   }
 
   // The kiosk only ever handles check-in - checkout is self-service from
@@ -311,9 +328,13 @@ class SupabaseService {
     };
   }
 
-  static Future<bool> verifyKioskAdminPin(String pin) async {
+  // REQ-SEC-002 fast-track (2026-09-19): now returns a short-lived
+  // (20 min) kiosk-admin session token instead of a bare bool - the token
+  // gates the face-embedding RPCs above. Null means wrong PIN, PIN not
+  // configured, or currently locked out (same as the old `false`).
+  static Future<String?> verifyKioskAdminPin(String pin) async {
     final res = await client.rpc('verify_kiosk_admin_pin', params: {'p_pin': pin});
-    return res as bool? ?? false;
+    return res as String?;
   }
 
   // Staff-initiated checkout from their own app (My Attendance) - the
@@ -446,29 +467,66 @@ class SupabaseService {
   // subject teacher with no class of their own just sees what they gave.
   // className stays for backward compatibility with callers that only need
   // a single class with no creator filter (e.g. a student's own class).
-  static Future<List<Map<String, dynamic>>> fetchHomework({String? className, List<String>? classNames, String? createdBy}) async {
+  //
+  // REQ-SEC-002 Category 3 Group B (2026-09-22): homework moved from direct
+  // anon table access to session-token-gated RPCs. Any teacher may still
+  // create homework for any class (deliberate existing feature, see
+  // lib/core/utils/teacher_classes.dart) - only READ is class-gated
+  // (is_teacher_of_class, server-side) via fetch_homework_for_class; a
+  // teacher's own-authored homework is always visible via fetch_my_homework
+  // regardless of class.
+  static Future<List<Map<String, dynamic>>> fetchHomework({
+    required String employeeId, required String sessionToken,
+    String? className, List<String>? classNames, String? createdBy,
+  }) async {
     if (classNames != null && classNames.isNotEmpty) {
-      final byClass = await client.from('homework').select().inFilter('class', classNames);
-      final merged  = List<Map<String, dynamic>>.from(byClass);
+      final merged = <Map<String, dynamic>>[];
+      final seenIds = <dynamic>{};
+      for (final c in classNames) {
+        final res = await client.rpc('fetch_homework_for_class', params: {
+          'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_class_name': c,
+        }) as List;
+        for (final h in List<Map<String, dynamic>>.from(res)) {
+          if (seenIds.add(h['id'])) merged.add(h);
+        }
+      }
       if (createdBy != null) {
-        final byCreator = await client.from('homework').select().eq('created_by', createdBy);
-        final seenIds    = merged.map((h) => h['id']).toSet();
+        final byCreator = await client.rpc('fetch_my_homework', params: {
+          'p_employee_id': employeeId, 'p_session_token': sessionToken,
+        }) as List;
         for (final h in List<Map<String, dynamic>>.from(byCreator)) {
-          if (!seenIds.contains(h['id'])) merged.add(h);
+          if (seenIds.add(h['id'])) merged.add(h);
         }
       }
       merged.sort((a, b) => ('${a['due_date'] ?? ''}').compareTo('${b['due_date'] ?? ''}'));
       return merged;
     }
-    var query = client.from('homework').select();
-    if (className != null) query = query.eq('class', className);
-    if (createdBy != null) query = query.eq('created_by', createdBy);
-    final res = await query.order('due_date', ascending: true);
-    return List<Map<String, dynamic>>.from(res);
+    if (createdBy != null) {
+      final res = await client.rpc('fetch_my_homework', params: {
+        'p_employee_id': employeeId, 'p_session_token': sessionToken,
+      }) as List;
+      return List<Map<String, dynamic>>.from(res);
+    }
+    if (className != null) {
+      final res = await client.rpc('fetch_homework_for_class', params: {
+        'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_class_name': className,
+      }) as List;
+      final list = List<Map<String, dynamic>>.from(res);
+      list.sort((a, b) => ('${a['due_date'] ?? ''}').compareTo('${b['due_date'] ?? ''}'));
+      return list;
+    }
+    return [];
   }
 
-  static Future<void> createHomework(Map<String, dynamic> data) async {
-    await client.from('homework').insert(data);
+  static Future<void> createHomework(Map<String, dynamic> data, String sessionToken) async {
+    await client.rpc('create_homework', params: {
+      'p_employee_id': data['created_by'],
+      'p_session_token': sessionToken,
+      'p_class_name': data['class'],
+      'p_subject': data['subject'],
+      'p_description': data['description'],
+      'p_due_date': data['due_date'],
+    });
   }
 
   // Exam marks ────────────────────────────────────────────────────────────────
@@ -479,29 +537,63 @@ class SupabaseService {
   // simple queries merged client-side rather than one hand-built OR filter
   // string, since class names can contain spaces/hyphens (e.g. "11th -
   // Commerce") that would need careful escaping in a raw PostgREST filter.
-  static Future<List<Map<String, dynamic>>> fetchExams({String? className, List<String>? classNames, String? createdBy}) async {
+  // REQ-SEC-002 Category 3 Group B (2026-09-22): exams moved from direct
+  // anon table access to session-token-gated RPCs - same shape as
+  // fetchHomework above (any teacher may create for any class, only READ
+  // is class-gated).
+  static Future<List<Map<String, dynamic>>> fetchExams({
+    required String employeeId, required String sessionToken,
+    String? className, List<String>? classNames, String? createdBy,
+  }) async {
     if (classNames != null && classNames.isNotEmpty) {
-      final byClass = await client.from('exams').select().inFilter('class', classNames);
-      final merged  = List<Map<String, dynamic>>.from(byClass);
+      final merged = <Map<String, dynamic>>[];
+      final seenIds = <dynamic>{};
+      for (final c in classNames) {
+        final res = await client.rpc('fetch_exams_for_class', params: {
+          'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_class_name': c,
+        }) as List;
+        for (final e in List<Map<String, dynamic>>.from(res)) {
+          if (seenIds.add(e['id'])) merged.add(e);
+        }
+      }
       if (createdBy != null) {
-        final byCreator = await client.from('exams').select().eq('created_by', createdBy);
-        final seenIds    = merged.map((e) => e['id']).toSet();
+        final byCreator = await client.rpc('fetch_my_exams', params: {
+          'p_employee_id': employeeId, 'p_session_token': sessionToken,
+        }) as List;
         for (final e in List<Map<String, dynamic>>.from(byCreator)) {
-          if (!seenIds.contains(e['id'])) merged.add(e);
+          if (seenIds.add(e['id'])) merged.add(e);
         }
       }
       merged.sort((a, b) => ('${b['date'] ?? ''}').compareTo('${a['date'] ?? ''}'));
       return merged;
     }
-    var query = client.from('exams').select();
-    if (className != null) query = query.eq('class', className);
-    if (createdBy != null) query = query.eq('created_by', createdBy);
-    final res = await query.order('date', ascending: false);
-    return List<Map<String, dynamic>>.from(res);
+    if (createdBy != null) {
+      final res = await client.rpc('fetch_my_exams', params: {
+        'p_employee_id': employeeId, 'p_session_token': sessionToken,
+      }) as List;
+      return List<Map<String, dynamic>>.from(res);
+    }
+    if (className != null) {
+      final res = await client.rpc('fetch_exams_for_class', params: {
+        'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_class_name': className,
+      }) as List;
+      final list = List<Map<String, dynamic>>.from(res);
+      list.sort((a, b) => ('${b['date'] ?? ''}').compareTo('${a['date'] ?? ''}'));
+      return list;
+    }
+    return [];
   }
 
-  static Future<void> createExam(Map<String, dynamic> data) async {
-    await client.from('exams').insert(data);
+  static Future<void> createExam(Map<String, dynamic> data, String sessionToken) async {
+    await client.rpc('create_exam', params: {
+      'p_employee_id': data['created_by'],
+      'p_session_token': sessionToken,
+      'p_name': data['name'],
+      'p_class_name': data['class'],
+      'p_subject': data['subject'],
+      'p_date': data['date'],
+      'p_max_marks': data['max_marks'],
+    });
   }
 
   // Admin-configurable default full marks for a new Monthly Test (Settings →
@@ -512,30 +604,39 @@ class SupabaseService {
     return (res?['monthly_test_max_marks'] as num?)?.toInt() ?? 25;
   }
 
+  // REQ-SEC-002 Category 3 Group B (2026-09-22): exam_marks moved from
+  // direct anon table access to session-token-gated RPCs, scoped via the
+  // parent exam (own exam or is_teacher_of_class(exam's class)).
+  //
   // Which of these exam ids already have at least one mark entered - used to
   // count "pending" exams (held, but marks not started) on the dashboard.
-  static Future<Set<String>> fetchExamIdsWithMarks(List<String> examIds) async {
+  static Future<Set<String>> fetchExamIdsWithMarks(String employeeId, String sessionToken, List<String> examIds) async {
     if (examIds.isEmpty) return {};
-    final res = await client.from('exam_marks').select('exam_id').inFilter('exam_id', examIds);
+    final res = await client.rpc('fetch_exam_ids_with_marks', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_exam_ids': examIds,
+    }) as List;
     return List<Map<String, dynamic>>.from(res).map((r) => r['exam_id'].toString()).toSet();
   }
 
-  static Future<List<Map<String, dynamic>>> fetchExamMarks(String examId) async {
-    final res = await client
-        .from('exam_marks')
-        .select()
-        .eq('exam_id', examId);
+  static Future<List<Map<String, dynamic>>> fetchExamMarks(String employeeId, String sessionToken, String examId) async {
+    final res = await client.rpc('fetch_exam_marks', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_exam_id': examId,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
-  // Without onConflict, upsert() targets the table's primary key (id) - since
-  // these records never include one, every save silently INSERTED a fresh
-  // row instead of updating the existing mark, even though exam_marks has a
-  // real UNIQUE (exam_id, student_id) constraint. That's what made re-saving
-  // already-entered marks look broken - the edit never actually landed on
-  // the row being displayed, just piled up a duplicate underneath it.
-  static Future<void> saveMarksBatch(List<Map<String, dynamic>> records) async {
-    await client.from('exam_marks').upsert(records, onConflict: 'exam_id,student_id');
+  // records: [{exam_id, student_id, marks_obtained, entered_by}] (entered_by
+  // is ignored server-side, always forced to the verified caller) - the RPC
+  // itself does the same "insert or update on (exam_id, student_id)" upsert
+  // this table's real UNIQUE constraint requires, previously done client-side
+  // via .upsert(onConflict:).
+  static Future<void> saveMarksBatch(String employeeId, String sessionToken, String examId, List<Map<String, dynamic>> records) async {
+    await client.rpc('save_marks_batch', params: {
+      'p_employee_id': employeeId,
+      'p_session_token': sessionToken,
+      'p_exam_id': examId,
+      'p_marks': records.map((r) => {'student_id': r['student_id'], 'marks_obtained': r['marks_obtained']}).toList(),
+    });
   }
 
   // Same shape as fetchClassStudents, but looks a class up by name instead of
@@ -595,28 +696,52 @@ class SupabaseService {
     return map;
   }
 
-  static Future<List<Map<String, dynamic>>> fetchOfficialExamMarks(String examId, String className, String subjectName) async {
-    final res = await client
-        .from('official_exam_marks')
-        .select()
-        .eq('exam_id', examId)
-        .eq('class_name', className)
-        .eq('subject_name', subjectName);
+  // REQ-SEC-002 Category 3 Group C (2026-09-22): official_exam_marks moved
+  // to session-token-gated RPCs. Entering marks uses the same "any teacher,
+  // any class" picker as Group B's exams/homework/syllabus (identity-gated
+  // only); the Class Overview (all subjects, whole class) is
+  // is_teacher_of_class-gated, matching Group B's broadened-read shape.
+  static Future<List<Map<String, dynamic>>> fetchOfficialExamMarks(String employeeId, String sessionToken, String examId, String className, String subjectName) async {
+    final res = await client.rpc('fetch_official_exam_marks', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken,
+      'p_exam_id': examId, 'p_class_name': className, 'p_subject': subjectName,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
   // Class-teacher read-only "all subjects for my class" view.
-  static Future<List<Map<String, dynamic>>> fetchOfficialExamMarksForClass(String examId, String className) async {
-    final res = await client
-        .from('official_exam_marks')
-        .select()
-        .eq('exam_id', examId)
-        .eq('class_name', className);
+  static Future<List<Map<String, dynamic>>> fetchOfficialExamMarksForClass(String employeeId, String sessionToken, String examId, String className) async {
+    final res = await client.rpc('fetch_official_exam_marks_for_class', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_exam_id': examId, 'p_class_name': className,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
-  static Future<void> saveOfficialMarksBatch(List<Map<String, dynamic>> records) async {
-    await client.from('official_exam_marks').upsert(records, onConflict: 'exam_id,student_id,subject_name');
+  // records: [{exam_id, student_id, class_name, subject_name, marks_obtained,
+  // entered_by}], all sharing one exam_id/class_name/subject_name per call
+  // (entered_by ignored server-side, always forced to the verified caller).
+  static Future<void> saveOfficialMarksBatch(String employeeId, String sessionToken, List<Map<String, dynamic>> records) async {
+    if (records.isEmpty) return;
+    await client.rpc('save_official_marks_batch', params: {
+      'p_employee_id': employeeId,
+      'p_session_token': sessionToken,
+      'p_exam_id': records.first['exam_id'],
+      'p_class_name': records.first['class_name'],
+      'p_subject': records.first['subject_name'],
+      'p_marks': records.map((r) => {'student_id': r['student_id'], 'marks_obtained': r['marks_obtained']}).toList(),
+    });
+  }
+
+  // Student-facing: own rows only, across every subject for one exam -
+  // replaces the previous fetchOfficialExamMarksForClass()-then-client-
+  // filter pattern the student page used, which could already read every
+  // student's official results directly (anon, no auth existed for this
+  // table before Group C).
+  static Future<List<Map<String, dynamic>>> fetchOfficialExamMarksForStudent(String studentId, String sessionToken, String examId) async {
+    final res = await client.rpc('fetch_official_exam_marks_for_student', params: {
+      'p_student_id': studentId, 'p_session_token': sessionToken, 'p_exam_id': examId,
+    }) as List;
+    return List<Map<String, dynamic>>.from(res);
   }
 
   // Syllabus ──────────────────────────────────────────────────────────────────
@@ -625,47 +750,86 @@ class SupabaseService {
   // a class teacher sees every chapter added for their own class (by any
   // teacher) plus anything they personally added for other classes, while a
   // subject teacher with no class of their own just sees what they added.
-  static Future<List<Map<String, dynamic>>> fetchSyllabus({String? className, List<String>? classNames, String? teacherId}) async {
+  // REQ-SEC-002 Category 3 Group B (2026-09-22): syllabus moved from direct
+  // anon table access to session-token-gated RPCs. Create is open to any
+  // class (deliberate feature, same as exams/homework); update/delete/lock
+  // are own-record (teacher_id must match the caller server-side) - not
+  // class-gated, matching this table's existing per-row ownership shape.
+  static Future<List<Map<String, dynamic>>> fetchSyllabus({
+    required String employeeId, required String sessionToken,
+    String? className, List<String>? classNames, String? teacherId,
+  }) async {
     if (classNames != null && classNames.isNotEmpty) {
-      final byClass = await client.from('syllabus').select().inFilter('class', classNames);
-      final merged  = List<Map<String, dynamic>>.from(byClass);
+      final merged = <Map<String, dynamic>>[];
+      final seenIds = <dynamic>{};
+      for (final c in classNames) {
+        final res = await client.rpc('fetch_syllabus_for_class', params: {
+          'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_class_name': c,
+        }) as List;
+        for (final s in List<Map<String, dynamic>>.from(res)) {
+          if (seenIds.add(s['id'])) merged.add(s);
+        }
+      }
       if (teacherId != null) {
-        final byTeacher = await client.from('syllabus').select().eq('teacher_id', teacherId);
-        final seenIds    = merged.map((s) => s['id']).toSet();
+        final byTeacher = await client.rpc('fetch_my_syllabus', params: {
+          'p_employee_id': employeeId, 'p_session_token': sessionToken,
+        }) as List;
         for (final s in List<Map<String, dynamic>>.from(byTeacher)) {
-          if (!seenIds.contains(s['id'])) merged.add(s);
+          if (seenIds.add(s['id'])) merged.add(s);
         }
       }
       merged.sort((a, b) => (a['sort_order'] ?? 0).compareTo(b['sort_order'] ?? 0));
       return merged;
     }
-    var query = client.from('syllabus').select();
-    if (className != null) query = query.eq('class', className);
-    if (teacherId != null) query = query.eq('teacher_id', teacherId);
-    final res = await query.order('sort_order', ascending: true);
-    return List<Map<String, dynamic>>.from(res);
+    if (teacherId != null) {
+      final res = await client.rpc('fetch_my_syllabus', params: {
+        'p_employee_id': employeeId, 'p_session_token': sessionToken,
+      }) as List;
+      return List<Map<String, dynamic>>.from(res);
+    }
+    if (className != null) {
+      final res = await client.rpc('fetch_syllabus_for_class', params: {
+        'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_class_name': className,
+      }) as List;
+      final list = List<Map<String, dynamic>>.from(res);
+      list.sort((a, b) => (a['sort_order'] ?? 0).compareTo(b['sort_order'] ?? 0));
+      return list;
+    }
+    return [];
   }
 
   // Bulk insert so a teacher can add a whole chapter list in one go instead
   // of one at a time - each row still gets its own id/status/progress.
-  static Future<void> createSyllabusChapters(List<Map<String, dynamic>> rows) async {
+  // rows: [{teacher_id, class, subject, chapter, status, sort_order}, ...] -
+  // all rows in one call share class_name/subject/starting sort_order.
+  static Future<void> createSyllabusChapters(List<Map<String, dynamic>> rows, String sessionToken) async {
     if (rows.isEmpty) return;
-    await client.from('syllabus').insert(rows);
+    await client.rpc('create_syllabus_chapters', params: {
+      'p_employee_id': rows.first['teacher_id'],
+      'p_session_token': sessionToken,
+      'p_class_name': rows.first['class'],
+      'p_subject': rows.first['subject'],
+      'p_chapters': rows.map((r) => r['chapter']).toList(),
+      'p_start_sort_order': rows.first['sort_order'],
+    });
   }
 
-  static Future<void> updateSyllabusStatus(String id, String status) async {
-    await client.from('syllabus').update({
-      'status': status,
-      'updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', id);
+  static Future<void> updateSyllabusStatus(String id, String status, String employeeId, String sessionToken) async {
+    await client.rpc('update_syllabus_status', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_chapter_id': id, 'p_status': status,
+    });
   }
 
-  static Future<void> deleteSyllabusChapter(String id) async {
-    await client.from('syllabus').delete().eq('id', id);
+  static Future<void> deleteSyllabusChapter(String id, String employeeId, String sessionToken) async {
+    await client.rpc('delete_syllabus_chapter', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_chapter_id': id,
+    });
   }
 
-  static Future<void> updateSyllabusChapterName(String id, String chapter) async {
-    await client.from('syllabus').update({'chapter': chapter}).eq('id', id);
+  static Future<void> updateSyllabusChapterName(String id, String chapter, String employeeId, String sessionToken) async {
+    await client.rpc('update_syllabus_chapter_name', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_chapter_id': id, 'p_chapter_name': chapter,
+    });
   }
 
   // Wipes every chapter (and via ON DELETE CASCADE, their subtopics) this
@@ -673,38 +837,99 @@ class SupabaseService {
   // Chapters/Import, so re-uploading a corrected sheet doesn't just append
   // another full copy on top of what's already there.
   static Future<void> deleteSyllabusForSubject({
-    required String teacherId, required String className, required String subject,
+    required String teacherId, required String sessionToken, required String className, required String subject,
   }) async {
-    await client.from('syllabus')
-        .delete()
-        .eq('teacher_id', teacherId)
-        .eq('class', className)
-        .eq('subject', subject);
+    await client.rpc('delete_syllabus_for_subject', params: {
+      'p_employee_id': teacherId, 'p_session_token': sessionToken, 'p_class_name': className, 'p_subject': subject,
+    });
   }
 
   // Subtopics under a chapter - optional, own independent progress. A
   // chapter with subtopics has its own status derived app-side from these
   // instead of being cycled directly.
-  static Future<List<Map<String, dynamic>>> fetchSubtopics(List<String> chapterIds) async {
+  //
+  // REQ-SEC-002 Category 3 Group B (2026-09-22): scoped via the parent
+  // chapter (syllabus.teacher_id for ownership/writes, syllabus.class for
+  // the broadened class-teacher read) - fetch naturally filters to
+  // authorized chapter_ids rather than raising, since it's a batch read
+  // across a caller-supplied id list spanning both "my own" and "my class".
+  static Future<List<Map<String, dynamic>>> fetchSubtopics(String employeeId, String sessionToken, List<String> chapterIds) async {
     if (chapterIds.isEmpty) return [];
-    final res = await client.from('syllabus_subtopics').select().inFilter('chapter_id', chapterIds).order('sort_order', ascending: true);
+    final res = await client.rpc('fetch_syllabus_subtopics', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_chapter_ids': chapterIds,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
-  static Future<void> createSubtopics(List<Map<String, dynamic>> rows) async {
+  // rows: [{chapter_id, name, status, sort_order}, ...] - all rows share one
+  // chapter_id/starting sort_order per call (matches every call site).
+  static Future<void> createSubtopics(List<Map<String, dynamic>> rows, String employeeId, String sessionToken) async {
     if (rows.isEmpty) return;
-    await client.from('syllabus_subtopics').insert(rows);
+    await client.rpc('create_syllabus_subtopics', params: {
+      'p_employee_id': employeeId,
+      'p_session_token': sessionToken,
+      'p_chapter_id': rows.first['chapter_id'],
+      'p_names': rows.map((r) => r['name']).toList(),
+      'p_start_sort_order': rows.first['sort_order'],
+    });
   }
 
-  static Future<void> updateSubtopicStatus(String id, String status) async {
-    await client.from('syllabus_subtopics').update({
-      'status': status,
-      'updated_at': DateTime.now().toIso8601String(),
-    }).eq('id', id);
+  static Future<void> updateSubtopicStatus(String id, String status, String employeeId, String sessionToken) async {
+    await client.rpc('update_subtopic_status', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_subtopic_id': id, 'p_status': status,
+    });
   }
 
-  static Future<void> deleteSubtopic(String id) async {
-    await client.from('syllabus_subtopics').delete().eq('id', id);
+  static Future<void> deleteSubtopic(String id, String employeeId, String sessionToken) async {
+    await client.rpc('delete_subtopic', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_subtopic_id': id,
+    });
+  }
+
+  // Student reads for exams/homework/syllabus (Group B addendum) ──────────
+  // REQ-SEC-002 Category 3 Group B (2026-09-22): the student app reads its
+  // own class's exams/homework/syllabus/subtopics too, missed in the
+  // initial teacher-focused pass above - separate RPCs since the identity
+  // shape differs (student session, own class resolved server-side via
+  // student_enrollments, never trusted from the client - a student can only
+  // ever see their own class, no "which class" parameter needed at all).
+  static Future<List<Map<String, dynamic>>> fetchExamsForStudent(String studentId, String sessionToken) async {
+    final res = await client.rpc('fetch_exams_for_student', params: {
+      'p_student_id': studentId, 'p_session_token': sessionToken,
+    }) as List;
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchHomeworkForStudent(String studentId, String sessionToken) async {
+    final res = await client.rpc('fetch_homework_for_student', params: {
+      'p_student_id': studentId, 'p_session_token': sessionToken,
+    }) as List;
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchSyllabusForStudent(String studentId, String sessionToken) async {
+    final res = await client.rpc('fetch_syllabus_for_student', params: {
+      'p_student_id': studentId, 'p_session_token': sessionToken,
+    }) as List;
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  // A student's own mark for one exam (never the whole class's) - matches
+  // the existing Dart-side filter's intent, and is tighter than the
+  // pre-Group-B state (any anon caller could read every student's marks).
+  static Future<List<Map<String, dynamic>>> fetchMyExamMark(String studentId, String sessionToken, String examId) async {
+    final res = await client.rpc('fetch_my_exam_mark', params: {
+      'p_student_id': studentId, 'p_session_token': sessionToken, 'p_exam_id': examId,
+    }) as List;
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<List<Map<String, dynamic>>> fetchSubtopicsForStudent(String studentId, String sessionToken, List<String> chapterIds) async {
+    if (chapterIds.isEmpty) return [];
+    final res = await client.rpc('fetch_syllabus_subtopics_for_student', params: {
+      'p_student_id': studentId, 'p_session_token': sessionToken, 'p_chapter_ids': chapterIds,
+    }) as List;
+    return List<Map<String, dynamic>>.from(res);
   }
 
   // Syllabus lock + edit-request workflow ──────────────────────────────────
@@ -714,45 +939,44 @@ class SupabaseService {
 
   // Sets locked on every chapter row for this teacher+class+subject at once,
   // since they were all added/locked together as one syllabus.
-  static Future<void> lockSyllabus({required String teacherId, required String className, required String subject}) async {
-    await client.from('syllabus').update({
-      'locked': true,
-      'locked_at': DateTime.now().toIso8601String(),
-    }).eq('teacher_id', teacherId).eq('class', className).eq('subject', subject);
+  static Future<void> lockSyllabus({required String teacherId, required String sessionToken, required String className, required String subject}) async {
+    await client.rpc('lock_syllabus', params: {
+      'p_employee_id': teacherId, 'p_session_token': sessionToken, 'p_class_name': className, 'p_subject': subject,
+    });
   }
 
   static Future<void> submitSyllabusEditRequest({
     required String teacherId,
+    required String sessionToken,
     required String className,
     required String subject,
     String? reason,
     String? requestedChanges,
   }) async {
-    await client.from('syllabus_edit_requests').insert({
-      'teacher_id': teacherId,
-      'class_name': className,
-      'subject_name': subject,
-      'reason': reason,
-      'requested_changes': requestedChanges,
+    await client.rpc('submit_syllabus_edit_request', params: {
+      'p_teacher_id': teacherId,
+      'p_session_token': sessionToken,
+      'p_class_name': className,
+      'p_subject': subject,
+      'p_reason': reason,
+      'p_requested_changes': requestedChanges,
     });
   }
 
-  static Future<List<Map<String, dynamic>>> fetchMySyllabusEditRequests(String teacherId) async {
-    final res = await client
-        .from('syllabus_edit_requests')
-        .select()
-        .eq('teacher_id', teacherId)
-        .order('created_at', ascending: false)
-        .limit(50);
+  static Future<List<Map<String, dynamic>>> fetchMySyllabusEditRequests(String teacherId, String sessionToken) async {
+    final res = await client.rpc('fetch_my_syllabus_edit_requests', params: {
+      'p_teacher_id': teacherId, 'p_session_token': sessionToken,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
   // Ends an approved edit window early ("Save & Lock") instead of waiting
-  // the full 24 hours out.
-  static Future<void> closeSyllabusEditWindow(String requestId) async {
-    await client.from('syllabus_edit_requests').update({
-      'closed_at': DateTime.now().toIso8601String(),
-    }).eq('id', requestId);
+  // the full 24 hours out. Now requires and verifies the owning teacherId
+  // (previously id-only, no owner check at all - REQ-SEC-002 Category 3).
+  static Future<void> closeSyllabusEditWindow(String requestId, String teacherId, String sessionToken) async {
+    await client.rpc('close_syllabus_edit_window', params: {
+      'p_request_id': requestId, 'p_teacher_id': teacherId, 'p_session_token': sessionToken,
+    });
   }
 
   // Birthdays ─────────────────────────────────────────────────────────────
@@ -868,8 +1092,18 @@ class SupabaseService {
 
   // Queries & Suggestions ────────────────────────────────────────────────────
 
-  static Future<void> submitQuery(Map<String, dynamic> data) async {
-    await client.from('queries_suggestions').insert(data);
+  // REQ-SEC-002 Category 3 Group A (2026-09-19): data must contain
+  // user_type/user_id/user_name/class_name/message (unchanged shape),
+  // plus a sessionToken keyed to that same user_type/user_id.
+  static Future<void> submitQuery(Map<String, dynamic> data, String sessionToken) async {
+    await client.rpc('submit_query', params: {
+      'p_user_type': data['user_type'],
+      'p_user_id': data['user_id'],
+      'p_session_token': sessionToken,
+      'p_user_name': data['user_name'],
+      'p_class_name': data['class_name'],
+      'p_message': data['message'],
+    });
   }
 
   // Diagnostic Reports (AGENTS.md §L, REQ-HYG-006) ────────────────────────────
@@ -881,12 +1115,10 @@ class SupabaseService {
     return res['id'] as String;
   }
 
-  static Future<List<Map<String, dynamic>>> fetchMyQueries(String userId) async {
-    final res = await client
-        .from('queries_suggestions')
-        .select()
-        .eq('user_id', userId)
-        .order('created_at', ascending: false);
+  static Future<List<Map<String, dynamic>>> fetchMyQueries(String userType, String userId, String sessionToken) async {
+    final res = await client.rpc('fetch_my_queries', params: {
+      'p_user_type': userType, 'p_user_id': userId, 'p_session_token': sessionToken,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -912,19 +1144,17 @@ class SupabaseService {
 
   // task_assignees has a composite primary key (task_id, employee_id) - no
   // single id column - so rows are addressed by that pair, not a row id.
-  static Future<List<Map<String, dynamic>>> fetchTeacherTasks(String employeeId) async {
-    final res = await client
-        .from('task_assignees')
-        .select('task_id, status, task:tasks(*)')
-        .eq('employee_id', employeeId);
+  static Future<List<Map<String, dynamic>>> fetchTeacherTasks(String employeeId, String sessionToken) async {
+    final res = await client.rpc('fetch_teacher_tasks', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
-  static Future<void> updateTaskAssigneeStatus(String taskId, String employeeId, String status) async {
-    await client.from('task_assignees').update({
-      'status': status,
-      'status_updated_at': DateTime.now().toIso8601String(),
-    }).eq('task_id', taskId).eq('employee_id', employeeId);
+  static Future<void> updateTaskAssigneeStatus(String taskId, String employeeId, String sessionToken, String status) async {
+    await client.rpc('update_task_assignee_status', params: {
+      'p_task_id': taskId, 'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_status': status,
+    });
   }
 
   // Daily Tasks ───────────────────────────────────────────────────────────────
@@ -934,18 +1164,18 @@ class SupabaseService {
   // daily_task_targets has a row for this employee. Completion is a per
   // (task, employee, calendar date) row so it resets automatically each day.
 
-  static Future<List<Map<String, dynamic>>> fetchDailyTasksForEmployee(String employeeId) async {
+  static Future<List<Map<String, dynamic>>> fetchDailyTasksForEmployee(String employeeId, String sessionToken) async {
     final today = DateTime.now().toIso8601String().substring(0, 10);
+    // daily_tasks itself is already anon-readable (REQ-SEC-002 Category 2,
+    // fixed earlier) - only daily_task_completions needed the session gate.
     final tasksRes = await client
         .from('daily_tasks')
         .select('id, title, description, target_type, daily_task_targets(employee_id)')
         .eq('active', true)
         .order('created_at', ascending: true);
-    final completionsRes = await client
-        .from('daily_task_completions')
-        .select('daily_task_id, completed_at')
-        .eq('employee_id', employeeId)
-        .eq('completion_date', today);
+    final completionsRes = await client.rpc('fetch_my_daily_task_completions', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_date': today,
+    }) as List;
 
     final completedAt = <String, String>{};
     for (final c in List<Map<String, dynamic>>.from(completionsRes)) {
@@ -969,23 +1199,16 @@ class SupabaseService {
     return applicable;
   }
 
-  static Future<void> markDailyTaskDone(String dailyTaskId, String employeeId) async {
-    final today = DateTime.now().toIso8601String().substring(0, 10);
-    await client.from('daily_task_completions').upsert({
-      'daily_task_id': dailyTaskId,
-      'employee_id': employeeId,
-      'completion_date': today,
-    }, onConflict: 'daily_task_id,employee_id,completion_date');
+  static Future<void> markDailyTaskDone(String dailyTaskId, String employeeId, String sessionToken) async {
+    await client.rpc('mark_daily_task_done', params: {
+      'p_daily_task_id': dailyTaskId, 'p_employee_id': employeeId, 'p_session_token': sessionToken,
+    });
   }
 
-  static Future<void> unmarkDailyTaskDone(String dailyTaskId, String employeeId) async {
-    final today = DateTime.now().toIso8601String().substring(0, 10);
-    await client
-        .from('daily_task_completions')
-        .delete()
-        .eq('daily_task_id', dailyTaskId)
-        .eq('employee_id', employeeId)
-        .eq('completion_date', today);
+  static Future<void> unmarkDailyTaskDone(String dailyTaskId, String employeeId, String sessionToken) async {
+    await client.rpc('unmark_daily_task_done', params: {
+      'p_daily_task_id': dailyTaskId, 'p_employee_id': employeeId, 'p_session_token': sessionToken,
+    });
   }
 
   // Notices ───────────────────────────────────────────────────────────────────
@@ -1079,21 +1302,39 @@ class SupabaseService {
   }
 
   static Future<List<Map<String, dynamic>>> fetchTeacherDocuments({
-    required String teacherId, required String section,
+    required String teacherId, required String sessionToken, required String section,
   }) async {
-    final res = await client.from('teacher_documents').select()
-        .eq('teacher_id', teacherId)
-        .eq('section', section)
-        .order('created_at', ascending: false);
+    final res = await client.rpc('fetch_teacher_documents', params: {
+      'p_teacher_id': teacherId, 'p_session_token': sessionToken, 'p_section': section,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
-  static Future<void> createTeacherDocument(Map<String, dynamic> data) async {
-    await client.from('teacher_documents').insert(data);
+  // REQ-SEC-002 Category 3 Group A (2026-09-19): data must contain
+  // teacher_id/section/academic_year/class/subject/title/file_key/
+  // file_name/file_size (unchanged shape), plus a sessionToken keyed to
+  // that same teacher_id.
+  static Future<void> createTeacherDocument(Map<String, dynamic> data, String sessionToken) async {
+    await client.rpc('create_teacher_document', params: {
+      'p_teacher_id': data['teacher_id'],
+      'p_session_token': sessionToken,
+      'p_section': data['section'],
+      'p_academic_year': data['academic_year'],
+      'p_class': data['class'],
+      'p_subject': data['subject'],
+      'p_title': data['title'],
+      'p_file_key': data['file_key'],
+      'p_file_name': data['file_name'],
+      'p_file_size': data['file_size'],
+    });
   }
 
-  static Future<void> deleteTeacherDocument(String id) async {
-    await client.from('teacher_documents').delete().eq('id', id);
+  // Now requires and verifies the owning teacherId (previously id-only, no
+  // owner check at all - REQ-SEC-002 Category 3).
+  static Future<void> deleteTeacherDocument(String id, String teacherId, String sessionToken) async {
+    await client.rpc('delete_teacher_document', params: {
+      'p_id': id, 'p_teacher_id': teacherId, 'p_session_token': sessionToken,
+    });
   }
 
   // School Calendar ──────────────────────────────────────────────────────────

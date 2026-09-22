@@ -50,9 +50,10 @@ class _StudentHomeState extends State<StudentHome> {
   }
 
   Future<void> _loadNotifications() async {
-    final profile   = AuthService.to.profile.value ?? {};
-    final studentId = profile['id'] as String?;
-    if (studentId == null) return;
+    final profile     = AuthService.to.profile.value ?? {};
+    final studentId   = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
+    if (studentId == null || sessionToken == null) return;
     _userKey = 'student_$studentId';
     final className = profile['class_name'] as String? ?? '';
 
@@ -64,10 +65,10 @@ class _StudentHomeState extends State<StudentHome> {
     // merged into the same feed as Notices - see monthlyTestReminders /
     // officialExamReminders for why these need no server-side scheduling.
     final classExams = className.isNotEmpty
-        ? await SupabaseService.fetchExams(className: className)
+        ? await SupabaseService.fetchExamsForStudent(studentId, sessionToken)
         : <Map<String, dynamic>>[];
     final officialExams = await SupabaseService.fetchOfficialExams();
-    final alerts = await SupabaseService.fetchStudentAlerts(studentId);
+    final alerts = await SupabaseService.fetchStudentAlerts(studentId, sessionToken);
     final birthday = birthdayNoticeItem(profile['dob'] as String?);
 
     final combined = [

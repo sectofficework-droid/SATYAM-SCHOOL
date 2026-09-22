@@ -24,8 +24,9 @@ class _TeacherDailyTasksPageState extends State<TeacherDailyTasksPage> {
     setState(() => _loading = true);
     final profile = AuthService.to.profile.value ?? {};
     _employeeId = profile['id'] as String?;
-    final tasks = _employeeId != null
-        ? await SupabaseService.fetchDailyTasksForEmployee(_employeeId!)
+    final sessionToken = AuthService.to.sessionToken;
+    final tasks = _employeeId != null && sessionToken != null
+        ? await SupabaseService.fetchDailyTasksForEmployee(_employeeId!, sessionToken)
         : <Map<String, dynamic>>[];
     if (mounted) setState(() { _tasks = tasks; _loading = false; });
   }
@@ -33,7 +34,8 @@ class _TeacherDailyTasksPageState extends State<TeacherDailyTasksPage> {
   Future<void> _toggle(Map<String, dynamic> task) async {
     final id = task['id'] as String;
     final employeeId = _employeeId;
-    if (employeeId == null || _busyIds.contains(id)) return;
+    final sessionToken = AuthService.to.sessionToken;
+    if (employeeId == null || sessionToken == null || _busyIds.contains(id)) return;
     // REQ-BUG-008: must capture the original value itself, not just a
     // wasDone bool derived from it - the optimistic setState below
     // overwrites task['completedAt'], so reconstructing the rollback from
@@ -48,9 +50,9 @@ class _TeacherDailyTasksPageState extends State<TeacherDailyTasksPage> {
     });
     try {
       if (wasDone) {
-        await SupabaseService.unmarkDailyTaskDone(id, employeeId);
+        await SupabaseService.unmarkDailyTaskDone(id, employeeId, sessionToken);
       } else {
-        await SupabaseService.markDailyTaskDone(id, employeeId);
+        await SupabaseService.markDailyTaskDone(id, employeeId, sessionToken);
       }
     } catch (_) {
       if (mounted) setState(() => task['completedAt'] = originalCompletedAt);

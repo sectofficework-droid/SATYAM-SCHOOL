@@ -369,6 +369,385 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       work than tranche 1, and this project has no automated tests to catch
       a mistake before a real teacher/student notices. Recommend its own
       session, not a rushed continuation of this one.
+      **2026-09-19 status check found Tranche 1 caused a live regression,
+      fixed same day.** `tasks` and `daily_task_targets` were both in
+      Tranche 1's "46 admin-only, zero mobile dependency" list — wrong for
+      both. The Teacher app's `task_assignees`/`daily_tasks` reads use
+      PostgREST embeds (`task:tasks(*)`, `daily_task_targets(employee_id)`)
+      that need direct `SELECT` grants on the embedded tables too, even
+      though no Flutter code queries `tasks`/`daily_task_targets` by name
+      directly. Live-verified broken: `anon` got `permission denied` on
+      both from the moment Tranche 1 shipped — every Teacher-app "My
+      Tasks"/"Daily Tasks" fetch failed in production until this fix.
+      **Fixed**: restored `anon` SELECT-only on both (writes stay
+      admin-only), same pattern as `school_calendar_events`. Migration:
+      `mobile-app/SUPABASE_FIX_TASKS_ANON_REGRESSION.sql`, applied via
+      `mcp__supabase__apply_migration`. Verified live (role-simulated,
+      rolled back): `anon` SELECT now returns rows on both; `anon` INSERT
+      still correctly `permission denied`.
+      **Also found during the same status check: the live RLS-disabled
+      count is 33, not 29** — 4 new tables (`cron_secrets`,
+      `employee_punch_codes`, `kiosk_qr_sessions`, `kiosk_settings`)
+      appeared as a side effect of the REQ-SEC-009/010 fixes (RLS defaults
+      off on table creation). Confirmed none of the 4 has direct Flutter
+      access — simple admin-only lock, not part of the harder
+      mobile-carve-out problem.
+      **Full per-table remediation plan**: `governance/planning/
+      REQ-SEC-002-MOBILE-TABLES-PLAN.md`. Reviewed against live state
+      2026-09-19 (caught one gap: `daily_tasks` had been dropped from the
+      categorization, fixed) then **Categories 1 and 2 applied and verified
+      live the same day** (mechanical, no design decision needed):
+      - **Category 1 — FIXED**: `cron_secrets`, `employee_punch_codes`,
+        `kiosk_qr_sessions`, `kiosk_settings` (no direct Flutter access,
+        RPC-only) — RLS enabled, `is_admin_user()`-gated, `anon` fully
+        locked out. Migration: `mobile-app/SUPABASE_LOCK_RPC_ONLY_TABLES.sql`.
+      - **Category 2 — FIXED**: `academic_years`, `app_versions`,
+        `class_subjects`, `daily_tasks`, `employee_attendance`,
+        `employee_shifts`, `notices`, `official_exam_subject_config`,
+        `official_exams`, `school_profile`, `school_rules`, `timetables`
+        (mobile-read-only, confirmed via grep, zero write call sites) — RLS
+        enabled, `anon` kept SELECT-only, writes `is_admin_user()`-gated.
+        Migration: `mobile-app/SUPABASE_LOCK_MOBILE_READONLY_TABLES.sql`.
+      - Verified live: project-wide `rls_disabled` count dropped from 33 to
+        exactly **17** — matching Category 3 with zero surprises. Spot-check
+        role-simulated queries confirmed `anon` SELECT still works on all 16
+        newly-locked tables and `anon` writes are correctly `permission
+        denied`.
+      - **Category 3 — direction decided 2026-09-19, plan not yet written,
+        no "code it" given.** 17 tables (`employees`, `exam_marks`,
+        `exams`, `homework`, `student_attendance`, `leave_requests`,
+        `official_exam_marks`, `queries_suggestions`, `student_alerts`,
+        `syllabus`, `syllabus_edit_requests`, `syllabus_subtopics`,
+        `task_assignees`, `teacher_alerts`, `teacher_documents`,
+        `attendance_edit_requests`, `daily_task_completions`) where mobile
+        writes or reads other users' rows with no real server-side identity
+        check. **User chose path (B) — move each risky write behind a
+        `SECURITY DEFINER` RPC that re-verifies identity per call** (the
+        pattern already used 4 times: REQ-SEC-005/007/008/009), not real
+        Supabase Auth for mobile (path A, would've reopened REQ-SEC-010's
+        "no new auth system" stance) and not deferral (path C). MAJOR
+        change per §J12B — reopens DESIGN FIXED, needs a proper written
+        plan before any "code it", not started yet given the scale
+        (~25-35 new RPCs across 17 tables' worth of call sites, plus a
+        matching Dart refactor across all 3 flavors — larger than any
+        single REQ-SEC fix shipped so far). Plan drafted:
+        `governance/planning/REQ-SEC-002-CATEGORY3-RPC-PLAN.md`.
+        **One piece fast-tracked and FIXED 2026-09-19**: raw biometric
+        face-embedding vectors (`employees.face_embedding`) were readable
+        by any anon caller with no auth at all — found while drafting the
+        plan above, judged severe enough (comparable to REQ-SEC-006) to
+        fix immediately rather than wait for the full session-token
+        rollout. Now gated behind a short-lived kiosk-admin token (minted
+        on PIN entry) via 4 new RPCs; direct table access revoked
+        (`SELECT`/`UPDATE` on the relevant columns). Migration:
+        `mobile-app/SUPABASE_FIX_FACE_EMBEDDING_EXPOSURE.sql`. Caught and
+        fixed a real bug in the fix itself during verification: a
+        column-level `REVOKE` had no effect because `anon` already held
+        the table-level grant (Postgres-specific gotcha) — corrected to a
+        full table-level revoke + explicit column allowlist. `flutter
+        analyze` clean, attendance-flavor debug APK builds successfully.
+        **Not yet verified on the physical kiosk device** — needs the user
+        to install `app-attendance-debug.apk` and confirm the PIN →
+        enrollment flow still works with the real PIN.
+        **Foundation + Group A — IMPLEMENTED 2026-09-19** (user: "implement
+        req sec 002", scoped to Foundation + Group A after confirming size).
+        Session-token mechanism built: `mobile_sessions` table (7-day
+        sliding expiry, decided by the user), `mint_mobile_session`/
+        `verify_mobile_session`/`revoke_mobile_session`, wired into
+        `teacher_login`/`student_login` plus (found necessary mid-build,
+        not originally scoped this precisely) the impersonation-login and
+        sibling-switch paths, since those also cache a profile via
+        `AuthService._saveSession` and would otherwise leave sessions
+        with no token at all. Deliberately NOT wired into password-change
+        this pass (flagged, not dropped — see migration file). Then all 9
+        Group A tables (`leave_requests`, `queries_suggestions`,
+        `student_alerts`, `teacher_alerts`, `task_assignees`,
+        `daily_task_completions`, `attendance_edit_requests`,
+        `syllabus_edit_requests`, `teacher_documents`) moved to
+        session-token-gated RPCs, direct `anon` access revoked, admin
+        panel unaffected (still `authenticated` + `is_admin_user()`).
+        Also fixed the plan's flagged "secondary gap"
+        (`closeSyllabusEditWindow`/`deleteTeacherDocument` previously had
+        no owner check at all). Migrations:
+        `mobile-app/SUPABASE_CAT3_FOUNDATION_MOBILE_SESSIONS.sql`,
+        `mobile-app/SUPABASE_CAT3_GROUP_A_RPCS.sql`. **Caught and fixed a
+        real bug during verification**: `verify_mobile_session`'s first
+        version used `GET DIAGNOSTICS` into a `boolean` variable instead
+        of `int` — failed on the very first live test, fixed before
+        proceeding. Verified live throughout (role-simulated, rolled
+        back): full RPC chains work, wrong-token calls rejected, direct
+        table access blocked on all 9 tables, `rls_disabled` count
+        dropped 33→17 (Categories 1+2, prior session)→8 (this session).
+        Dart: 18 `supabase_service.dart` methods + 10 call-site files
+        across teacher/student modules updated; `flutter analyze` clean;
+        teacher- and student-flavor debug APKs both build successfully.
+        **Not yet tested on a real device with a real login** — needs the
+        user to verify end-to-end (leave request, queries, alerts, tasks,
+        daily tasks, attendance/syllabus edit requests, documents) before
+        this is fully closed. **Code review pass 2026-09-19 (before device
+        testing happened) found the token guards break pre-existing
+        sessions silently and some submit flows fail with no error message
+        — see REQ-BUG-015/016/017 below**, which device testing should
+        specifically watch for.
+        **Group B, Group C, and the `employees` phase all DONE 2026-09-22
+        — REQ-SEC-002 Category 3 is now fully complete** (see below for
+        each). Full detail: `governance/planning/REQ-SEC-002-CATEGORY3-RPC-PLAN.md`.
+
+        **2026-09-22: Group C (2 tables) implemented and verified.**
+        `official_exam_marks`, `student_attendance`'s per-student read
+        moved to session-token-gated RPCs. Migration:
+        `mobile-app/SUPABASE_CAT3_GROUP_C_RPCS.sql`. **Finding vs. the
+        plan's stated uncertainty**: `student_attendance`'s per-student
+        read turned out NOT dual-shape after all — only the student app
+        calls `fetchStudentAttendance`; teacher-side attendance is a
+        separate Dart method already covered by Group B. **Real
+        pre-existing info leak found and fixed**: `official_exam_marks`
+        genuinely is dual-shape, and the student page was fetching the
+        *whole class's* official results and filtering to its own row
+        client-side — meaning any anon caller could already read every
+        student's official exam marks directly (worse than the freeform
+        exam_marks leak fixed in Group B, since these are the official
+        results). Fixed with a dedicated `fetch_official_exam_marks_for_student`
+        RPC returning only the caller's own rows. Entering official marks
+        uses the same "any teacher, any class" picker confirmed for Group B
+        (`allSchoolClasses`) — identity-gated only; the teacher's own Class
+        Overview (all subjects, whole class) is `is_teacher_of_class`-gated.
+        Verified via 9 rolled-back-transaction tests, all correct
+        (including cross-identity rejection). `flutter analyze` clean, both
+        flavors' debug APKs build. **Table lock-down deferred** — written
+        but not run, per the REQ-BUG-018 lesson (`official_exam_marks` is a
+        new table for this; `student_attendance` is already covered by
+        Group B's own deferred block).
+
+        **2026-09-22: `employees` phase DONE — real live exposure found and
+        fixed immediately, no app release needed.** The 2026-09-19
+        face-embedding fast-track had narrowed `anon`'s SELECT to "every
+        column except `face_embedding`" and revoked UPDATE, but left
+        `anon` with **live INSERT and DELETE** on the whole table (no
+        legitimate mobile use — confirmed via grep, zero call sites) and a
+        SELECT list far broader than mobile actually reads: **Aadhaar
+        number, PAN number, monthly salary, DOB, address — real PII/
+        financial-identity data, readable by anyone with the public anon
+        key, no auth at all.** Confirmed live-exploitable this session via
+        a role-simulated rolled-back transaction (INSERT got past the
+        permission check to a NOT-NULL constraint — proof the grant was
+        real, not theoretical). Only 2 legitimate direct-SELECT call sites
+        exist anywhere in mobile Dart (`fetchOtherTeachers`,
+        `fetchPrincipalContact`), needing only `id, name, phone, type,
+        status, designation` — simple public-within-school directory info,
+        not identity-gated (matches this project's Category 2 pattern, no
+        RPC needed). Fixed: `REVOKE ALL ON employees FROM anon` +
+        `GRANT SELECT (id, name, phone, type, status, designation)`.
+        Verified live: INSERT/aadhar-SELECT now correctly denied,
+        name/phone SELECT still works. **No Dart changes needed** — the
+        two existing call sites already only touched these 6 columns — so
+        this fix is live immediately, not gated behind a future release
+        like Group A/B/C's table locks.
+
+        **REQ-SEC-002 Category 3 status as of 2026-09-22**: Foundation,
+        Group A, Group B, Group C, and `employees` are all built and
+        verified. Group A/B/C's own table-lock-downs stay deliberately
+        deferred (RLS+REVOKE written but commented out) until Teacher/
+        Student v1.0.0+3 (or later) is confirmed installed on real devices
+        — see REQ-BUG-018 above. `employees`' fix is the one exception:
+        already fully live, since it required no app-side change.
+
+        **2026-09-22: Group B (6 tables) implemented and verified, RPCs
+        live, table-lock deliberately deferred.** `exams`, `exam_marks`,
+        `homework`, `syllabus`, `syllabus_subtopics`, `student_attendance`
+        moved to session-token-gated RPCs (~30 new functions total,
+        including student-facing reads — see below). Migration:
+        `mobile-app/SUPABASE_CAT3_GROUP_B_RPCS.sql`.
+        **Real correction found by reading actual page files, not just the
+        shared service layer** (the plan's own documented risk for Group
+        C, turned out to apply to Group B too): `lib/core/utils/
+        teacher_classes.dart` has an explicit comment — "Any teacher can
+        give homework or conduct an exam for any class" — and every create
+        picker (`teacher_marks_page.dart`/`teacher_homework_page.dart`/
+        `teacher_syllabus_page.dart`) uses `allSchoolClasses`, not a
+        restricted list. This is a deliberate cross-class-coverage feature
+        (e.g. substitute teaching), not an oversight. So CREATE on exams/
+        homework/syllabus is gated by session identity only
+        (`created_by`/`teacher_id` always forced server-side to the
+        verified caller, never trusted from the client) — NOT by
+        `is_teacher_of_class`. The new `is_teacher_of_class` helper
+        (class-teacher of a section under this class, OR a supporting
+        teacher, OR timetabled — free-text `timetables.teacher`/`.name`
+        match, same known fragility already flagged in the plan) still
+        gates exactly what the plan intended: a class-teacher's broadened
+        READ of their whole class's records, and both directions of
+        `student_attendance` (no "any class" feature exists there).
+        **Second real gap found, not in the original plan**: the student
+        app also reads exams/homework/syllabus/syllabus_subtopics/
+        exam_marks for its own class (`student_home.dart`,
+        `student_homework_page.dart`, `student_marks_page.dart`,
+        `student_syllabus_page.dart`) — missed in the first pass, which
+        only traced teacher-side call sites. Added 5 more student-facing
+        RPCs (`fetch_exams_for_student`, `fetch_homework_for_student`,
+        `fetch_syllabus_for_student`, `fetch_syllabus_subtopics_for_
+        student`, `fetch_my_exam_mark`) that resolve the student's own
+        class server-side via `student_enrollments.class_id -> classes.name`
+        (students has no direct class column) and never trust a
+        client-supplied class name. `fetch_my_exam_mark` is also a real
+        tightening versus the pre-Group-B state: previously any anon caller
+        could read every student's marks for an exam directly; now a
+        student can only ever see their own row. Migrations:
+        `mobile-app/SUPABASE_CAT3_GROUP_B_RPCS.sql` (addendum sections),
+        applied as 2 follow-up migrations same session.
+        **Verified live via 20 rolled-back-transaction test cases**
+        (role-simulated, matching Group A's verification approach): class-
+        broadening reads correctly gated, "any class" creates correctly
+        open, ownership checks correctly block other teachers editing your
+        chapters, wrong/cross-identity tokens correctly rejected, student
+        own-mark-only access confirmed. Supabase security advisor shows
+        only the expected "anon/authenticated-callable SECURITY DEFINER"
+        notices (same accepted pattern as Group A), no search_path warnings.
+        Dart: `supabase_service.dart` fully rewired (all Group B methods
+        now RPC-based, plus 5 new student methods); every call site across
+        `teacher_attendance_page.dart`, `teacher_home.dart`,
+        `teacher_homework_page.dart`, `teacher_marks_page.dart`,
+        `teacher_syllabus_page.dart`, `student_home.dart`,
+        `student_homework_page.dart`, `student_marks_page.dart`,
+        `student_syllabus_page.dart` updated to pass session tokens/new
+        signatures. `flutter analyze`: clean (only the same pre-existing
+        unrelated admin_workspace style infos). **Both teacher- and
+        student-flavor debug APKs build successfully
+        (`app-teacher-debug.apk`, `app-student-debug.apk`).**
+        **Deliberately NOT done, per the REQ-BUG-018 lesson**: the
+        anon-grant-revoking table lock-down (RLS enable + REVOKE) is
+        written but commented out in the migration file — do NOT run it
+        until a build containing this migration's Dart changes is
+        confirmed actually installed on real devices (same v4 sequencing
+        this project is already using for Group A's rollout). **Not yet
+        tested on a real device with a real login.**
+- [x] **REQ-BUG-018 — PRODUCTION INCIDENT (2026-09-21): Cat3 Group A's DB
+      migration went live 2026-09-19 with no matching app release, breaking
+      every currently-installed Teacher/Student app. TEMPORARILY ROLLED
+      BACK, not a permanent fix.** User-reported symptom: "teachers unable
+      to take attendance." Root cause: `SUPABASE_CAT3_GROUP_A_RPCS.sql`
+      revoked `anon`'s direct grants on the 9 Group A tables and applied
+      live via Supabase MCP — but the matching Dart code (session-token
+      wiring) was only ever local/uncommitted, never built into a
+      distributed release (S3 or Play Store). Every installed app instance
+      still calls these 9 tables directly as `anon` and got permission
+      errors with zero error handling in the call chain — on the Mark
+      Attendance screen specifically, the unhandled `fetchMyEditRequests`
+      call inside `_loadAttendanceForDate()` left `_attLoading` stuck
+      `true` forever, so the screen just spins and teachers can never
+      reach the roster/Save button. Same silent failure mode hit Leave
+      Requests, Teacher/Student Alerts, Queries & Suggestions, Task
+      Assignees, Daily Task Completions, Syllabus Edit Requests, and
+      Teacher Documents. **Attempted to ship the real fix instead of
+      rolling back**: bumped `pubspec.yaml` to `1.0.0+3`, built Teacher +
+      Student release APK and AAB (both `flutter analyze` clean). Blocked
+      distributing them to already-installed devices from that session:
+      (1) `app_versions` (the in-app-update table) turned out to be
+      completely empty and had no per-app/flavor column at all — it had
+      never actually been used; added one (`app` column + CHECK + index,
+      `SUPABASE_APP_VERSIONS_ADD_APP_COLUMN.sql`, `fetchLatestAppVersion`/
+      `checkForAppUpdate` updated to filter by `AppConfig.lockedRole.name`)
+      but couldn't actually upload either APK to the S3 bucket — no usable
+      AWS credentials available in that session (the admin-panel's
+      `.env.local` credentials are scoped to a *different* bucket than the
+      mobile-asset one, and real secret values are correctly inaccessible
+      regardless); (2) tried publishing the Teacher AAB straight to Play
+      Console via `secrets/play-publisher-service-account.json` (Google
+      Play Developer API, Python) — confirmed the service account has API
+      access to `com.satyamstars.teacher` (existing closed-testing/alpha
+      track was already at versionCode 2, hence the bump to 3) but returns
+      403 for `com.satyamstars.student` (never granted access in Play
+      Console's Users & permissions); the Teacher AAB upload itself then
+      failed twice at the network layer (timeout, then a redirect-handling
+      error) — looked like a sandboxed-environment limit on large outbound
+      transfers, not a code bug. **Given neither channel could actually
+      reach installed devices, reverted the DB side instead**
+      (`SUPABASE_ROLLBACK_CAT3_GROUP_A_PENDING_APK.sql`: RLS disabled +
+      full `anon` grants restored on all 9 tables, live-verified) —
+      matches every other not-yet-migrated mobile table's current state.
+      **This is a rollback, not a fix**: the `anon`-direct-access exposure
+      Cat3 Group A was meant to close is open again. Do not re-apply
+      `SUPABASE_CAT3_GROUP_A_RPCS.sql`'s restriction until a build
+      containing its Dart changes (already written, version 1.0.0+3, APK+
+      AAB already built — see `mobile-app/build/app/outputs/`) is
+      confirmed actually installed on real devices: needs (a) a working S3
+      upload path + a populated `app_versions` row per flavor with
+      `force_update` considered, and (b) Play Console access granted to
+      the service account for `com.satyamstars.student`, plus a working
+      network path (or manual upload) to get the Teacher/Student AABs into
+      Play Console. **General process gap this exposes**: nothing in this
+      project's release process currently stops a DB migration that
+      changes a mobile RPC/grant contract from going live before the
+      matching app build is actually distributed — worth a standing rule
+      (e.g. "gate anon-grant-revoking migrations on a confirmed-distributed
+      client release") rather than relying on catching it live each time
+      (this is now the second instance of this exact failure mode, after
+      the `tasks`/`daily_task_targets` regression earlier in the
+      2026-09-19 session).
+      **2026-09-22 update: distribution blocker resolved, restriction
+      RE-APPLIED before adoption confirmed (user's explicit choice).** The
+      user connected Claude in Chrome and manually uploaded both emergency
+      AABs (v1.0.0+3) through the Play Console UI themselves — the file
+      size (~104-113MB) still blocks the browser-automation upload tool,
+      but a manual file-picker selection has no such limit. Teacher app:
+      release 3 (1.0.0, versionCode 3) submitted for Google review,
+      replacing the stale versionCode 2 (Sep 19). Student app: release 2
+      (1.0.0, versionCode 3) submitted for Google review, replacing the
+      stale versionCode 1 (Sep 17) — confirmed via `git diff --cached`
+      that Student's build isn't a no-op despite sharing pubspec version
+      with Teacher (`student_home.dart`/`student_query_page.dart` carry
+      the same guard-pattern fix, plus shared `supabase_service.dart`/
+      `auth_service.dart` carry the Cat3 session-token wiring). The
+      Play Publisher API's 403 on the Student app package was NOT fixed —
+      this was a manual-upload success only; API-based Student uploads
+      still need that Play Console access grant.
+      **Then, same day, the user explicitly chose to re-apply
+      `SUPABASE_CAT3_GROUP_A_RPCS.sql`'s restriction immediately** —
+      *before* Google's review cleared and before any device had actually
+      received versionCode 3. I flagged the tradeoff (every
+      currently-installed device would break again, and `app_versions` has
+      no populated rows yet so there's no force-update signal either) and
+      asked first; the user confirmed "apply the SQL now anyway." Applied
+      as migration `req_sec_002_cat3_group_a_relock_after_v3_submission`
+      (the 2026-09-21 rollback never dropped the original RLS
+      policies/RPC functions, so this only needed to re-enable RLS +
+      revoke `anon` grants) — live-verified all 9 tables back to
+      `rls_enabled: true`, zero `anon` grants. **This means the outage
+      REQ-BUG-018 describes is back in effect right now, by deliberate
+      choice, until each device updates** — not a regression to
+      "catch and fix," don't roll it back again without the user asking.
+      Real remaining gap: `app_versions` still needs `teacher`/`student`
+      rows populated (with `force_update` considered) once review clears,
+      so the app can actually prompt users to update instead of relying on
+      passive Play Store auto-update. Full session detail:
+      `governance/work-log/LOG-2026-09-22.md`.
+- [x] **REQ-BUG-019 — Admin Access Code login for an admin-linked employee
+      landed on the empty Teacher tabs instead of Admin Workspace. FIXED
+      2026-09-22.** User-reported: "if I login to any admin user using
+      admin access key then it logs into admin's teachers profile (which
+      remains empty)." Root cause: `teacher_home.dart`'s `_hasAdminWorkspace`
+      getter depends on `profile['admin_role'] != null`. `teacher_login`
+      resolves and includes `admin_role` (via `admin_users.id =
+      employees.admin_user_id`) — but `_impersonation_employee_json` (used
+      by the Admin Access Code / `redeem_impersonation_code` path) was
+      never updated to do the same when Staff App Unification added this
+      field. So an admin-only (`type = 'non-teaching'`) account impersonated
+      via an access code always fell through to the ordinary, data-less
+      Teacher tabs instead of Admin Workspace replacing them. Confirmed by
+      comparing both live function bodies directly (`pg_proc.prosrc`), not
+      guessing from the Dart side. **Also found and captured, incidental to
+      this fix**: `_impersonation_employee_json`'s `session_token` field
+      (added by a prior session via Supabase MCP) was never fully written
+      into a tracked `.sql` file — `SUPABASE_CAT3_FOUNDATION_MOBILE_
+      SESSIONS.sql` only left a comment pointing at it. New file
+      `mobile-app/SUPABASE_FIX_IMPERSONATION_ADMIN_ROLE.sql` is now the
+      single source of truth for this function, superseding the stale copy
+      in `SUPABASE_IMPERSONATION.sql`. **Verified live**: called the
+      function directly against a real admin-linked employee (EMP003,
+      `senior_admin`) — `admin_role` now correctly present, matching
+      `teacher_login`'s shape exactly. **No Dart change needed — already
+      live in production**, same as the `employees` grant fix above (this
+      is a pure RPC correction, no client code depends on a new field
+      shape that isn't already handled).
 - [x] **REQ-SEC-004 — `teacher_update_profile` has zero identity check.
       FIXED 2026-09-04.** Checked 2026-08-18: NOT fixable without an app
       rebuild, so deferred out of Stage 1. Unlike `teacher_change_password` (which verifies
@@ -639,6 +1018,44 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       bypasses those tables' own grants/RLS regardless), but the underlying
       ~72-table exposure remains exactly as large as REQ-SEC-002 already
       describes it.
+
+      **2026-09-22 update, user-requested: `senior_admin` now has full
+      parity with `management` for Users & Roles management specifically**
+      (create/edit/delete/promote-demote an admin account of ANY tier
+      including `senior_admin`/`management`, and use "Link to employee").
+      This deliberately loosens part of this same REQ-SEC-005 fix — user's
+      explicit choice, confirmed scoped to Users & Roles only (not every
+      other management-only area — Salary, TC approval, Diagnostics
+      download, etc. all stay as they were; diagnostics was separately
+      confirmed to already include `senior_admin`, nothing to change
+      there). Self-protection rules are untouched (still nobody can delete
+      their own account or change their own role — those are safety rails,
+      not tier-hierarchy rules, and weren't part of this ask). Updated:
+      `admin_create_user`, `admin_update_user`, `admin_delete_user`,
+      `admin_set_employee_link` (all applied live via Supabase MCP, no new
+      migration file — SQL captured in this TODO entry's history, matching
+      the same "captured, not necessarily file-tracked" pattern this
+      project already has for a few RPCs). Client-side:
+      `admin-panel/src/app/(dashboard)/settings/UsersRolesTab.js`'s
+      `isManagement` flag (gates the "Link to employee" UI) now also
+      includes `senior_admin` — the create/edit/delete buttons already had
+      no client-side tier gate at all (server-only), so no change was
+      needed there. Verified via 6 rolled-back-transaction tests
+      (role-simulated as the real `senior_admin` account, Rajesh Biswal):
+      creating/demoting/deleting a `management`-tier account now succeeds
+      where it previously raised `Not authorized`; self-promote and
+      self-delete still correctly denied; `admin_set_employee_link` now
+      callable. **Found and flagged separately, NOT part of this fix**:
+      `admin_create_user`'s `INSERT INTO admin_users (name, initials,
+      role)` never supplies `id`, which has no default and is `NOT NULL` —
+      confirmed live this session that creating an account fails for
+      *everyone* (management included), not just `senior_admin` — this is
+      the same pre-existing "create a new admin account has never fully
+      worked" gap flagged in an earlier session (missing the step of
+      linking to a real Supabase Auth login). Not fixed here — out of
+      scope of what was asked, and fixing it needs a decision on how a
+      real login gets created (Supabase Auth invite flow, matching id),
+      not just a one-line change.
 - [x] **REQ-SEC-007 — CLOSED 2026-09-19 (all 3 items fixed).** Role-tier/auth gaps in the same class as REQ-SEC-005,
       not covered by that fix. Found 2026-09-19 during the Staff App
       Unification full Admin Panel feature-inventory audit
@@ -1385,6 +1802,57 @@ password-change flows, PDF generation utilities.
       numbers after re-enrollment to confirm it actually improved before
       considering this closed. EMP013/EMP001/EMP015/EMP021's milder outlier
       shots remain as a smaller optional follow-up, not yet actioned.
+
+### found 2026-09-19 (code review of Cat3 Foundation+Group A, via `ocr delegate` host-agent review)
+- [ ] **REQ-BUG-015 — Pre-existing logged-in sessions (anyone logged in
+      before Cat3 Group A shipped) silently lose their entire notification
+      feed, with no migration path and no error shown.**
+      `auth_service.dart:28`'s `sessionToken` reads
+      `profile.value['session_token']`, a key that only exists on
+      profiles cached *after* today's `teacher_login`/`student_login`
+      change added it. `initSession()` restores an old cached profile as
+      fully logged in anyway — `isLoggedIn` stays true, nothing detects
+      or repairs the missing token. Confirmed via code reading (not yet
+      reproduced against a real pre-existing session on device):
+      `student_home.dart:56` and `teacher_home.dart:72` both gate their
+      *entire* `_loadNotifications` call on `sessionToken != null`, when
+      only one or two of the several RPC calls inside actually need the
+      token (`fetchNotices`/`fetchExams`/the birthday popup don't). Any
+      user with a pre-existing session opens Home to a blank/stale feed
+      with no error. The same guard pattern was applied to ~10 pages this
+      session (leave requests, queries, alerts, daily tasks, edit
+      requests, teacher documents — see REQ-SEC-002 Cat3 Group A above),
+      so the same silent breakage likely repeats across most of them.
+      **Fix direction not yet chosen**: either (a) narrow each guard to
+      wrap only the calls that need the token, or (b) detect a missing
+      token once in `initSession()`/`AuthService` and force a one-time
+      relogin prompt, fixing every call site at the root instead of
+      patching each individually. (b) is probably the smaller, more
+      robust fix given how many call sites (a) would touch.
+
+- [ ] **REQ-BUG-016 — Submitting a query or leave request on a stale
+      (tokenless) session fails completely silently.** Same missing-
+      `session_token` root cause as REQ-BUG-015.
+      `student_query_page.dart:44`'s `submit()` returns early when
+      `sessionToken` is null with no user feedback at all;
+      `teacher_query_page.dart:43` and `teacher_leave_page.dart:219` have
+      the identical pattern. Inconsistent with sibling page
+      `teacher_question_bank_page.dart`, which already shows "Session
+      error - please sign in again." for the same condition — that's the
+      bar these three should be matched to. A user taps Submit, sees
+      nothing happen, and has no way to know their query/leave request
+      was dropped. Confirmed via code reading, not yet device-tested.
+
+- [ ] **REQ-BUG-017 — MINOR: unsafe non-null cast on route arguments in
+      the kiosk staff-enroll list, inconsistent with every other call site
+      touched this session.** `staff_enroll_list_page.dart:30` does
+      `_kioskToken = Get.arguments as String;` with no fallback, whereas
+      every other newly-added token-threading call site in today's diff
+      (e.g. `face_enroll_capture_page.dart`) uses `as String? ?? ''` to
+      degrade gracefully instead. If this route is ever entered without
+      valid arguments (a future deep link, GetX state restoration
+      replaying the route), `initState` throws instead of degrading.
+      Found via code reading, not yet observed in practice.
 
 ## FEATURE INITIATIVES (large, multi-session — own plan file, own mini gate checklist)
 - [ ] **REQ-FEAT-001 — Staff App unification: evolve `mobile-app/` teacher

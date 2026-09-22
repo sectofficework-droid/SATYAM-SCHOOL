@@ -68,14 +68,15 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
     setState(() { _loading = true; _selExam = null; _students = []; });
     final profile    = AuthService.to.profile.value ?? {};
     final employeeId = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final ownClass    = profile['class_name'] as String?;
     _isClassTeacher = ownClass != null && ownClass.isNotEmpty;
 
-    final mine = employeeId != null
-        ? await SupabaseService.fetchExams(createdBy: employeeId)
+    final mine = (employeeId != null && sessionToken != null)
+        ? await SupabaseService.fetchExams(employeeId: employeeId, sessionToken: sessionToken, createdBy: employeeId)
         : <Map<String, dynamic>>[];
-    final classWide = _isClassTeacher
-        ? await SupabaseService.fetchExams(classNames: [ownClass!])
+    final classWide = (_isClassTeacher && employeeId != null && sessionToken != null)
+        ? await SupabaseService.fetchExams(employeeId: employeeId, sessionToken: sessionToken, classNames: [ownClass!])
         : <Map<String, dynamic>>[];
     final maxMarks = await SupabaseService.fetchMonthlyTestMaxMarks();
 
@@ -126,6 +127,8 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
     setState(() { _selExam = exam; _markCtrl.clear(); _students = []; _loadingRoster = true; });
 
     final profile     = AuthService.to.profile.value ?? {};
+    final employeeId  = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final sectionId   = profile['class_teacher_of_section_id']?.toString();
     final myClassName = profile['class_name'] as String?;
     final examClass   = exam['class'] as String?;
@@ -138,7 +141,9 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
         ? await SupabaseService.fetchClassStudents(sectionId)
         : (examClass != null ? await SupabaseService.fetchClassStudentsByName(examClass) : <Map<String, dynamic>>[]);
 
-    final marks = await SupabaseService.fetchExamMarks(exam['id'] as String);
+    final marks = (employeeId != null && sessionToken != null)
+        ? await SupabaseService.fetchExamMarks(employeeId, sessionToken, exam['id'] as String)
+        : <Map<String, dynamic>>[];
     for (final m in marks) {
       final sid = m['student_id'] as String;
       _markCtrl[sid] = TextEditingController(text: '${m['marks_obtained'] ?? ''}');
@@ -268,6 +273,8 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                         ));
                         return;
                       }
+                      final sessionToken = AuthService.to.sessionToken;
+                      if (sessionToken == null) return;
                       await SupabaseService.createExam({
                         'name':       nameCtrl.text.trim(),
                         'class':      selectedClass,
@@ -275,7 +282,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                         'date':       DateFormat('yyyy-MM-dd').format(examDate!),
                         'max_marks':  _monthlyTestMaxMarks,
                         'created_by': profile['id'],
-                      });
+                      }, sessionToken);
                       if (ctx.mounted) Navigator.pop(ctx);
                       _load();
                     },
@@ -306,19 +313,20 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
     setState(() => _saving = true);
     final profile   = AuthService.to.profile.value ?? {};
     final teacherId = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final records   = _students
         .where((s) => _markCtrl[s['id']]?.text.isNotEmpty == true)
         .map((s) {
           final sid = s['id'] as String;
           return {
-            'exam_id':        _selExam!['id'],
             'student_id':     sid,
             'marks_obtained': double.tryParse(_markCtrl[sid]!.text) ?? 0,
-            'entered_by':     teacherId,
           };
         }).toList();
     try {
-      await SupabaseService.saveMarksBatch(records);
+      if (teacherId != null && sessionToken != null) {
+        await SupabaseService.saveMarksBatch(teacherId, sessionToken, _selExam!['id'] as String, records);
+      }
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(

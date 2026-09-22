@@ -22,10 +22,11 @@ class _TeacherTasksPageState extends State<TeacherTasksPage> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final profile    = AuthService.to.profile.value ?? {};
-    final employeeId = profile['id'] as String?;
-    final list = employeeId != null
-        ? await SupabaseService.fetchTeacherTasks(employeeId)
+    final profile      = AuthService.to.profile.value ?? {};
+    final employeeId   = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
+    final list = employeeId != null && sessionToken != null
+        ? await SupabaseService.fetchTeacherTasks(employeeId, sessionToken)
         : <Map<String, dynamic>>[];
     // Sort by deadline (soonest first), tasks without a deadline last.
     list.sort((a, b) {
@@ -43,8 +44,9 @@ class _TeacherTasksPageState extends State<TeacherTasksPage> {
   // so a status update is addressed by that pair.
   Future<void> _updateStatus(String taskId, String newStatus) async {
     final employeeId = _employeeId;
-    if (employeeId == null) return;
-    await SupabaseService.updateTaskAssigneeStatus(taskId, employeeId, newStatus);
+    final sessionToken = AuthService.to.sessionToken;
+    if (employeeId == null || sessionToken == null) return;
+    await SupabaseService.updateTaskAssigneeStatus(taskId, employeeId, sessionToken, newStatus);
     if (!mounted) return;
     setState(() {
       final idx = _assignments.indexWhere((a) => a['task_id'] == taskId);

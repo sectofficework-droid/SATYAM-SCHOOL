@@ -107,9 +107,14 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
   Future<void> _selectSubject(String subject) async {
     setState(() { _selectedSubject = subject; _step = 'entry'; _loadingRoster = true; _students = []; _markCtrl.clear(); });
     final examId = _selectedExam!['id'] as String;
+    final profile = AuthService.to.profile.value ?? {};
+    final employeeId = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final results = await Future.wait([
       SupabaseService.fetchClassStudentsByName(_selectedClass!),
-      SupabaseService.fetchOfficialExamMarks(examId, _selectedClass!, subject),
+      (employeeId != null && sessionToken != null)
+          ? SupabaseService.fetchOfficialExamMarks(employeeId, sessionToken, examId, _selectedClass!, subject)
+          : Future.value(<Map<String, dynamic>>[]),
       SupabaseService.fetchExamSubjectMaxMarks(examId, _selectedClass!, subject),
     ]);
     final students   = results[0] as List<Map<String, dynamic>>;
@@ -129,6 +134,7 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
     setState(() => _saving = true);
     final profile   = AuthService.to.profile.value ?? {};
     final teacherId = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final records = _students
         .where((s) => _markCtrl[s['id']]?.text.isNotEmpty == true)
         .map((s) {
@@ -139,10 +145,11 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
             'class_name':     _selectedClass,
             'subject_name':   _selectedSubject,
             'marks_obtained': double.tryParse(_markCtrl[sid]!.text) ?? 0,
-            'entered_by':     teacherId,
           };
         }).toList();
-    await SupabaseService.saveOfficialMarksBatch(records);
+    if (teacherId != null && sessionToken != null) {
+      await SupabaseService.saveOfficialMarksBatch(teacherId, sessionToken, records);
+    }
     if (mounted) {
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -163,10 +170,15 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
     setState(() => _loadingOverview = true);
     final className = _ownClassName!;
     final examId    = _selectedExam!['id'] as String;
+    final profile = AuthService.to.profile.value ?? {};
+    final employeeId = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final results = await Future.wait([
       SupabaseService.fetchClassSubjects(className),
       SupabaseService.fetchClassStudentsByName(className),
-      SupabaseService.fetchOfficialExamMarksForClass(examId, className),
+      (employeeId != null && sessionToken != null)
+          ? SupabaseService.fetchOfficialExamMarksForClass(employeeId, sessionToken, examId, className)
+          : Future.value(<Map<String, dynamic>>[]),
     ]);
     if (mounted) {
       setState(() {

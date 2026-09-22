@@ -19,17 +19,22 @@ class StaffEnrollListPage extends StatefulWidget {
 class _StaffEnrollListPageState extends State<StaffEnrollListPage> {
   List<Map<String, dynamic>>? _staff;
   String? _error;
+  // REQ-SEC-002 fast-track (2026-09-19): the kiosk-admin session token
+  // minted by the PIN dialog (kiosk_home_page.dart), passed via GetX route
+  // arguments - required by every face-embedding call from here on.
+  late final String _kioskToken;
 
   @override
   void initState() {
     super.initState();
+    _kioskToken = Get.arguments as String;
     _load();
   }
 
   Future<void> _load() async {
     setState(() { _error = null; _staff = null; });
     try {
-      final staff = await SupabaseService.fetchStaffForEnrollment();
+      final staff = await SupabaseService.fetchStaffForEnrollment(_kioskToken);
       if (!mounted) return;
       setState(() => _staff = staff);
     } catch (e, st) {
@@ -80,16 +85,17 @@ class _StaffEnrollListPageState extends State<StaffEnrollListPage> {
     final unregistered = _staff!.where((s) => s['registered'] == false).toList();
     final registered   = _staff!.where((s) => s['registered'] == true).toList();
     return TabBarView(children: [
-      _StaffList(staff: unregistered, emptyText: 'Every active staff member has a face registered.'),
-      _StaffList(staff: registered, emptyText: 'No one has been enrolled yet.', onDeleted: _load),
+      _StaffList(staff: unregistered, emptyText: 'Every active staff member has a face registered.', kioskToken: _kioskToken),
+      _StaffList(staff: registered, emptyText: 'No one has been enrolled yet.', onDeleted: _load, kioskToken: _kioskToken),
     ]);
   }
 }
 
 class _StaffList extends StatelessWidget {
-  const _StaffList({required this.staff, required this.emptyText, this.onDeleted});
+  const _StaffList({required this.staff, required this.emptyText, required this.kioskToken, this.onDeleted});
   final List<Map<String, dynamic>> staff;
   final String emptyText;
+  final String kioskToken;
   final VoidCallback? onDeleted;
 
   Future<void> _confirmDelete(BuildContext context, String id, String name) async {
@@ -108,7 +114,7 @@ class _StaffList extends StatelessWidget {
       ),
     );
     if (confirmed != true) return;
-    await SupabaseService.deleteFaceEmbedding(id);
+    await SupabaseService.deleteFaceEmbedding(kioskToken, id);
     onDeleted?.call();
   }
 
@@ -135,8 +141,9 @@ class _StaffList extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(14),
             onTap: () => Get.toNamed(Routes.kioskEnrollCapture, arguments: {
-              'id':   s['id'] as String,
-              'name': s['name'] as String? ?? 'Staff',
+              'id':    s['id'] as String,
+              'name':  s['name'] as String? ?? 'Staff',
+              'token': kioskToken,
             }),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),

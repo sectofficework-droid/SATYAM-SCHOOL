@@ -28,7 +28,10 @@ class _TeacherQueryPageState extends State<TeacherQueryPage> {
     setState(() => _loading = true);
     final profile = AuthService.to.profile.value ?? {};
     final id = profile['id'] as String?;
-    final mine = id != null ? await SupabaseService.fetchMyQueries(id) : <Map<String, dynamic>>[];
+    final sessionToken = AuthService.to.sessionToken;
+    final mine = id != null && sessionToken != null
+        ? await SupabaseService.fetchMyQueries('teacher', id, sessionToken)
+        : <Map<String, dynamic>>[];
     if (mounted) setState(() { _mine = mine; _loading = false; });
   }
 
@@ -36,6 +39,8 @@ class _TeacherQueryPageState extends State<TeacherQueryPage> {
     final message = _msgCtrl.text.trim();
     if (message.isEmpty) return;
     final profile = AuthService.to.profile.value ?? {};
+    final sessionToken = AuthService.to.sessionToken;
+    if (sessionToken == null) return;
     setState(() => _submitting = true);
     try {
       await SupabaseService.submitQuery({
@@ -44,7 +49,7 @@ class _TeacherQueryPageState extends State<TeacherQueryPage> {
         'user_name':  profile['name'] ?? '',
         'class_name': profile['class_name'],
         'message':    message,
-      });
+      }, sessionToken);
       _msgCtrl.clear();
       await _load();
       if (mounted) {

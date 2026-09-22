@@ -43,6 +43,7 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
   bool _loading = true;
 
   String? get _employeeId => (AuthService.to.profile.value ?? {})['id'] as String?;
+  String? get _sessionToken => AuthService.to.sessionToken;
 
   @override
   void initState() { super.initState(); _load(); }
@@ -50,8 +51,9 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
   Future<void> _load() async {
     setState(() => _loading = true);
     final employeeId = _employeeId;
-    final docs = employeeId != null
-        ? await SupabaseService.fetchTeacherDocuments(teacherId: employeeId, section: _sections[_sectionIndex].key)
+    final sessionToken = _sessionToken;
+    final docs = employeeId != null && sessionToken != null
+        ? await SupabaseService.fetchTeacherDocuments(teacherId: employeeId, sessionToken: sessionToken, section: _sections[_sectionIndex].key)
         : <Map<String, dynamic>>[];
     if (mounted) setState(() { _documents = docs; _loading = false; });
   }
@@ -82,7 +84,10 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
       ),
     );
     if (confirm != true) return;
-    await SupabaseService.deleteTeacherDocument(doc['id'] as String);
+    final employeeId = _employeeId;
+    final sessionToken = _sessionToken;
+    if (employeeId == null || sessionToken == null) return;
+    await SupabaseService.deleteTeacherDocument(doc['id'] as String, employeeId, sessionToken);
     _load();
   }
 
@@ -207,6 +212,7 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
     final section = _sections[_sectionIndex];
     final profile = AuthService.to.profile.value ?? {};
     final employeeId = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final teacherName = profile['name'] as String?;
     final titleCtrl = TextEditingController();
 
@@ -255,7 +261,7 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
             if ((selectedSubject ?? '').trim().isEmpty) { setS(() => error = 'Please select a subject.'); return; }
             if (titleCtrl.text.trim().isEmpty) { setS(() => error = 'Please enter a ${section.fieldLabel.toLowerCase()}.'); return; }
             if (pickedFile == null) { setS(() => error = 'Please pick a file to upload.'); return; }
-            if (employeeId == null || selectedAcademicYear == null) { setS(() => error = 'Session error - please sign in again.'); return; }
+            if (employeeId == null || sessionToken == null || selectedAcademicYear == null) { setS(() => error = 'Session error - please sign in again.'); return; }
 
             setS(() { uploading = true; error = null; });
             try {
@@ -275,7 +281,7 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
                 'file_key': key,
                 'file_name': pickedFile!.name,
                 'file_size': compressed.length,
-              });
+              }, sessionToken);
               if (ctx.mounted) Navigator.pop(ctx);
               _load();
             } catch (e) {

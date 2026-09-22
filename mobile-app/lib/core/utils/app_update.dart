@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../app_config.dart';
 import '../theme/app_theme.dart';
 import '../services/supabase_service.dart';
 
@@ -15,7 +16,7 @@ const _s3Base = 'https://satyam-stars-international-school.s3.ap-south-1.amazona
 // notice popup's shouldShowNoticePopupToday) so it doesn't nag on every
 // launch; force_update rows skip that entirely and can't be dismissed.
 Future<void> checkForAppUpdate(BuildContext context) async {
-  final latest = await SupabaseService.fetchLatestAppVersion();
+  final latest = await SupabaseService.fetchLatestAppVersion(AppConfig.lockedRole.name);
   if (latest == null) return;
 
   final info = await PackageInfo.fromPlatform();

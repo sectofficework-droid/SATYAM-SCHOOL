@@ -66,9 +66,10 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
   }
 
   Future<void> _loadNotifications() async {
-    final profile    = AuthService.to.profile.value ?? {};
-    final employeeId = profile['id'] as String?;
-    if (employeeId == null) return;
+    final profile     = AuthService.to.profile.value ?? {};
+    final employeeId  = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
+    if (employeeId == null || sessionToken == null) return;
     _userKey = 'teacher_$employeeId';
     final ownClass = profile['class_name'] as String?;
 
@@ -79,15 +80,15 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
     final notices = await SupabaseService.fetchNotices(
       audiences: const ['Everyone', 'All Staff', 'Management'],
     );
-    final taskAssignments = await SupabaseService.fetchTeacherTasks(employeeId);
-    final alerts = await SupabaseService.fetchTeacherAlerts(employeeId);
+    final taskAssignments = await SupabaseService.fetchTeacherTasks(employeeId, sessionToken);
+    final alerts = await SupabaseService.fetchTeacherAlerts(employeeId, sessionToken);
 
     // Same exam sets the Monthly Test tab itself shows for this teacher -
     // mine plus (if a class teacher) whatever's been set for their own
     // class, de-duplicated since a teacher can appear in both.
-    final mineExams = await SupabaseService.fetchExams(createdBy: employeeId);
+    final mineExams = await SupabaseService.fetchExams(employeeId: employeeId, sessionToken: sessionToken, createdBy: employeeId);
     final classExams = (ownClass != null && ownClass.isNotEmpty)
-        ? await SupabaseService.fetchExams(classNames: [ownClass])
+        ? await SupabaseService.fetchExams(employeeId: employeeId, sessionToken: sessionToken, classNames: [ownClass])
         : <Map<String, dynamic>>[];
     final examsById = <String, Map<String, dynamic>>{};
     for (final e in [...mineExams, ...classExams]) { examsById[e['id'] as String] = e; }

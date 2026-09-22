@@ -21,10 +21,11 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final profile    = AuthService.to.profile.value ?? {};
-    final employeeId = profile['id'] as String?;
-    final requests = employeeId != null
-        ? await SupabaseService.fetchMyLeaveRequests(employeeId)
+    final profile      = AuthService.to.profile.value ?? {};
+    final employeeId   = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
+    final requests = employeeId != null && sessionToken != null
+        ? await SupabaseService.fetchMyLeaveRequests(employeeId, sessionToken)
         : <Map<String, dynamic>>[];
     if (mounted) setState(() { _requests = requests; _loading = false; });
   }
@@ -36,6 +37,7 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
 
     final profile      = AuthService.to.profile.value ?? {};
     final employeeId   = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final teacherName  = profile['name'] as String?;
     final academicYear = await SupabaseService.fetchCurrentAcademicYearLabel();
 
@@ -214,9 +216,10 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
                         content: Text('Please enter a reason'), behavior: SnackBarBehavior.floating));
                       return;
                     }
-                    if (employeeId == null) return;
+                    if (employeeId == null || sessionToken == null) return;
                     await SupabaseService.submitLeaveRequest(
                       employeeId: employeeId,
+                      sessionToken: sessionToken,
                       fromDate: DateFormat('yyyy-MM-dd').format(fromDate!),
                       toDate: DateFormat('yyyy-MM-dd').format(toDate!),
                       reason: reasonCtrl.text.trim(),

@@ -33,15 +33,15 @@ class _StudentMarksPageState extends State<StudentMarksPage> {
 
   Future<void> _load() async {
     final profile   = AuthService.to.profile.value ?? {};
-    final className = profile['class_name'] as String? ?? '';
     final studentId = profile['id'] as String? ?? '';
+    final sessionToken = AuthService.to.sessionToken;
+    if (sessionToken == null) { if (mounted) setState(() => _loading = false); return; }
 
-    final exams = await SupabaseService.fetchExams(className: className);
+    final exams = await SupabaseService.fetchExamsForStudent(studentId, sessionToken);
     // Collect all marks for this student across all exams
     final List<Map<String, dynamic>> allMarks = [];
     for (final e in exams) {
-      final marks = await SupabaseService.fetchExamMarks(e['id'] as String);
-      final myMark = marks.where((m) => m['student_id'] == studentId).toList();
+      final myMark = await SupabaseService.fetchMyExamMark(studentId, sessionToken, e['id'] as String);
       if (myMark.isNotEmpty) {
         allMarks.add({...e, 'obtained': myMark.first['marks_obtained']});
       } else {

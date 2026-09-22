@@ -7,28 +7,31 @@ import '../../../core/services/kiosk_pin_service.dart';
 // set centrally from the admin panel (Settings -> Kiosk), not on this
 // device - if it hasn't been configured yet, this shows a message pointing
 // there instead of the old "set it yourself" first-run flow.
-Future<bool> showAdminPinGate(BuildContext context) async {
+// REQ-SEC-002 fast-track (2026-09-19): returns the short-lived kiosk-admin
+// session token minted on a correct PIN (null on cancel/wrong PIN/locked
+// out) instead of a bare bool - the caller must thread this token through
+// to every face-embedding read/write from here on.
+Future<String?> showAdminPinGate(BuildContext context) async {
   bool configured;
   try {
     configured = await KioskPinService.isConfigured();
   } catch (_) {
-    if (!context.mounted) return false;
+    if (!context.mounted) return null;
     await _showInfoDialog(context, 'Connection Error',
         'Could not reach the server to check the PIN. Check the kiosk\'s internet connection and try again.');
-    return false;
+    return null;
   }
-  if (!context.mounted) return false;
+  if (!context.mounted) return null;
   if (!configured) {
     await _showInfoDialog(context, 'PIN Not Configured',
         'Ask your admin to set the Kiosk PIN from the admin panel under Settings → Kiosk before enrolling staff faces here.');
-    return false;
+    return null;
   }
-  final result = await showDialog<bool>(
+  return showDialog<String>(
     context: context,
     barrierDismissible: true,
     builder: (_) => const _AdminPinDialog(),
   );
-  return result ?? false;
 }
 
 Future<void> _showInfoDialog(BuildContext context, String title, String message) => showDialog<void>(
@@ -64,20 +67,20 @@ class _AdminPinDialogState extends State<_AdminPinDialog> {
       return;
     }
     setState(() { _busy = true; _error = null; });
-    bool ok;
+    String? token;
     try {
-      ok = await KioskPinService.verifyPin(pin);
+      token = await KioskPinService.verifyPin(pin);
     } catch (e) {
       if (!mounted) return;
       setState(() { _busy = false; _error = 'Could not verify PIN - check your connection.'; });
       return;
     }
     if (!mounted) return;
-    if (!ok) {
+    if (token == null) {
       setState(() { _busy = false; _error = 'Incorrect PIN'; _pinCtrl.clear(); });
       return;
     }
-    Navigator.of(context).pop(true);
+    Navigator.of(context).pop(token);
   }
 
   @override
@@ -99,7 +102,7 @@ class _AdminPinDialogState extends State<_AdminPinDialog> {
       ],
     ]),
     actions: [
-      TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancel')),
+      TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
       ElevatedButton(
         onPressed: _busy ? null : _submit,
         child: _busy

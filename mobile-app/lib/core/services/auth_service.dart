@@ -19,6 +19,14 @@ class AuthService extends GetxService {
   final profile    = Rx<Map<String, dynamic>?>(null);
   final isLoggedIn = false.obs;
 
+  // REQ-SEC-002 Category 3 (2026-09-19): the session token minted by
+  // teacher_login/student_login/redeem_impersonation_code/
+  // get_sibling_profile (all of which flow through _saveSession below) -
+  // required by every session-gated RPC from here on. Cached as part of
+  // the same profile blob, so it survives an app restart the same way the
+  // rest of the profile already does.
+  String? get sessionToken => profile.value?['session_token'] as String?;
+
   // Sibling profile switcher (Student app only) - real enrolled students an
   // admin has linked to the current one via student_siblings.sibling_student_id
   // (see SUPABASE_SIBLING_SWITCHER.sql). Cached summaries for the Home
@@ -178,6 +186,15 @@ class AuthService extends GetxService {
   }
 
   Future<void> signOut() async {
+    // Best-effort server-side revocation - a network failure here shouldn't
+    // block the local sign-out (the token still expires on its own within
+    // 7 days either way).
+    final token = sessionToken;
+    if (token != null) {
+      try {
+        await SupabaseService.client.rpc('revoke_mobile_session', params: {'p_token': token});
+      } catch (_) {}
+    }
     await _storage.delete(key: 'user_role');
     await _storage.delete(key: 'user_profile');
     profile.value    = null;

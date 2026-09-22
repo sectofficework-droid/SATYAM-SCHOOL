@@ -28,7 +28,10 @@ class _StudentQueryPageState extends State<StudentQueryPage> {
     setState(() => _loading = true);
     final profile = AuthService.to.profile.value ?? {};
     final id = profile['id'] as String?;
-    final mine = id != null ? await SupabaseService.fetchMyQueries(id) : <Map<String, dynamic>>[];
+    final sessionToken = AuthService.to.sessionToken;
+    final mine = id != null && sessionToken != null
+        ? await SupabaseService.fetchMyQueries('student', id, sessionToken)
+        : <Map<String, dynamic>>[];
     if (mounted) setState(() { _mine = mine; _loading = false; });
   }
 
@@ -37,6 +40,8 @@ class _StudentQueryPageState extends State<StudentQueryPage> {
     if (message.isEmpty) return;
     final profile  = AuthService.to.profile.value ?? {};
     final fullName = '${profile['first_name'] ?? ''} ${profile['last_name'] ?? ''}'.trim();
+    final sessionToken = AuthService.to.sessionToken;
+    if (sessionToken == null) return;
     setState(() => _submitting = true);
     try {
       await SupabaseService.submitQuery({
@@ -45,7 +50,7 @@ class _StudentQueryPageState extends State<StudentQueryPage> {
         'user_name':  fullName,
         'class_name': profile['class_name'],
         'message':    message,
-      });
+      }, sessionToken);
       _msgCtrl.clear();
       await _load();
       if (mounted) {

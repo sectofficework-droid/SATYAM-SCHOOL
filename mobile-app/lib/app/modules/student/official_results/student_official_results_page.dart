@@ -33,6 +33,7 @@ class _StudentOfficialResultsPageState extends State<StudentOfficialResultsPage>
     final profile   = AuthService.to.profile.value ?? {};
     final className = profile['class_name'] as String? ?? '';
     final studentId = profile['id'] as String? ?? '';
+    final sessionToken = AuthService.to.sessionToken;
 
     final exams    = await SupabaseService.fetchOfficialExams();
     final subjects = className.isNotEmpty ? await SupabaseService.fetchClassSubjects(className) : <String>[];
@@ -42,8 +43,11 @@ class _StudentOfficialResultsPageState extends State<StudentOfficialResultsPage>
       if (_isLocked(exam)) { results.add({...exam, 'locked': true, 'subjectRows': <Map<String, dynamic>>[]}); continue; }
 
       final examId = exam['id'] as String;
-      final marksRows = className.isNotEmpty
-          ? await SupabaseService.fetchOfficialExamMarksForClass(examId, className)
+      // Own marks only, across every subject - fetch_official_exam_marks_for_student
+      // resolves this server-side rather than fetching the whole class and
+      // filtering client-side (see REQ-SEC-002 Category 3 Group C notes).
+      final marksRows = sessionToken != null
+          ? await SupabaseService.fetchOfficialExamMarksForStudent(studentId, sessionToken, examId)
           : <Map<String, dynamic>>[];
       final maxBySubject = className.isNotEmpty
           ? await SupabaseService.fetchExamSubjectConfigForClass(examId, className)
@@ -51,7 +55,7 @@ class _StudentOfficialResultsPageState extends State<StudentOfficialResultsPage>
 
       final myMarks = <String, double>{};
       for (final m in marksRows) {
-        if (m['student_id'] == studentId && m['marks_obtained'] != null) {
+        if (m['marks_obtained'] != null) {
           myMarks[m['subject_name'] as String] = (m['marks_obtained'] as num).toDouble();
         }
       }

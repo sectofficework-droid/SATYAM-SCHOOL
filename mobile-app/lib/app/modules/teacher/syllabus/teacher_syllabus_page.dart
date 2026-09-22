@@ -109,26 +109,29 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     setState(() => _loading = true);
     final profile    = AuthService.to.profile.value ?? {};
     final employeeId = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final ownClass    = profile['class_name'] as String?;
     _employeeId = employeeId;
     _isClassTeacher = ownClass != null && ownClass.isNotEmpty;
 
-    final mine = employeeId != null
-        ? await SupabaseService.fetchSyllabus(teacherId: employeeId)
+    final mine = (employeeId != null && sessionToken != null)
+        ? await SupabaseService.fetchSyllabus(employeeId: employeeId, sessionToken: sessionToken, teacherId: employeeId)
         : <Map<String, dynamic>>[];
-    final classWide = _isClassTeacher
-        ? await SupabaseService.fetchSyllabus(classNames: [ownClass!])
+    final classWide = (_isClassTeacher && employeeId != null && sessionToken != null)
+        ? await SupabaseService.fetchSyllabus(employeeId: employeeId, sessionToken: sessionToken, classNames: [ownClass!])
         : <Map<String, dynamic>>[];
 
     final allIds = {...mine.map((c) => c['id'] as String), ...classWide.map((c) => c['id'] as String)}.toList();
-    final subtopics = await SupabaseService.fetchSubtopics(allIds);
+    final subtopics = (employeeId != null && sessionToken != null)
+        ? await SupabaseService.fetchSubtopics(employeeId, sessionToken, allIds)
+        : <Map<String, dynamic>>[];
     final subMap = <String, List<Map<String, dynamic>>>{};
     for (final s in subtopics) {
       subMap.putIfAbsent(s['chapter_id'] as String, () => []).add(s);
     }
 
-    final requests = employeeId != null
-        ? await SupabaseService.fetchMySyllabusEditRequests(employeeId)
+    final requests = employeeId != null && sessionToken != null
+        ? await SupabaseService.fetchMySyllabusEditRequests(employeeId, sessionToken)
         : <Map<String, dynamic>>[];
 
     if (mounted) {
@@ -222,17 +225,23 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
   Future<void> _cycleStatus(Map<String, dynamic> chapter) async {
     if (chapter['teacher_id'] != _employeeId) return; // view-only for others' chapters
     if ((_subtopicsByChapter[chapter['id']] ?? const []).isNotEmpty) return; // derived, not directly cycled
+    final employeeId = _employeeId;
+    final sessionToken = AuthService.to.sessionToken;
+    if (employeeId == null || sessionToken == null) return;
     final current = _statuses.indexOf(chapter['status'] ?? 'Not Started');
     final next = _statuses[(current + 1) % _statuses.length];
     setState(() => chapter['status'] = next);
-    await SupabaseService.updateSyllabusStatus(chapter['id'] as String, next);
+    await SupabaseService.updateSyllabusStatus(chapter['id'] as String, next, employeeId, sessionToken);
   }
 
   Future<void> _cycleSubtopicStatus(Map<String, dynamic> subtopic) async {
+    final employeeId = _employeeId;
+    final sessionToken = AuthService.to.sessionToken;
+    if (employeeId == null || sessionToken == null) return;
     final current = _statuses.indexOf(subtopic['status'] ?? 'Not Started');
     final next = _statuses[(current + 1) % _statuses.length];
     setState(() => subtopic['status'] = next);
-    await SupabaseService.updateSubtopicStatus(subtopic['id'] as String, next);
+    await SupabaseService.updateSubtopicStatus(subtopic['id'] as String, next, employeeId, sessionToken);
   }
 
   Future<void> _deleteChapter(Map<String, dynamic> chapter) async {
@@ -255,7 +264,10 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
       ),
     );
     if (confirm != true) return;
-    await SupabaseService.deleteSyllabusChapter(chapter['id'] as String);
+    final employeeId = _employeeId;
+    final sessionToken = AuthService.to.sessionToken;
+    if (employeeId == null || sessionToken == null) return;
+    await SupabaseService.deleteSyllabusChapter(chapter['id'] as String, employeeId, sessionToken);
     _load();
   }
 
@@ -282,8 +294,11 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
       ),
     );
     if (newName == null || newName.isEmpty || newName == chapter['chapter']) return;
+    final employeeId = _employeeId;
+    final sessionToken = AuthService.to.sessionToken;
+    if (employeeId == null || sessionToken == null) return;
     setState(() => chapter['chapter'] = newName);
-    await SupabaseService.updateSyllabusChapterName(chapter['id'] as String, newName);
+    await SupabaseService.updateSyllabusChapterName(chapter['id'] as String, newName, employeeId, sessionToken);
   }
 
   Future<void> _deleteSubtopic(Map<String, dynamic> subtopic) async {
@@ -304,7 +319,10 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
       ),
     );
     if (confirm != true) return;
-    await SupabaseService.deleteSubtopic(subtopic['id'] as String);
+    final employeeId = _employeeId;
+    final sessionToken = AuthService.to.sessionToken;
+    if (employeeId == null || sessionToken == null) return;
+    await SupabaseService.deleteSubtopic(subtopic['id'] as String, employeeId, sessionToken);
     _load();
   }
 
@@ -328,13 +346,16 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
         ],
       ),
     );
-    if (confirm != true || _employeeId == null) return;
-    await SupabaseService.lockSyllabus(teacherId: _employeeId!, className: className, subject: subject);
+    final sessionToken = AuthService.to.sessionToken;
+    if (confirm != true || _employeeId == null || sessionToken == null) return;
+    await SupabaseService.lockSyllabus(teacherId: _employeeId!, sessionToken: sessionToken, className: className, subject: subject);
     _load();
   }
 
   Future<void> _saveAndLock(Map<String, dynamic> request) async {
-    await SupabaseService.closeSyllabusEditWindow(request['id'] as String);
+    final sessionToken = AuthService.to.sessionToken;
+    if (_employeeId == null || sessionToken == null) return;
+    await SupabaseService.closeSyllabusEditWindow(request['id'] as String, _employeeId!, sessionToken);
     _load();
   }
 
@@ -399,9 +420,11 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
       ),
     );
 
-    if (result != true || _employeeId == null) return;
+    final sessionToken = AuthService.to.sessionToken;
+    if (result != true || _employeeId == null || sessionToken == null) return;
     await SupabaseService.submitSyllabusEditRequest(
       teacherId: _employeeId!,
+      sessionToken: sessionToken,
       className: className,
       subject: subject,
       reason: reasonCtrl.text.trim(),
@@ -447,12 +470,15 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                   ));
                   return;
                 }
+                final employeeId = _employeeId;
+                final sessionToken = AuthService.to.sessionToken;
+                if (employeeId == null || sessionToken == null) return;
                 await SupabaseService.createSubtopics(names.asMap().entries.map((e) => {
                   'chapter_id': chapter['id'],
                   'name':       e.value,
                   'status':     'Not Started',
                   'sort_order': e.key,
-                }).toList());
+                }).toList(), employeeId, sessionToken);
                 if (ctx.mounted) Navigator.pop(ctx);
                 _load();
               },
@@ -641,10 +667,12 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                         ));
                         return;
                       }
+                      final sessionToken = AuthService.to.sessionToken;
+                      if (sessionToken == null) return;
                       var sortOrder = 0;
                       if (replaceExisting) {
                         await SupabaseService.deleteSyllabusForSubject(
-                          teacherId: profile['id'] as String, className: selectedClass, subject: selectedSubject!.trim(),
+                          teacherId: profile['id'] as String, sessionToken: sessionToken, className: selectedClass, subject: selectedSubject!.trim(),
                         );
                       } else {
                         sortOrder = existingChapters.length;
@@ -656,7 +684,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                         'chapter':    name,
                         'status':     'Not Started',
                         'sort_order': sortOrder++,
-                      }).toList());
+                      }).toList(), sessionToken);
                       if (ctx.mounted) Navigator.pop(ctx);
                       _load();
                     },
@@ -774,11 +802,13 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
           Future<void> confirmImport() async {
             setS(() { importing = true; importError = null; });
             try {
+              final sessionToken = AuthService.to.sessionToken;
+              if (sessionToken == null) { setS(() { importError = 'Session expired - please log in again.'; importing = false; }); return; }
               final valid = validRows.toList()..sort((a, b) => a.no!.compareTo(b.no!));
               var sortOrder = 0;
               if (replaceExisting) {
                 await SupabaseService.deleteSyllabusForSubject(
-                  teacherId: profile['id'] as String, className: selectedClass, subject: selectedSubject!,
+                  teacherId: profile['id'] as String, sessionToken: sessionToken, className: selectedClass, subject: selectedSubject!,
                 );
               } else {
                 sortOrder = existingChapters.length;
@@ -790,7 +820,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                 'chapter':    r.name,
                 'status':     'Not Started',
                 'sort_order': sortOrder++,
-              }).toList());
+              }).toList(), sessionToken);
               if (ctx.mounted) Navigator.pop(ctx);
               _load();
             } catch (e) {

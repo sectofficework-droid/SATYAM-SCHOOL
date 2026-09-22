@@ -27,8 +27,11 @@ class _StudentHomeworkPageState extends State<StudentHomeworkPage> {
 
   Future<void> _load() async {
     final profile   = AuthService.to.profile.value ?? {};
-    final className = profile['class_name'] as String?;
-    final hw        = await SupabaseService.fetchHomework(className: className);
+    final studentId = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
+    final hw = (studentId != null && sessionToken != null)
+        ? await SupabaseService.fetchHomeworkForStudent(studentId, sessionToken)
+        : <Map<String, dynamic>>[];
     setState(() { _list = hw; _loading = false; });
   }
 

@@ -73,11 +73,14 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
   Future<void> _load() async {
     setState(() => _loading = true);
     final profile   = AuthService.to.profile.value ?? {};
-    final className = profile['class_name'] as String?;
-    final chapters = (className != null && className.isNotEmpty)
-        ? await SupabaseService.fetchSyllabus(className: className)
+    final studentId = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
+    final chapters = (studentId != null && sessionToken != null)
+        ? await SupabaseService.fetchSyllabusForStudent(studentId, sessionToken)
         : <Map<String, dynamic>>[];
-    final subtopics = await SupabaseService.fetchSubtopics(chapters.map((c) => c['id'] as String).toList());
+    final subtopics = (studentId != null && sessionToken != null)
+        ? await SupabaseService.fetchSubtopicsForStudent(studentId, sessionToken, chapters.map((c) => c['id'] as String).toList())
+        : <Map<String, dynamic>>[];
     final subMap = <String, List<Map<String, dynamic>>>{};
     for (final s in subtopics) {
       subMap.putIfAbsent(s['chapter_id'] as String, () => []).add(s);

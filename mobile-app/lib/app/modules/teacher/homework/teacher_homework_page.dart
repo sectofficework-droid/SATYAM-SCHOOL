@@ -46,14 +46,15 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
     setState(() => _loading = true);
     final profile    = AuthService.to.profile.value ?? {};
     final employeeId = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final ownClass    = profile['class_name'] as String?;
     _isClassTeacher = ownClass != null && ownClass.isNotEmpty;
 
-    final mine = employeeId != null
-        ? await SupabaseService.fetchHomework(createdBy: employeeId)
+    final mine = (employeeId != null && sessionToken != null)
+        ? await SupabaseService.fetchHomework(employeeId: employeeId, sessionToken: sessionToken, createdBy: employeeId)
         : <Map<String, dynamic>>[];
-    final classWide = _isClassTeacher
-        ? await SupabaseService.fetchHomework(classNames: [ownClass!])
+    final classWide = (_isClassTeacher && employeeId != null && sessionToken != null)
+        ? await SupabaseService.fetchHomework(employeeId: employeeId, sessionToken: sessionToken, classNames: [ownClass!])
         : <Map<String, dynamic>>[];
 
     final teacherName = profile['name'] as String?;
@@ -239,13 +240,15 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                       ));
                       return;
                     }
+                    final sessionToken = AuthService.to.sessionToken;
+                    if (sessionToken == null) return;
                     await SupabaseService.createHomework({
                       'class':       selectedClass,
                       'subject':     selectedSubject,
                       'description': descCtrl.text.trim(),
                       'due_date':    DateFormat('yyyy-MM-dd').format(dueDate!),
                       'created_by':  profile['id'],
-                    });
+                    }, sessionToken);
                     if (ctx.mounted) Navigator.pop(ctx);
                     _load();
                   },

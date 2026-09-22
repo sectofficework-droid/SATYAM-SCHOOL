@@ -15,5 +15,8 @@ class KioskPinService {
     return settings['pinIsSet'] as bool? ?? false;
   }
 
-  static Future<bool> verifyPin(String pin) => SupabaseService.verifyKioskAdminPin(pin);
+  // REQ-SEC-002 fast-track (2026-09-19): returns the kiosk-admin session
+  // token on success (null on failure) instead of a bare bool - see
+  // SupabaseService.verifyKioskAdminPin.
+  static Future<String?> verifyPin(String pin) => SupabaseService.verifyKioskAdminPin(pin);
 }

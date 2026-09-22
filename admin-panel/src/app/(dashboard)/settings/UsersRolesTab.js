@@ -73,12 +73,15 @@ export default function UsersRolesTab() {
   const authUser = useStore(s => s.authUser);
   // Linking an admin_users row to an employees row is what makes the Staff
   // App's mobile Admin Workspace reachable for that person (Staff App
-  // Unification, STAFF-APP-DESIGN-FIXED.md §1) - management-only, same
-  // tier restriction as creating/editing senior_admin+management accounts
-  // (REQ-SEC-005), since it's a privilege-granting action, not ordinary
-  // data entry. Server-enforced in admin_set_employee_link regardless of
+  // Unification, STAFF-APP-DESIGN-FIXED.md §1). REQ-SEC-005 originally
+  // restricted this - and creating/editing/deleting senior_admin+
+  // management accounts - to management only; the user asked 2026-09-22
+  // to give senior_admin full parity with management for all Users & Roles
+  // management, so this now matches the server-side rule (admin_create_
+  // user/admin_update_user/admin_delete_user/admin_set_employee_link all
+  // allow senior_admin+management alike). Server-enforced regardless of
   // what this flag hides/shows.
-  const isManagement = authUser?.role === "management";
+  const isManagement = authUser?.role === "management" || authUser?.role === "senior_admin";
 
   // ── Users (real DB data) ──
   const [users,    setUsers]    = useState([]);
