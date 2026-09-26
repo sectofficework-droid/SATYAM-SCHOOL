@@ -98,19 +98,26 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Committed and pushed 2026-09-19** — `main` at `6f67b8e` ("Add Staff App
-Unification (Admin Workspace) + close REQ-SEC-005/007/008, fix new
-REQ-SEC-009"), pushed to `origin/main` at the user's explicit request
-("fix all push merge"). This repo works directly on `main` (no PR/branch
-flow), so the push is the merge. 42 files, all of session (2)/(3)'s Staff
-App work plus the earlier-staged REQ-SEC-005/007 client wiring. Working
-tree clean as of the push. Production (Vercel) auto-deploys from `main`,
-so the admin-panel changes (Users & Roles linking UI, TC issuance RPC
-call, diagnostics RPC call) are now live — **not verified in a live
-browser before pushing** (Chrome extension wasn't connected this
-session); verified via `npm run lint` (clean) and a manual diff review
-only. Watch for user-reported issues on Settings → Users & Roles, the
-student TC-issuance page, and `/diagnostics` specifically.
+**Committed and pushed 2026-09-26** — admin panel `student/page.js`: added
+a Gender filter dropdown ("All Genders"/Male/Female/Other) next to the
+existing Class filter on the Student Management list, matching `s.gender`
+from `studentService.getStudents()`; also added a "Gender Filter: ..."
+line to the PDF export header when active, mirroring the existing Class
+Filter line. Pushed to `origin/main` at the user's explicit request ("add
+push merge to deploy") — this repo works directly on `main`, so the push
+is the merge; Production (Vercel) auto-deploys from `main`. Verified via
+`npm run lint` (clean); **not verified in a live browser** — the Student
+page requires admin login and the user opted to skip the browser check
+rather than share credentials this session.
+
+**Prior — Committed and pushed 2026-09-22** — `main` at `07097d9`
+("Complete REQ-SEC-002 Category 3 (Groups A/B/C + employees), fix Cat3
+v1.0.0+3 distribution, and 2 admin bugs"), 45 files, the mobile
+session-token rollout + REQ-BUG-018/019 + REQ-SEC-005 follow-up. See
+`work-log\LOG-2026-09-22.md` and `planning\TODO.md` for detail.
+
+Older checkpoints (2026-09-19 `6f67b8e` and earlier): see
+`work-log\LOG-2026-09-19.md` onward.
 
 Prior 2026-09-17 uncommitted work (kiosk face-recognition fixes —
 `mobile-app/lib/core/services/face_recognition_service.dart`,

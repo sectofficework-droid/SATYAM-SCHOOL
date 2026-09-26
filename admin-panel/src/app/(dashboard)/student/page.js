@@ -730,6 +730,7 @@ export default function StudentPage() {
   const [session, setSession]             = useState(CURRENT_SESSION);
   const [search, setSearch]               = useState("");
   const [stdFilter, setStdFilter]         = useState("All Classes");
+  const [genderFilter, setGenderFilter]   = useState("All Genders");
   const [docFilter, setDocFilter]         = useState("All");
   const [showLeft, setShowLeft]           = useState(false);
   const [govtIdFilter, setGovtIdFilter]   = useState([]);
@@ -791,6 +792,8 @@ export default function StudentPage() {
     ...CLASS_ORDER.filter(c => activeClassNames.includes(c)),
   ];
 
+  const ALL_GENDERS = ["All Genders", "Male", "Female", "Other"];
+
   const DOC_FILTER_OPTIONS = [
     { key: "Leaving Certificate",  label: "TC" },
     { key: "Birth Certificate",    label: "Birth Certificate" },
@@ -816,10 +819,11 @@ export default function StudentPage() {
       s.enrollment.includes(search) ||
       s.fatherName.toLowerCase().includes(search.toLowerCase());
     const matchStd    = stdFilter === "All Classes" || s.std === stdFilter;
+    const matchGender = genderFilter === "All Genders" || s.gender === genderFilter;
     const matchDoc    = docFilter === "All" || (s.pendingDocs || []).includes(docFilter);
     const matchGovtId = govtIdFilter.length === 0 || govtIdFilter.some(k => !(s[k] && s[k].trim()));
     const matchDetails = detailsFilter === "All" || s.dataStatus === detailsFilter;
-    return matchSearch && matchStd && matchDoc && matchGovtId && matchDetails;
+    return matchSearch && matchStd && matchGender && matchDoc && matchGovtId && matchDetails;
   });
 
   const handleDeactivate = async (student, { reason, date }) => {
@@ -936,6 +940,7 @@ export default function StudentPage() {
       doc.text(`Pending ID Filter: ${govtIdFilter.map(k => k.toUpperCase()).join(", ")}`, 14, y); y += 5;
     }
     if (stdFilter !== "All Classes") { doc.text(`Class Filter: ${stdFilter}`, 14, y); y += 5; }
+    if (genderFilter !== "All Genders") { doc.text(`Gender Filter: ${genderFilter}`, 14, y); y += 5; }
 
     autoTable(doc, {
       startY: y + 2,
@@ -1108,6 +1113,13 @@ export default function StudentPage() {
               <select value={stdFilter} onChange={(e) => setStdFilter(e.target.value)}
                 className="appearance-none pl-3 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white cursor-pointer">
                 {allStandards.map((s) => <option key={s}>{s}</option>)}
+              </select>
+              <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+            </div>
+            <div className="relative">
+              <select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)}
+                className="appearance-none pl-3 pr-8 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy bg-white cursor-pointer">
+                {ALL_GENDERS.map((g) => <option key={g}>{g}</option>)}
               </select>
               <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
             </div>
