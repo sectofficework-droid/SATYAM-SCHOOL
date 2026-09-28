@@ -98,11 +98,11 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Committed and pushed 2026-09-28** — admin panel: redesigned Transfer Certificate (School Leaving Certificate) generator and layout across `/documents` and `/student/[id]/tc` to match official `LAKSHITA RAULA TC.pdf`. Extracted authentic dual logos (`tc-logo.png`, `tc-saraswati.png`), added Base64 assets (`tcAssets.js`), central generator engine (`tcGenerator.js`) with 18 numbered fields, continuous baseline underlines, word date parser, caution notice, 3-column signatures, and live scaled preview + batch roster/CSV issuance in `/documents`. Aligned to exact visual parity with `LAKSHITA RAULA TC.pdf` (single-line school title, natural colons attached to labels, unbroken continuous baseline underlines with centered values across all 18 fields, uniform 13.5px typography, zero vertical spillover on 1 full A4 page). Verified via `npm run build` (clean, 46/46 routes). See `ai-context\SESSION-2026-09-28-1.md` and `work-log\LOG-2026-09-28.md`.
+**Committed and pushed 2026-09-29** — admin panel: finalized Transfer Certificate (School Leaving Certificate) pixel-perfect layout and typography in `admin-panel/src/lib/tcGenerator.js`. Resolved horizontal alignment inconsistency by standardizing `.tc-col-lbl` (`width: 170px`) and left-aligning pupil details (`.tc-val-left`, 184px) into a straight vertical column. Restored title and stadium pill hierarchy (clean bold serif title between divider lines; capsule pill enclosing `SCHOOL DISE CODE - 24224100067`). Enclosed rustication penalty note inside the footer box. Standardized all body labels (13.5px, weight 600), values (13.5px, weight 700), and footer signatures (13.5px, weight 600). Confirmed exact 1-page A4 print output (`595.92 x 842.88 pt`) with zero overflow. Commit `b617acd`. See `ai-context\SESSION-2026-09-28-1.md` and `work-log\LOG-2026-09-28.md`.
 
-**Prior — Committed and pushed 2026-09-26** — admin panel `student/page.js`: added a Gender filter dropdown next to the existing Class filter and added "Gender Filter: ..." to the PDF export header. Pushed to `origin/main`.
+**Prior — Committed and pushed 2026-09-28** — admin panel: redesigned Transfer Certificate (School Leaving Certificate) generator and layout across `/documents` and `/student/[id]/tc` to match official `LAKSHITA RAULA TC.pdf`. Extracted authentic dual logos (`tc-logo.png`, `tc-saraswati.png`), added Base64 assets (`tcAssets.js`), central generator engine (`tcGenerator.js`) with 18 numbered fields, continuous baseline underlines, word date parser, caution notice, 3-column signatures, and live scaled preview + batch roster/CSV issuance in `/documents`. Verified via `npm run build` (clean, 46/46 routes). Commit `dc3f507`.
 
-Older checkpoints (2026-09-22 `07097d9` and earlier): see `work-log\LOG-2026-09-22.md` onward.
+Prior checkpoints (2026-09-26 and earlier): see `work-log\LOG-2026-09-22.md` onward.
 
 Prior 2026-09-17 uncommitted work (kiosk face-recognition fixes —
 `mobile-app/lib/core/services/face_recognition_service.dart`,
@@ -243,7 +243,10 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-09-22 — REQ-BUG-018 distribution blocker
+**Current — Session 2026-09-29 — Auto-close shifts at configurable shift end time.**
+Fixed bug where staff who punch in but forget to punch out are blocked from punching in the next day. Added `kiosk_settings.shift_end_time` (default 16:00), `auto_close_open_shifts` RPC (closes open shifts past end time + pushes `teacher_alerts` notification), modified `record_check_out` RPC to also push notification on manual checkout. pg_cron schedule every 15 min (separate migration file). Admin panel UI in Settings → Kiosk → Punch Timing. No mobile app update needed (RPC signatures unchanged). Committed `343cd62`, pushed to `origin/main`. **SQL migrations NOT yet applied to Supabase** — user must run both SQL files in Supabase Dashboard → SQL Editor. See `ai-context\SESSION-2026-09-29-1.md`, `work-log\LOG-2026-09-29.md`.
+
+**Prior — Session 2026-09-22 — REQ-BUG-018 distribution blocker
 resolved via manual Play Store upload; Cat3 Group A restriction
 re-applied same day, before device adoption confirmed (user's explicit,
 informed choice).**
