@@ -45,17 +45,16 @@ const SUB_TABS = [
   { key:"tc",        label:"TC",        icon:FileText   },
 ];
 
-// Two fixed ID card designs, each the school's actual Canva-exported card
-// (see "SCHOOL ID CARD 1.jpg" and "SCHOOL ID CARD 2.jpg") used directly as a
-// background image so the design itself is pixel-identical to the original -
-// these two colors are only needed for the small bits redrawn on top
-// (the red nameplate in design 1, the navy name/class boxes in design 2).
-const CARD_NAVY = "#1a2b6b";
-const CARD_RED  = "#dc2626";
+// Two fixed ID card designs:
+// Design 1: Satyam Stars Official Portrait (matches "id card protrait template.png")
+// Design 2: Trust Landscape CR80 card
+const CARD_NAVY   = "#00296b";
+const CARD_ORANGE = "#ff751f";
+const CARD_RED    = "#dc2626";
 
 const CARD_DESIGNS = [
-  { id:1, name:"Classic Portrait",  desc:"Gold-ring photo, red nameplate" },
-  { id:2, name:"Trust Landscape",   desc:"CR80 card, navy header/footer"  },
+  { id:1, name:"Portrait Card",    desc:"Satyam Stars Official Portrait (2026-27)" },
+  { id:2, name:"Trust Landscape",  desc:"CR80 card, navy header/footer"  },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -203,132 +202,128 @@ function fitFontSize(doc, text, maxWidth, startSize, minSize = 4.5) {
   return size;
 }
 
-// Design 1 is the actual "SCHOOL ID CARD 1.jpg" Canva export used as a
-// full-bleed background (591x1004px, so the card is drawn at that exact
-// aspect ratio) - the decorative dot pattern, blob shapes, gold-ring photo
-// frame, red nameplate outline, wave, and footer are all pixel-identical to
-// the Canva design because they ARE that image. Only the parts that change
-// per student (photo, name, and each info row's value) are drawn on top,
-// each preceded by an opaquely-filled cover shape so the sample data baked
-// into the template ("Jharana Patra", "123-456-7890", etc.) never shows
-// through from underneath.
-const CARD1_W = 79.5, CARD1_H = 135.1; // 591:1004 aspect ratio
+// Design 1 matches "id card protrait template.png" (685x1157px, so the card is drawn
+// at 80mm x 135.1mm on A4 portrait, 4 cards per page). The official template
+// (/id-card-portrait-template.png) includes the school header, logo, orange frame border,
+// signature, and footer. Only dynamic values (photo, student name, class pill, and info
+// fields) are rendered on top, matching the template layout.
+const CARD1_W = 80, CARD1_H = 135.1; // 685:1157 aspect ratio
+const CARD1_PHOTO_W = 30.13, CARD1_PHOTO_H = 31.07;
+const CARD1_PHOTO_RATIO = CARD1_PHOTO_W / CARD1_PHOTO_H;
 
 async function drawCardDesign1(doc, s, bgB64, photoB64, cx, cy) {
   const W = CARD1_W, H = CARD1_H;
-  const [rr, rg, rb] = rgb(CARD_RED);
 
   if (bgB64) {
-    try { doc.addImage(bgB64, "JPEG", cx, cy, W, H); } catch {}
+    try { doc.addImage(bgB64, "PNG", cx, cy, W, H); } catch {}
   }
 
-  // ── Photo (inside the template's gold ring) ───────────────────
-  const px = cx + 39.8, py = cy + 36.3;
+  // ── Photo (inside the template's orange frame) ────────────────
+  const bx = cx + 24.76, by = cy + 28.15, bw = CARD1_PHOTO_W, bh = CARD1_PHOTO_H;
   if (photoB64) {
-    doc.setFillColor(255, 255, 255);
-    doc.circle(px, py, 14.6, "F");
-    try { doc.addImage(photoB64, "PNG", px-14.5, py-14.5, 29, 29); } catch {}
+    try { doc.addImage(photoB64, "PNG", bx, by, bw, bh); } catch {}
+    // Crisp orange outline on top of photo
+    doc.setDrawColor(255, 117, 31);
+    doc.setLineWidth(0.7);
+    doc.roundedRect(cx + 24.06, cy + 27.56, 31.53, 32.23, 4.67, 4.67, "S");
   }
 
-  // ── Name (redraw the red pill, same shape/color as the template) ─
-  doc.setFillColor(rr, rg, rb);
-  doc.roundedRect(cx+8.7, cy+57.4, 61.6, 5.8, 2.9, 2.9, "F");
+  // ── Name (bold uppercase, centered below photo frame) ─────────
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(8.5);
-  doc.setTextColor(255, 255, 255);
   const nameStr = (s.name || "Student Name").toUpperCase();
-  const nameFit = doc.splitTextToSize(nameStr, 57)[0];
-  doc.text(nameFit, cx+39.5, cy+61, { align:"center" });
+  fitFontSize(doc, nameStr, 58, 15, 8);
+  doc.setTextColor(0, 0, 0);
+  doc.text(nameStr, cx + 40.0, cy + 66.2, { align: "center" });
 
-  // ── Info row values (labels are already printed on the template) ─
-  const VALUE_X = cx+40.9, VALUE_W = 35.8;
-  const infoRows = [
-    { y:69.8, val: s.fatherName || "" },
-    { y:74.8, val: s.motherName || "" },
-    { y:79.8, val: fmtDMY(s.dob) || "" },
-    { y:84.9, val: s.mobile || s.mobile1 || "" },
-  ];
-  doc.setFontSize(6.3);
-  infoRows.forEach(row => {
-    doc.setFillColor(255, 255, 255);
-    doc.rect(VALUE_X, cy+row.y-3.9, VALUE_W, 4.6, "F");
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(31, 41, 55);
-    const valLine = doc.splitTextToSize(": " + (row.val || "—"), VALUE_W)[0];
-    doc.text(valLine, VALUE_X, cy+row.y);
+  // ── Class / STD Pill ──────────────────────────────────────────
+  doc.setFont("helvetica", "bold");
+  const stdStr = "STD : " + (s.std || "—").toUpperCase();
+  fitFontSize(doc, stdStr, 32, 10.5, 6.5);
+  doc.setTextColor(255, 255, 255);
+  doc.text(stdStr, cx + 40.0, cy + 73.5, { align: "center" });
+
+  // ── Info row values (labels & colons are already on the template) ─
+  const VAL_X = cx + 35.8, VAL_W = 40.2;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.2);
+  doc.setTextColor(0, 0, 0);
+
+  const father = (s.fatherName || "—").toUpperCase();
+  const mother = (s.motherName || "—").toUpperCase();
+  const dob    = (fmtDMY(s.dob) || "—").toUpperCase();
+  const mobile = ((s.mobile && s.mobile1 && s.mobile !== s.mobile1)
+    ? `${s.mobile}, ${s.mobile1}`
+    : (s.mobile || s.mobile1 || "—")).toUpperCase();
+
+  doc.text(doc.splitTextToSize(father, VAL_W)[0], VAL_X, cy + 78.48);
+  doc.text(doc.splitTextToSize(mother, VAL_W)[0], VAL_X, cy + 83.74);
+  doc.text(doc.splitTextToSize(dob, VAL_W)[0], VAL_X, cy + 89.00);
+  doc.text(doc.splitTextToSize(mobile, VAL_W)[0], VAL_X, cy + 94.25);
+
+  // Address (up to 3 lines)
+  const addrStr = (fmtAddr(s) || "—").toUpperCase();
+  const addrLines = doc.splitTextToSize(addrStr, VAL_W).slice(0, 3);
+  addrLines.forEach((line, i) => {
+    doc.text(line, VAL_X, cy + 99.50 + i * 5.14);
   });
-
-  // Address (may wrap onto a second/third line)
-  doc.setFillColor(255, 255, 255);
-  doc.rect(VALUE_X, cy+85.9, VALUE_W, 18.6, "F");
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(31, 41, 55);
-  const addrLines = doc.splitTextToSize(": " + (fmtAddr(s) || "—"), VALUE_W).slice(0, 3);
-  addrLines.forEach((line, i) => doc.text(line, VALUE_X, cy+89.9+i*5));
 }
 
-// Design 2 is the actual "SCHOOL ID CARD 2.jpg" Canva export (1011x639px)
-// used as a full-bleed background the same way design 1 is - the navy
-// header/footer, trust name, school title, stripe accents and box outlines
-// are all pixel-identical to the Canva design. Only the photo, name, class,
-// and each info row's value are drawn on top, each preceded by an opaque
-// cover shape.
+// Design 2 is the landscape CR80 card (1011x639px, 90mm x 56.9mm on A4, 8 cards per page).
+// The template (/id-card-bg-2.jpg) contains the navy header, school title, photo frame,
+// navy name/class boxes, labels, and footer. Only dynamic student data is drawn on top.
 const CARD2_W = 90, CARD2_H = 56.9; // 1011:639 aspect ratio
-const CARD2_PHOTO_W = 18.7, CARD2_PHOTO_H = 23.2; // pale-blue photo box, mm
+const CARD2_PHOTO_W = 17.4, CARD2_PHOTO_H = 21.5; // inner photo area, mm
 const CARD2_PHOTO_RATIO = CARD2_PHOTO_W / CARD2_PHOTO_H;
 
 async function drawCardDesign2(doc, s, bgB64, photoB64, cx, cy) {
-  const [nr, ng, nb] = rgb(CARD_NAVY);
-
   if (bgB64) {
     try { doc.addImage(bgB64, "JPEG", cx, cy, CARD2_W, CARD2_H); } catch {}
   }
 
   // ── Photo (inside the template's pale-blue box) ─────────────────
-  const bx = cx+3.6, by = cy+17.7, bw = CARD2_PHOTO_W, bh = CARD2_PHOTO_H;
+  const bx = cx + 4.3, by = cy + 18.9, bw = CARD2_PHOTO_W, bh = CARD2_PHOTO_H;
   if (photoB64) {
     try { doc.addImage(photoB64, "PNG", bx, by, bw, bh); } catch {}
   }
 
-  // ── Name + Class boxes (redraw navy, same as the template) ───────
-  const boxY = cy+17.8, boxH = 6.9;
-  const nameX = cx+22.3, nameW = 41.2;
-  const stdX = nameX+nameW+0.3, stdW = 12.5;
-  doc.setFillColor(nr, ng, nb);
-  doc.rect(nameX, boxY, nameW, boxH, "F");
-  doc.rect(stdX, boxY, stdW, boxH, "F");
+  // ── Name & Class ────────────────────────────────────────────────
+  const boxY = cy + 18.6, boxH = 6.9;
+  const nameX = cx + 22.1, nameW = 40.8;
+  const stdX = nameX + nameW + 0.8, stdW = 13.0;
+
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
   doc.setTextColor(255, 255, 255);
-  const nameFit = doc.splitTextToSize((s.name || "Student Name").toUpperCase(), nameW-4)[0];
-  doc.text(nameFit, nameX+nameW/2, boxY+boxH/2+1.2, { align:"center" });
-  const stdText = (s.std || "—").toUpperCase();
-  fitFontSize(doc, stdText, stdW-2, 7);
-  doc.text(stdText, stdX+stdW/2, boxY+boxH/2+1.2, { align:"center" });
+  const nameFit = doc.splitTextToSize((s.name || "Student Name").toUpperCase(), nameW - 4)[0];
+  doc.text(nameFit, nameX + nameW / 2, boxY + boxH / 2 + 1.2, { align: "center" });
 
-  // ── Info row values (labels are already printed on the template) ─
-  const VALUE_X = cx+39.2, VALUE_W = 47.7;
-  const infoRows = [
-    { y:27.6, val: s.fatherName || "" },
-    { y:30.8, val: s.motherName || "" },
-    { y:34.0, val: fmtDMY(s.dob) || "" },
-    { y:37.2, val: s.mobile || s.mobile1 || "" },
-  ];
-  doc.setFontSize(5.3);
-  infoRows.forEach(row => {
-    doc.setFillColor(245, 245, 245);
-    doc.rect(VALUE_X, cy+row.y-2.6, VALUE_W, 3.0, "F");
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(31, 41, 55);
-    const valLine = doc.splitTextToSize(": " + (row.val || "—"), VALUE_W)[0];
-    doc.text(valLine, VALUE_X, cy+row.y);
+  const stdText = (s.std || "—").toUpperCase();
+  fitFontSize(doc, stdText, stdW - 2, 7.5);
+  doc.text(stdText, stdX + stdW / 2, boxY + boxH / 2 + 1.2, { align: "center" });
+
+  // ── Info row values (labels & colons are already on the clean template) ─
+  const VAL_X = cx + 43.6, VAL_W = 43.5;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(5.8);
+  doc.setTextColor(17, 24, 39);
+
+  const father = (s.fatherName || "—").toUpperCase();
+  const mother = (s.motherName || "—").toUpperCase();
+  const dob    = (fmtDMY(s.dob) || "—").toUpperCase();
+  const mobile = ((s.mobile && s.mobile1 && s.mobile !== s.mobile1)
+    ? `${s.mobile}, ${s.mobile1}`
+    : (s.mobile || s.mobile1 || "—")).toUpperCase();
+
+  doc.text(doc.splitTextToSize(father, VAL_W)[0], VAL_X, cy + 28.2);
+  doc.text(doc.splitTextToSize(mother, VAL_W)[0], VAL_X, cy + 32.5);
+  doc.text(doc.splitTextToSize(dob, VAL_W)[0], VAL_X, cy + 36.8);
+  doc.text(doc.splitTextToSize(mobile, VAL_W)[0], VAL_X, cy + 41.1);
+
+  const addrStr = (fmtAddr(s) || "—").toUpperCase();
+  const addrLines = doc.splitTextToSize(addrStr, VAL_W).slice(0, 2);
+  addrLines.forEach((line, i) => {
+    doc.text(line, VAL_X, cy + 45.4 + i * 4.3);
   });
-  doc.setFillColor(245, 245, 245);
-  doc.rect(VALUE_X, cy+37.8, VALUE_W, 6.6, "F");
-  doc.setFont("helvetica", "normal");
-  doc.setTextColor(31, 41, 55);
-  const addrLines = doc.splitTextToSize(": " + (fmtAddr(s) || "—"), VALUE_W).slice(0, 2);
-  addrLines.forEach((line, i) => doc.text(line, VALUE_X, cy+40.4+i*3.2));
 }
 
 async function drawCard(doc, s, designId, bgB64, photoB64, cx, cy) {
@@ -341,10 +336,10 @@ async function drawCard(doc, s, designId, bgB64, photoB64, cx, cy) {
 // CR80-style card (8 per A4 page, 2 columns x 4 rows) - and design 2's photo
 // is a rounded square, not a circle, so it needs its own crop.
 const DESIGN1_POSITIONS = [
-  { cx:10,    cy:8   },
-  { cx:99.5,  cy:8   },
-  { cx:10,    cy:151.1 },
-  { cx:99.5,  cy:151.1 },
+  { cx:15,    cy:8   },
+  { cx:115,   cy:8   },
+  { cx:15,    cy:152 },
+  { cx:115,   cy:152 },
 ];
 const DESIGN2_POSITIONS = [0,1,2,3].flatMap(row =>
   [10, 110].map(cx => ({ cx, cy: 8 + row*70 }))
@@ -354,7 +349,7 @@ async function generatePDF(students, designId, onProgress) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ orientation:"portrait", unit:"mm", format:"a4" });
 
-  const bgUrl = window.location.origin + (designId === 2 ? "/id-card-bg-2.jpg" : "/id-card-bg-1.jpg");
+  const bgUrl = window.location.origin + (designId === 2 ? "/id-card-bg-2.jpg" : "/id-card-portrait-template.png");
   const bgB64 = await fetchBase64(bgUrl);
 
   const positions  = designId === 2 ? DESIGN2_POSITIONS : DESIGN1_POSITIONS;
@@ -367,7 +362,9 @@ async function generatePDF(students, designId, onProgress) {
     let photoUrl = "";
     if (s.photo) { try { photoUrl = (await getS3ViewUrl(s.photo))||""; } catch {} }
     const photoB64 = photoUrl
-      ? await (designId === 2 ? roundedSquareBase64(photoUrl, { radiusFrac: 0.02, ratio: CARD2_PHOTO_RATIO }) : circularBase64(photoUrl))
+      ? await (designId === 2
+          ? roundedSquareBase64(photoUrl, { radiusFrac: 0.02, ratio: CARD2_PHOTO_RATIO })
+          : roundedSquareBase64(photoUrl, { radiusFrac: 0.13, ratio: CARD1_PHOTO_RATIO }))
       : null;
 
     const slot = i % perPage;
@@ -378,6 +375,205 @@ async function generatePDF(students, designId, onProgress) {
   }
 
   doc.save("ID_Cards_Satyam_Stars.pdf");
+}
+
+// ── Download Single Card as high-resolution PNG ──────────────────────────────
+async function downloadSingleCardPNG(student, designId = 1) {
+  if (!student) return;
+  const s = student;
+
+  if (designId === 2) {
+    const W = 1011, H = 639;
+    const canvas = document.createElement("canvas");
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext("2d");
+    const bgImg = new Image();
+    bgImg.crossOrigin = "anonymous";
+    await new Promise(r => { bgImg.onload = r; bgImg.onerror = r; bgImg.src = "/id-card-bg-2.jpg"; });
+    ctx.drawImage(bgImg, 0, 0, W, H);
+
+    let photoUrl = "";
+    if (s.photo) { try { photoUrl = (await getS3ViewUrl(s.photo)) || ""; } catch {} }
+    if (photoUrl) {
+      const pImg = new Image();
+      pImg.crossOrigin = "anonymous";
+      const ok = await new Promise(r => { pImg.onload = () => r(true); pImg.onerror = () => r(false); pImg.src = photoUrl; });
+      if (ok) {
+        const bx = 48, by = 212, bw = 195, bh = 241, br = 18;
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(bx + br, by);
+        ctx.arcTo(bx + bw, by, bx + bw, by + bh, br);
+        ctx.arcTo(bx + bw, by + bh, bx, by + bh, br);
+        ctx.arcTo(bx, by + bh, bx, by, br);
+        ctx.arcTo(bx, by, bx + bw, by, br);
+        ctx.closePath();
+        ctx.clip();
+        const sc = Math.max(bw / pImg.width, bh / pImg.height);
+        ctx.drawImage(pImg, bx + (bw - pImg.width * sc) / 2, by + (bh - pImg.height * sc) / 2, pImg.width * sc, pImg.height * sc);
+        ctx.restore();
+      }
+    }
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 32px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText((s.name || "STUDENT NAME").toUpperCase(), 474, 249);
+    ctx.fillText((s.std || "—").toUpperCase(), 785, 249);
+
+    ctx.fillStyle = "#111827";
+    ctx.font = "bold 23px Arial, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+
+    const father = (s.fatherName || "—").toUpperCase();
+    const mother = (s.motherName || "—").toUpperCase();
+    const dob    = (fmtDMY(s.dob) || "—").toUpperCase();
+    const mobile = ((s.mobile && s.mobile1 && s.mobile !== s.mobile1)
+      ? `${s.mobile}, ${s.mobile1}`
+      : (s.mobile || s.mobile1 || "—")).toUpperCase();
+
+    ctx.fillText(father, 495, 320);
+    ctx.fillText(mother, 495, 368);
+    ctx.fillText(dob,    495, 415);
+    ctx.fillText(mobile, 495, 463);
+
+    // Address
+    const addrStr = (fmtAddr(s) || "—").toUpperCase();
+    const words = addrStr.split(" ");
+    let line = "";
+    let lineY = 511;
+    const maxW = 480;
+    for (let n = 0; n < words.length; n++) {
+      const testLine = line + (line ? " " : "") + words[n];
+      const metrics = ctx.measureText(testLine);
+      if (metrics.width > maxW && line) {
+        ctx.fillText(line, 495, lineY);
+        line = words[n];
+        lineY += 48;
+        if (lineY > 565) break;
+      } else {
+        line = testLine;
+      }
+    }
+    if (line && lineY <= 565) {
+      ctx.fillText(line, 495, lineY);
+    }
+
+    const link = document.createElement("a");
+    link.download = `${(s.name || "ID_Card").replace(/[^a-zA-Z0-9_-]/g, "_")}_Landscape_ID_Card.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+    return;
+  }
+
+  // Portrait Template: 685 x 1157 matching "id card protrait template.png"
+  const W = 685, H = 1157;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  const bgImg = new Image();
+  bgImg.crossOrigin = "anonymous";
+  await new Promise(r => { bgImg.onload = r; bgImg.onerror = r; bgImg.src = "/id-card-portrait-template.png"; });
+  ctx.drawImage(bgImg, 0, 0, W, H);
+
+  let photoUrl = "";
+  if (s.photo) { try { photoUrl = (await getS3ViewUrl(s.photo)) || ""; } catch {} }
+  if (photoUrl) {
+    const pImg = new Image();
+    pImg.crossOrigin = "anonymous";
+    const ok = await new Promise(r => { pImg.onload = () => r(true); pImg.onerror = () => r(false); pImg.src = photoUrl; });
+    if (ok) {
+      const px = 212, py = 241, pw = 258, ph = 266, pr = 34;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(px + pr, py);
+      ctx.arcTo(px + pw, py, px + pw, py + ph, pr);
+      ctx.arcTo(px + pw, py + ph, px, py + ph, pr);
+      ctx.arcTo(px, py + ph, px, py, pr);
+      ctx.arcTo(px, py, px + pw, py, pr);
+      ctx.closePath();
+      ctx.clip();
+      const sc = Math.max(pw / pImg.width, ph / pImg.height);
+      ctx.drawImage(pImg, px + (pw - pImg.width * sc) / 2, py + (ph - pImg.height * sc) / 2, pImg.width * sc, pImg.height * sc);
+      ctx.restore();
+    }
+  }
+
+  // Crisp orange outline on top of photo
+  const fx = 206, fy = 236, fw = 270, fh = 276, fr = 40;
+  ctx.strokeStyle = "#ff751f";
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(fx + fr, fy);
+  ctx.arcTo(fx + fw, fy, fx + fw, fy + fh, fr);
+  ctx.arcTo(fx + fw, fy + fh, fx, fy + fh, fr);
+  ctx.arcTo(fx, fy + fh, fx, fy, fr);
+  ctx.arcTo(fx, fy, fx + fw, fy, fr);
+  ctx.closePath();
+  ctx.stroke();
+
+  // Name
+  ctx.fillStyle = "#000000";
+  ctx.font = "900 36px 'Arial Narrow', Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const nameStr = (s.name || "STUDENT NAME").toUpperCase();
+  ctx.fillText(nameStr, 342.5, 548);
+
+  // STD Pill
+  ctx.fillStyle = "#ffffff";
+  ctx.font = "900 24px Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("STD : " + (s.std || "—").toUpperCase(), 342.5, 616);
+
+  // Values (starting right after printed colon at x=306)
+  ctx.fillStyle = "#000000";
+  ctx.font = "700 20px Arial, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+
+  const father = (s.fatherName || "—").toUpperCase();
+  const mother = (s.motherName || "—").toUpperCase();
+  const dob    = (fmtDMY(s.dob) || "—").toUpperCase();
+  const mobile = ((s.mobile && s.mobile1 && s.mobile !== s.mobile1)
+    ? `${s.mobile}, ${s.mobile1}`
+    : (s.mobile || s.mobile1 || "—")).toUpperCase();
+
+  ctx.fillText(father, 306, 672);
+  ctx.fillText(mother, 306, 717);
+  ctx.fillText(dob,    306, 762);
+  ctx.fillText(mobile, 306, 807);
+
+  // Address
+  const addrStr = (fmtAddr(s) || "—").toUpperCase();
+  const words = addrStr.split(" ");
+  let line = "";
+  let lineY = 852;
+  const maxW = 335;
+  for (let n = 0; n < words.length; n++) {
+    const testLine = line + (line ? " " : "") + words[n];
+    const metrics = ctx.measureText(testLine);
+    if (metrics.width > maxW && line) {
+      ctx.fillText(line, 306, lineY);
+      line = words[n];
+      lineY += 45;
+      if (lineY > 945) break;
+    } else {
+      line = testLine;
+    }
+  }
+  if (line && lineY <= 945) {
+    ctx.fillText(line, 306, lineY);
+  }
+
+  const link = document.createElement("a");
+  link.download = `${(s.name || "ID_Card").replace(/[^a-zA-Z0-9_-]/g, "_")}_ID_Card.png`;
+  link.href = canvas.toDataURL("image/png");
+  link.click();
 }
 
 // ── Export for Canva Bulk Create ────────────────────────────────────────────
@@ -1108,34 +1304,63 @@ function BonafidePreview({ student, logoUrl }) {
 // photo/name/values are overlaid, mirroring the PDF drawing functions above.
 function CardPreviewDesign1({ student }) {
   const s = student || {};
-  const infoRows = [
-    { val: s.fatherName || "—" },
-    { val: s.motherName || "—" },
-    { val: fmtDMY(s.dob) || "—" },
-    { val: s.mobile || s.mobile1 || "—" },
-  ];
-  const W = 270, H = 459; // 591:1004 aspect ratio
+  const W = 270, H = 456; // 685:1157 aspect ratio (270 x 456)
+  const sc = 270 / 685;
+
+  const father = (s.fatherName || "—").toUpperCase();
+  const mother = (s.motherName || "—").toUpperCase();
+  const dob    = (fmtDMY(s.dob) || "—").toUpperCase();
+  const mobile = ((s.mobile && s.mobile1 && s.mobile !== s.mobile1)
+    ? `${s.mobile}, ${s.mobile1}`
+    : (s.mobile || s.mobile1 || "—")).toUpperCase();
+  const address = (fmtAddr(s) || "—").toUpperCase();
 
   return (
-    <div style={{ width:W, height:H, fontFamily:"Arial,Helvetica,sans-serif", position:"relative", overflow:"hidden", borderRadius:9, boxShadow:"0 4px 20px rgba(0,0,0,0.4)", flexShrink:0 }}>
-      <img src="/id-card-bg-1.jpg" alt="" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"fill" }}/>
+    <div style={{ width:W, height:H, fontFamily:"Arial,Helvetica,sans-serif", position:"relative", overflow:"hidden", borderRadius:10, boxShadow:"0 4px 20px rgba(0,0,0,0.4)", flexShrink:0 }}>
+      <img src="/id-card-portrait-template.png" alt="" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"fill" }}/>
 
-      {/* Photo (inside the template's gold ring) */}
-      <div style={{ position:"absolute", top:73.3, left:85.1, width:100.4, height:100.4, borderRadius:"50%", overflow:"hidden", background:"#e5e7eb" }}>
-        {s.photo ? <S3Image s3Key={s.photo} alt={s.name} className="w-full h-full object-cover"/> : <div style={{ width:"100%", height:"100%", background:"#d1d5db", display:"flex", alignItems:"center", justifyContent:"center", fontSize:32, color:"#9ca3af" }}>👤</div>}
+      {/* Photo (inside the template's orange frame) */}
+      <div style={{ position:"absolute", top: 241 * sc, left: 212 * sc, width: 258 * sc, height: 266 * sc, borderRadius: 34 * sc, overflow:"hidden", background:"#eef2f6" }}>
+        {s.photo ? (
+          <S3Image s3Key={s.photo} alt={s.name} className="w-full h-full object-cover"/>
+        ) : (
+          <div style={{ width:"100%", height:"100%", display:"flex", alignItems:"center", justifyContent:"center", fontSize:32, color:"#9ca3af" }}>👤</div>
+        )}
+      </div>
+      {/* Crisp orange frame border overlay */}
+      <div style={{ position:"absolute", top: 236 * sc, left: 206 * sc, width: 270 * sc, height: 276 * sc, borderRadius: 40 * sc, border:`${6 * sc}px solid #ff751f`, pointerEvents:"none" }}/>
+
+      {/* Student Name (centered below photo frame) */}
+      <div style={{ position:"absolute", top: 524 * sc, left: 10, width: W - 20, height: 48 * sc, display:"flex", alignItems:"center", justifyContent:"center" }}>
+        <span style={{ color:"#000000", fontSize:14.5, fontWeight:900, letterSpacing:0.3, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", fontFamily:"'Arial Narrow', Arial, sans-serif" }}>
+          {(s.name || "STUDENT NAME").toUpperCase()}
+        </span>
       </div>
 
-      {/* Name (over the red pill) */}
-      <div style={{ position:"absolute", top:195.3, left:29.7, width:209.3, height:19.7, borderRadius:9.9, background:CARD_RED, display:"flex", alignItems:"center", justifyContent:"center" }}>
-        <span style={{ color:"white", fontSize:13, fontWeight:900, letterSpacing:0.5, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", padding:"0 10px" }}>{(s.name||"Student Name").toUpperCase()}</span>
+      {/* Class / STD Pill */}
+      <div style={{ position:"absolute", top: 593 * sc, left: 194 * sc, width: 308 * sc, height: 46 * sc, display:"flex", alignItems:"center", justifyContent:"center" }}>
+        <span style={{ color:"#ffffff", fontSize:10.5, fontWeight:900, letterSpacing:0.6 }}>
+          STD : {(s.std || "—").toUpperCase()}
+        </span>
       </div>
 
-      {/* Info row values (labels are already printed on the template) */}
-      <div style={{ position:"absolute", top:230, left:139, width:122, background:"white" }}>
-        {infoRows.map((row, i) => (
-          <div key={i} style={{ height:17.1, display:"flex", alignItems:"center", fontSize:10.5, color:"#1f2937", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>: {row.val}</div>
-        ))}
-        <div style={{ minHeight:51, fontSize:10.5, color:"#1f2937", lineHeight:"17.1px" }}>: {fmtAddr(s) || "—"}</div>
+      {/* Info row values (labels & colons are already on the template) */}
+      <div style={{ position:"absolute", top: 654 * sc, left: 306 * sc, width: (655 - 306) * sc, color:"#000000", fontWeight:700, fontSize:8.5, fontFamily:"Arial, Helvetica, sans-serif" }}>
+        <div style={{ height: 45 * sc, display:"flex", alignItems:"center", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+          {father}
+        </div>
+        <div style={{ height: 45 * sc, display:"flex", alignItems:"center", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+          {mother}
+        </div>
+        <div style={{ height: 45 * sc, display:"flex", alignItems:"center", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+          {dob}
+        </div>
+        <div style={{ height: 45 * sc, display:"flex", alignItems:"center", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+          {mobile}
+        </div>
+        <div style={{ minHeight: 90 * sc, fontSize:8.5, lineHeight:`17.7px`, paddingTop: 3 * sc, overflow:"hidden" }}>
+          {address}
+        </div>
       </div>
     </div>
   );
@@ -1144,37 +1369,55 @@ function CardPreviewDesign1({ student }) {
 // Landscape CR80-style preview matching "SCHOOL ID CARD 2.jpg".
 function CardPreviewDesign2({ student }) {
   const s = student || {};
-  const infoRows = [
-    { val: s.fatherName || "—" },
-    { val: s.motherName || "—" },
-    { val: fmtDMY(s.dob) || "—" },
-    { val: s.mobile || s.mobile1 || "—" },
-  ];
   const W = 400, H = 253; // 1011:639 aspect ratio
+  const sc = W / 1011;
+
+  const father = (s.fatherName || "—").toUpperCase();
+  const mother = (s.motherName || "—").toUpperCase();
+  const dob    = (fmtDMY(s.dob) || "—").toUpperCase();
+  const mobile = ((s.mobile && s.mobile1 && s.mobile !== s.mobile1)
+    ? `${s.mobile}, ${s.mobile1}`
+    : (s.mobile || s.mobile1 || "—")).toUpperCase();
+  const address = (fmtAddr(s) || "—").toUpperCase();
 
   return (
     <div style={{ width:W, height:H, fontFamily:"Arial,Helvetica,sans-serif", position:"relative", overflow:"hidden", borderRadius:8, boxShadow:"0 4px 20px rgba(0,0,0,0.4)", flexShrink:0 }}>
       <img src="/id-card-bg-2.jpg" alt="" style={{ position:"absolute", inset:0, width:"100%", height:"100%", objectFit:"fill" }}/>
 
       {/* Photo (inside the template's pale-blue box) */}
-      <div style={{ position:"absolute", top:78.4, left:15.8, width:83.9, height:104.1, overflow:"hidden", background:"#e5e7eb" }}>
-        {s.photo ? <S3Image s3Key={s.photo} alt={s.name} className="w-full h-full object-cover"/> : <div style={{ width:"100%", height:"100%", background:"#d1d5db", display:"flex", alignItems:"center", justifyContent:"center", fontSize:32, color:"#9ca3af" }}>👤</div>}
+      <div style={{ position:"absolute", top: 212 * sc, left: 48 * sc, width: 195 * sc, height: 241 * sc, borderRadius: 8 * sc, overflow:"hidden", background:"#e5e7eb" }}>
+        {s.photo ? <S3Image s3Key={s.photo} alt={s.name} className="w-full h-full object-cover"/> : <div style={{ width:"100%", height:"100%", background:"#d1d5db", display:"flex", alignItems:"center", justifyContent:"center", fontSize:28, color:"#9ca3af" }}>👤</div>}
       </div>
 
-      {/* Name + Class (redraw navy, same as the template) */}
-      <div style={{ position:"absolute", top:79.2, left:98.9, width:184.4, height:30.5, background:CARD_NAVY, display:"flex", alignItems:"center", justifyContent:"center" }}>
-        <span style={{ color:"white", fontSize:16, fontWeight:900, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", padding:"0 8px" }}>{(s.name||"Student Name").toUpperCase()}</span>
+      {/* Name + Class (centered in navy boxes on template) */}
+      <div style={{ position:"absolute", top: 209 * sc, left: 244 * sc, width: 461 * sc, height: 80 * sc, display:"flex", alignItems:"center", justifyContent:"center" }}>
+        <span style={{ color:"white", fontSize: 13, fontWeight:900, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", padding:"0 6px" }}>
+          {(s.name || "Student Name").toUpperCase()}
+        </span>
       </div>
-      <div style={{ position:"absolute", top:79.2, left:283.3, width:56.6, height:30.5, background:CARD_NAVY, display:"flex", alignItems:"center", justifyContent:"center" }}>
-        <span style={{ color:"white", fontSize:14, fontWeight:900 }}>{(s.std||"—").toUpperCase()}</span>
+      <div style={{ position:"absolute", top: 209 * sc, left: 712 * sc, width: 146 * sc, height: 80 * sc, display:"flex", alignItems:"center", justifyContent:"center" }}>
+        <span style={{ color:"white", fontSize: 12, fontWeight:900, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+          {(s.std || "—").toUpperCase()}
+        </span>
       </div>
 
-      {/* Info row values (labels are already printed on the template) */}
-      <div style={{ position:"absolute", top:114, left:174.1, width:212.1, background:"#f5f5f5" }}>
-        {infoRows.map((row, i) => (
-          <div key={i} style={{ height:14.3, display:"flex", alignItems:"center", fontSize:11, color:"#1f2937", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>: {row.val}</div>
-        ))}
-        <div style={{ minHeight:28.6, fontSize:11, color:"#1f2937", lineHeight:"14.3px" }}>: {fmtAddr(s) || "—"}</div>
+      {/* Info row values (starting right after printed colon at x=495) */}
+      <div style={{ position:"absolute", top: 300 * sc, left: 495 * sc, width: (1011 - 495 - 20) * sc, color:"#111827", fontWeight:700, fontSize: 9.5, lineHeight: 1 }}>
+        <div style={{ height: 48 * sc, display:"flex", alignItems:"center", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+          {father}
+        </div>
+        <div style={{ height: 48 * sc, display:"flex", alignItems:"center", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+          {mother}
+        </div>
+        <div style={{ height: 48 * sc, display:"flex", alignItems:"center", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+          {dob}
+        </div>
+        <div style={{ height: 48 * sc, display:"flex", alignItems:"center", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+          {mobile}
+        </div>
+        <div style={{ minHeight: 96 * sc, lineHeight: `${48 * sc * 0.95}px`, paddingTop: 3 * sc, overflow:"hidden" }}>
+          {address}
+        </div>
       </div>
     </div>
   );
@@ -1881,6 +2124,14 @@ export default function DocumentsPage() {
                       </button>
                     </div>
                   )}
+                  <button
+                    onClick={() => downloadSingleCardPNG(previewStudent, designId)}
+                    className="flex items-center justify-center gap-2 w-full py-2 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors shadow-sm"
+                    title="Download this student's card as a high-resolution PNG image"
+                  >
+                    <Download className="w-3.5 h-3.5 text-school-navy"/>
+                    Download Card (PNG)
+                  </button>
                 </>
               ) : (
                 <div className="flex flex-col items-center justify-center h-64 gap-3 text-gray-300">
@@ -1927,7 +2178,7 @@ export default function DocumentsPage() {
           <p className="text-xs text-gray-400 text-center -mt-2">
             {designId === 2
               ? "PDF downloads directly — 8 cards per A4 page (landscape, 90mm × 56.9mm)."
-              : "PDF downloads directly — 4 cards per A4 page (79.5mm × 135.1mm)."}
+              : "PDF downloads directly — 4 cards per A4 page (portrait, 80mm × 135.1mm)."}
             {" "}Select students above, then Download PDF for the in-app card, or Export for Canva to regenerate
             in Canva's own Bulk Create (the photo links in that export expire after 1 hour, so upload it soon after exporting).
           </p>
