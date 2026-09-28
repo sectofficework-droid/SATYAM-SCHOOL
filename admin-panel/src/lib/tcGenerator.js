@@ -244,7 +244,8 @@ export function generateSchoolLeavingCertificateSingle(r) {
 
   return `
   <div class="tc-page">
-    <div class="tc-cert-box">
+    <!-- Top & Body Box -->
+    <div class="tc-box-main">
       <!-- Header -->
       <div class="tc-header">
         <img src="${TC_LOGO_BASE64}" class="tc-logo-left" alt="School Logo"/>
@@ -256,150 +257,157 @@ export function generateSchoolLeavingCertificateSingle(r) {
         <img src="${TC_SARASWATI_BASE64}" class="tc-logo-right" alt="Saraswati Maa"/>
       </div>
 
-      <!-- Title & DISE code -->
-      <div class="tc-title-dise-wrap">
-        <div class="tc-title-pill">SCHOOL LEAVING CERTIFICATE</div>
-        <div class="tc-dise-code">SCHOOL DISE CODE - 24224100067</div>
+      <!-- Title: SCHOOL LEAVING CERTIFICATE -->
+      <div class="tc-title-wrap">
+        <div class="tc-title-text">SCHOOL LEAVING CERTIFICATE</div>
       </div>
 
+      <!-- Body -->
       <div class="tc-body">
+        <!-- DISE Code Pill -->
+        <div class="tc-dise-wrap">
+          <div class="tc-dise-pill">SCHOOL DISE CODE - 24224100067</div>
+        </div>
+
         <!-- Certificate No and Register No -->
         <div class="tc-row" style="margin-bottom: 2px;">
-          <span class="tc-bold-lbl">Certificate No:</span>
-          <span class="tc-line" style="flex: 0 0 170px;">${r.certificateNo || "&nbsp;"}</span>
+          <span class="tc-lbl" style="font-weight: 700;">Certificate No:</span>
+          <span class="tc-line tc-val-center" style="flex: 0 0 180px;">${r.certificateNo || "&nbsp;"}</span>
           <span style="flex: 1;"></span>
-          <span class="tc-bold-lbl">Register No. of the pupil :</span>
-          <span class="tc-line" style="flex: 0 0 160px;">${r.registerNo || "&nbsp;"}</span>
+          <span class="tc-lbl" style="font-weight: 700;">Register No. of the pupil :</span>
+          <span class="tc-line tc-val-center" style="flex: 1;">${r.registerNo || "&nbsp;"}</span>
         </div>
 
         <!-- U-DISE -->
         <div class="tc-row">
           <span class="tc-lbl">U-DISE Number of the Student :</span>
-          <span class="tc-line">${r.udiseNo || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${r.udiseNo || "&nbsp;"}</span>
         </div>
 
         <!-- 1. Name -->
         <div class="tc-row">
-          <span class="tc-lbl">1. Name of the Pupil :</span>
-          <span class="tc-line">${r.name || "&nbsp;"}</span>
+          <span class="tc-col-lbl"><span>1. Name of the Pupil</span><span>:</span></span>
+          <span class="tc-line tc-val-left">${r.name || "&nbsp;"}</span>
         </div>
 
         <!-- 2. Father -->
         <div class="tc-row">
-          <span class="tc-lbl">2. Father&rsquo;s Name :</span>
-          <span class="tc-line">${r.fatherName || "&nbsp;"}</span>
+          <span class="tc-col-lbl"><span>2. Father&rsquo;s Name</span><span>:</span></span>
+          <span class="tc-line tc-val-left">${r.fatherName || "&nbsp;"}</span>
         </div>
 
         <!-- 3. Mother -->
         <div class="tc-row">
-          <span class="tc-lbl">3. Mother&rsquo;s Name :</span>
-          <span class="tc-line">${r.motherName || "&nbsp;"}</span>
+          <span class="tc-col-lbl"><span>3. Mother&rsquo;s Name</span><span>:</span></span>
+          <span class="tc-line tc-val-left">${r.motherName || "&nbsp;"}</span>
         </div>
 
         <!-- 4. Aadhar -->
         <div class="tc-row">
-          <span class="tc-lbl">4. Pupil Aadhar No. :</span>
-          <span class="tc-line">${r.aadhar || "&nbsp;"}</span>
+          <span class="tc-col-lbl"><span>4. Pupil Aadhar No.</span><span>:</span></span>
+          <span class="tc-line tc-val-left">${r.aadhar || "&nbsp;"}</span>
         </div>
 
         <!-- 5. Religion and Caste -->
         <div class="tc-row">
-          <span class="tc-lbl">5. Religion and Caste :</span>
-          <span class="tc-line">${religionCaste || "&nbsp;"}</span>
+          <span class="tc-col-lbl"><span>5. Religion and Caste</span><span>:</span></span>
+          <span class="tc-line tc-val-left">${religionCaste || "&nbsp;"}</span>
         </div>
 
         <!-- 6. Place of Birth -->
         <div class="tc-row">
-          <span class="tc-lbl">6. Place of Birth :</span>
-          <span class="tc-line">${r.placeOfBirth || "&nbsp;"}</span>
+          <span class="tc-col-lbl"><span>6. Place of Birth</span><span>:</span></span>
+          <span class="tc-line tc-val-left">${r.placeOfBirth || "&nbsp;"}</span>
         </div>
 
         <!-- 7. DOB -->
         <div class="tc-row">
           <span class="tc-lbl">7. Date of Birth ( in Christian Era ) as per Admission Register ( in Figures ) :</span>
-          <span class="tc-line" style="flex: 1;">${dobDmy || "&nbsp;"}</span>
+          <span class="tc-line tc-val-center" style="flex: 1;">${dobDmy || "&nbsp;"}</span>
         </div>
 
-        <div class="tc-row tc-sub">
-          <span class="tc-lbl">( in Words ) :</span>
-          <span class="tc-line" style="flex: 1;">${dobWords || "&nbsp;"}</span>
+        <div class="tc-row">
+          <span class="tc-col-lbl" style="width: 170px; padding-left: 16px;"><span>( in Words )</span><span>:</span></span>
+          <span class="tc-line tc-val-left">${dobWords || "&nbsp;"}</span>
         </div>
 
         <!-- 8. Last School Attended -->
         <div class="tc-row">
-          <span class="tc-lbl">8. Last School Attended :</span>
-          <span class="tc-line">${r.lastSchoolAttended || "SATYAM STARS INTERNATIONAL SCHOOL"}</span>
+          <span class="tc-col-lbl"><span>8. Last School Attended</span><span>:</span></span>
+          <span class="tc-line tc-val-left">${r.lastSchoolAttended || "SATYAM STARS INTERNATIONAL SCHOOL"}</span>
         </div>
 
         <!-- 9. Date of Admission -->
         <div class="tc-row">
-          <span class="tc-lbl">9. Date of Admission :</span>
-          <span class="tc-line">${admissionDmy || "&nbsp;"}</span>
+          <span class="tc-col-lbl"><span>9. Date of Admission</span><span>:</span></span>
+          <span class="tc-line tc-val-left">${admissionDmy || "&nbsp;"}</span>
         </div>
 
         <!-- 10 & 11. Progress and Conduct -->
         <div class="tc-row">
           <span class="tc-lbl">10. Progress :</span>
-          <span class="tc-line" style="flex: 1; margin-right: 16px;">${r.progress || "VERY GOOD"}</span>
+          <span class="tc-line tc-val-center" style="flex: 1; margin-right: 16px;">${r.progress || "VERY GOOD"}</span>
           <span class="tc-lbl">11. Conduct :</span>
-          <span class="tc-line" style="flex: 1;">${r.conduct || "VERY GOOD"}</span>
+          <span class="tc-line tc-val-center" style="flex: 1;">${r.conduct || "VERY GOOD"}</span>
         </div>
 
         <!-- 12. Attendance -->
         <div class="tc-row">
           <span class="tc-lbl">12. Attendance :</span>
-          <span class="tc-line" style="flex: 0 0 65px; margin: 0 4px;">${r.attendancePresent || "&nbsp;"}</span>
+          <span class="tc-line tc-val-center" style="flex: 0 0 65px; margin: 0 4px;">${r.attendancePresent || "&nbsp;"}</span>
           <span class="tc-lbl" style="margin: 0 4px;">Out of</span>
-          <span class="tc-line" style="flex: 0 0 65px; margin: 0 4px;">${r.attendanceTotal || "&nbsp;"}</span>
+          <span class="tc-line tc-val-center" style="flex: 0 0 65px; margin: 0 4px;">${r.attendanceTotal || "&nbsp;"}</span>
           <span class="tc-lbl" style="margin: 0 4px;">in Class</span>
-          <span class="tc-line" style="flex: 0 0 75px; margin: 0 4px;">${r.attendanceClass || "&nbsp;"}</span>
+          <span class="tc-line tc-val-center" style="flex: 0 0 75px; margin: 0 4px;">${r.attendanceClass || "&nbsp;"}</span>
           <span class="tc-lbl" style="margin: 0 4px;">From</span>
-          <span class="tc-line" style="flex: 1; margin-left: 4px;">${r.attendanceFrom || "&nbsp;"}</span>
+          <span class="tc-line tc-val-center" style="flex: 1; margin-left: 4px;">${r.attendanceFrom || "&nbsp;"}</span>
         </div>
 
         <!-- 13. Date of Leaving -->
         <div class="tc-row">
           <span class="tc-lbl">13. Date of Leaving the School :</span>
-          <span class="tc-line">${leavingDmy || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${leavingDmy || "&nbsp;"}</span>
         </div>
 
         <!-- 14. Exam Passed / Promoted -->
         <div class="tc-row">
           <span class="tc-lbl">14. Whether he/she has Passed the examination</span>
-          <span class="tc-line">${r.passedExamText || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${r.passedExamText || "&nbsp;"}</span>
         </div>
 
-        <div class="tc-row tc-sub">
-          <span class="tc-lbl">or Promoted to the next Higher Class</span>
-          <span class="tc-line">${r.promotedText || "&nbsp;"}</span>
+        <div class="tc-row">
+          <span class="tc-lbl" style="padding-left: 20px;">or Promoted to the next Higher Class</span>
+          <span class="tc-line tc-val-left">${r.promotedText || "&nbsp;"}</span>
         </div>
 
         <!-- 15. Class Studying Since -->
         <div class="tc-row">
           <span class="tc-lbl">15. Class in which Studying and Since When</span>
-          <span class="tc-line">${r.studyingClassSince || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${r.studyingClassSince || "&nbsp;"}</span>
         </div>
 
         <!-- 16. Reason -->
         <div class="tc-row">
           <span class="tc-lbl">16. Reason for Leaving The School</span>
-          <span class="tc-line">${r.reasonForLeaving || "TO STUDY ELSEWHERE"}</span>
+          <span class="tc-line tc-val-left">${r.reasonForLeaving || "TO STUDY ELSEWHERE"}</span>
         </div>
 
         <!-- 17. PEN -->
         <div class="tc-row">
           <span class="tc-lbl">17. Student&rsquo;s PEN ( Permanent Education Number )</span>
-          <span class="tc-line">${r.pen || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${r.pen || "&nbsp;"}</span>
         </div>
 
         <!-- 18. Remarks -->
         <div class="tc-row">
           <span class="tc-lbl">18. Remarks</span>
-          <span class="tc-line">${r.remarks || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${r.remarks || "&nbsp;"}</span>
         </div>
       </div>
+    </div>
 
-      <!-- Signatures Footer -->
+    <!-- Footer Box (Signatures & Rustication Warning) -->
+    <div class="tc-box-footer">
       <div class="tc-sig-section">
         <div class="tc-footer-left">
           <div class="tc-sig-row">
@@ -412,18 +420,16 @@ export function generateSchoolLeavingCertificateSingle(r) {
           </div>
           <div class="tc-sig-row">
             <span class="tc-sig-lbl">Date</span>
-            <span class="tc-sig-line">${leavingDmy || "&nbsp;"}</span>
+            <span class="tc-sig-line" style="text-align: left; padding-left: 16px;">${leavingDmy || "&nbsp;"}</span>
           </div>
         </div>
         <div class="tc-footer-right">
           Signature of Principal
         </div>
       </div>
-    </div>
-
-    <!-- Rustication Warning Note outside border -->
-    <div class="tc-rustication-note">
-      (No change in entry in this certificate shall be made except by the authority issuing it any infringement of this requirement is liable to involve the the imposition of a penalty such as that of rustication)
+      <div class="tc-rustication-note">
+        (No change in entry in this certificate shall be made except by the authority issuing it any infringement of this requirement is liable to involve the the imposition of a penalty such as that of rustication)
+      </div>
     </div>
   </div>`;
 }
@@ -443,7 +449,7 @@ export const TC_STYLES = `
     height: 297mm;
     max-height: 297mm;
     margin: 0 auto;
-    padding: 8mm 12mm 6mm 12mm;
+    padding: 8mm 12mm 7mm 12mm;
     background: #fff;
     page-break-after: always;
     page-break-inside: avoid;
@@ -451,7 +457,6 @@ export const TC_STYLES = `
     color: #000;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
     box-sizing: border-box;
     overflow: hidden;
   }
@@ -472,7 +477,7 @@ export const TC_STYLES = `
       width: 210mm !important;
       height: 297mm !important;
       max-height: 297mm !important;
-      padding: 8mm 12mm 6mm 12mm !important;
+      padding: 8mm 12mm 7mm 12mm !important;
       margin: 0 !important;
       page-break-after: always !important;
       page-break-inside: avoid !important;
@@ -482,12 +487,11 @@ export const TC_STYLES = `
       page-break-after: auto !important;
     }
   }
-  .tc-cert-box {
+  .tc-box-main {
     border: 2px solid #000;
     padding: 8px 14px 10px 14px;
     display: flex;
     flex-direction: column;
-    justify-content: space-between;
     flex: 1;
     background: #fff;
     box-sizing: border-box;
@@ -496,8 +500,8 @@ export const TC_STYLES = `
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding-bottom: 6px;
-    border-bottom: 2px solid #000;
+    padding-bottom: 5px;
+    border-bottom: 1.5px solid #000;
   }
   .tc-logo-left {
     width: 68px;
@@ -539,26 +543,29 @@ export const TC_STYLES = `
     color: #000;
     white-space: nowrap;
   }
-  .tc-title-dise-wrap {
+  .tc-title-wrap {
     text-align: center;
-    padding: 8px 0 6px;
+    padding: 5px 0 4px;
     border-bottom: 2px solid #000;
   }
-  .tc-title-pill {
-    display: inline-block;
-    border: 2px solid #000;
-    border-radius: 20px;
-    padding: 4px 34px;
+  .tc-title-text {
     font-family: "Times New Roman", Times, Georgia, serif;
     font-size: 20px;
     font-weight: 900;
     letter-spacing: 0.8px;
     text-transform: uppercase;
     color: #000;
-    margin-bottom: 6px;
   }
-  .tc-dise-code {
-    font-size: 13.5px;
+  .tc-dise-wrap {
+    text-align: center;
+    padding: 5px 0 3px;
+  }
+  .tc-dise-pill {
+    display: inline-block;
+    border: 1.5px solid #000;
+    border-radius: 14px;
+    padding: 2px 28px;
+    font-size: 12.5px;
     font-weight: 700;
     letter-spacing: 0.5px;
     color: #000;
@@ -568,7 +575,7 @@ export const TC_STYLES = `
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 6px 0;
+    padding-top: 2px;
     box-sizing: border-box;
   }
   .tc-row {
@@ -578,21 +585,21 @@ export const TC_STYLES = `
     line-height: 1.25;
     color: #000;
     width: 100%;
-    min-height: 25px;
+    min-height: 24px;
   }
-  .tc-row.tc-sub {
-    padding-left: 20px;
-  }
-  .tc-bold-lbl {
-    font-weight: 700;
-    white-space: nowrap;
-    color: #000;
+  .tc-col-lbl {
+    width: 170px;
+    display: inline-flex;
+    justify-content: space-between;
     flex-shrink: 0;
+    white-space: nowrap;
     font-size: 13.5px;
-    margin-right: 6px;
+    font-weight: 600;
+    color: #000;
+    padding-right: 6px;
   }
   .tc-lbl {
-    font-weight: 500;
+    font-weight: 600;
     white-space: nowrap;
     color: #000;
     flex-shrink: 0;
@@ -603,19 +610,30 @@ export const TC_STYLES = `
     flex: 1;
     border-bottom: 1.2px solid #000;
     display: inline-block;
-    text-align: center;
     font-weight: 700;
     font-size: 13.5px;
     letter-spacing: 0.3px;
     color: #000;
     text-transform: uppercase;
-    padding: 0 4px 1px;
     box-sizing: border-box;
     min-height: 18px;
   }
+  .tc-val-left {
+    text-align: left;
+    padding: 0 14px 1px;
+  }
+  .tc-val-center {
+    text-align: center;
+    padding: 0 4px 1px;
+  }
+  .tc-box-footer {
+    border: 2px solid #000;
+    margin-top: 5px;
+    padding: 8px 14px 6px 14px;
+    background: #fff;
+    box-sizing: border-box;
+  }
   .tc-sig-section {
-    border-top: 2px solid #000;
-    padding: 10px 4px 2px;
     display: flex;
     justify-content: space-between;
     align-items: flex-end;
@@ -623,7 +641,7 @@ export const TC_STYLES = `
   .tc-footer-left {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     font-size: 13.5px;
   }
   .tc-sig-row {
@@ -632,7 +650,7 @@ export const TC_STYLES = `
   }
   .tc-sig-lbl {
     font-size: 13.5px;
-    font-weight: 500;
+    font-weight: 600;
     color: #000;
     width: 110px;
     flex-shrink: 0;
@@ -647,18 +665,18 @@ export const TC_STYLES = `
     padding-bottom: 1px;
   }
   .tc-footer-right {
-    font-size: 14.5px;
-    font-weight: 700;
+    font-size: 13.5px;
+    font-weight: 600;
     color: #000;
-    padding-bottom: 4px;
+    padding-bottom: 2px;
   }
   .tc-rustication-note {
     text-align: center;
-    font-size: 10px;
+    font-size: 10.5px;
     line-height: 1.35;
-    color: #111;
-    margin-top: 6px;
-    padding: 0 12px;
+    color: #000;
+    margin-top: 8px;
+    padding: 0 8px;
     font-family: Arial, Helvetica, sans-serif;
   }
 `;
