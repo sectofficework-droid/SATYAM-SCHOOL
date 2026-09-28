@@ -397,6 +397,20 @@ export async function getInventoryForReport() {
 // null after the first punch.
 const STAFF_ATTENDANCE_STATUS_LABELS = { P: "Present", A: "Absent", L: "Leave" };
 
+// Standard working day, in hours. Everything overtime/shortfall is measured
+// against this: worked = hoursWorked - STANDARD_DAY_HOURS, so a partial day
+// reads as shortfall and a long day reads as overtime. Kept as a plain
+// constant rather than a kiosk_settings column on purpose - there is no admin
+// UI to edit a per-school shift length, and adding one would mean a DB
+// migration plus a save path for a value this project has never had.
+const STANDARD_DAY_HOURS = 8;
+
+// Only the columns the report actually renders. employee_shifts is the widest
+// table in the join (every punch ever) and this report never shows raw shift
+// rows, so the open-shift flag is derived here rather than fetched.
+const STAFF_ATTENDANCE_SHIFT_FIELDS =
+  "employee_id, date, check_in_at, check_out_at, punch_method, is_late, late_minutes";
+
 export async function getStaffAttendanceForReport() {
   const [attRes, shiftRes, empRes] = await Promise.all([
     supabase
@@ -405,10 +419,10 @@ export async function getStaffAttendanceForReport() {
       .order("date", { ascending: false }),
     supabase
       .from("employee_shifts")
-      .select("employee_id, date, check_in_at, check_out_at, punch_method"),
+      .select(STAFF_ATTENDANCE_SHIFT_FIELDS),
     supabase
       .from("employees")
-      .select("id, emp_code, name, designation, department"),
+      .select("id, emp_code, name, designation, department, status"),
   ]);
   if (attRes.error) throw attRes.error;
   if (shiftRes.error) throw shiftRes.error;
@@ -433,20 +447,143 @@ export async function getStaffAttendanceForReport() {
       if (!s.check_in_at || !s.check_out_at) return sum;
       return sum + (new Date(s.check_out_at) - new Date(s.check_in_at)) / 3600000;
     }, 0);
+
+    // A punch with no matching check-out: the staff member is currently on
+    // shift, or they punched in and walked away without punching out. The
+    // shift-end cron closes the second case after the cutoff, so what is left
+    // here is either genuinely still-open work or a row the cron has not
+    // reached yet - worth flagging rather than silently reporting 0 hours.
+    const unclosedShifts = shifts.filter(s => !s.check_out_at).length;
+
+    // The day row is the authority for lateness (is_late/late_minutes are
+    // written once, against the day's first punch, by the kiosk RPCs). Fall
+    // back to the shifts only when the day row carries no verdict at all.
+    const isLate = row.is_late ?? shifts.some(s => s.is_late);
+    const lateMinutes = isLate ? (row.late_minutes ?? shifts.find(s => s.is_late)?.late_minutes ?? 0) : 0;
+
+    const balance = hoursWorked - STANDARD_DAY_HOURS;
+    // Date-only strings are parsed as UTC midnight by the Date constructor,
+    // which lands on the wrong weekday for IST; the explicit local parse is
+    // what actually matches the school calendar.
+    const dayIndex = weekdayIndex(row.date);
+
     return {
       employeeId:  row.employee_id,
       empCode:     emp.emp_code || "",
       name:        emp.name || "Unknown",
       designation: emp.designation || "",
       department:  emp.department || "",
+      empStatus:   emp.status || "",
       date:        row.date,
+      dayIndex,
+      dayName:     STAFF_DAY_NAMES[dayIndex] || "",
+      isWeekend:   dayIndex === 0 || dayIndex === 6,
       status:      STAFF_ATTENDANCE_STATUS_LABELS[row.status] || row.status,
       checkIn:     firstIn || "",
       checkOut:    lastOut || "",
       shiftCount:  shifts.length || (row.check_in_at ? 1 : 0),
       hoursWorked: hoursWorked ? Math.round(hoursWorked * 100) / 100 : "",
+      // Signed hours against the standard day: positive is overtime, negative
+      // is a shortfall. Empty (not 0) whenever the day has no measured hours,
+      // so an absent/leave day never reads as a 0-hour shortfall.
+      hoursBalance: hoursWorked ? round1(balance) : "",
+      unclosedShifts,
       punchMethod: row.punch_method || shifts[0]?.punch_method || "",
       punctuality: row.is_late === true ? `Late by ${row.late_minutes} min` : row.is_late === false ? "On Time" : "",
+      lateMinutes,
     };
   });
+}
+
+function round1(n) {
+  return Math.round(n * 10) / 10;
+}
+
+// -1 for a missing/unparseable date, so callers can drop the row's weekday
+// rather than silently bucketing it under Sunday.
+function weekdayIndex(isoDate) {
+  if (!isoDate) return -1;
+  const d = new Date(`${isoDate}T00:00:00`);
+  return isNaN(d.getTime()) ? -1 : d.getDay();
+}
+
+const STAFF_DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+
+// ── Staff Attendance — per-employee rollup ───────────────────────────────────
+// Collapses the day rows above into one row per employee for the rows that
+// survived filtering, so a month is readable instead of 30xN lines. Overtime
+// is summed from the signed per-day balance rather than recomputed from total
+// hours - summing balances keeps a short day from cancelling out a long one
+// inside the same month, which is what a payroll dispute is actually about.
+export function rollupStaffAttendance(rows) {
+  const byEmp = {};
+  for (const r of (rows || [])) {
+    (byEmp[r.employeeId] ??= []).push(r);
+  }
+
+  return Object.entries(byEmp).map(([employeeId, days]) => {
+    const first = days[0];
+    const sorted = days.slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    const present = days.filter(d => d.status === "Present").length;
+    const absent  = days.filter(d => d.status === "Absent").length;
+    const leave   = days.filter(d => d.status === "Leave").length;
+    const lateDays = days.filter(d => d.lateMinutes > 0).length;
+    const totalHours = days.reduce((s, d) => s + (Number(d.hoursWorked) || 0), 0);
+    const totalBalance = days.reduce((s, d) => s + (d.hoursBalance === "" ? 0 : Number(d.hoursBalance) || 0), 0);
+    // Attendance % counts only days the employee was actually expected to be
+    // marked in - leave is excluded from the denominator so a sanctioned
+    // absence is not reported as an attendance failure.
+    const countable = present + absent;
+    const unclosed = days.reduce((s, d) => s + (d.unclosedShifts || 0), 0);
+    const hasWorkedDays = days.some(d => d.hoursBalance !== "");
+
+    return {
+      employeeId,
+      empCode:      first.empCode,
+      name:         first.name,
+      designation:  first.designation,
+      department:   first.department,
+      period:       periodLabel(sorted),
+      daysRecorded: days.length,
+      present,
+      absent,
+      leave,
+      lateDays,
+      lateMinutes:  days.reduce((s, d) => s + (Number(d.lateMinutes) || 0), 0),
+      attendancePct: countable ? Math.round((present / countable) * 1000) / 10 : "",
+      totalHours:   round1(totalHours),
+      // A period that nets to exactly zero still reads 0.0 - blank would be
+      // wrong there, since it reads as "no hours worked" and hides a balanced
+      // month. Blank is reserved for a period with no measured day at all
+      // (leave-only, or a filter that matched no worked day).
+      hoursBalance: hasWorkedDays ? round1(totalBalance) : "",
+      shiftCount:   days.reduce((s, d) => s + (Number(d.shiftCount) || 0), 0),
+      unclosedShifts: unclosed,
+      punchMethods: [...new Set(days.map(d => d.punchMethod).filter(Boolean))].join(", "),
+    };
+  });
+}
+
+// "01 Jun - 30 Jun 2026" for a single month, "01 Jun - 15 Jul 2026" when the
+// selected rows straddle a month boundary, so a rollup never implies a range
+// the data does not actually cover.
+function periodLabel(sorted) {
+  if (!sorted.length) return "";
+  const first = sorted[0].date;
+  const last  = sorted[sorted.length - 1].date;
+  if (!first || !last) return "";
+  if (first === last) return fmtShort(first);
+  const a = new Date(`${first}T00:00:00`);
+  const b = new Date(`${last}T00:00:00`);
+  const sameMonth = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth();
+  if (sameMonth) return `${fmtShort(first).replace(/ \d{4}$/, "")} - ${fmtShort(last)}`;
+  return `${fmtShort(first)} - ${fmtShort(last)}`;
+}
+
+const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+function fmtShort(isoDate) {
+  const [y, m, d] = String(isoDate).split("-");
+  if (!y || !m || !d) return isoDate;
+  return `${Number(d)} ${MONTH_NAMES[Number(m) - 1]} ${y}`;
 }

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   GraduationCap, IndianRupee, Users, Package, Search,
   RefreshCw, Download, FileText, ShieldCheck, BookOpen, Landmark, IdCard,
-  CheckSquare, X, LogOut, Fingerprint,
+  CheckSquare, X, LogOut, Fingerprint, ArrowUp, ArrowDown, ChevronsUpDown,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -12,7 +12,7 @@ import {
   getStudentsForReport, getFeesForReport,
   getEmployeesForReport, getInventoryForReport,
   getPaymentsForReport, getAcademicYearLabels, getTcIssuedForReport,
-  getStaffAttendanceForReport,
+  getStaffAttendanceForReport, rollupStaffAttendance,
 } from "@/lib/reportService";
 import { MM, computeColumnLayout, triggerPdfDownload } from "@/lib/pdfTableExport";
 import DateInputDMY from "@/components/DateInputDMY";
@@ -68,9 +68,24 @@ function fmtDateTime(value) {
   return d.toLocaleString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true });
 }
 
+// Signed hours, shown with an explicit + so a column of overtime vs shortfall
+// is readable at a glance rather than requiring the reader to know which side
+// of zero a bare number sits on.
+function round1(n) {
+  return Math.round(n * 10) / 10;
+}
+
+function fmtBalance(v) {
+  const n = Number(v);
+  if (!n) return "";
+  return `${n > 0 ? "+" : ""}${round1(n)} hrs`;
+}
+
 function formatCellValue(col, value) {
   if (value === undefined || value === null || value === "") return "";
   if (col.isDateTime) return fmtDateTime(value);
+  if (col.isHours && col.key === "hoursBalance") return fmtBalance(value);
+  if (col.isNumber) return Number(value).toLocaleString("en-IN");
   return col.isDate ? fmtDate(value) : value;
 }
 
@@ -574,6 +589,8 @@ const REPORT_CONFIGS = {
   },
   staffAttendance: {
     label:"Staff Attendance (Kiosk)", icon:Fingerprint,
+    // Has a second (per-employee) view - see staffAttendanceView below.
+    isDualView: true,
     // designation/department options are patched in at render time from the
     // live data (activeQuickFilters below) - actual values are free text set
     // per-employee in the Employee module, not a fixed enum like EMP_ROLES.
@@ -583,10 +600,12 @@ const REPORT_CONFIGS = {
       {key:"status",      label:"Status",       options:["All","Present","Absent","Leave"]},
       {key:"punchMethod", label:"Punch Method", options:["All","face","qr","code"]},
       {key:"punctuality", label:"Punctuality",  options:["All","Late","On Time"]},
+      {key:"workingDays", label:"Working Days", options:["All","Exclude Sundays","Exclude Weekends"]},
     ],
     dateField:"date", dateLabel:"Date",
     columns:[
       {key:"date",        label:"Date",           dflt:true,  isDate:true },
+      {key:"dayName",     label:"Day",            dflt:true  },
       {key:"empCode",     label:"Emp Code",       dflt:false },
       {key:"name",        label:"Employee Name",  dflt:true  },
       {key:"designation", label:"Designation",    dflt:true  },
@@ -595,8 +614,11 @@ const REPORT_CONFIGS = {
       {key:"checkIn",     label:"Check-In",       dflt:true,  isDateTime:true },
       {key:"checkOut",    label:"Check-Out",      dflt:true,  isDateTime:true },
       {key:"punctuality", label:"Punctuality",    dflt:true  },
-      {key:"shiftCount",  label:"Shifts",         dflt:false },
-      {key:"hoursWorked", label:"Hours Worked",   dflt:false },
+      {key:"hoursWorked", label:"Hours Worked",   dflt:true,  isHours:true },
+      {key:"hoursBalance",label:"OT / Short",     dflt:true,  isHours:true },
+      {key:"shiftCount",  label:"Shifts",         dflt:false, isNumber:true },
+      {key:"lateMinutes", label:"Late (min)",     dflt:false, isNumber:true },
+      {key:"unclosedShifts", label:"Unclosed Punch", dflt:false, isNumber:true },
       {key:"punchMethod", label:"Punch Method",   dflt:false },
     ],
     getData(sourceData, f, df, dt, s) {
@@ -606,6 +628,9 @@ const REPORT_CONFIGS = {
       if (f.status      && f.status      !== "All") d = d.filter(x => x.status      === f.status);
       if (f.punchMethod && f.punchMethod !== "All") d = d.filter(x => x.punchMethod === f.punchMethod);
       if (f.punctuality && f.punctuality !== "All") d = d.filter(x => x.punctuality.startsWith(f.punctuality === "Late" ? "Late" : "On Time"));
+      if (f.workingDays && f.workingDays !== "All") {
+        d = d.filter(x => f.workingDays === "Exclude Sundays" ? x.dayIndex !== 0 : !x.isWeekend);
+      }
       if (df) d = d.filter(x => x.date >= df);
       if (dt) d = d.filter(x => x.date <= dt);
       if (s) {
@@ -619,12 +644,22 @@ const REPORT_CONFIGS = {
       const absent  = d.filter(x => x.status === "Absent").length;
       const leave   = d.filter(x => x.status === "Leave").length;
       const late    = d.filter(x => x.punctuality.startsWith("Late")).length;
+      // Unclosed punches are the operational problem this report is meant to
+      // surface: a staff member who forgot to punch out is still counted as a
+      // full day's hours nowhere else, so it gets its own tile rather than
+      // hiding inside a percentage.
+      const unclosed = d.filter(x => (x.unclosedShifts || 0) > 0).length;
+      const ot       = d.reduce((s, x) => s + (Number(x.hoursBalance) > 0 ? Number(x.hoursBalance) : 0), 0);
+      const shortfall= d.reduce((s, x) => s + (Number(x.hoursBalance) < 0 ? -Number(x.hoursBalance) : 0), 0);
       return [
-        {label:"Total Records", value:d.length, color:"blue"  },
-        {label:"Present",       value:present,  color:"green" },
-        {label:"Absent",        value:absent,   color:"red"   },
-        {label:"On Leave",      value:leave,    color:"orange"},
-        {label:"Late Arrivals", value:late,     color:"red"   },
+        {label:"Total Records",  value:d.length,  color:"blue"  },
+        {label:"Present",        value:present,  color:"green" },
+        {label:"Absent",         value:absent,   color:"red"   },
+        {label:"On Leave",       value:leave,    color:"orange"},
+        {label:"Late Arrivals",  value:late,     color:"red"   },
+        {label:"Needs Attention (Unclosed Punch)", value:unclosed, color:"purple"},
+        {label:"Total Overtime (hrs)", value:round1(ot),  color:"green" },
+        {label:"Total Shortfall (hrs)", value:round1(shortfall), color:"amber" },
       ];
     },
   },
@@ -742,6 +777,108 @@ const REPORT_CONFIGS = {
   },
 };
 
+// ── Staff Attendance — per-employee view ───────────────────────────────────
+// The second half of the dual-view report (cfg.isDualView). Filters and the
+// date range stay shared with the daily view - they are applied to the day
+// rows first, then rollupStaffAttendance() collapses whatever survived, so
+// narrowing to one employee or one week narrows the rollup too. getData is
+// therefore a no-op: re-filtering here would double-apply filters that have
+// no meaning on a per-employee row (a "Present" filter would match a
+// rollup whose count is 5, not a status the row no longer has).
+const STAFF_ATTENDANCE_EMPLOYEE_CONFIG = {
+  label:"Staff Attendance (Kiosk)", icon:Fingerprint,
+  dateField:null, dateLabel:"Period",
+  columns:[
+    {key:"period",        label:"Period",         dflt:true  },
+    {key:"empCode",       label:"Emp Code",       dflt:false },
+    {key:"name",          label:"Employee Name",  dflt:true  },
+    {key:"designation",   label:"Designation",    dflt:true  },
+    {key:"department",    label:"Department",     dflt:false },
+    {key:"daysRecorded",  label:"Days Recorded", dflt:true,  isNumber:true },
+    {key:"present",       label:"Present Days",   dflt:true,  isNumber:true },
+    {key:"absent",        label:"Absent Days",    dflt:true,  isNumber:true },
+    {key:"leave",         label:"Leave Days",     dflt:true,  isNumber:true },
+    {key:"attendancePct", label:"Attendance %",   dflt:true,  isNumber:true },
+    {key:"lateDays",      label:"Late Days",      dflt:false, isNumber:true },
+    {key:"lateMinutes",   label:"Total Late (min)", dflt:false, isNumber:true },
+    {key:"totalHours",    label:"Total Hours",    dflt:true,  isHours:true },
+    {key:"hoursBalance",  label:"OT / Short (hrs)", dflt:true, isHours:true },
+    {key:"shiftCount",    label:"Total Shifts",   dflt:false, isNumber:true },
+    {key:"unclosedShifts",label:"Unclosed Punch", dflt:false, isNumber:true },
+    {key:"punchMethods",  label:"Punch Methods",  dflt:false },
+  ],
+  getData(sourceData) { return sourceData || []; },
+  getSummary(d) {
+    const totalPresent = d.reduce((s, x) => s + x.present, 0);
+    const totalAbsent  = d.reduce((s, x) => s + x.absent, 0);
+    const totalLeave   = d.reduce((s, x) => s + x.leave, 0);
+    const late         = d.filter(x => x.lateDays > 0).length;
+    const unclosed     = d.filter(x => (x.unclosedShifts || 0) > 0).length;
+    const ot           = d.reduce((s, x) => s + (Number(x.hoursBalance) > 0 ? Number(x.hoursBalance) : 0), 0);
+    const shortfall    = d.reduce((s, x) => s + (Number(x.hoursBalance) < 0 ? -Number(x.hoursBalance) : 0), 0);
+    return [
+      {label:"Employees",      value:d.length,        color:"blue"  },
+      {label:"Present Days",   value:totalPresent,    color:"green" },
+      {label:"Absent Days",    value:totalAbsent,     color:"red"   },
+      {label:"Leave Days",     value:totalLeave,      color:"orange"},
+      {label:"Late Employees", value:late,            color:"red"   },
+      {label:"Unclosed Punch", value:unclosed,        color:"purple"},
+      {label:"Total Overtime (hrs)", value:round1(ot),  color:"green" },
+      {label:"Total Shortfall (hrs)", value:round1(shortfall), color:"amber" },
+    ];
+  },
+};
+
+// ── Sorting ──────────────────────────────────────────────────────────────────
+// Sorts a copy, so the caller's array (and therefore the source-order default
+// and every other consumer of it) is left alone. Empty/missing values always
+// sort last regardless of direction - a column where "-" floats to the top
+// hides the very rows being looked for. Numeric-typed columns compare as
+// numbers so 9 hours sorts below 10, and an empty cell counts as 0 so absent
+// days do not outrank real overtime.
+//
+// columns/lookup is passed in by the caller rather than resolving the config
+// here: which columns are sortable, and which of them are numeric, depends on
+// the report AND its view (the staff report has two different column sets).
+function sortRows(rows, key, dir, columns) {
+  const col = (columns || []).find(c => c.key === key) || {};
+  const sign = dir === "desc" ? -1 : 1;
+  const isNum = !!col.isNumber || !!col.isHours;
+
+  const byValue = (a, b) => {
+    const av = a[key];
+    const bv = b[key];
+    const aEmpty = av === undefined || av === null || av === "";
+    const bEmpty = bv === undefined || bv === null || bv === "";
+    if (aEmpty && bEmpty) return 0;
+    if (aEmpty) return 1;
+    if (bEmpty) return -1;
+    if (isNum) return (Number(av) - Number(bv)) * sign;
+    return String(av).localeCompare(String(bv), undefined, { numeric: true }) * sign;
+  };
+  // Value order first, then a stable pass that re-asserts empty-last (the
+  // descending flip above would otherwise drag blanks back to the top).
+  return rows.slice().sort(byValue).sort((a, b) => {
+    const aEmpty = a[key] === undefined || a[key] === null || a[key] === "";
+    const bEmpty = b[key] === undefined || b[key] === null || b[key] === "";
+    if (aEmpty === bEmpty) return 0;
+    return aEmpty ? 1 : -1;
+  });
+}
+
+function toggleSort(key) {
+  setSort(prev => {
+    if (prev.key !== key) return { key, dir: "desc" };
+    if (prev.dir === "desc") return { key, dir: "asc" };
+    return {};
+  });
+}
+
+function sortIcon(key) {
+  if (sort.key !== key) return ChevronsUpDown;
+  return sort.dir === "desc" ? ArrowDown : ArrowUp;
+}
+
 // ── Color Map ─────────────────────────────────────────────────────────────────
 const COLOR_MAP = {
   blue:   {bg:"bg-blue-50",    border:"border-blue-200",    label:"text-blue-600",   val:"text-blue-700"  },
@@ -845,10 +982,22 @@ export default function ReportPage() {
   const [feesView, setFeesView] = useState("status"); // "collection" | "status"
   const [partialMaxAmount, setPartialMaxAmount] = useState("");
 
+  // Staff Attendance's second view: "daily" (one row per employee per day) or
+  // "employee" (one row per employee, rolled up over whatever the day-level
+  // filters selected). Reset whenever the report type changes, since the two
+  // views are only meaningful for staffAttendance.
+  const [staffView, setStaffView] = useState("daily");
+  // { [columnKey]: "asc" | "desc" } - one sortable column at a time, matching
+  // what a report export is expected to let you do. Empty = source order.
+  const [sort, setSort] = useState({});
+
   const cfg  = REPORT_CONFIGS[rType];
+  const isStaffRollup = cfg.isDualView && staffView === "employee";
   const ecfg = cfg.isFeesModule
     ? (feesView === "collection" ? cfg.collectionConfig : cfg.statusConfig)
-    : cfg;
+    : isStaffRollup
+      ? STAFF_ATTENDANCE_EMPLOYEE_CONFIG
+      : cfg;
 
   // Staff Attendance's designation/department are free text set per-employee
   // (not a fixed enum like EMP_ROLES), so their filter options are derived
@@ -883,8 +1032,19 @@ export default function ReportPage() {
     setExtraFieldKey(""); setExtraFieldPos(1);
     setFilters({});
     setDateFrom(""); setDateTo(""); setSearch(""); setPartialMaxAmount("");
+    setSort({});
     if (!cfg.isFeesModule) setFeesView("status");
   }, [rType, feesView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Switching between the staff report's two views swaps the whole column set,
+  // so the selection has to be re-seeded from the config being switched to -
+  // otherwise the per-employee view renders with daily keys that match nothing
+  // and the table comes up empty.
+  useEffect(() => {
+    if (!isStaffRollup) return;
+    setSelCols(STAFF_ATTENDANCE_EMPLOYEE_CONFIG.columns.filter(c => c.dflt).map(c => c.key));
+    setSort({});
+  }, [isStaffRollup]);
 
   const sourceData =
     rType === "fees" && feesView === "collection" ? dbPayments        :
@@ -902,6 +1062,16 @@ export default function ReportPage() {
       data = data.filter(x => x.totalPaid <= maxAmt).sort((a, b) => b.totalPaid - a.totalPaid);
     }
   }
+  // The per-employee view is a rollup OF the filtered day rows, not a separate
+  // query: run the daily config's getData against the raw day rows first, then
+  // collapse. That way every filter above (including the date range) narrows
+  // the rollup too, instead of re-filters being applied to rows that no longer
+  // carry those fields.
+  if (isStaffRollup) data = rollupStaffAttendance(data);
+  // Sorted against the ACTIVE view's columns, not a hardcoded config - the two
+  // staff views have different keys, and every other report type sorts its own
+  // columns (a numeric one would otherwise degrade to string order).
+  if (sort.key) data = sortRows(data, sort.key, sort.dir, ecfg.columns);
   // actCols follows selection order; fixed-entry types use locked order + inserted extra fields
   const actCols = ecfg.isFixedEntry
     ? buildFixedCols(ecfg.fixedColumns, extraFields).filter(c => !hiddenFixedCols.includes(c.key))
@@ -1173,6 +1343,20 @@ export default function ReportPage() {
 
       {/* Filters */}
       <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-4">
+
+        {/* Staff Attendance view toggle — daily rows vs per-employee rollup */}
+        {cfg.isDualView && (
+          <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+            <button onClick={() => setStaffView("daily")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${staffView === "daily" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              Daily
+            </button>
+            <button onClick={() => setStaffView("employee")}
+              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${staffView === "employee" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              Per Employee
+            </button>
+          </div>
+        )}
 
         {/* Fees module sub-tabs */}
         {cfg.isFeesModule && (
@@ -1516,9 +1700,20 @@ export default function ReportPage() {
                   </th>
                 )}
                 <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap w-8">#</th>
-                {actCols.map(c=>(
-                  <th key={c.key} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">{c.label}</th>
-                ))}
+                {actCols.map(c=>{
+                  const SortIcon = sortIcon(c.key);
+                  const active  = sort.key === c.key;
+                  return (
+                    <th key={c.key} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">
+                      <button onClick={() => toggleSort(c.key)}
+                        title={`Sort by ${c.label}`}
+                        className={`inline-flex items-center gap-1 transition-colors hover:text-white ${active ? "text-white" : ""}`}>
+                        {c.label}
+                        <SortIcon className={`w-3 h-3 ${active ? "opacity-100" : "opacity-40"}`}/>
+                      </button>
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>

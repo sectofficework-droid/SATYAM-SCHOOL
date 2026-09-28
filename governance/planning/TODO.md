@@ -1896,7 +1896,58 @@ password-change flows, PDF generation utilities.
 
 ---
 
+## Staff attendance reporting — follow-ups (found 2026-09-29)
+
+Raised while upgrading the admin panel's "Staff Attendance (Kiosk)" report
+(`ai-context\SESSION-2026-09-29-2.md`). Everything above this section shipped;
+the four items below were identified in the same pass and deliberately **not**
+built, because each needs either a decision or a database change that was not
+approved.
+
+- [ ] **REQ-FEAT-002 — Half-day attendance is not representable (MINOR→MAJOR,
+      needs DDL).** `employee_attendance.status` is `CHECK IN ('P','A','L')`
+      (`SUPABASE_STAFF_LEAVE.sql:18-24`), so a half-day is indistinguishable
+      from a full day, and the new report's overtime/shortfall column counts it
+      as a whole short day. Needs the constraint widened (e.g. add `'HD'`, or a
+      nullable `half_day BOOLEAN` to avoid breaking existing consumers of the
+      status value) plus a Mark-Attendance UI control in
+      `(dashboard)/employee/page.js` `MarkStaffAttendanceTab`. **Blocks on:** a
+      decision on which representation, then a migration run in the Supabase SQL
+      Editor. Would also affect the kiosk/teacher mobile apps if the status
+      value is ever written from them.
+- [ ] **REQ-FEAT-003 — Leave has no type (MINOR→MAJOR, needs DDL).**
+      `leave_requests` has only a free-text `reason`
+      (`SUPABASE_STAFF_LEAVE.sql:28-39`) — no Casual / Sick / Earned / Unpaid
+      classification, so no payroll-grade leave report is possible. The new
+      per-employee view counts leave days but cannot break them down. **Blocks
+      on:** deciding the type list, then a migration + an approval-form field.
+- [ ] **REQ-FEAT-004 — No staff holiday calendar; the report only knows
+      weekends.** The new "Working Days" filter offers All / Exclude Sundays /
+      Exclude weekends. The student-side `holidays` table
+      (`SUPABASE_ATTENDANCE_*`, edited in
+      `(dashboard)/attendance/page.js`) is student-scoped; reusing it for staff
+      attendance is a real decision (same holidays? school-wide vs
+      department-specific?) and was not assumed. **Blocks on:** a decision, not
+      a migration — the table already exists.
+- [ ] **REQ-FEAT-005 — The staff attendance report loads every
+      `employee_attendance` + `employee_shifts` row up front.** Pre-existing,
+      not introduced by the 2026-09-29 work, and not fixed there: the report
+      page loads all 11 report types in one `Promise.all` (`report/page.js:815`),
+      so a date-range pushdown into `getStaffAttendanceForReport()` would have
+      been dead code until the loader is split. Currently fine at this school's
+      data volume; will degrade as attendance history grows. **Fix would be:**
+      lazy-load per report type (or per view) rather than widening one query.
+
+**Assumption to confirm before trusting overtime figures:**
+`STANDARD_DAY_HOURS = 8` in `admin-panel/src/lib/reportService.js` is a
+placeholder, not a confirmed school policy. `kiosk_settings.shift_end_time`
+(16:00) is a *cutoff*, not a shift length, and was deliberately not reused as the
+baseline. If the real working day differs, every OT/shortfall value in the new
+report is wrong until that constant is corrected.
+
+---
+
 **How to use this file going forward:** when a session finds something
-out-of-scope, add it here under the right severity per §J14 rather than
+out-of-scope, add it here under the right severity per AJ14 rather than
 fixing it inline. When you approve a fix, move it to an "in progress" note
 with the session date, and log the outcome in the next `work-log\LOG-*.md`.

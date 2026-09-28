@@ -98,7 +98,33 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Committed and pushed 2026-09-29** — admin panel: finalized Transfer Certificate (School Leaving Certificate) pixel-perfect layout and typography in `admin-panel/src/lib/tcGenerator.js`. Resolved horizontal alignment inconsistency by standardizing `.tc-col-lbl` (`width: 170px`) and left-aligning pupil details (`.tc-val-left`, 184px) into a straight vertical column. Restored title and stadium pill hierarchy (clean bold serif title between divider lines; capsule pill enclosing `SCHOOL DISE CODE - 24224100067`). Enclosed rustication penalty note inside the footer box. Standardized all body labels (13.5px, weight 600), values (13.5px, weight 700), and footer signatures (13.5px, weight 600). Confirmed exact 1-page A4 print output (`595.92 x 842.88 pt`) with zero overflow. Commit `b617acd`. See `ai-context\SESSION-2026-09-28-1.md` and `work-log\LOG-2026-09-28.md`.
+**Not committed as of 2026-09-29 (session 2)** — admin panel: upgraded the **Staff
+Attendance (Kiosk)** report (`admin-panel/src/app/(dashboard)/report/page.js` +
+`admin-panel/src/lib/reportService.js`). Added overtime/shortfall against a standard
+8-hour day, an unclosed-punch column + "Needs Attention" tile, a **Per Employee** view
+(Daily/Per-Employee toggle) with present/absent/leave counts, attendance % excluding
+approved leave, total hours and total late minutes, a Working Days filter
+(all/Sundays/weekends), day names, sortable columns, and 8 summary tiles. **No DB
+change** — read-only over existing `employee_attendance`/`employee_shifts`. Verified:
+lint clean, `/report` 200, and a 30-check fixture harness against the real
+rollup/sort code (which caught two real bugs: a hardcoded column lookup that would
+have made other reports sort numbers as text, and a zero-net period rendering blank
+instead of `0.0`). **NOT verified in-browser** — the page needs auth, so the table,
+both views, and the tiles are unconfirmed on screen, and no real data was checked.
+**`STANDARD_DAY_HOURS = 8` is an assumption, not confirmed school policy** — every
+overtime figure depends on it. Half-day status, leave types, a staff holiday
+calendar, and the pre-existing all-rows-up-front load were deliberately left undone
+(`TODO.md` REQ-FEAT-002..005). See `ai-context\SESSION-2026-09-29-2.md` and
+`work-log\LOG-2026-09-29.md`.
+
+**Prior — Committed and pushed 2026-09-29 (session 1)** — auto-close open shifts at a
+configurable shift end time (`SUPABASE_AUTO_CLOSE_SHIFTS.sql`,
+`SUPABASE_PG_CRON_SCHEDULE.sql`, `kioskSettingsService.js`, `KioskSettingsTab.js`).
+Commit `343cd62`. **SQL migrations still NOT applied to production** — user must run
+both files in Supabase SQL Editor. Until then open shifts are never auto-closed, which
+is why the unclosed-punch tile above will keep filling.
+
+**Prior — Committed and pushed 2026-09-29** — admin panel: finalized Transfer Certificate (School Leaving Certificate) pixel-perfect layout and typography in `admin-panel/src/lib/tcGenerator.js`. Resolved horizontal alignment inconsistency by standardizing `.tc-col-lbl` (`width: 170px`) and left-aligning pupil details (`.tc-val-left`, 184px) into a straight vertical column. Restored title and stadium pill hierarchy (clean bold serif title between divider lines; capsule pill enclosing `SCHOOL DISE CODE - 24224100067`). Enclosed rustication penalty note inside the footer box. Standardized all body labels (13.5px, weight 600), values (13.5px, weight 700), and footer signatures (13.5px, weight 600). Confirmed exact 1-page A4 print output (`595.92 x 842.88 pt`) with zero overflow. Commit `b617acd`. See `ai-context\SESSION-2026-09-28-1.md` and `work-log\LOG-2026-09-28.md`.
 
 **Prior — Committed and pushed 2026-09-28** — admin panel: redesigned Transfer Certificate (School Leaving Certificate) generator and layout across `/documents` and `/student/[id]/tc` to match official `LAKSHITA RAULA TC.pdf`. Extracted authentic dual logos (`tc-logo.png`, `tc-saraswati.png`), added Base64 assets (`tcAssets.js`), central generator engine (`tcGenerator.js`) with 18 numbered fields, continuous baseline underlines, word date parser, caution notice, 3-column signatures, and live scaled preview + batch roster/CSV issuance in `/documents`. Verified via `npm run build` (clean, 46/46 routes). Commit `dc3f507`.
 
