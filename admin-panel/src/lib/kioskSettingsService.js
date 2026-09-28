@@ -14,16 +14,18 @@ export async function getKioskSettings() {
     expectedStartTime: row?.o_expected_start_time?.slice(0, 5) || "09:00",
     lateGraceMinutes:  row?.o_late_grace_minutes ?? 10,
     absentCutoffTime:  row?.o_absent_cutoff_time?.slice(0, 5) || "",
+    shiftEndTime:      row?.o_shift_end_time?.slice(0, 5) || "16:00",
     pinIsSet:          !!row?.o_pin_is_set,
   };
 }
 
 // absentCutoffTime: "" disables the auto-absent job (stored as NULL).
-export async function saveKioskSettings({ expectedStartTime, lateGraceMinutes, absentCutoffTime }) {
+export async function saveKioskSettings({ expectedStartTime, lateGraceMinutes, absentCutoffTime, shiftEndTime }) {
   const { error } = await supabase.rpc("save_kiosk_settings", {
     p_expected_start_time: expectedStartTime,
     p_late_grace_minutes:  Number(lateGraceMinutes) || 0,
     p_absent_cutoff_time:  absentCutoffTime || null,
+    p_shift_end_time:      shiftEndTime || null,
   });
   if (error) throw error;
 }

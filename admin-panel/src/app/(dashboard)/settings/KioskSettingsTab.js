@@ -12,6 +12,7 @@ export default function KioskSettingsTab() {
   const [grace, setGrace]           = useState(10);
   const [cutoffEnabled, setCutoffEnabled] = useState(false);
   const [cutoffTime, setCutoffTime] = useState("11:00");
+  const [shiftEndTime, setShiftEndTime] = useState("16:00");
 
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
@@ -31,6 +32,7 @@ export default function KioskSettingsTab() {
         setGrace(s.lateGraceMinutes);
         setCutoffEnabled(!!s.absentCutoffTime);
         if (s.absentCutoffTime) setCutoffTime(s.absentCutoffTime);
+        setShiftEndTime(s.shiftEndTime);
         setPinIsSet(s.pinIsSet);
       })
       .catch(() => {})
@@ -46,6 +48,7 @@ export default function KioskSettingsTab() {
         expectedStartTime: startTime,
         lateGraceMinutes:  grace,
         absentCutoffTime:  cutoffEnabled ? cutoffTime : "",
+        shiftEndTime:      shiftEndTime,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -108,6 +111,17 @@ export default function KioskSettingsTab() {
           <p className="text-xs text-gray-400 -mt-1">
             e.g. start time 9:00 AM + 10 min grace means anyone checking in after 9:10 AM is flagged late (the report still shows the true minutes late from 9:00, not from the grace cutoff).
           </p>
+
+          <div className="border-t border-gray-100 pt-3.5">
+            <div className="max-w-[160px]">
+              <label className="block text-xs font-medium text-gray-500 mb-1">Shift end time (auto check-out)</label>
+              <input type="time" value={shiftEndTime} onChange={e => setShiftEndTime(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-school-navy" />
+            </div>
+            <p className="text-xs text-gray-400 mt-1.5">
+              All open shifts are automatically checked out at this time every day. Staff who forget to check out from their app won&apos;t be blocked from punching in the next day.
+            </p>
+          </div>
 
           <div className="border-t border-gray-100 pt-3.5">
             <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer mb-2">
