@@ -302,16 +302,16 @@ export function generateSchoolLeavingCertificateSingle(r) {
       <div class="tc-body">
         <!-- Certificate No and Register No -->
         <div class="tc-row" style="margin-bottom: 2px;">
-          <span class="tc-lbl" style="font-weight: 700;">Certificate No:</span>
-          <span class="tc-line" style="flex: 0 0 170px; margin: 0 8px;">${r.certificateNo || "&nbsp;"}</span>
+          <span class="tc-lbl" style="font-weight: 700; font-size: 15px;">Certificate No:</span>
+          <span class="tc-line" style="flex: 0 0 180px; margin: 0 8px;">${r.certificateNo || "&nbsp;"}</span>
           <span style="flex: 1;"></span>
-          <span class="tc-lbl" style="font-weight: 700;">Register No. of the pupil :</span>
-          <span class="tc-line" style="flex: 0 0 140px; margin-left: 8px;">${r.registerNo || "&nbsp;"}</span>
+          <span class="tc-lbl" style="font-weight: 700; font-size: 15px;">Register No. of the pupil :</span>
+          <span class="tc-line" style="flex: 0 0 150px; margin-left: 8px;">${r.registerNo || "&nbsp;"}</span>
         </div>
 
         <!-- U-DISE -->
         <div class="tc-row">
-          <span class="tc-lbl" style="font-weight: 600;">U-DISE Number of the Student :</span>
+          <span class="tc-lbl" style="font-weight: 600; font-size: 15px;">U-DISE Number of the Student :</span>
           <span class="tc-line" style="flex: 1; margin-left: 8px;">${r.udiseNo || "&nbsp;"}</span>
         </div>
 
@@ -353,7 +353,7 @@ export function generateSchoolLeavingCertificateSingle(r) {
 
         <!-- 7. DOB -->
         <div class="tc-row">
-          <span class="tc-lbl">7. Date of Birth ( in Christian Era ) as per Admission Register ( in Figures ) :</span>
+          <span class="tc-lbl" style="font-size: 13.8px; letter-spacing: -0.1px;">7. Date of Birth ( in Christian Era ) as per Admission Register ( in Figures ) :</span>
           <span class="tc-line" style="flex: 1; margin-left: 8px;">${dobDmy || "&nbsp;"}</span>
         </div>
 
@@ -521,7 +521,7 @@ export const TC_STYLES = `
   }
   .tc-cert-box {
     border: 2px solid #000;
-    padding: 8px 14px 10px;
+    padding: 8px 16px 10px 16px;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
@@ -537,38 +537,38 @@ export const TC_STYLES = `
     border-bottom: 2px solid #000;
   }
   .tc-logo-left {
-    width: 64px;
-    height: 72px;
+    width: 74px;
+    height: 82px;
     object-fit: contain;
     flex-shrink: 0;
   }
   .tc-logo-right {
-    width: 54px;
-    height: 72px;
+    width: 62px;
+    height: 82px;
     object-fit: contain;
     flex-shrink: 0;
   }
   .tc-header-center {
     flex: 1;
     text-align: center;
-    padding: 0 10px;
+    padding: 0 8px;
   }
   .tc-trust-name {
-    font-size: 13.5px;
+    font-size: 15.5px;
     font-weight: 700;
     letter-spacing: 0.2px;
     color: #000;
   }
   .tc-school-name {
     font-family: "Times New Roman", Times, Georgia, serif;
-    font-size: 25px;
+    font-size: 30px;
     font-weight: 900;
     letter-spacing: 0.5px;
     color: #000;
     margin: 2px 0;
   }
   .tc-school-address {
-    font-size: 12.5px;
+    font-size: 14px;
     font-weight: 600;
     color: #000;
   }
@@ -579,10 +579,10 @@ export const TC_STYLES = `
   }
   .tc-title-pill {
     display: inline-block;
-    border: 2px solid #000;
-    border-radius: 22px;
-    padding: 4px 36px;
-    font-size: 19px;
+    border: 2.2px solid #000;
+    border-radius: 26px;
+    padding: 5px 42px;
+    font-size: 23px;
     font-weight: 900;
     letter-spacing: 0.8px;
     text-transform: uppercase;
@@ -590,7 +590,7 @@ export const TC_STYLES = `
     margin-bottom: 6px;
   }
   .tc-dise-code {
-    font-size: 13.5px;
+    font-size: 15.5px;
     font-weight: 800;
     letter-spacing: 0.5px;
     color: #000;
@@ -606,17 +606,17 @@ export const TC_STYLES = `
   .tc-row {
     display: flex;
     align-items: flex-end;
-    font-size: 13px;
+    font-size: 14.8px;
     line-height: 1.25;
     color: #000;
     width: 100%;
-    min-height: 25px;
+    min-height: 27px;
   }
   .tc-row.tc-sub {
     padding-left: 20px;
   }
   .tc-col-lbl {
-    width: 220px;
+    width: 245px;
     flex-shrink: 0;
     display: inline-flex;
     justify-content: space-between;
@@ -624,26 +624,28 @@ export const TC_STYLES = `
     color: #000;
     padding-right: 6px;
     box-sizing: border-box;
+    font-size: 14.8px;
   }
   .tc-lbl {
     font-weight: 500;
     white-space: nowrap;
     color: #000;
     flex-shrink: 0;
+    font-size: 14.8px;
   }
   .tc-line {
     flex: 1;
-    border-bottom: 1.2px solid #000;
+    border-bottom: 1.4px solid #000;
     display: inline-block;
     text-align: center;
     font-weight: 700;
-    font-size: 13px;
+    font-size: 15px;
     letter-spacing: 0.3px;
     color: #000;
     text-transform: uppercase;
     padding: 0 4px 1px;
     box-sizing: border-box;
-    min-height: 18px;
+    min-height: 20px;
   }
   .tc-sig-section {
     border-top: 2px solid #000;
@@ -656,37 +658,37 @@ export const TC_STYLES = `
     display: flex;
     flex-direction: column;
     gap: 14px;
-    font-size: 13.5px;
+    font-size: 15px;
   }
   .tc-sig-row {
     display: flex;
     align-items: flex-end;
   }
   .tc-sig-lbl {
-    font-size: 13.5px;
+    font-size: 15px;
     font-weight: 500;
     color: #000;
-    width: 110px;
+    width: 115px;
     flex-shrink: 0;
   }
   .tc-sig-line {
-    width: 240px;
-    border-bottom: 1.2px solid #000;
+    width: 250px;
+    border-bottom: 1.4px solid #000;
     text-align: center;
     font-weight: 700;
-    font-size: 13px;
+    font-size: 14.5px;
     color: #000;
     padding-bottom: 1px;
   }
   .tc-footer-right {
-    font-size: 14.5px;
+    font-size: 16.5px;
     font-weight: 700;
     color: #000;
     padding-bottom: 4px;
   }
   .tc-rustication-note {
     text-align: center;
-    font-size: 10px;
+    font-size: 11.5px;
     line-height: 1.35;
     color: #000;
     margin-top: 6px;
