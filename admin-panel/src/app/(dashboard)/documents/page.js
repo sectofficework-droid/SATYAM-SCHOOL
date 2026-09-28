@@ -1203,8 +1203,9 @@ function TcPreview({ row }) {
       <style>{TC_STYLES}</style>
       <div
         style={{
-          width: 794,
-          transform: "scale(0.371)",
+          width: "210mm",
+          height: "297mm",
+          transform: "scale(0.3715)",
           transformOrigin: "top left",
           pointerEvents: "none"
         }}
