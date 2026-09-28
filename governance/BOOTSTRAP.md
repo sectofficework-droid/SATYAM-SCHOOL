@@ -98,26 +98,11 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Committed and pushed 2026-09-26** — admin panel `student/page.js`: added
-a Gender filter dropdown ("All Genders"/Male/Female/Other) next to the
-existing Class filter on the Student Management list, matching `s.gender`
-from `studentService.getStudents()`; also added a "Gender Filter: ..."
-line to the PDF export header when active, mirroring the existing Class
-Filter line. Pushed to `origin/main` at the user's explicit request ("add
-push merge to deploy") — this repo works directly on `main`, so the push
-is the merge; Production (Vercel) auto-deploys from `main`. Verified via
-`npm run lint` (clean); **not verified in a live browser** — the Student
-page requires admin login and the user opted to skip the browser check
-rather than share credentials this session.
+**Committed and pushed 2026-09-28** — admin panel: redesigned Transfer Certificate (School Leaving Certificate) generator and layout across `/documents` and `/student/[id]/tc` to match official `LAKSHITA RAULA TC.pdf`. Extracted authentic dual logos (`tc-logo.png`, `tc-saraswati.png`), added Base64 assets (`tcAssets.js`), central generator engine (`tcGenerator.js`) with 18 numbered fields, continuous baseline underlines, word date parser, caution notice, 3-column signatures, and live scaled preview + batch roster/CSV issuance in `/documents`. Pushed to `origin/main` at commit `dc3f507`. Verified via `npm run build` (clean, 46/46 routes). See `ai-context\SESSION-2026-09-28-1.md` and `work-log\LOG-2026-09-28.md`.
 
-**Prior — Committed and pushed 2026-09-22** — `main` at `07097d9`
-("Complete REQ-SEC-002 Category 3 (Groups A/B/C + employees), fix Cat3
-v1.0.0+3 distribution, and 2 admin bugs"), 45 files, the mobile
-session-token rollout + REQ-BUG-018/019 + REQ-SEC-005 follow-up. See
-`work-log\LOG-2026-09-22.md` and `planning\TODO.md` for detail.
+**Prior — Committed and pushed 2026-09-26** — admin panel `student/page.js`: added a Gender filter dropdown next to the existing Class filter and added "Gender Filter: ..." to the PDF export header. Pushed to `origin/main`.
 
-Older checkpoints (2026-09-19 `6f67b8e` and earlier): see
-`work-log\LOG-2026-09-19.md` onward.
+Older checkpoints (2026-09-22 `07097d9` and earlier): see `work-log\LOG-2026-09-22.md` onward.
 
 Prior 2026-09-17 uncommitted work (kiosk face-recognition fixes —
 `mobile-app/lib/core/services/face_recognition_service.dart`,
