@@ -120,9 +120,16 @@ calendar, and the pre-existing all-rows-up-front load were deliberately left und
 **Prior — Committed and pushed 2026-09-29 (session 1)** — auto-close open shifts at a
 configurable shift end time (`SUPABASE_AUTO_CLOSE_SHIFTS.sql`,
 `SUPABASE_PG_CRON_SCHEDULE.sql`, `kioskSettingsService.js`, `KioskSettingsTab.js`).
-Commit `343cd62`. **SQL migrations still NOT applied to production** — user must run
-both files in Supabase SQL Editor. Until then open shifts are never auto-closed, which
-is why the unclosed-punch tile above will keep filling.
+Commit `343cd62`. **Migration status verified live 2026-09-29 (session 2): the main
+migration IS applied to production** — `kiosk_settings.shift_end_time` = `16:00:00`,
+`auto_close_open_shifts()` RPC exists and is callable. The earlier claim here that
+"SQL migrations still NOT applied" was **wrong** (stale note, user had run them).
+**Still unverified: the pg_cron schedule** (`SUPABASE_PG_CRON_SCHEDULE.sql`) —
+`cron.job` is not readable over PostgREST, but 17 open `employee_shifts` dating to
+2026-09-09 and zero ever-created "Auto Checked Out" alerts are strong evidence it was
+never scheduled. Also note `employee_attendance` currently holds **0 rows** (truncated
+during session 1 testing), so the report reads empty until real punches accumulate.
+See `ai-context\SESSION-2026-09-29-2.md`.
 
 **Prior — Committed and pushed 2026-09-29** — admin panel: finalized Transfer Certificate (School Leaving Certificate) pixel-perfect layout and typography in `admin-panel/src/lib/tcGenerator.js`. Resolved horizontal alignment inconsistency by standardizing `.tc-col-lbl` (`width: 170px`) and left-aligning pupil details (`.tc-val-left`, 184px) into a straight vertical column. Restored title and stadium pill hierarchy (clean bold serif title between divider lines; capsule pill enclosing `SCHOOL DISE CODE - 24224100067`). Enclosed rustication penalty note inside the footer box. Standardized all body labels (13.5px, weight 600), values (13.5px, weight 700), and footer signatures (13.5px, weight 600). Confirmed exact 1-page A4 print output (`595.92 x 842.88 pt`) with zero overflow. Commit `b617acd`. See `ai-context\SESSION-2026-09-28-1.md` and `work-log\LOG-2026-09-28.md`.
 

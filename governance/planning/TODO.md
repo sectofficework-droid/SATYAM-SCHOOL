@@ -1938,6 +1938,45 @@ approved.
       data volume; will degrade as attendance history grows. **Fix would be:**
       lazy-load per report type (or per view) rather than widening one query.
 
+- [ ] **REQ-FEAT-006 — pg_cron `auto-close-shifts` job appears never to have
+      been scheduled (found 2026-09-29, evidence-based).** The main migration
+      (`SUPABASE_AUTO_CLOSE_SHIFTS.sql`) **is** applied to production — verified
+      live: `kiosk_settings.shift_end_time` = `16:00:00`, `auto_close_open_shifts()`
+      RPC exists and is callable. But the *schedule* has no positive evidence:
+      **17 of 27 `employee_shifts` rows are still open**, oldest 2026-09-09 (20
+      days), and **zero "Auto Checked Out" alerts have ever been created** in
+      `teacher_alerts`. Had the job run after 16:00 on any of those days, all
+      would be closed. `cron.job` is not readable over PostgREST, so this needs
+      confirming in the SQL Editor: `SELECT jobname, schedule, command FROM cron.job;`
+      **Fix:** run `SUPABASE_PG_CRON_SCHEDULE.sql` if the job is absent. Note it
+      self-gates to after 16:00 IST (`SUPABASE_AUTO_CLOSE_SHIFTS.sql:75`), so it
+      will not visibly do anything before then — that is expected, not a fault.
+- [ ] **REQ-BUG-020 — 17 orphaned open `employee_shifts` (found 2026-09-29).**
+      All 17 have `check_out_at IS NULL` and **no matching `employee_attendance`
+      day row** (that table is currently empty — it was truncated during
+      2026-09-29 session 1 testing). So they are not blocking punch-in (the
+      blocking index is PARTIAL on open shifts only, and the kiosk's punch path
+      no longer writes a day row for these), but they do display as "on shift"
+      in Employee → Leave & Attendance → Live, and would be counted as real
+      hours by any overtime report.
+      **Do NOT blanket-close at 16:00** — that yields **negative durations** for
+      3 staff who punched in after 16:00 (Debiprasad Das 18:05, Rudra Prasad
+      Muni 20:26, Pragyan Panda 20:04) and invents hours for 16 others, netting
+      **-101.7 h of false shortfall**. Reviewed, refuse-to-guess SQL prepared:
+      `mobile-app/STAFF_SHIFT_BACKLOG_REVIEW.sql` (creates `preview_stale_shifts()`
+      read-only + `close_stale_shifts(confirm BOOLEAN)` that refuses to write a
+      close at or before the punch-in). **Blocks on:** a human decision per
+      shift — the 13 shifts on 2026-09-17 (punched 11:11–14:57, likely a bulk
+      face-enrolment/test session) are very probably not real work at all and
+      may warrant deletion rather than a synthetic close. Deletion of attendance
+      rows is destructive and needs its own explicit approval.
+- [ ] **REQ-HYG-007 — `employee_attendance` is empty (0 rows).** Truncated
+      deliberately during 2026-09-29 session 1 testing, so the Staff Attendance
+      (Kiosk) report renders zero rows and none of the new columns/tiles can be
+      exercised. Not a defect, but **the report cannot be meaningfully
+      in-browser-verified until real punches accumulate** — this is why that
+      verification is still outstanding in `SESSION-2026-09-29-2.md`.
+
 **Assumption to confirm before trusting overtime figures:**
 `STANDARD_DAY_HOURS = 8` in `admin-panel/src/lib/reportService.js` is a
 placeholder, not a confirmed school policy. `kiosk_settings.shift_end_time`
