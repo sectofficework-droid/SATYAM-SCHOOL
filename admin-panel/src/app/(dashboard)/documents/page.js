@@ -4,13 +4,15 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getStudents } from "@/lib/studentService";
 import { getS3ViewUrl } from "@/lib/s3Upload";
 import { fmtDMY } from "@/lib/utils";
+import { normalizeDate } from "@/lib/importUtils";
 import { getMarksheetsForClass, getSingleExamMarksheet, getCurrentOfficialExams } from "@/lib/marksheetService";
 import { isExamUnlocked } from "@/lib/examService";
 import S3Image from "@/components/S3Image";
 import * as XLSX from "xlsx";
 import {
   CreditCard, Award, FileText, Search, Download, FileSpreadsheet,
-  Users, GraduationCap, X, CheckSquare, ChevronLeft, ChevronRight
+  Users, GraduationCap, X, CheckSquare, ChevronLeft, ChevronRight,
+  Upload, AlertCircle, Printer, Trash2
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -44,6 +46,258 @@ const CARD_DESIGNS = [
   { id:1, name:"Classic Portrait",  desc:"Gold-ring photo, red nameplate" },
   { id:2, name:"Trust Landscape",   desc:"CR80 card, navy header/footer"  },
 ];
+
+// ── TC (School Leaving Certificate): bulk CSV/Excel import + print ─────────
+// Deliberately separate from the per-student TC route (student/[id]/tc/page.js)
+// - that one requires an already-enrolled student and marks them "Left" in
+// the database. This tool is print-only: it never writes to
+// transfer_certificates or touches a student's status, so it can generate
+// the certificate for anyone, in this system or not (e.g. reissuing an old
+// leaving certificate from paper records). Matches the school's actual
+// government-format "School Leaving Certificate" (see LAKSHITA RAULA TC.pdf
+// reference), not the simplified certificate the per-student route uses.
+const TC_FIELDS = [
+  { key: "certificateNo",      label: "Certificate No",                                required: true  },
+  { key: "registerNo",         label: "Register No. of the Pupil",                     required: false },
+  { key: "udiseNo",            label: "U-DISE Number of the Student",                  required: false },
+  { key: "name",                label: "Name of the Pupil",                            required: true  },
+  { key: "fatherName",         label: "Father's Name",                                 required: true  },
+  { key: "motherName",         label: "Mother's Name",                                 required: false },
+  { key: "aadhar",              label: "Pupil Aadhar No",                              required: false },
+  { key: "religion",            label: "Religion",                                     required: false },
+  { key: "caste",                label: "Caste / Category",                            required: false },
+  { key: "placeOfBirth",       label: "Place of Birth",                                required: false },
+  { key: "dob",                  label: "Date of Birth (DD-MM-YYYY)",                  required: true,  isDate: true },
+  { key: "lastSchoolAttended", label: "Last School Attended",                          required: false },
+  { key: "dateOfAdmission",    label: "Date of Admission (DD-MM-YYYY)",                required: false, isDate: true },
+  { key: "progress",            label: "Progress",                                     required: false },
+  { key: "conduct",              label: "Conduct",                                     required: false },
+  { key: "attendancePresent",  label: "Attendance - Present Days",                     required: false },
+  { key: "attendanceTotal",    label: "Attendance - Total Days",                       required: false },
+  { key: "attendanceClass",    label: "Attendance - In Class",                         required: false },
+  { key: "attendanceFrom",      label: "Attendance - From",                            required: false },
+  { key: "dateOfLeaving",      label: "Date of Leaving (DD-MM-YYYY)",                  required: true,  isDate: true },
+  { key: "passedExamText",      label: "Passed Examination (e.g. YES, STD 1ST PASSED)", required: false },
+  { key: "promotedText",        label: "Promoted To (e.g. YES, PROMOTED TO STD 2ND)",  required: false },
+  { key: "studyingClassSince", label: "Class Studying & Since When",                   required: false },
+  { key: "reasonForLeaving",    label: "Reason for Leaving",                           required: true  },
+  { key: "pen",                  label: "Student's PEN",                              required: false },
+  { key: "remarks",              label: "Remarks",                                    required: false },
+];
+
+const TC_SAMPLE_ROW = {
+  certificateNo: "SSIS/6724/140", registerNo: "140", udiseNo: "242241000672520057",
+  name: "LAKSHITA RAULA", fatherName: "SURYA RAULA", motherName: "ANITA RAULA",
+  aadhar: "273693183592", religion: "HINDU", caste: "GENERAL",
+  placeOfBirth: "BERHAMPUR, GANJAM, ODISHA", dob: "28-10-2018",
+  lastSchoolAttended: "SATYAM STARS INTERNATIONAL SCHOOL", dateOfAdmission: "06-06-2025",
+  progress: "VERY GOOD", conduct: "VERY GOOD",
+  attendancePresent: "210", attendanceTotal: "235", attendanceClass: "1ST", attendanceFrom: "JUNE 2025",
+  dateOfLeaving: "17-09-2026", passedExamText: "YES, STD 1ST PASSED", promotedText: "YES, PROMOTED TO STD 2ND",
+  studyingClassSince: "STD 1ST FROM 8 JUN 2025", reasonForLeaving: "TO STUDY ELSEWHERE",
+  pen: "23169819416", remarks: "PROMOTED TO STD 2ND",
+};
+
+function downloadTcTemplate() {
+  const headerRow = TC_FIELDS.map(f => f.label);
+  const sampleRow = TC_FIELDS.map(f => TC_SAMPLE_ROW[f.key] || "");
+  const ws = XLSX.utils.aoa_to_sheet([headerRow, sampleRow]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "TC Data");
+  XLSX.writeFile(wb, "TC_Bulk_Import_Template.csv");
+}
+
+// Strips a trailing "(...)" hint (e.g. "(DD-MM-YYYY)") before comparing
+// header text, so a plain CSV the user builds in Excel/Sheets without the
+// hint still matches the template's column labels.
+function stripHint(label) {
+  return String(label).replace(/\s*\([^)]*\)\s*$/, "").trim().toLowerCase();
+}
+
+// Reads an uploaded CSV/Excel file into TC_FIELDS-shaped rows, matching
+// columns by header label (order-independent) and validating required
+// fields + date columns. Returns rows with an `_errors` array each - rows
+// with errors are shown in the preview but excluded from printing.
+function parseTcFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        // raw:true keeps every CSV cell as plain text (no number/date auto-
+        // detection) - without it, long all-digit IDs like the 18-digit
+        // U-DISE number get silently coerced into a JS double and lose
+        // precision (e.g. ...520057 becomes ...520060). Values that should
+        // be numbers/dates are still recovered by normalizeDate() below,
+        // which parses plain DD-MM-YYYY/ISO strings directly.
+        const wb = XLSX.read(evt.target.result, { type: "binary", cellDates: true, raw: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "" });
+        if (rows.length < 2) { reject(new Error("File has no data rows. Please use the downloaded template.")); return; }
+        const headerRow = rows[0];
+        const colMap = {};
+        TC_FIELDS.forEach(f => {
+          const idx = headerRow.findIndex(h => stripHint(h) === stripHint(f.label));
+          if (idx >= 0) colMap[f.key] = idx;
+        });
+        const dataRows = rows.slice(1).filter(row => row.some(c => c !== "" && c !== undefined && c !== null));
+        if (!dataRows.length) { reject(new Error("No data rows found in the file.")); return; }
+
+        const result = dataRows.map((row, i) => {
+          const r = { _row: i + 2, _errors: [] };
+          TC_FIELDS.forEach(f => {
+            const raw = colMap[f.key] !== undefined ? (row[colMap[f.key]] ?? "") : "";
+            if (f.isDate) {
+              r[f.key] = raw ? (normalizeDate(raw) || "") : "";
+              r["_raw_" + f.key] = raw instanceof Date ? raw.toDateString() : String(raw).trim();
+            } else {
+              r[f.key] = raw instanceof Date ? (normalizeDate(raw) || "") : String(raw).trim();
+            }
+          });
+          TC_FIELDS.filter(f => f.required && !r[f.key]).forEach(f => r._errors.push(`${stripHint(f.label)} is required`));
+          TC_FIELDS.filter(f => f.isDate && !r[f.key] && r["_raw_" + f.key]).forEach(f =>
+            r._errors.push(`${stripHint(f.label)} "${r["_raw_" + f.key]}" is not a valid date`));
+          return r;
+        });
+        resolve(result);
+      } catch {
+        reject(new Error("Could not read the file. Please use the downloaded template (.csv or .xlsx)."));
+      }
+    };
+    reader.onerror = () => reject(new Error("Could not read the file."));
+    reader.readAsBinaryString(file);
+  });
+}
+
+// One numbered field, matching the reference form's "label : underlined value"
+// shape. Plain inline text (not flex columns) so a long label (field 7) wraps
+// naturally within the page width instead of forcing the row wider than the
+// certificate box.
+function tcFieldLine(num, label, value) {
+  return `<div class="tf"><b>${num}.</b> ${label} :<span class="tv">${value || "&nbsp;"}</span></div>`;
+}
+// Unnumbered continuation line (e.g. "(in Words)" under field 7), indented
+// to align under its parent field's label.
+function tcSubLine(label, value) {
+  return `<div class="tf sub">${label} :<span class="tv">${value || "&nbsp;"}</span></div>`;
+}
+
+function generateSchoolLeavingCertificateHTML(rows, logoUrl) {
+  const pages = rows.map((r) => {
+    const { words: dobWords, dmy: dobDmy } = dobParts(r.dob);
+    const admissionDmy = fmtDMY(r.dateOfAdmission) || "";
+    const leavingDmy = fmtDMY(r.dateOfLeaving) || "";
+    const religionCaste = [r.religion, r.caste].filter(Boolean).join(", ");
+
+    return `
+    <div class="page">
+      <div class="cert">
+        <div class="hdr">
+          ${logoUrl ? `<img src="${logoUrl}" class="logo" />` : ""}
+          <div class="hdrtext">
+            <div class="trust">SATYAM EDUCATION CHARITABLE TRUST (E-8941) MANAGED</div>
+            <div class="school">SATYAM STARS INTERNATIONAL SCHOOL</div>
+            <div class="addr">Swaminarayan Nagar, Bhidbhajan, Pandesara, Surat-394221.</div>
+          </div>
+        </div>
+
+        <div class="title">SCHOOL LEAVING CERTIFICATE</div>
+        <div class="disewrap"><span class="dise">SCHOOL DISE CODE - 24224100067</span></div>
+
+        <div class="toprow">
+          <span><b>Certificate No:</b> <u>${r.certificateNo || "&nbsp;"}</u></span>
+          <span><b>Register No. of the pupil:</b> <u>${r.registerNo || "&nbsp;"}</u></span>
+        </div>
+        <div class="toprow single"><b>U-DISE Number of the Student:</b> <u>${r.udiseNo || "&nbsp;"}</u></div>
+
+        <div class="body">
+          ${tcFieldLine(1, "Name of the Pupil", r.name)}
+          ${tcFieldLine(2, "Father&rsquo;s Name", r.fatherName)}
+          ${tcFieldLine(3, "Mother&rsquo;s Name", r.motherName)}
+          ${tcFieldLine(4, "Pupil Aadhar No.", r.aadhar)}
+          ${tcFieldLine(5, "Religion and Caste", religionCaste)}
+          ${tcFieldLine(6, "Place of Birth", r.placeOfBirth)}
+          ${tcFieldLine("7", "Date of Birth (in Christian Era) as per Admission Register (in Figures)", dobDmy)}
+          ${tcSubLine("(in Words)", dobWords)}
+          ${tcFieldLine(8, "Last School Attended", r.lastSchoolAttended)}
+          ${tcFieldLine(9, "Date of Admission", admissionDmy)}
+          <div class="tf split">
+            <span class="half"><b>10.</b> Progress :<span class="tv">${r.progress || "&nbsp;"}</span></span>
+            <span class="half"><b>11.</b> Conduct :<span class="tv">${r.conduct || "&nbsp;"}</span></span>
+          </div>
+          <div class="tf"><b>12.</b> Attendance :<span class="tv">${r.attendancePresent || "&nbsp;"}</span> Out of <span class="tv">${r.attendanceTotal || "&nbsp;"}</span> in Class <span class="tv">${r.attendanceClass || "&nbsp;"}</span> From <span class="tv">${r.attendanceFrom || "&nbsp;"}</span></div>
+          ${tcFieldLine(13, "Date of Leaving the School", leavingDmy)}
+          ${tcFieldLine(14, "Whether he/she has Passed the examination", r.passedExamText)}
+          ${tcSubLine("or Promoted to the next Higher Class", r.promotedText)}
+          ${tcFieldLine(15, "Class in which Studying and Since When", r.studyingClassSince)}
+          ${tcFieldLine(16, "Reason for Leaving The School", r.reasonForLeaving)}
+          ${tcFieldLine(17, "Student&rsquo;s PEN (Permanent Education Number)", r.pen)}
+          ${tcFieldLine(18, "Remarks", r.remarks)}
+        </div>
+
+        <div class="bottom">
+          <div class="footer">
+            <div>
+              <div class="sigline">Checked by ________________________</div>
+              <div class="sigline">Class Teacher ________________________</div>
+              <div class="sigline">Date <u>${leavingDmy || "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"}</u></div>
+            </div>
+            <div class="principal">Signature of Principal</div>
+          </div>
+
+          <p class="note">(No change in entry in this certificate shall be made except by the authority issuing it any infringement of this requirement is liable to involve the imposition of a penalty such as that of rustication)</p>
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>School Leaving Certificate</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{font-family:Arial,sans-serif;color:#111;background:#fff;}
+  .page{width:210mm;height:297mm;padding:10mm;page-break-after:always;}
+  .page:last-child{page-break-after:avoid;}
+  @media print{
+    body{margin:0;}
+    .page{page-break-after:always;}
+    .page:last-child{page-break-after:avoid;}
+    @page{size:A4;margin:0;}
+  }
+  .cert{border:2.5px solid #000;padding:18px 26px;height:100%;display:flex;flex-direction:column;overflow:hidden;}
+  .hdr{display:flex;align-items:center;justify-content:center;gap:16px;text-align:center;padding-bottom:8px;}
+  .logo{width:62px;height:62px;object-fit:contain;flex-shrink:0;}
+  .hdrtext .trust{font-size:11.5px;font-weight:600;letter-spacing:0.3px;}
+  .hdrtext .school{font-size:24px;font-weight:900;margin-top:3px;}
+  .hdrtext .addr{font-size:11.5px;margin-top:3px;}
+  .title{text-align:center;font-size:20px;font-weight:900;letter-spacing:0.5px;border-top:2.5px solid #000;border-bottom:2.5px solid #000;padding:7px 0;margin-top:8px;}
+  .disewrap{text-align:center;margin:10px 0;}
+  .dise{display:inline-block;border:1.3px solid #000;border-radius:14px;padding:4px 18px;font-size:11.5px;font-weight:700;}
+  .toprow{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid #eee;}
+  .toprow.single{justify-content:flex-start;gap:8px;}
+  .toprow u{text-underline-offset:3px;}
+  .body{margin-top:4px;}
+  .tf{font-size:13px;line-height:1.45;padding:5px 0;border-bottom:1px dotted #ddd;}
+  .tf.sub{padding-left:24px;}
+  .tf.split{display:flex;gap:24px;}
+  .tf .half{flex:1;}
+  .tf b{margin-right:2px;}
+  .tv{display:inline-block;font-weight:700;border-bottom:1px solid #000;padding:0 5px;min-width:20px;}
+  .bottom{margin-top:auto;padding-top:16px;}
+  .footer{display:flex;justify-content:space-between;align-items:flex-end;font-size:13.5px;}
+  .sigline{margin-bottom:13px;}
+  .principal{font-weight:700;}
+  .note{text-align:center;font-size:9.5px;color:#444;margin-top:16px;font-style:italic;line-height:1.5;}
+</style>
+</head>
+<body>
+${pages}
+</body>
+</html>`;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtAddr(s) {
@@ -1192,6 +1446,11 @@ export default function DocumentsPage() {
   const [marksheetMode, setMarksheetMode]       = useState("final"); // "final" | "single"
   const [selectedExamId, setSelectedExamId]     = useState("");
   const [officialExams, setOfficialExams]       = useState([]);
+  const [tcRows, setTcRows]           = useState([]);
+  const [tcFileName, setTcFileName]   = useState("");
+  const [tcParsing, setTcParsing]     = useState(false);
+  const [tcError, setTcError]         = useState("");
+  const tcFileRef = useRef(null);
 
   useEffect(() => {
     setLoading(true);
@@ -1316,6 +1575,44 @@ export default function DocumentsPage() {
     }
   }, [selectedStudents, students, marksheetMode, selectedExamId, officialExams]);
 
+  const handleTcFileChange = useCallback(async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setTcParsing(true);
+    setTcError("");
+    try {
+      const rows = await parseTcFile(file);
+      setTcRows(rows);
+      setTcFileName(file.name);
+    } catch (err) {
+      setTcRows([]);
+      setTcFileName("");
+      setTcError(err.message);
+    } finally {
+      setTcParsing(false);
+    }
+  }, []);
+
+  const tcValidRows = tcRows.filter(r => r._errors.length === 0);
+
+  const handlePrintTc = useCallback(() => {
+    if (!tcValidRows.length) return;
+    const html = generateSchoolLeavingCertificateHTML(tcValidRows, logoUrl);
+    const win = window.open("", "_blank");
+    if (!win) { alert("Please allow pop-ups to print the certificates."); return; }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 300);
+  }, [tcValidRows, logoUrl]);
+
+  const clearTcRows = useCallback(() => {
+    setTcRows([]);
+    setTcFileName("");
+    setTcError("");
+  }, []);
+
   return (
     <div className="flex flex-col gap-5 max-w-7xl mx-auto">
       <div>
@@ -1333,14 +1630,106 @@ export default function DocumentsPage() {
         ))}
       </div>
 
-      {(activeTab === "noc" || activeTab === "tc") && (
+      {activeTab === "noc" && (
         <div className="flex flex-col items-center justify-center h-64 gap-4 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
           <FileText className="w-12 h-12 text-gray-300"/>
           <p className="text-gray-500 font-medium">Coming Soon</p>
-          {activeTab === "tc" && (
-            <p className="text-xs text-gray-400 -mt-2">
-              Transfer Certificates are generated per-student from each student's profile page in the meantime.
+        </div>
+      )}
+
+      {activeTab === "tc" && (
+        <div className="flex flex-col gap-5">
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <h2 className="text-sm font-semibold text-gray-700 mb-1 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-school-navy"/> Bulk Transfer Certificate (School Leaving Certificate)
+            </h2>
+            <p className="text-xs text-gray-400 mb-4">
+              Print-only — this does not touch student records or the database. Works for anyone,
+              enrolled here or not. Import a CSV/Excel file to generate certificates for many people at once.
+              {" "}For a single already-enrolled student, use the TC option on their profile page instead.
             </p>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <input ref={tcFileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleTcFileChange}/>
+              <button onClick={() => tcFileRef.current?.click()} disabled={tcParsing}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-school-navy text-white text-sm font-medium hover:bg-school-navy/90 disabled:opacity-50 transition-colors">
+                <Upload className="w-4 h-4"/>
+                {tcParsing ? "Reading…" : "Choose CSV / Excel File"}
+              </button>
+              <button onClick={downloadTcTemplate}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-lg border border-school-navy text-school-navy text-sm font-medium hover:bg-school-navy/5 transition-colors">
+                <Download className="w-4 h-4"/> Download Sample CSV
+              </button>
+              {tcFileName && (
+                <span className="text-xs text-gray-500 flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5"/>{tcFileName}
+                </span>
+              )}
+              {tcRows.length > 0 && (
+                <button onClick={clearTcRows} className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1 ml-auto">
+                  <Trash2 className="w-3.5 h-3.5"/>Clear
+                </button>
+              )}
+            </div>
+
+            {tcError && (
+              <div className="mt-3 flex items-start gap-2 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5"/>{tcError}
+              </div>
+            )}
+          </div>
+
+          {tcRows.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+                <span className="text-sm font-semibold text-gray-700">
+                  {tcRows.length} row{tcRows.length!==1?"s":""} parsed
+                </span>
+                <span className="text-xs">
+                  <span className="text-green-600 font-semibold">{tcValidRows.length} ready</span>
+                  {tcRows.length - tcValidRows.length > 0 && (
+                    <span className="text-red-500 font-semibold ml-2">{tcRows.length - tcValidRows.length} with errors</span>
+                  )}
+                </span>
+              </div>
+              <div className="max-h-80 overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Row</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Name</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 hidden sm:table-cell">Father's Name</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 hidden md:table-cell">Date of Leaving</th>
+                      <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {tcRows.map((r) => (
+                      <tr key={r._row} className={r._errors.length ? "bg-red-50/50" : ""}>
+                        <td className="px-4 py-2 text-gray-400 text-xs">{r._row}</td>
+                        <td className="px-3 py-2 font-medium text-gray-800">{r.name || "—"}</td>
+                        <td className="px-3 py-2 text-gray-500 hidden sm:table-cell">{r.fatherName || "—"}</td>
+                        <td className="px-3 py-2 text-gray-500 hidden md:table-cell">{fmtDMY(r.dateOfLeaving) || "—"}</td>
+                        <td className="px-3 py-2">
+                          {r._errors.length
+                            ? <span className="text-red-600 text-xs" title={r._errors.join("; ")}>
+                                <AlertCircle className="w-3.5 h-3.5 inline mr-1"/>{r._errors.length} error{r._errors.length!==1?"s":""}
+                              </span>
+                            : <span className="text-green-600 text-xs">Ready</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 px-5 py-3.5 border-t border-gray-100 bg-gray-50">
+                <button onClick={handlePrintTc} disabled={!tcValidRows.length}
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-school-navy text-white text-sm font-medium hover:bg-school-navy/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
+                  <Printer className="w-4 h-4"/> Print Certificates ({tcValidRows.length})
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}

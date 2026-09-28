@@ -137,6 +137,90 @@ function TcCertificate({ student, tcData }) {
   );
 }
 
+// ── Standalone printable TC document ─────────────────────────────
+// Built as a self-contained HTML string (own <style>, no Tailwind/dashboard
+// chrome) and printed from a fresh window — mirrors the pattern used for the
+// admission form PDF in student/[id]/page.js. window.print() on the
+// dashboard page itself would print the sidebar/header along with it.
+function generateTcHTML(student, tcData) {
+  const rows = [
+    ["Student's Name",          student.name],
+    ["Father's Name",           student.fatherName],
+    ["Mother's Name",           student.motherName],
+    ["Date of Birth",           fmtDMY(student.dob)],
+    ["Nationality / Religion",  `Indian / ${student.religion}`],
+    ["Category",                student.caste],
+    ["Aadhar Card No.",         student.aadhar || "Not Provided"],
+    ["Date of Admission",       fmtDMY(student.admissionDate)],
+    ["Class at Admission",      student.admissionClass || "—"],
+    ["Last Class Attended",     `${student.std}${student.section ? "-" + student.section : ""}`],
+    ["Academic Session",        student.session],
+    ["Date of Leaving",         new Date(tcData.leavingDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })],
+    ["Reason for Leaving",      tcData.reason === "Other" ? tcData.customReason : tcData.reason],
+    ["General Conduct",         tcData.conduct],
+    ["Dues / Books Cleared",    tcData.duesCleared ? "Yes — All cleared" : "No — Dues pending"],
+    ["Remarks",                 tcData.remarks || "—"],
+  ];
+
+  const rowsHTML = rows.map(([label, value]) => `
+    <div class="row">
+      <span class="rl">${label}</span>
+      <span class="rv">: ${value}</span>
+    </div>`).join("");
+
+  const tcDateStr = new Date(tcData.tcDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Transfer Certificate - ${student.name}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:Arial,sans-serif;color:#222;background:#fff;padding:14mm;}
+  @media print{body{padding:10mm;}}
+  .card{max-width:720px;margin:0 auto;border:4px solid #1e3a5f;border-radius:14px;padding:28px;}
+  .hdr{text-align:center;border-bottom:2px solid #e5e7eb;padding-bottom:16px;margin-bottom:20px;}
+  .hdr .sub{font-size:10px;font-weight:700;color:#666;text-transform:uppercase;letter-spacing:2px;}
+  .hdr h1{font-size:22px;font-weight:900;color:#1e3a5f;margin-top:4px;}
+  .hdr .loc{font-size:10px;color:#999;margin-top:4px;}
+  .hdr .meta{margin-top:10px;display:flex;justify-content:center;gap:24px;font-size:11px;color:#666;}
+  .hdr .meta b{color:#222;}
+  .row{display:flex;align-items:flex-start;border-bottom:1px solid #f1f1f1;padding:8px 0;}
+  .row:last-child{border-bottom:none;}
+  .rl{font-size:10.5px;color:#666;font-weight:600;width:210px;flex-shrink:0;padding-top:1px;}
+  .rv{font-size:12.5px;color:#111;font-weight:700;flex:1;}
+  .sigs{margin-top:32px;display:grid;grid-template-columns:repeat(3,1fr);gap:20px;padding-top:20px;border-top:2px solid #e5e7eb;}
+  .sig{text-align:center;}
+  .sig .ln{height:36px;border-bottom:1px solid #bbb;margin-bottom:6px;}
+  .sig .role{font-size:10.5px;font-weight:700;color:#444;}
+  .sig .school{font-size:8.5px;color:#999;}
+  .foot{text-align:center;font-size:8.5px;color:#999;margin-top:14px;}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="hdr">
+      <div class="sub">Satyam Stars International School</div>
+      <h1>TRANSFER CERTIFICATE</h1>
+      <div class="loc">Affiliated &middot; Surat, Gujarat &middot; India</div>
+      <div class="meta">
+        <span>TC No: <b>${tcData.tcNumber}</b></span>
+        <span>Date: <b>${tcDateStr}</b></span>
+      </div>
+    </div>
+    ${rowsHTML}
+    <div class="sigs">
+      <div class="sig"><div class="ln"></div><div class="role">Class Teacher</div><div class="school">Satyam Stars Int. School</div></div>
+      <div class="sig"><div class="ln"></div><div class="role">Checked By</div><div class="school">Satyam Stars Int. School</div></div>
+      <div class="sig"><div class="ln"></div><div class="role">Principal</div><div class="school">Satyam Stars Int. School</div></div>
+    </div>
+    <div class="foot">This certificate is issued on the basis of school records. Any correction must be reported within 30 days.</div>
+  </div>
+</body>
+</html>`;
+}
+
 // ── Main TC Page ───────────────────────────────────────────────
 export default function TcPage() {
   const { id }  = useParams();
@@ -241,7 +325,15 @@ export default function TcPage() {
             </p>
           </div>
           <button
-            onClick={() => window.print()}
+            onClick={() => {
+              const html = generateTcHTML(student, form);
+              const win = window.open("", "_blank");
+              if (!win) { alert("Please allow pop-ups to print the TC."); return; }
+              win.document.write(html);
+              win.document.close();
+              win.focus();
+              setTimeout(() => win.print(), 300);
+            }}
             className="inline-flex items-center gap-2 px-4 py-2 bg-school-navy text-white text-xs font-semibold rounded-xl hover:bg-school-navy-dark transition-colors"
           >
             <Printer className="w-3.5 h-3.5" /> Print TC
