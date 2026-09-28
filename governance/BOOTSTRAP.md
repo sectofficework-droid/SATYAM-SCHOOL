@@ -98,7 +98,9 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Not committed as of 2026-09-29 (session 2)** — admin panel: upgraded the **Staff
+**Committed and pushed 2026-09-29 (session 3)** — admin panel: finalized **Official Portrait & Clean Landscape ID Card Generation** in `admin-panel/src/app/(dashboard)/documents/page.js` and `admin-panel/public/id-card-*`. Portrait design matches official `id card protrait template.png` ($685 \times 1157\text{ px}$, $80\text{ mm} \times 135.1\text{ mm}$ on A4, 4 per sheet) with rounded orange frame, centered bold uppercase name, navy STD pill, colon-aligned dynamic fields, and principal signature. Landscape design matches clean CR80 card ($1011 \times 639\text{ px}$, $90\text{ mm} \times 56.9\text{ mm}$ on A4, 8 per sheet) with all legacy sample photo/text erased, zero opaque gray cover shapes, and direct alignment after pre-printed labels/colons. Live previews, bulk A4 PDF generation, and single-card PNG downloads verified for both formats. Verified clean via `npm run lint` and `npm run build` (46/46 pages). Commit `9fb659e`, pushed to `origin/main`. See `ai-context\SESSION-2026-09-29-3.md` and `work-log\LOG-2026-09-29.md`.
+
+**Prior — Committed and pushed 2026-09-29 (session 2)** — admin panel: upgraded the **Staff
 Attendance (Kiosk)** report (`admin-panel/src/app/(dashboard)/report/page.js` +
 `admin-panel/src/lib/reportService.js`). Added overtime/shortfall against a standard
 8-hour day, an unclosed-punch column + "Needs Attention" tile, a **Per Employee** view
@@ -276,8 +278,11 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-09-29 — Auto-close shifts at configurable shift end time.**
-Fixed bug where staff who punch in but forget to punch out are blocked from punching in the next day. Added `kiosk_settings.shift_end_time` (default 16:00), `auto_close_open_shifts` RPC (closes open shifts past end time + pushes `teacher_alerts` notification), modified `record_check_out` RPC to also push notification on manual checkout. pg_cron schedule every 15 min (separate migration file). Admin panel UI in Settings → Kiosk → Punch Timing. No mobile app update needed (RPC signatures unchanged). Committed `343cd62`, pushed to `origin/main`. **SQL migrations NOT yet applied to Supabase** — user must run both SQL files in Supabase Dashboard → SQL Editor. See `ai-context\SESSION-2026-09-29-1.md`, `work-log\LOG-2026-09-29.md`.
+**Current — Session 2026-09-29 (session 3) — Official Portrait & Clean Landscape ID Card Generation.**
+Prepared admin panel ID card generation (`/documents`) to match `id card protrait template.png` as final output. Created clean official template assets at `admin-panel/public/id-card-portrait-template.png` and `public/id-card-bg-1.jpg` ($685 \times 1157\text{ px}$, $80\text{ mm} \times 135.1\text{ mm}$ on A4, 4 per sheet) with orange frame, bold student name, navy STD pill, colon-aligned values, and signature. Cleaned landscape template at `public/id-card-bg-2.jpg` (CR80 $1011 \times 639\text{ px}$, $90\text{ mm} \times 56.9\text{ mm}$ on A4, 8 per sheet), removing all sample photo/text and eliminating opaque gray cover shapes. Verified live previews, bulk A4 PDF generation, and single-card PNG downloads for both formats. Verified clean via `npm run lint` and `npm run build`. Committed `9fb659e`, pushed to `origin/main`. See `ai-context\SESSION-2026-09-29-3.md`, `work-log\LOG-2026-09-29.md`.
+
+**Prior — Session 2026-09-29 (session 2) — Staff Attendance (Kiosk) report upgrades.**
+Upgraded Staff Attendance (Kiosk) report (`(dashboard)/report/page.js`, `reportService.js`) with overtime/shortfall, unclosed punch flags, Daily / Per-Employee toggle, working days filter, and column sorting. Committed `b7c60a3`, pushed to `origin/main`. See `ai-context\SESSION-2026-09-29-2.md`, `work-log\LOG-2026-09-29.md`.
 
 **Prior — Session 2026-09-22 — REQ-BUG-018 distribution blocker
 resolved via manual Play Store upload; Cat3 Group A restriction
