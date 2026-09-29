@@ -426,7 +426,9 @@ export async function getStaffAttendanceForReport() {
   ]);
   if (attRes.error) throw attRes.error;
   if (shiftRes.error) throw shiftRes.error;
-  if (empRes.error) throw empRes.error;
+  if (empRes.error) {
+    console.warn("Could not load employee details for staff attendance report:", empRes.error.message);
+  }
 
   const empMap = {};
   for (const e of (empRes.data || [])) empMap[e.id] = e;

@@ -936,11 +936,12 @@ export default function ReportPage() {
   const [dbStaffAttendance, setDbStaffAttendance] = useState([]);
   const [dbLoading,   setDbLoading]   = useState(true);
   const [dbSessions,  setDbSessions]  = useState(SESSIONS_FALLBACK);
+  const [refreshing,  setRefreshing]  = useState(false);
 
   const loadAll = useCallback(async () => {
-    setDbLoading(true);
+    setRefreshing(true);
     try {
-      const [students, fees, payments, employees, inventory, sessions, tcIssued, staffAttendance] = await Promise.all([
+      const results = await Promise.allSettled([
         getStudentsForReport(),
         getFeesForReport(),
         getPaymentsForReport(),
@@ -950,18 +951,20 @@ export default function ReportPage() {
         getTcIssuedForReport(),
         getStaffAttendanceForReport(),
       ]);
-      setDbStudents(students);
-      setDbFees(fees);
-      setDbPayments(payments);
-      setDbEmployees(employees);
-      setDbInventory(inventory);
-      setDbTcIssued(tcIssued);
-      setDbStaffAttendance(staffAttendance);
-      if (sessions.length) setDbSessions(sessions);
+      const [students, fees, payments, employees, inventory, sessions, tcIssued, staffAttendance] = results;
+      if (students.status === "fulfilled") setDbStudents(students.value);
+      if (fees.status === "fulfilled") setDbFees(fees.value);
+      if (payments.status === "fulfilled") setDbPayments(payments.value);
+      if (employees.status === "fulfilled") setDbEmployees(employees.value);
+      if (inventory.status === "fulfilled") setDbInventory(inventory.value);
+      if (sessions.status === "fulfilled" && sessions.value?.length) setDbSessions(sessions.value);
+      if (tcIssued.status === "fulfilled") setDbTcIssued(tcIssued.value);
+      if (staffAttendance.status === "fulfilled") setDbStaffAttendance(staffAttendance.value);
     } catch (e) {
       console.error("Report loadAll error:", e);
     } finally {
       setDbLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -1459,9 +1462,10 @@ export default function ReportPage() {
           <h2 className="text-xl font-bold text-gray-800">Reports & Export</h2>
           <p className="text-sm text-gray-500 mt-0.5">Generate, filter and export reports for any module</p>
         </div>
-        <button onClick={loadAll}
-          className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
-          <RefreshCw className="w-3 h-3"/>Refresh
+        <button onClick={loadAll} disabled={refreshing}
+          className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors disabled:opacity-60">
+          <RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin text-school-navy" : ""}`}/>
+          {refreshing ? "Refreshing..." : "Refresh"}
         </button>
       </div>
 
