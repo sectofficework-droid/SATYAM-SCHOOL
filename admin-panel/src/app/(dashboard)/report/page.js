@@ -5,6 +5,7 @@ import {
   GraduationCap, IndianRupee, Users, Package, Search,
   RefreshCw, Download, FileText, ShieldCheck, BookOpen, Landmark, IdCard,
   CheckSquare, X, LogOut, Fingerprint, ArrowUp, ArrowDown, ChevronsUpDown,
+  Trash2,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -991,6 +992,136 @@ export default function ReportPage() {
     return sort.dir === "desc" ? ArrowDown : ArrowUp;
   }
 
+  const [deletingStaffKey, setDeletingStaffKey] = useState(null);
+  const [selectedStaffRows, setSelectedStaffRows] = useState(new Set());
+
+  const getStaffRowKey = useCallback((row) => {
+    return isStaffRollup ? row.employeeId : `${row.employeeId}|${row.date}`;
+  }, [isStaffRollup]);
+
+  function toggleSelectStaffRow(key) {
+    setSelectedStaffRows(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
+  function toggleSelectAllStaff() {
+    const visibleKeys = data.map(getStaffRowKey);
+    const allSelected = visibleKeys.length > 0 && visibleKeys.every(k => selectedStaffRows.has(k));
+    setSelectedStaffRows(prev => {
+      const next = new Set(prev);
+      visibleKeys.forEach(k => {
+        if (allSelected) next.delete(k);
+        else next.add(k);
+      });
+      return next;
+    });
+  }
+
+  async function handleDeleteSelectedStaff() {
+    const count = selectedStaffRows.size;
+    if (!count) return;
+
+    const confirmMsg = isStaffRollup
+      ? `Delete ALL attendance and shift records for the ${count} selected employee(s)?\nThis will permanently remove data from both employee_shifts and employee_attendance.`
+      : `Delete ${count} selected attendance and shift record(s)?\nThis will permanently remove data from both employee_shifts and employee_attendance.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    setDeletingStaffKey("bulk");
+    try {
+      if (isStaffRollup) {
+        const empIds = Array.from(selectedStaffRows);
+        const matchingRows = dbStaffAttendance.filter(r => empIds.includes(r.employeeId));
+        const items = matchingRows.map(r => ({ employeeId: r.employeeId, date: r.date }));
+        const res = await fetch("/api/staff-attendance/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || "Failed to delete");
+        setDbStaffAttendance(prev => prev.filter(r => !empIds.includes(r.employeeId)));
+      } else {
+        const items = Array.from(selectedStaffRows).map(k => {
+          const [employeeId, date] = k.split("|");
+          return { employeeId, date };
+        });
+        const res = await fetch("/api/staff-attendance/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || "Failed to delete");
+        const deleteSet = new Set(selectedStaffRows);
+        setDbStaffAttendance(prev => prev.filter(r => !deleteSet.has(`${r.employeeId}|${r.date}`)));
+      }
+      setSelectedStaffRows(new Set());
+    } catch (err) {
+      alert("Delete failed: " + err.message);
+    } finally {
+      setDeletingStaffKey(null);
+    }
+  }
+
+  async function handleDeleteStaffAttendance(row) {
+    if (isStaffRollup) {
+      if (!window.confirm(`Delete ALL ${row.daysRecorded} attendance and shift record(s) for ${row.name} (${row.period})?\nThis will permanently remove data from both the shift table (employee_shifts) and attendance table (employee_attendance).`)) {
+        return;
+      }
+      setDeletingStaffKey(row.employeeId);
+      try {
+        const empRows = dbStaffAttendance.filter(r => r.employeeId === row.employeeId);
+        const dates = [...new Set(empRows.map(r => r.date))];
+        const res = await fetch("/api/staff-attendance/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ employeeId: row.employeeId, dates }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || "Failed to delete");
+        setDbStaffAttendance(prev => prev.filter(r => r.employeeId !== row.employeeId));
+        setSelectedStaffRows(prev => {
+          const next = new Set(prev);
+          next.delete(row.employeeId);
+          return next;
+        });
+      } catch (err) {
+        alert("Delete failed: " + err.message);
+      } finally {
+        setDeletingStaffKey(null);
+      }
+    } else {
+      if (!window.confirm(`Delete attendance and all shift records for ${row.name} on ${row.date}?\nThis will permanently remove data from both the shift table (employee_shifts) and attendance table (employee_attendance).`)) {
+        return;
+      }
+      const key = `${row.employeeId}|${row.date}`;
+      setDeletingStaffKey(key);
+      try {
+        const res = await fetch("/api/staff-attendance/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ employeeId: row.employeeId, date: row.date }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || "Failed to delete");
+        setDbStaffAttendance(prev => prev.filter(r => !(r.employeeId === row.employeeId && r.date === row.date)));
+        setSelectedStaffRows(prev => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      } catch (err) {
+        alert("Delete failed: " + err.message);
+      } finally {
+        setDeletingStaffKey(null);
+      }
+    }
+  }
+
   const cfg  = REPORT_CONFIGS[rType];
   const isStaffRollup = Boolean(cfg.isDualView && staffView === "employee");
   const ecfg = cfg.isFeesModule
@@ -1033,6 +1164,7 @@ export default function ReportPage() {
     setFilters({});
     setDateFrom(""); setDateTo(""); setSearch(""); setPartialMaxAmount("");
     setSort({});
+    setSelectedStaffRows(new Set());
     if (!cfg.isFeesModule) setFeesView("status");
     if (!cfg.isDualView) setStaffView("daily");
   }, [rType, feesView]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1048,6 +1180,7 @@ export default function ReportPage() {
       : cfg.columns;
     setSelCols(activeCols.filter(c => c.dflt).map(c => c.key));
     setSort({});
+    setSelectedStaffRows(new Set());
   }, [staffView, cfg.isDualView, cfg.columns]);
 
   const sourceData =
@@ -1689,17 +1822,55 @@ export default function ReportPage() {
         </div>
       )}
 
+      {/* Staff Attendance Multi-select bulk action bar */}
+      {rType === "staffAttendance" && selectedStaffRows.size > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center gap-2 text-sm text-red-800">
+            <span className="font-bold bg-red-100 text-red-700 px-2 py-0.5 rounded-full text-xs">
+              {selectedStaffRows.size}
+            </span>
+            <span>record(s) selected</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedStaffRows(new Set())}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:bg-red-100/60 transition-colors"
+            >
+              Clear Selection
+            </button>
+            <button
+              type="button"
+              onClick={handleDeleteSelectedStaff}
+              disabled={deletingStaffKey === "bulk"}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold bg-red-600 text-white hover:bg-red-700 shadow-sm transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {deletingStaffKey === "bulk" ? "Deleting..." : `Delete Selected (${selectedStaffRows.size})`}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Standard table */}
       {!ecfg.isEligibility && (
         <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
           <table className="text-xs w-full">
             <thead>
               <tr className="bg-school-navy text-white">
-                {isStudentSourced && manualSelect && (
+                {((isStudentSourced && manualSelect) || rType === "staffAttendance") && (
                   <th className="px-3 py-2.5 w-8">
                     <input type="checkbox"
-                      checked={data.length > 0 && data.every(row => selectedEnrollments.has(row.enrollNo))}
-                      onChange={toggleSelectAllVisible}
+                      checked={
+                        rType === "staffAttendance"
+                          ? data.length > 0 && data.every(row => selectedStaffRows.has(getStaffRowKey(row)))
+                          : data.length > 0 && data.every(row => selectedEnrollments.has(row.enrollNo))
+                      }
+                      onChange={
+                        rType === "staffAttendance"
+                          ? toggleSelectAllStaff
+                          : toggleSelectAllVisible
+                      }
                       className="w-3.5 h-3.5 accent-school-navy"/>
                   </th>
                 )}
@@ -1718,16 +1889,31 @@ export default function ReportPage() {
                     </th>
                   );
                 })}
+                {rType === "staffAttendance" && (
+                  <th className="px-3 py-2.5 text-center font-semibold whitespace-nowrap w-16">Action</th>
+                )}
               </tr>
             </thead>
             <tbody>
-              {data.map((row,idx)=>(
-                <tr key={idx} className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${idx%2===0?"bg-white":"bg-gray-50/40"}`}>
+              {data.map((row,idx)=>{
+                const isStaffSelected = rType === "staffAttendance" && selectedStaffRows.has(getStaffRowKey(row));
+                return (
+                <tr key={idx} className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${
+                  isStaffSelected ? "bg-red-50/60" : (idx%2===0?"bg-white":"bg-gray-50/40")
+                }`}>
                   {isStudentSourced && manualSelect && (
                     <td className="px-3 py-2">
                       <input type="checkbox"
                         checked={selectedEnrollments.has(row.enrollNo)}
                         onChange={() => toggleSelectRow(row.enrollNo)}
+                        className="w-3.5 h-3.5 accent-school-navy"/>
+                    </td>
+                  )}
+                  {rType === "staffAttendance" && (
+                    <td className="px-3 py-2">
+                      <input type="checkbox"
+                        checked={selectedStaffRows.has(getStaffRowKey(row))}
+                        onChange={() => toggleSelectStaffRow(getStaffRowKey(row))}
                         className="w-3.5 h-3.5 accent-school-navy"/>
                     </td>
                   )}
@@ -1741,10 +1927,23 @@ export default function ReportPage() {
                           : <span className="text-gray-300">-</span>}
                     </td>
                   ))}
+                  {rType === "staffAttendance" && (
+                    <td className="px-3 py-2 text-center whitespace-nowrap">
+                      <button
+                        onClick={() => handleDeleteStaffAttendance(row)}
+                        disabled={deletingStaffKey === (isStaffRollup ? row.employeeId : `${row.employeeId}|${row.date}`)}
+                        title={isStaffRollup ? `Delete all records for ${row.name}` : `Delete attendance & shifts for ${row.name} on ${row.date}`}
+                        className="p-1.5 rounded-lg text-red-500 hover:text-red-700 hover:bg-red-50 transition-colors disabled:opacity-50 inline-flex items-center justify-center"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
-              ))}
+              );
+              })}
               {data.length===0 && (
-                <tr><td colSpan={actCols.length + 1 + (isStudentSourced && manualSelect ? 1 : 0)} className="px-4 py-10 text-center text-gray-400 text-sm">No records match the selected filters</td></tr>
+                <tr><td colSpan={actCols.length + 1 + ((isStudentSourced && manualSelect) || rType === "staffAttendance" ? 1 : 0) + (rType === "staffAttendance" ? 1 : 0)} className="px-4 py-10 text-center text-gray-400 text-sm">No records match the selected filters</td></tr>
               )}
             </tbody>
           </table>

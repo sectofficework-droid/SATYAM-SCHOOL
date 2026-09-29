@@ -157,3 +157,17 @@ export async function getEmployeeAttendanceHistory(employeeId, fromDate, toDate)
   if (error) throw error;
   return data || [];
 }
+
+// ── Delete staff attendance & shifts ─────────────────────────────────────────
+// Removes records from BOTH employee_shifts and employee_attendance for an
+// employee on a specific date (or across multiple dates) via the admin API.
+export async function deleteStaffAttendanceRecord(params) {
+  const res = await fetch("/api/staff-attendance/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Failed to delete staff attendance");
+  return data;
+}

@@ -30,7 +30,7 @@ import {
 import {
   getPendingLeaveRequests, approveLeaveRequest, rejectLeaveRequest,
   getEmployeeAttendanceForDate, saveEmployeeAttendanceForDate, getEmployeeShiftsForDate,
-  getLiveStaffStatus,
+  getLiveStaffStatus, deleteStaffAttendanceRecord,
 } from "@/lib/staffLeaveService";
 import {
   getDailyTasks, addDailyTask, updateDailyTask, deactivateDailyTask, getCompletionStatus,
@@ -1926,22 +1926,35 @@ function MarkStaffAttendanceTab({ employees }) {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [status, setStatus] = useState({}); // employee_id -> 'P'|'A'
   const [shiftsByEmployee, setShiftsByEmployee] = useState({}); // employee_id -> [{ check_in_at, check_out_at, punch_method }]
+  const [recordedAttIds, setRecordedAttIds] = useState(new Set()); // employee_ids with actual attendance row in DB
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [deletingId, setDeletingId] = useState(null);
+  const [selectedEmpIds, setSelectedEmpIds] = useState(new Set());
 
   const activeEmployees = employees.filter(e => e.status !== "Inactive");
 
-  useEffect(() => {
+  const loadData = useCallback(() => {
     setLoading(true);
     Promise.all([getEmployeeAttendanceForDate(date), getEmployeeShiftsForDate(date)])
       .then(([rows, shifts]) => {
         const map = {};
-        rows.forEach(r => { map[r.employee_id] = r.status; });
+        const recorded = new Set();
+        rows.forEach(r => {
+          map[r.employee_id] = r.status;
+          recorded.add(r.employee_id);
+        });
         activeEmployees.forEach(e => { if (!map[e.id]) map[e.id] = "P"; });
         setStatus(map);
+        setRecordedAttIds(recorded);
         setShiftsByEmployee(shifts);
       }).finally(() => setLoading(false));
+  }, [date, activeEmployees]);
+
+  useEffect(() => {
+    setSelectedEmpIds(new Set());
+    loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
 
@@ -1952,6 +1965,7 @@ function MarkStaffAttendanceTab({ employees }) {
       await saveEmployeeAttendanceForDate(records);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+      loadData();
     } catch (e) {
       alert("Failed to save: " + e.message);
     } finally {
@@ -1959,39 +1973,173 @@ function MarkStaffAttendanceTab({ employees }) {
     }
   }
 
+  async function handleDelete(employeeId, employeeName) {
+    if (!window.confirm(`Delete attendance and all shift records for ${employeeName} on ${date}?\nThis will permanently remove data from both the shift table (employee_shifts) and attendance table (employee_attendance).`)) {
+      return;
+    }
+    setDeletingId(employeeId);
+    try {
+      await deleteStaffAttendanceRecord({ employeeId, date });
+      setShiftsByEmployee(prev => {
+        const next = { ...prev };
+        delete next[employeeId];
+        return next;
+      });
+      setRecordedAttIds(prev => {
+        const next = new Set(prev);
+        next.delete(employeeId);
+        return next;
+      });
+      setStatus(prev => {
+        const next = { ...prev };
+        delete next[employeeId];
+        return next;
+      });
+      setSelectedEmpIds(prev => {
+        const next = new Set(prev);
+        next.delete(employeeId);
+        return next;
+      });
+    } catch (e) {
+      alert("Failed to delete: " + e.message);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  const allActiveSelected = activeEmployees.length > 0 && activeEmployees.every(e => selectedEmpIds.has(e.id));
+
+  function toggleSelectAll() {
+    if (allActiveSelected) {
+      setSelectedEmpIds(new Set());
+    } else {
+      setSelectedEmpIds(new Set(activeEmployees.map(e => e.id)));
+    }
+  }
+
+  async function handleBulkDelete() {
+    const count = selectedEmpIds.size;
+    if (!count) return;
+    if (!window.confirm(`Delete attendance and all shift records for the ${count} selected employee(s) on ${date}?\nThis will permanently remove data from both the shift table (employee_shifts) and attendance table (employee_attendance).`)) {
+      return;
+    }
+    setDeletingId("bulk");
+    try {
+      const empIds = Array.from(selectedEmpIds);
+      await deleteStaffAttendanceRecord({ employeeIds: empIds, date });
+      setShiftsByEmployee(prev => {
+        const next = { ...prev };
+        empIds.forEach(id => delete next[id]);
+        return next;
+      });
+      setRecordedAttIds(prev => {
+        const next = new Set(prev);
+        empIds.forEach(id => next.delete(id));
+        return next;
+      });
+      setStatus(prev => {
+        const next = { ...prev };
+        empIds.forEach(id => delete next[id]);
+        return next;
+      });
+      setSelectedEmpIds(new Set());
+    } catch (e) {
+      alert("Failed to delete: " + e.message);
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-wrap gap-2">
-        <input type="date" value={date} onChange={e => setDate(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-        <button onClick={handleSave} disabled={saving}
-          className={`px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-50 ${
-            saved ? "bg-green-500" : "bg-school-navy hover:bg-school-navy/90"
-          }`}>
-          {saving ? "Saving..." : saved ? "Saved!" : "Save Attendance"}
-        </button>
+      <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-wrap gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <input type="date" value={date} onChange={e => setDate(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20" />
+          <label className="flex items-center gap-2 text-xs text-gray-600 font-medium cursor-pointer select-none py-1">
+            <input
+              type="checkbox"
+              checked={allActiveSelected}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 rounded border-gray-300 text-school-navy focus:ring-school-navy/30 cursor-pointer"
+            />
+            <span>Select All</span>
+          </label>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={handleSave} disabled={saving}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold text-white transition-colors disabled:opacity-50 ${
+              saved ? "bg-green-500" : "bg-school-navy hover:bg-school-navy/90"
+            }`}>
+            {saving ? "Saving..." : saved ? "Saved!" : "Save Attendance"}
+          </button>
+        </div>
       </div>
+
+      {selectedEmpIds.size > 0 && (
+        <div className="bg-red-50 border-b border-red-200 px-5 py-2.5 flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2 text-red-800 font-medium">
+            <span className="bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-full">{selectedEmpIds.size}</span>
+            <span>employee(s) selected</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedEmpIds(new Set())}
+              className="px-2.5 py-1 text-gray-600 hover:text-gray-900 hover:bg-red-100/60 rounded transition-colors"
+            >
+              Clear Selection
+            </button>
+            <button
+              type="button"
+              onClick={handleBulkDelete}
+              disabled={deletingId === "bulk"}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-700 shadow-sm transition-colors disabled:opacity-50"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {deletingId === "bulk" ? "Deleting..." : `Delete Selected (${selectedEmpIds.size})`}
+            </button>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center h-40 text-sm text-gray-400">Loading…</div>
       ) : (
         <div className="divide-y divide-gray-50 max-h-[520px] overflow-y-auto">
           {activeEmployees.map(e => {
             const shifts = shiftsByEmployee[e.id] || [];
+            const hasRecord = recordedAttIds.has(e.id) || shifts.length > 0;
+            const isSelected = selectedEmpIds.has(e.id);
             return (
-              <div key={e.id} className="flex items-center justify-between px-5 py-3 gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-gray-800">{e.name}</p>
-                  <p className="text-xs text-gray-400">{e.designation}</p>
-                  {shifts.map((s, i) => (
-                    <p key={i} className="text-xs text-gray-500 mt-1">
-                      {`In: ${fmtPunchTime(s.check_in_at) || "—"}`} · {`Out: ${fmtPunchTime(s.check_out_at) || "—"}`}
-                      {s.punch_method === "face" && (
-                        <span className="ml-1.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 text-[10px] font-semibold align-middle">Face Punch</span>
-                      )}
-                    </p>
-                  ))}
+              <div key={e.id} className={`flex items-center justify-between px-5 py-3 gap-3 transition-colors ${isSelected ? "bg-red-50/40" : ""}`}>
+                <div className="flex items-center gap-3 min-w-0">
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => {
+                      setSelectedEmpIds(prev => {
+                        const next = new Set(prev);
+                        next.has(e.id) ? next.delete(e.id) : next.add(e.id);
+                        return next;
+                      });
+                    }}
+                    className="w-4 h-4 rounded border-gray-300 text-school-navy focus:ring-school-navy/30 cursor-pointer flex-shrink-0"
+                  />
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-800">{e.name}</p>
+                    <p className="text-xs text-gray-400">{e.designation}</p>
+                    {shifts.map((s, i) => (
+                      <p key={i} className="text-xs text-gray-500 mt-1">
+                        {`In: ${fmtPunchTime(s.check_in_at) || "—"}`} · {`Out: ${fmtPunchTime(s.check_out_at) || "—"}`}
+                        {s.punch_method === "face" && (
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 text-[10px] font-semibold align-middle">Face Punch</span>
+                        )}
+                      </p>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex gap-1.5 flex-shrink-0">
+                <div className="flex items-center gap-1.5 flex-shrink-0">
                   {["P", "A"].map(v => (
                     <button key={v} onClick={() => setStatus(prev => ({ ...prev, [e.id]: v }))}
                       className={`w-9 h-9 rounded-lg text-xs font-bold border transition-colors ${
@@ -2002,6 +2150,17 @@ function MarkStaffAttendanceTab({ employees }) {
                       {v}
                     </button>
                   ))}
+                  {hasRecord && (
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(e.id, e.name)}
+                      disabled={deletingId === e.id}
+                      title={`Delete attendance & shift records for ${e.name} on ${date}`}
+                      className="w-9 h-9 rounded-lg flex items-center justify-center border border-red-200 text-red-500 hover:bg-red-50 hover:border-red-300 transition-colors disabled:opacity-50 ml-1"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             );
