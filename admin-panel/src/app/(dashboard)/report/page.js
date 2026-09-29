@@ -995,6 +995,127 @@ export default function ReportPage() {
   const [deletingStaffKey, setDeletingStaffKey] = useState(null);
   const [selectedStaffRows, setSelectedStaffRows] = useState(new Set());
 
+  const cfg  = REPORT_CONFIGS[rType];
+  const isStaffRollup = Boolean(cfg.isDualView && staffView === "employee");
+  const ecfg = cfg.isFeesModule
+    ? (feesView === "collection" ? cfg.collectionConfig : cfg.statusConfig)
+    : isStaffRollup
+      ? STAFF_ATTENDANCE_EMPLOYEE_CONFIG
+      : cfg;
+
+  // Staff Attendance's designation/department are free text set per-employee
+  // (not a fixed enum like EMP_ROLES), so their filter options are derived
+  // from whatever actually shows up in the loaded attendance rows.
+  const dbStaffDesignations = useMemo(
+    () => [...new Set(dbStaffAttendance.map(r => r.designation).filter(Boolean))].sort(),
+    [dbStaffAttendance]
+  );
+  const dbStaffDepartments = useMemo(
+    () => [...new Set(dbStaffAttendance.map(r => r.department).filter(Boolean))].sort(),
+    [dbStaffAttendance]
+  );
+
+  // Patch session filter options with live DB years (module-level config uses SESSIONS_FALLBACK as static placeholder)
+  const activeQuickFilters = useMemo(() =>
+    (ecfg.quickFilters || []).map(f => {
+      if (f.key === "session")     return { ...f, options: ["All", ...dbSessions] };
+      if (f.key === "designation" && rType === "staffAttendance") return { ...f, options: ["All", ...dbStaffDesignations] };
+      if (f.key === "department"  && rType === "staffAttendance") return { ...f, options: ["All", ...dbStaffDepartments] };
+      return f;
+    }), [ecfg.quickFilters, dbSessions, rType, dbStaffDesignations, dbStaffDepartments]);
+
+  useEffect(() => {
+    const activeCols = cfg.isFeesModule
+      ? (feesView === "collection" ? cfg.collectionConfig.columns : cfg.statusConfig.columns)
+      : cfg.columns;
+    const init = activeCols.filter(c => c.dflt).map(c => c.key);
+    setSelCols(init);
+    setExtraFields([]);
+    setHiddenFixedCols([]);
+    setShowAddExtra(false);
+    setExtraFieldKey(""); setExtraFieldPos(1);
+    setFilters({});
+    setDateFrom(""); setDateTo(""); setSearch(""); setPartialMaxAmount("");
+    setSort({});
+    setSelectedStaffRows(new Set());
+    if (!cfg.isFeesModule) setFeesView("status");
+    if (!cfg.isDualView) setStaffView("daily");
+  }, [rType, feesView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Switching between the staff report's two views swaps the whole column set,
+  // so the selection has to be re-seeded from the config being switched to -
+  // otherwise the per-employee view renders with daily keys that match nothing
+  // and the table comes up empty.
+  useEffect(() => {
+    if (!cfg.isDualView) return;
+    const activeCols = staffView === "employee"
+      ? STAFF_ATTENDANCE_EMPLOYEE_CONFIG.columns
+      : cfg.columns;
+    setSelCols(activeCols.filter(c => c.dflt).map(c => c.key));
+    setSort({});
+    setSelectedStaffRows(new Set());
+  }, [staffView, cfg.isDualView, cfg.columns]);
+
+  const sourceData =
+    rType === "fees" && feesView === "collection" ? dbPayments        :
+    rType === "fees"                              ? dbFees            :
+    rType === "employee"                          ? dbEmployees       :
+    rType === "inventory"                         ? dbInventory       :
+    rType === "tcIssued"                          ? dbTcIssued        :
+    rType === "staffAttendance"                   ? dbStaffAttendance :
+    /* student, eligibility, grRegister, udiseEntry, penEntry */ dbStudents;
+
+  let data = ecfg.getData(sourceData, filters, dateFrom, dateTo, search);
+  if (rType === "fees" && feesView === "status" && filters.status === "Partial" && partialMaxAmount !== "") {
+    const maxAmt = Number(partialMaxAmount);
+    if (!isNaN(maxAmt) && maxAmt >= 0) {
+      data = data.filter(x => x.totalPaid <= maxAmt).sort((a, b) => b.totalPaid - a.totalPaid);
+    }
+  }
+  // The per-employee view is a rollup OF the filtered day rows, not a separate
+  // query: run the daily config's getData against the raw day rows first, then
+  // collapse. That way every filter above (including the date range) narrows
+  // the rollup too, instead of re-filters being applied to rows that no longer
+  // carry those fields.
+  if (isStaffRollup) data = rollupStaffAttendance(data);
+  // Sorted against the ACTIVE view's columns, not a hardcoded config - the two
+  // staff views have different keys, and every other report type sorts its own
+  // columns (a numeric one would otherwise degrade to string order).
+  if (sort.key) data = sortRows(data, sort.key, sort.dir, ecfg.columns);
+  // actCols follows selection order; fixed-entry types use locked order + inserted extra fields
+  const actCols = ecfg.isFixedEntry
+    ? buildFixedCols(ecfg.fixedColumns, extraFields).filter(c => !hiddenFixedCols.includes(c.key))
+    : selCols.map(key => ecfg.columns.find(c => c.key === key)).filter(Boolean);
+
+  // Manual selection only applies to student-sourced report types (student,
+  // eligibility, grRegister, udiseEntry, penEntry all pull from dbStudents).
+  // selectedRows is looked up against the UNFILTERED base rows (not `data`,
+  // which reflects whatever class/search filter happens to be active right
+  // now) so a student ticked under one class filter is still included after
+  // switching to a different class or search term.
+  const isStudentSourced = sourceData === dbStudents;
+  const unfilteredStudentRows = isStudentSourced
+    ? ecfg.getData(sourceData, {}, "", "", "")
+    : [];
+  const selectedRows = unfilteredStudentRows.filter(row => selectedEnrollments.has(row.enrollNo));
+
+  function toggleSelectRow(enrollNo) {
+    setSelectedEnrollments(prev => {
+      const next = new Set(prev);
+      next.has(enrollNo) ? next.delete(enrollNo) : next.add(enrollNo);
+      return next;
+    });
+  }
+  function toggleSelectAllVisible() {
+    const visibleEnrollNos = data.map(row => row.enrollNo);
+    const allVisibleSelected = visibleEnrollNos.every(e => selectedEnrollments.has(e));
+    setSelectedEnrollments(prev => {
+      const next = new Set(prev);
+      visibleEnrollNos.forEach(e => allVisibleSelected ? next.delete(e) : next.add(e));
+      return next;
+    });
+  }
+
   const getStaffRowKey = useCallback((row) => {
     return isStaffRollup ? row.employeeId : `${row.employeeId}|${row.date}`;
   }, [isStaffRollup]);
@@ -1122,126 +1243,6 @@ export default function ReportPage() {
     }
   }
 
-  const cfg  = REPORT_CONFIGS[rType];
-  const isStaffRollup = Boolean(cfg.isDualView && staffView === "employee");
-  const ecfg = cfg.isFeesModule
-    ? (feesView === "collection" ? cfg.collectionConfig : cfg.statusConfig)
-    : isStaffRollup
-      ? STAFF_ATTENDANCE_EMPLOYEE_CONFIG
-      : cfg;
-
-  // Staff Attendance's designation/department are free text set per-employee
-  // (not a fixed enum like EMP_ROLES), so their filter options are derived
-  // from whatever actually shows up in the loaded attendance rows.
-  const dbStaffDesignations = useMemo(
-    () => [...new Set(dbStaffAttendance.map(r => r.designation).filter(Boolean))].sort(),
-    [dbStaffAttendance]
-  );
-  const dbStaffDepartments = useMemo(
-    () => [...new Set(dbStaffAttendance.map(r => r.department).filter(Boolean))].sort(),
-    [dbStaffAttendance]
-  );
-
-  // Patch session filter options with live DB years (module-level config uses SESSIONS_FALLBACK as static placeholder)
-  const activeQuickFilters = useMemo(() =>
-    (ecfg.quickFilters || []).map(f => {
-      if (f.key === "session")     return { ...f, options: ["All", ...dbSessions] };
-      if (f.key === "designation" && rType === "staffAttendance") return { ...f, options: ["All", ...dbStaffDesignations] };
-      if (f.key === "department"  && rType === "staffAttendance") return { ...f, options: ["All", ...dbStaffDepartments] };
-      return f;
-    }), [ecfg.quickFilters, dbSessions, rType, dbStaffDesignations, dbStaffDepartments]);
-
-  useEffect(() => {
-    const activeCols = cfg.isFeesModule
-      ? (feesView === "collection" ? cfg.collectionConfig.columns : cfg.statusConfig.columns)
-      : cfg.columns;
-    const init = activeCols.filter(c => c.dflt).map(c => c.key);
-    setSelCols(init);
-    setExtraFields([]);
-    setHiddenFixedCols([]);
-    setShowAddExtra(false);
-    setExtraFieldKey(""); setExtraFieldPos(1);
-    setFilters({});
-    setDateFrom(""); setDateTo(""); setSearch(""); setPartialMaxAmount("");
-    setSort({});
-    setSelectedStaffRows(new Set());
-    if (!cfg.isFeesModule) setFeesView("status");
-    if (!cfg.isDualView) setStaffView("daily");
-  }, [rType, feesView]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Switching between the staff report's two views swaps the whole column set,
-  // so the selection has to be re-seeded from the config being switched to -
-  // otherwise the per-employee view renders with daily keys that match nothing
-  // and the table comes up empty.
-  useEffect(() => {
-    if (!cfg.isDualView) return;
-    const activeCols = staffView === "employee"
-      ? STAFF_ATTENDANCE_EMPLOYEE_CONFIG.columns
-      : cfg.columns;
-    setSelCols(activeCols.filter(c => c.dflt).map(c => c.key));
-    setSort({});
-    setSelectedStaffRows(new Set());
-  }, [staffView, cfg.isDualView, cfg.columns]);
-
-  const sourceData =
-    rType === "fees" && feesView === "collection" ? dbPayments        :
-    rType === "fees"                              ? dbFees            :
-    rType === "employee"                          ? dbEmployees       :
-    rType === "inventory"                         ? dbInventory       :
-    rType === "tcIssued"                          ? dbTcIssued        :
-    rType === "staffAttendance"                   ? dbStaffAttendance :
-    /* student, eligibility, grRegister, udiseEntry, penEntry */ dbStudents;
-
-  let data = ecfg.getData(sourceData, filters, dateFrom, dateTo, search);
-  if (rType === "fees" && feesView === "status" && filters.status === "Partial" && partialMaxAmount !== "") {
-    const maxAmt = Number(partialMaxAmount);
-    if (!isNaN(maxAmt) && maxAmt >= 0) {
-      data = data.filter(x => x.totalPaid <= maxAmt).sort((a, b) => b.totalPaid - a.totalPaid);
-    }
-  }
-  // The per-employee view is a rollup OF the filtered day rows, not a separate
-  // query: run the daily config's getData against the raw day rows first, then
-  // collapse. That way every filter above (including the date range) narrows
-  // the rollup too, instead of re-filters being applied to rows that no longer
-  // carry those fields.
-  if (isStaffRollup) data = rollupStaffAttendance(data);
-  // Sorted against the ACTIVE view's columns, not a hardcoded config - the two
-  // staff views have different keys, and every other report type sorts its own
-  // columns (a numeric one would otherwise degrade to string order).
-  if (sort.key) data = sortRows(data, sort.key, sort.dir, ecfg.columns);
-  // actCols follows selection order; fixed-entry types use locked order + inserted extra fields
-  const actCols = ecfg.isFixedEntry
-    ? buildFixedCols(ecfg.fixedColumns, extraFields).filter(c => !hiddenFixedCols.includes(c.key))
-    : selCols.map(key => ecfg.columns.find(c => c.key === key)).filter(Boolean);
-
-  // Manual selection only applies to student-sourced report types (student,
-  // eligibility, grRegister, udiseEntry, penEntry all pull from dbStudents).
-  // selectedRows is looked up against the UNFILTERED base rows (not `data`,
-  // which reflects whatever class/search filter happens to be active right
-  // now) so a student ticked under one class filter is still included after
-  // switching to a different class or search term.
-  const isStudentSourced = sourceData === dbStudents;
-  const unfilteredStudentRows = isStudentSourced
-    ? ecfg.getData(sourceData, {}, "", "", "")
-    : [];
-  const selectedRows = unfilteredStudentRows.filter(row => selectedEnrollments.has(row.enrollNo));
-
-  function toggleSelectRow(enrollNo) {
-    setSelectedEnrollments(prev => {
-      const next = new Set(prev);
-      next.has(enrollNo) ? next.delete(enrollNo) : next.add(enrollNo);
-      return next;
-    });
-  }
-  function toggleSelectAllVisible() {
-    const visibleEnrollNos = data.map(row => row.enrollNo);
-    const allVisibleSelected = visibleEnrollNos.every(e => selectedEnrollments.has(e));
-    setSelectedEnrollments(prev => {
-      const next = new Set(prev);
-      visibleEnrollNos.forEach(e => allVisibleSelected ? next.delete(e) : next.add(e));
-      return next;
-    });
-  }
   const summary = ecfg.getSummary(data);
 
   function eligStatusText(eligible, done) {
