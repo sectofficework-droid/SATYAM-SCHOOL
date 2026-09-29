@@ -627,7 +627,7 @@ const REPORT_CONFIGS = {
       if (f.department  && f.department  !== "All") d = d.filter(x => x.department  === f.department);
       if (f.status      && f.status      !== "All") d = d.filter(x => x.status      === f.status);
       if (f.punchMethod && f.punchMethod !== "All") d = d.filter(x => x.punchMethod === f.punchMethod);
-      if (f.punctuality && f.punctuality !== "All") d = d.filter(x => x.punctuality.startsWith(f.punctuality === "Late" ? "Late" : "On Time"));
+      if (f.punctuality && f.punctuality !== "All") d = d.filter(x => x.punctuality?.startsWith(f.punctuality === "Late" ? "Late" : "On Time"));
       if (f.workingDays && f.workingDays !== "All") {
         d = d.filter(x => f.workingDays === "Exclude Sundays" ? x.dayIndex !== 0 : !x.isWeekend);
       }
@@ -643,7 +643,7 @@ const REPORT_CONFIGS = {
       const present = d.filter(x => x.status === "Present").length;
       const absent  = d.filter(x => x.status === "Absent").length;
       const leave   = d.filter(x => x.status === "Leave").length;
-      const late    = d.filter(x => x.punctuality.startsWith("Late")).length;
+      const late    = d.filter(x => (x.punctuality || "").startsWith("Late")).length;
       // Unclosed punches are the operational problem this report is meant to
       // surface: a staff member who forgot to punch out is still counted as a
       // full day's hours nowhere else, so it gets its own tile rather than
@@ -866,19 +866,6 @@ function sortRows(rows, key, dir, columns) {
   });
 }
 
-function toggleSort(key) {
-  setSort(prev => {
-    if (prev.key !== key) return { key, dir: "desc" };
-    if (prev.dir === "desc") return { key, dir: "asc" };
-    return {};
-  });
-}
-
-function sortIcon(key) {
-  if (sort.key !== key) return ChevronsUpDown;
-  return sort.dir === "desc" ? ArrowDown : ArrowUp;
-}
-
 // ── Color Map ─────────────────────────────────────────────────────────────────
 const COLOR_MAP = {
   blue:   {bg:"bg-blue-50",    border:"border-blue-200",    label:"text-blue-600",   val:"text-blue-700"  },
@@ -991,8 +978,21 @@ export default function ReportPage() {
   // what a report export is expected to let you do. Empty = source order.
   const [sort, setSort] = useState({});
 
+  function toggleSort(key) {
+    setSort(prev => {
+      if (prev.key !== key) return { key, dir: "desc" };
+      if (prev.dir === "desc") return { key, dir: "asc" };
+      return {};
+    });
+  }
+
+  function sortIcon(key) {
+    if (sort.key !== key) return ChevronsUpDown;
+    return sort.dir === "desc" ? ArrowDown : ArrowUp;
+  }
+
   const cfg  = REPORT_CONFIGS[rType];
-  const isStaffRollup = cfg.isDualView && staffView === "employee";
+  const isStaffRollup = Boolean(cfg.isDualView && staffView === "employee");
   const ecfg = cfg.isFeesModule
     ? (feesView === "collection" ? cfg.collectionConfig : cfg.statusConfig)
     : isStaffRollup
@@ -1034,6 +1034,7 @@ export default function ReportPage() {
     setDateFrom(""); setDateTo(""); setSearch(""); setPartialMaxAmount("");
     setSort({});
     if (!cfg.isFeesModule) setFeesView("status");
+    if (!cfg.isDualView) setStaffView("daily");
   }, [rType, feesView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Switching between the staff report's two views swaps the whole column set,
@@ -1041,10 +1042,13 @@ export default function ReportPage() {
   // otherwise the per-employee view renders with daily keys that match nothing
   // and the table comes up empty.
   useEffect(() => {
-    if (!isStaffRollup) return;
-    setSelCols(STAFF_ATTENDANCE_EMPLOYEE_CONFIG.columns.filter(c => c.dflt).map(c => c.key));
+    if (!cfg.isDualView) return;
+    const activeCols = staffView === "employee"
+      ? STAFF_ATTENDANCE_EMPLOYEE_CONFIG.columns
+      : cfg.columns;
+    setSelCols(activeCols.filter(c => c.dflt).map(c => c.key));
     setSort({});
-  }, [isStaffRollup]);
+  }, [staffView, cfg.isDualView, cfg.columns]);
 
   const sourceData =
     rType === "fees" && feesView === "collection" ? dbPayments        :
