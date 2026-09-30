@@ -92,10 +92,19 @@ function TcCertificate({ student, tcData }) {
   });
 
   return (
-    <div className="bg-white border rounded-2xl p-4 max-w-5xl mx-auto shadow-sm overflow-hidden" id="tc-print">
+    <div className="bg-white border rounded-2xl p-4 shadow-sm overflow-hidden" id="tc-print">
       <style>{TC_STYLES}</style>
-      <div className="overflow-x-auto flex justify-center">
-        <div dangerouslySetInnerHTML={{ __html: generateSchoolLeavingCertificateSheet(row) }} />
+      <div className="overflow-x-auto flex justify-center py-2">
+        <div
+          style={{
+            width: "297mm",
+            height: "210mm",
+            transform: "scale(0.85)",
+            transformOrigin: "top center",
+            marginBottom: "-31.5mm"
+          }}
+          dangerouslySetInnerHTML={{ __html: generateSchoolLeavingCertificateSheet(row) }}
+        />
       </div>
     </div>
   );
@@ -206,7 +215,7 @@ export default function TcPage() {
 
   if (submitted) {
     return (
-      <div className="max-w-3xl mx-auto space-y-5 pb-10">
+      <div className="max-w-5xl mx-auto space-y-5 pb-10">
         {/* Success banner */}
         <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-4 flex items-center gap-3">
           <CheckCircle2 className="w-5 h-5 text-green-600 flex-shrink-0" />

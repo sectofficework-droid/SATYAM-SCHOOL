@@ -439,19 +439,11 @@ export const TC_STYLES = `
     size: A4 landscape;
     margin: 0;
   }
-  * {
+  .tc-landscape-sheet,
+  .tc-landscape-sheet * {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
-  }
-  html, body {
-    margin: 0 !important;
-    padding: 0 !important;
-    background: #fff !important;
-    width: 297mm !important;
-    height: 210mm !important;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
   }
   .tc-landscape-sheet {
     width: 297mm;
