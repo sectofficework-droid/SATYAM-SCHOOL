@@ -280,7 +280,13 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-09-29 (session 3) — Official Portrait & Clean Landscape ID Card Generation.**
+**Current — Session 2026-09-30 (session 1) — Duplicate 2-up A4 Landscape TC, Kiosk Safeupdate Fix, Lateness Recalculation & Auto-Absent Sync.**
+1. Delivered 2-up A4 landscape TC output with vertical scissor cut line (`✂`) and scoped print styles to prevent dashboard CSS leakage.
+2. Resolved PostgreSQL `safeupdate` error (`code: 21000`) on `save_kiosk_settings` by recreating RPC with `WHERE id IS NOT NULL;` and adding Vercel server-side route `/api/kiosk-settings` with `SUPABASE_SERVICE_ROLE_KEY`.
+3. Added automatic punctuality recalculation when kiosk timings change; recalculated 17 punches today turning 7 false lates into "On Time".
+4. Implemented auto-absent sync (`/api/staff-attendance/sync-absent`) checking `absent_cutoff_time` on report view/refresh; marked 10 unpunched active staff absent for today (17 Present, 10 Absent, total 27). Committed `3f14950`, pushed to `origin/main`. See `ai-context\SESSION-2026-09-30-1.md`, `work-log\LOG-2026-09-30.md`.
+
+**Prior — Session 2026-09-29 (session 3) — Official Portrait & Clean Landscape ID Card Generation.**
 Prepared admin panel ID card generation (`/documents`) to match `id card protrait template.png` as final output. Created clean official template assets at `admin-panel/public/id-card-portrait-template.png` and `public/id-card-bg-1.jpg` ($685 \times 1157\text{ px}$, $80\text{ mm} \times 135.1\text{ mm}$ on A4, 4 per sheet) with orange frame, bold student name, navy STD pill, colon-aligned values, and signature. Cleaned landscape template at `public/id-card-bg-2.jpg` (CR80 $1011 \times 639\text{ px}$, $90\text{ mm} \times 56.9\text{ mm}$ on A4, 8 per sheet), removing all sample photo/text and eliminating opaque gray cover shapes. Verified live previews, bulk A4 PDF generation, and single-card PNG downloads for both formats. Verified clean via `npm run lint` and `npm run build`. Committed `9fb659e`, pushed to `origin/main`. See `ai-context\SESSION-2026-09-29-3.md`, `work-log\LOG-2026-09-29.md`.
 
 **Prior — Session 2026-09-29 (session 2) — Staff Attendance (Kiosk) report upgrades.**
