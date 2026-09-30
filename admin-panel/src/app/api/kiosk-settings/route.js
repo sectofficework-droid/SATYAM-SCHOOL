@@ -105,6 +105,8 @@ export async function POST(request) {
               .eq("id", row.id);
           })
         );
+      }
+
       // Auto-mark absent if absentCutoffTime has passed and today is a working day
       if (absentCutoffTime) {
         const [cutH, cutM] = absentCutoffTime.split(":").map(Number);
