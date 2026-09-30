@@ -46,7 +46,7 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
 ---
 
 ## 🛑 CRITICAL — needs an explicit decision before any fix is attempted
-- [~] **REQ-SEC-011 — Supabase `service_role` key hardcoded as a literal
+- [x] **REQ-SEC-011 — Supabase `service_role` key hardcoded as a literal
       fallback in two committed API routes, already pushed to a PUBLIC
       GitHub repo. Found 2026-09-30 while building the admin-creation
       feature below.** `admin-panel/src/app/api/kiosk-settings/route.js:15`
@@ -72,19 +72,45 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       `"role":"anon"`, the public anon key, which is safe and expected to
       ship in a mobile client (protected by RLS) — not a second instance
       of this issue. `npm run lint` clean after the fix.
-      **STILL YOUR ACTION NEEDED, not something I can do:** (1) **rotate
-      the `service_role` key** in Supabase Dashboard → Settings → API
-      (user said 2026-09-30 they'd do this now); (2) update
-      `admin-panel/.env.local` (git-ignored) and the Vercel project's
-      environment variables with the new key — every API route in this
-      list reads from env, not a redeployed default, so both places need
-      the new value or these routes break; (3) optionally scrub the old
-      key out of git history (e.g. `git filter-repo`/BFG) — lower priority
-      once rotated, since the exposed key is worthless after that, but
-      still good hygiene since it's sitting in public commit history
-      either way; (4) consider whether the repo should be private going
-      forward — flagged, not decided, your call, separate from key
-      rotation.
+      **Rotation in progress, 2026-09-30:** project uses Supabase's newer
+      API-key system (both a "Legacy anon, service_role API keys" tab and
+      a "Publishable and secret API keys" tab exist under Settings → API).
+      Rotated via the **new** system rather than regenerating the legacy
+      JWT secret — regenerating the legacy secret would have rotated the
+      `anon` key too, breaking every already-installed copy of the
+      Teacher/Student/Attendance apps (that key is hardcoded client-side
+      by design, see `mobile-app/lib/app_bootstrap.dart:15` — safe/expected
+      there, unlike the service_role leak this item is about). User
+      created a new secret key on the "Publishable and secret API keys"
+      tab, put it in `admin-panel/.env.local` as `SUPABASE_SERVICE_ROLE_KEY`
+      (same variable name the code already reads — only the value
+      changed). **Verified locally 2026-09-30**: restarted the dev server
+      (env vars only load at process start), then called `GET
+      /api/admin-users` with a deliberately bogus bearer token — got back
+      a clean `401 "Not authenticated"` in ~3s (a real round trip to
+      Supabase's Auth server rejecting the fake token), not a `500`
+      config error and no stack trace in the server log. That confirms
+      the new key loads and authenticates correctly; the other two routes
+      read the identical env var through the same fallback chain, so this
+      covers them too — did not call them directly since both write to
+      live attendance/kiosk data.
+      **User confirmed "all done" 2026-09-30** — Vercel env var updated,
+      redeployed, old legacy key revoked. **Verified from here**: called
+      the live production endpoint `https://satyam-stars-international-
+      school-a-six.vercel.app/api/admin-users` with a deliberately bogus
+      bearer token, same test as the local check above — got a clean
+      `401 "Not authenticated"`, confirming production is authenticating
+      to Supabase with a working key, not erroring out. Tried to
+      cross-check the exact env var/deployment via the Vercel MCP
+      connection too (`list_deployments`) but it returned `403 Forbidden`
+      — not authorized for this team's scope — so the endpoint test is
+      the independent confirmation on record, not a Vercel-dashboard
+      screenshot.
+      **Still open, lower priority, not blocking**: (1) optionally scrub
+      the old (now-revoked, so already worthless) key out of git history
+      (e.g. `git filter-repo`/BFG) — pure hygiene at this point; (2)
+      consider whether the repo should be private going forward —
+      flagged, not decided, your call.
 - [x] **REQ-SEC-006 — `_app_password_backup_20260821` still holds every
       student's/employee's original PLAINTEXT password, fully exposed to
       anon (no login required). Found 2026-09-19 during a REQ-SEC-002
@@ -2193,6 +2219,61 @@ one, then fixed per the answer, not guessed:
       an admin, logging in as them, and confirming Remove really deletes
       the Auth account are all still unverified in a running dev server
       this session.
+- [x] **REQ-BUG-058 — Edit Employee's Status dropdown offers "On Leave"/
+      "Resigned", which the database rejects outright. Found 2026-09-30
+      from a live user report: "Failed to save employee: new row for
+      relation \"employees\" violates check constraint
+      \"employees_status_check\"".** Confirmed via
+      `pg_get_constraintdef`: `employees.status` only ever accepts
+      `'Active'`/`'Inactive'` (`CHECK (status = ANY (ARRAY['Active',
+      'Inactive'])))`). `employee/page.js`'s Edit Employee form
+      (~line 1207) offered `<option>Active</option><option>On
+      Leave</option><option>Resigned</option>` — picking either of the
+      last two and saving always fails with exactly the error reported.
+      The separate Add Employee form right next to it already correctly
+      offers only Active/Inactive, so this was a leftover inconsistency,
+      not an intentional richer status model — confirmed live via
+      `SELECT status, count(*) FROM employees GROUP BY status` that only
+      Active (27) and Inactive (1) rows exist, nothing orphaned to worry
+      about.
+      **Decision asked**: match the DB (Active/Inactive only) vs. expand
+      the DB to 4 statuses and audit every `status !== "Inactive"` "is
+      active" check across the app (attendance marking, daily tasks,
+      etc.) so Resigned/On Leave staff don't wrongly count as active.
+      **User chose match-the-DB. FIXED 2026-09-30** — Edit form's Status
+      `<select>` now renders `["Active", "Inactive"].map(...)`, same as
+      Add Employee. "code it" given. `npm run lint` clean. **Not yet
+      click-tested** in a running dev server this session.
+- [x] **REQ-BUG-059 — No way to add an admin for an email that already has
+      a Supabase Auth login. Found 2026-09-30 from a live user question**
+      ("how to map to already available emailid to admin"). REQ-BUG-057's
+      new `/api/admin-users` Add flow always calls
+      `auth.admin.createUser()`, which fails if that email is already
+      registered — and there was no fallback. Confirmed via `SELECT u.id,
+      u.email, admin_users.id IS NOT NULL AS has_admin_row FROM
+      auth.users u LEFT JOIN admin_users ON admin_users.id = u.id` that
+      `sectofficework@gmail.com` (created 2026-06-25) is exactly this
+      case — a real orphaned Auth account with no `admin_users` row,
+      predating this route.
+      **Decision asked**: detect-and-confirm vs. auto-link silently. User
+      chose detect-and-confirm. **FIXED 2026-09-30.**
+      `/api/admin-users` POST: on a duplicate-email createUser failure,
+      looks up the existing Auth user by email
+      (`auth.admin.listUsers()`), and — only if that account has no
+      `admin_users` row yet (a genuine duplicate-admin attempt still
+      errors clearly) — returns `409 {needsLink: true, existingUserId}`
+      instead of a flat error. Accepts a new `linkExistingId` field: when
+      present, skips `createUser` entirely and inserts `admin_users`
+      using that id, ignoring whatever password was typed (an existing
+      account's password is never touched by this path).
+      `UsersRolesTab.js`: `authedFetch()` now attaches the parsed error
+      body to the thrown `Error` (`err.body`) so the caller can inspect
+      `needsLink`; `saveUser()`'s create path catches that case, shows a
+      `confirm()` ("account already exists... link it instead? password
+      will not be changed"), and resubmits with `linkExistingId` on
+      accept. "code it" given. `npm run lint` clean. **Not yet
+      click-tested** — the real orphaned account above (your own email)
+      is the natural first thing to try this on.
 
 ## FEATURE INITIATIVES (large, multi-session — own plan file, own mini gate checklist)
 - [ ] **REQ-FEAT-001 — Staff App unification: evolve `mobile-app/` teacher
