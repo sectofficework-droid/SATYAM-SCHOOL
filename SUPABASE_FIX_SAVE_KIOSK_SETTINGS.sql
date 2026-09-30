@@ -1,20 +1,26 @@
 -- ============================================================================
 -- FIX: save_kiosk_settings safeupdate error
 -- PostgreSQL safeupdate extension requires a WHERE clause on all UPDATE statements.
--- This script replaces save_kiosk_settings with WHERE id IS NOT NULL.
+-- This script drops the old function and recreates save_kiosk_settings with WHERE id IS NOT NULL.
 -- ============================================================================
 
+-- Drop old versions first to avoid type mismatch errors
+DROP FUNCTION IF EXISTS public.save_kiosk_settings(TIME, INT, TIME, TIME);
+DROP FUNCTION IF EXISTS public.save_kiosk_settings(TIME WITHOUT TIME ZONE, INT, TIME WITHOUT TIME ZONE, TIME WITHOUT TIME ZONE);
+DROP FUNCTION IF EXISTS public.save_kiosk_settings(TIME, INT, TIME);
+DROP FUNCTION IF EXISTS public.save_kiosk_settings;
+
 CREATE OR REPLACE FUNCTION public.save_kiosk_settings(
-  p_expected_start_time TIME,
+  p_expected_start_time TIME WITHOUT TIME ZONE,
   p_late_grace_minutes INT,
-  p_absent_cutoff_time TIME,
-  p_shift_end_time TIME
+  p_absent_cutoff_time TIME WITHOUT TIME ZONE,
+  p_shift_end_time TIME WITHOUT TIME ZONE
 )
 RETURNS VOID
 LANGUAGE plpgsql SECURITY DEFINER
 AS $$
 BEGIN
-  UPDATE kiosk_settings SET
+  UPDATE public.kiosk_settings SET
     expected_start_time = p_expected_start_time,
     late_grace_minutes  = GREATEST(p_late_grace_minutes, 0),
     absent_cutoff_time  = p_absent_cutoff_time,
@@ -26,3 +32,4 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION public.save_kiosk_settings(TIME, INT, TIME, TIME) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.save_kiosk_settings(TIME, INT, TIME, TIME) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.save_kiosk_settings(TIME, INT, TIME, TIME) TO anon;
