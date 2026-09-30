@@ -412,6 +412,13 @@ const STAFF_ATTENDANCE_SHIFT_FIELDS =
   "employee_id, date, check_in_at, check_out_at, punch_method, is_late, late_minutes";
 
 export async function getStaffAttendanceForReport() {
+  // Ensure unpunched staff are marked absent if cutoff has passed
+  try {
+    if (typeof window !== "undefined") {
+      await fetch("/api/staff-attendance/sync-absent", { method: "POST" }).catch(() => {});
+    }
+  } catch (_) {}
+
   const [attRes, shiftRes, empRes] = await Promise.all([
     supabase
       .from("employee_attendance")

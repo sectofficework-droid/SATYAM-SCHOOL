@@ -105,9 +105,53 @@ export async function POST(request) {
               .eq("id", row.id);
           })
         );
+      // Auto-mark absent if absentCutoffTime has passed and today is a working day
+      if (absentCutoffTime) {
+        const [cutH, cutM] = absentCutoffTime.split(":").map(Number);
+        const cutTotalMins = (cutH || 0) * 60 + (cutM || 0);
+
+        const nowParts = new Intl.DateTimeFormat("en-US", {
+          timeZone: "Asia/Kolkata",
+          hour: "numeric",
+          minute: "numeric",
+          hour12: false,
+        }).formatToParts(new Date());
+        const curH = Number(nowParts.find((p) => p.type === "hour")?.value || 0);
+        const curM = Number(nowParts.find((p) => p.type === "minute")?.value || 0);
+        const curTotalMins = curH * 60 + curM;
+
+        if (curTotalMins >= cutTotalMins) {
+          const { data: events } = await supabaseAdmin
+            .from("school_calendar_events")
+            .select("category")
+            .eq("event_date", todayDate);
+
+          const isWorking = events?.some((e) => e.category === "working_day");
+          const isHoliday = events?.some((e) => e.category === "holiday" || e.category === "govt");
+          const weekday = new Date(`${todayDate}T00:00:00`).getDay();
+
+          if (isWorking || (weekday !== 0 && !isHoliday)) {
+            const [{ data: emps }, { data: allTodayAtt }] = await Promise.all([
+              supabaseAdmin.from("employees").select("id").eq("status", "Active"),
+              supabaseAdmin.from("employee_attendance").select("employee_id").eq("date", todayDate),
+            ]);
+
+            const punchedSet = new Set((allTodayAtt || []).map((a) => a.employee_id));
+            const missing = (emps || []).filter((e) => !punchedSet.has(e.id));
+            if (missing.length) {
+              await supabaseAdmin.from("employee_attendance").insert(
+                missing.map((e) => ({
+                  employee_id: e.id,
+                  date: todayDate,
+                  status: "A",
+                }))
+              );
+            }
+          }
+        }
       }
     } catch (recalcErr) {
-      console.warn("Failed to auto-recalculate today's punches:", recalcErr);
+      console.warn("Failed to auto-recalculate today's punches or absent staff:", recalcErr);
     }
 
     return NextResponse.json({ success: true, data: data?.[0] });
