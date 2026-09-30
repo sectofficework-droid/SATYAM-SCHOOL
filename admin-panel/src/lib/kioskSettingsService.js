@@ -34,18 +34,16 @@ export async function saveKioskSettings({ expectedStartTime, lateGraceMinutes, a
         shiftEndTime: shiftEndTime || null,
       }),
     });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.success) return json.data;
-      if (json.error) throw new Error(json.error);
-    } else {
-      const json = await res.json().catch(() => ({}));
-      if (json.error) throw new Error(json.error);
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && json.success) {
+      return json.data;
+    }
+    if (json.error) {
+      throw new Error(json.error);
     }
   } catch (apiErr) {
-    // If the API error is a known server rejection, throw it; otherwise fallback to RPC
     if (apiErr.message && !apiErr.message.includes("fetch")) {
-      // Try RPC fallback only if API failed unexpectedly
+      throw apiErr;
     }
   }
 
