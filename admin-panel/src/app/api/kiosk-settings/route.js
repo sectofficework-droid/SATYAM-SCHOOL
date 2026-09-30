@@ -43,6 +43,73 @@ export async function POST(request) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
+    // Automatically recalculate today's attendance & shifts with the updated timings
+    try {
+      const todayDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+      const newExpectedTime = expectedStartTime || "09:00";
+      const newGrace = Number(lateGraceMinutes) || 0;
+      const [expH, expM] = newExpectedTime.split(":").map(Number);
+      const expTotalMins = (expH || 0) * 60 + (expM || 0);
+      const cutoffTotalMins = expTotalMins + newGrace;
+
+      const [{ data: todayAtt }, { data: todayShifts }] = await Promise.all([
+        supabaseAdmin
+          .from("employee_attendance")
+          .select("id, check_in_at")
+          .eq("date", todayDate)
+          .not("check_in_at", "is", null),
+        supabaseAdmin
+          .from("employee_shifts")
+          .select("id, check_in_at")
+          .eq("date", todayDate)
+          .not("check_in_at", "is", null),
+      ]);
+
+      const computeLateness = (checkInAt) => {
+        const d = new Date(checkInAt);
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: "Asia/Kolkata",
+          hour: "numeric",
+          minute: "numeric",
+          second: "numeric",
+          hour12: false,
+        }).formatToParts(d);
+        const h = Number(parts.find((p) => p.type === "hour")?.value || 0);
+        const m = Number(parts.find((p) => p.type === "minute")?.value || 0);
+        const s = Number(parts.find((p) => p.type === "second")?.value || 0);
+        const checkInTotalMins = h * 60 + m + s / 60;
+        const lateMins = Math.max(0, Math.floor(checkInTotalMins - expTotalMins));
+        const isLate = checkInTotalMins > cutoffTotalMins;
+        return { lateMins, isLate };
+      };
+
+      if (todayAtt?.length) {
+        await Promise.all(
+          todayAtt.map((row) => {
+            const { lateMins, isLate } = computeLateness(row.check_in_at);
+            return supabaseAdmin
+              .from("employee_attendance")
+              .update({ late_minutes: lateMins, is_late: isLate })
+              .eq("id", row.id);
+          })
+        );
+      }
+
+      if (todayShifts?.length) {
+        await Promise.all(
+          todayShifts.map((row) => {
+            const { lateMins, isLate } = computeLateness(row.check_in_at);
+            return supabaseAdmin
+              .from("employee_shifts")
+              .update({ late_minutes: lateMins, is_late: isLate })
+              .eq("id", row.id);
+          })
+        );
+      }
+    } catch (recalcErr) {
+      console.warn("Failed to auto-recalculate today's punches:", recalcErr);
+    }
+
     return NextResponse.json({ success: true, data: data?.[0] });
   } catch (err) {
     return NextResponse.json(
