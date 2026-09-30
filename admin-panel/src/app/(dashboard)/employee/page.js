@@ -1205,9 +1205,7 @@ function EditEmployeeModal({ emp, onClose, onSave }) {
             <div className="col-span-2">
               <label className="block text-xs font-semibold text-gray-600 mb-1.5">Status</label>
               <select className={baseSel} value={status} onChange={e => setStatus(e.target.value)}>
-                <option>Active</option>
-                <option>On Leave</option>
-                <option>Resigned</option>
+                {["Active", "Inactive"].map(s => <option key={s}>{s}</option>)}
               </select>
             </div>
           </div>
