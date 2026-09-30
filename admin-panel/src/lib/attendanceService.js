@@ -2,6 +2,15 @@ import supabase from "./supabase";
 import { getStudents } from "./studentService";
 import { getClassesWithSections } from "./settingsService";
 
+// Same DB-name → app-name mapping studentService.js applies to getStudents()'s
+// `std` field — getClassesWithSections() returns the raw DB class name, so
+// without this, JR KG/SR KG/11th-12th Commerce never match the roster below.
+const CLASS_NAME_MAP = {
+  "JR KG": "JR.KG", "SR KG": "SR.KG",
+  "11th Commerce": "11th - Commerce", "12th Commerce": "12th - Commerce",
+};
+function normClass(name) { return CLASS_NAME_MAP[name] || name || ""; }
+
 // student_attendance: student_id, date, status ('P'/'A'), class, marked_by
 // - populated from the teacher app's Mark Attendance screen. No FK/join is
 // set up between it and students/classes (it just stores the class name as
@@ -57,7 +66,7 @@ export async function getAttendanceOverviewForDate(date) {
   const activeSections = [];
   classes.filter(c => c.is_active).forEach(c => {
     (c.sections || []).forEach(s => activeSections.push({
-      className: c.name, sectionId: s.id, sectionName: s.name, teacherName: s.class_teacher || "",
+      className: normClass(c.name), sectionId: s.id, sectionName: s.name, teacherName: s.class_teacher || "",
     }));
   });
   if (!activeSections.length) return [];

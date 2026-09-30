@@ -667,8 +667,8 @@ const REPORT_CONFIGS = {
   inventory: {
     label:"Inventory & Asset Report", icon:Package,
     quickFilters:[
-      {key:"category", label:"Category", options:["All","student","stock","office","other"]},
-      {key:"status",   label:"Status",   options:["All","Active","Maintenance","Disposed"]},
+      {key:"category", label:"Category", options:["All","Student","Stock","Office","Other","Asset"]},
+      {key:"status",   label:"Status",   options:["All","In Stock","Low Stock","Out of Stock","In Use","Available"]},
     ],
     dateField:"purchaseDate", dateLabel:"Purchase Date",
     columns:[
@@ -691,8 +691,8 @@ const REPORT_CONFIGS = {
     },
     getSummary(d) { return [
       {label:"Total Assets", value:d.length,                                                  color:"amber" },
-      {label:"Active",       value:d.filter(x=>x.status==="Active").length,                  color:"green" },
-      {label:"Maintenance",  value:d.filter(x=>x.status==="Maintenance").length,             color:"orange"},
+      {label:"In Stock",     value:d.filter(x=>x.status==="In Stock").length,                 color:"green" },
+      {label:"Low Stock",    value:d.filter(x=>x.status==="Low Stock").length,                color:"orange"},
       {label:"Total Available", value:d.filter(x=>x._type==="stock").reduce((s,x)=>s+x.value,0), color:"blue" },
     ];},
   },

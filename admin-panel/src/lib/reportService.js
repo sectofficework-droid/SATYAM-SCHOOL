@@ -125,7 +125,12 @@ export async function getTcIssuedForReport() {
         )
       )
     `)
-    .order("leaving_date", { ascending: false });
+    .order("leaving_date", { ascending: false })
+    // REQ-BUG-050: without this, the nested student_enrollments come back in
+    // no defined order, so the enrollments[enrollments.length-1] fallback
+    // below (used when no enrollment row has deactivate_date set) was
+    // nondeterministic across reloads.
+    .order("date_of_join", { foreignTable: "student_enrollments", ascending: true });
 
   if (error) throw error;
 
@@ -200,6 +205,11 @@ export async function getFeesForReport() {
     .from("academic_years").select("id").eq("is_current", true).single();
   if (!year) return [];
 
+  // REQ-BUG-032: classFees is a fallback for legacy rows with no fee_total
+  // snapshot, same as getFeesForSuperAdmin below — without it, this page
+  // showed ₹0 due for those rows while Super Admin showed the real amount.
+  const classFees = await getFeeStructure(year.id);
+
   const { data, error } = await supabase
     .from("student_enrollments")
     .select(`
@@ -216,7 +226,8 @@ export async function getFeesForReport() {
   return (data || []).map(row => {
     const s = row.student;
     if (!s) return null;
-    const totalFee  = Number(row.fee_total) || 0;
+    const cls       = normClass(row.class?.name);
+    const totalFee  = Number(row.fee_total) || classFees[cls] || 0;
     const discount  = Number(row.fee_discount) || 0;
     const totalPaid = (row.fee_payments || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
     const pending   = Math.max(totalFee - discount - totalPaid, 0);
@@ -224,7 +235,7 @@ export async function getFeesForReport() {
     return {
       enrollNo:  row.enrollment_no,
       name:      `${s.first_name} ${s.last_name}`.trim(),
-      cls:       normClass(row.class?.name),
+      cls,
       totalFee,
       discount,
       totalPaid,

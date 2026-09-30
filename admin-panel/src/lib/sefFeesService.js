@@ -28,14 +28,18 @@ export async function addPayment({ studentId, amount, paymentDate, receivedBy, n
 }
 
 // This month's total collection across all students, for the SEF dashboard.
+// REQ-BUG-043: computed in IST, not UTC - new Date().toISOString() renders
+// in UTC, so for ~5.5 hours after midnight IST on the 1st this queried the
+// previous month.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
 export async function getThisMonthCollection() {
-  const curMonth = new Date().toISOString().slice(0, 7);
+  const curMonth = new Date(Date.now() + IST_OFFSET_MS).toISOString().slice(0, 7);
   const { data, error } = await supabase
     .from("sef_fee_payments")
     .select("amount")
     .gte("payment_date", curMonth + "-01");
   if (error) throw error;
-  return (data || []).reduce((sum, p) => sum + Number(p.amount), 0);
+  return (data || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
 }
 
 // Recent payments across all students, joined with student name - for the
@@ -45,6 +49,7 @@ export async function getRecentPayments(limit = 5) {
     .from("sef_fee_payments")
     .select("id, amount, payment_date, student:sef_students(name)")
     .order("payment_date", { ascending: false })
+    .order("id", { ascending: false })
     .limit(limit);
   if (error) throw error;
   return data || [];

@@ -487,10 +487,6 @@ export async function addStudent(formData) {
     ? await getClassByName(formData.admissionClass)
     : cls;
 
-  // 3. Get next enrollment number and roll number
-  const enrollmentNo = await getNextEnrollmentNo();
-  const rollNo       = formData.rollNo ?? await getNextRollNo(cls.id, section.id, year.id);
-
   // 4. Insert into students table
   const { data: student, error: studentErr } = await supabase
     .from("students")
@@ -540,25 +536,44 @@ export async function addStudent(formData) {
     .single();
   if (studentErr) throw studentErr;
 
-  // 5. Insert enrollment
-  const { data: enrollment, error: enrollErr } = await supabase
-    .from("student_enrollments")
-    .insert({
-      student_id:        student.id,
-      academic_year_id:  year.id,
-      enrollment_no:     enrollmentNo,
-      class_id:          cls.id,
-      section_id:        section.id,
-      roll_no:           rollNo,
-      date_of_join:      formData.dateOfJoin || new Date().toISOString().split("T")[0],
-      admission_class_id: admCls?.id || cls.id,
-      fee_total:         formData.feeTotal || 0,
-      fee_discount:      formData.discountAmount || 0,
-      discount_reason:   formData.discountReason || null,
-    })
-    .select()
-    .single();
-  if (enrollErr) throw enrollErr;
+  // 5. Get next enrollment/roll number and insert enrollment - retry on a
+  // unique-constraint collision (REQ-BUG-030: two admissions saved at
+  // nearly the same instant can both read the same "current max" and
+  // compute the same next number). The DB's UNIQUE constraints on
+  // enrollment_no and (academic_year_id, class_id, section_id, roll_no)
+  // reject that instead of silently duplicating it - recompute and retry
+  // rather than surfacing a raw DB error to the admin.
+  const manualRollNo = formData.rollNo != null;
+  const maxAttempts = manualRollNo ? 3 : 5; // a manual roll_no can't be regenerated
+  let enrollment, enrollErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const enrollmentNo = await getNextEnrollmentNo();
+    const rollNo = manualRollNo ? formData.rollNo : await getNextRollNo(cls.id, section.id, year.id);
+    ({ data: enrollment, error: enrollErr } = await supabase
+      .from("student_enrollments")
+      .insert({
+        student_id:        student.id,
+        academic_year_id:  year.id,
+        enrollment_no:     enrollmentNo,
+        class_id:          cls.id,
+        section_id:        section.id,
+        roll_no:           rollNo,
+        date_of_join:      formData.dateOfJoin || new Date().toISOString().split("T")[0],
+        admission_class_id: admCls?.id || cls.id,
+        fee_total:         formData.feeTotal || 0,
+        fee_discount:      formData.discountAmount || 0,
+        discount_reason:   formData.discountReason || null,
+      })
+      .select()
+      .single());
+    if (!enrollErr || enrollErr.code !== "23505") break; // success, or a non-collision error
+  }
+  if (enrollErr) {
+    // Compensate: the students row above already committed, so remove it
+    // rather than leave an orphaned student with no enrollment.
+    await supabase.from("students").delete().eq("id", student.id);
+    throw enrollErr;
+  }
 
   // 6. Insert documents
   if (formData.documents?.length > 0) {

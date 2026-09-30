@@ -252,9 +252,9 @@ async function drawCardDesign1(doc, s, bgB64, photoB64, cx, cy) {
   const father = (s.fatherName || "—").toUpperCase();
   const mother = (s.motherName || "—").toUpperCase();
   const dob    = (fmtDMY(s.dob) || "—").toUpperCase();
-  const mobile = ((s.mobile && s.mobile1 && s.mobile !== s.mobile1)
-    ? `${s.mobile}, ${s.mobile1}`
-    : (s.mobile || s.mobile1 || "—")).toUpperCase();
+  const mobile = ((s.mobile && s.mobile2 && s.mobile !== s.mobile2)
+    ? `${s.mobile}, ${s.mobile2}`
+    : (s.mobile || s.mobile2 || "—")).toUpperCase();
 
   doc.text(doc.splitTextToSize(father, VAL_W)[0], VAL_X, cy + 78.48);
   doc.text(doc.splitTextToSize(mother, VAL_W)[0], VAL_X, cy + 83.74);
@@ -311,9 +311,9 @@ async function drawCardDesign2(doc, s, bgB64, photoB64, cx, cy) {
   const father = (s.fatherName || "—").toUpperCase();
   const mother = (s.motherName || "—").toUpperCase();
   const dob    = (fmtDMY(s.dob) || "—").toUpperCase();
-  const mobile = ((s.mobile && s.mobile1 && s.mobile !== s.mobile1)
-    ? `${s.mobile}, ${s.mobile1}`
-    : (s.mobile || s.mobile1 || "—")).toUpperCase();
+  const mobile = ((s.mobile && s.mobile2 && s.mobile !== s.mobile2)
+    ? `${s.mobile}, ${s.mobile2}`
+    : (s.mobile || s.mobile2 || "—")).toUpperCase();
 
   doc.text(doc.splitTextToSize(father, VAL_W)[0], VAL_X, cy + 28.2);
   doc.text(doc.splitTextToSize(mother, VAL_W)[0], VAL_X, cy + 32.5);
@@ -431,9 +431,9 @@ async function downloadSingleCardPNG(student, designId = 1) {
     const father = (s.fatherName || "—").toUpperCase();
     const mother = (s.motherName || "—").toUpperCase();
     const dob    = (fmtDMY(s.dob) || "—").toUpperCase();
-    const mobile = ((s.mobile && s.mobile1 && s.mobile !== s.mobile1)
-      ? `${s.mobile}, ${s.mobile1}`
-      : (s.mobile || s.mobile1 || "—")).toUpperCase();
+    const mobile = ((s.mobile && s.mobile2 && s.mobile !== s.mobile2)
+      ? `${s.mobile}, ${s.mobile2}`
+      : (s.mobile || s.mobile2 || "—")).toUpperCase();
 
     ctx.fillText(father, 495, 320);
     ctx.fillText(mother, 495, 368);
@@ -540,9 +540,9 @@ async function downloadSingleCardPNG(student, designId = 1) {
   const father = (s.fatherName || "—").toUpperCase();
   const mother = (s.motherName || "—").toUpperCase();
   const dob    = (fmtDMY(s.dob) || "—").toUpperCase();
-  const mobile = ((s.mobile && s.mobile1 && s.mobile !== s.mobile1)
-    ? `${s.mobile}, ${s.mobile1}`
-    : (s.mobile || s.mobile1 || "—")).toUpperCase();
+  const mobile = ((s.mobile && s.mobile2 && s.mobile !== s.mobile2)
+    ? `${s.mobile}, ${s.mobile2}`
+    : (s.mobile || s.mobile2 || "—")).toUpperCase();
 
   ctx.fillText(father, 306, 672);
   ctx.fillText(mother, 306, 717);
@@ -595,7 +595,7 @@ async function exportForCanva(students) {
       "Father's Name":  s.fatherName || "",
       "Mother's Name":  s.motherName || "",
       "DOB":            fmtDMY(s.dob) || "",
-      "Mobile No":      s.mobile || s.mobile1 || "",
+      "Mobile No":      s.mobile || s.mobile2 || "",
       "Address":        fmtAddr(s) || "",
       "Class":          (s.std || "") + (s.section ? ` - ${s.section}` : ""),
       "Enrollment No":  s.enrollment || "",
@@ -1311,9 +1311,9 @@ function CardPreviewDesign1({ student }) {
   const father = (s.fatherName || "—").toUpperCase();
   const mother = (s.motherName || "—").toUpperCase();
   const dob    = (fmtDMY(s.dob) || "—").toUpperCase();
-  const mobile = ((s.mobile && s.mobile1 && s.mobile !== s.mobile1)
-    ? `${s.mobile}, ${s.mobile1}`
-    : (s.mobile || s.mobile1 || "—")).toUpperCase();
+  const mobile = ((s.mobile && s.mobile2 && s.mobile !== s.mobile2)
+    ? `${s.mobile}, ${s.mobile2}`
+    : (s.mobile || s.mobile2 || "—")).toUpperCase();
   const address = (fmtAddr(s) || "—").toUpperCase();
 
   return (
@@ -1376,9 +1376,9 @@ function CardPreviewDesign2({ student }) {
   const father = (s.fatherName || "—").toUpperCase();
   const mother = (s.motherName || "—").toUpperCase();
   const dob    = (fmtDMY(s.dob) || "—").toUpperCase();
-  const mobile = ((s.mobile && s.mobile1 && s.mobile !== s.mobile1)
-    ? `${s.mobile}, ${s.mobile1}`
-    : (s.mobile || s.mobile1 || "—")).toUpperCase();
+  const mobile = ((s.mobile && s.mobile2 && s.mobile !== s.mobile2)
+    ? `${s.mobile}, ${s.mobile2}`
+    : (s.mobile || s.mobile2 || "—")).toUpperCase();
   const address = (fmtAddr(s) || "—").toUpperCase();
 
   return (
@@ -1484,6 +1484,8 @@ export default function DocumentsPage() {
     reasonForLeaving: "TO STUDY ELSEWHERE",
     conduct: "VERY GOOD",
     progress: "VERY GOOD",
+    attendancePresent: "",
+    attendanceTotal: "",
   });
   const [tcRows, setTcRows]           = useState([]);
   const [tcFileName, setTcFileName]   = useState("");
@@ -1767,6 +1769,26 @@ export default function DocumentsPage() {
                           value={tcOptions.conduct}
                           onChange={e => setTcOptions(o => ({ ...o, conduct: e.target.value }))}
                           placeholder="VERY GOOD"
+                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-school-navy"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-gray-500 mb-1 font-medium">Attendance — Present Days</label>
+                        <input
+                          type="text"
+                          value={tcOptions.attendancePresent}
+                          onChange={e => setTcOptions(o => ({ ...o, attendancePresent: e.target.value }))}
+                          placeholder="Leave blank if unknown"
+                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-school-navy"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-gray-500 mb-1 font-medium">Attendance — Total Days</label>
+                        <input
+                          type="text"
+                          value={tcOptions.attendanceTotal}
+                          onChange={e => setTcOptions(o => ({ ...o, attendanceTotal: e.target.value }))}
+                          placeholder="Leave blank if unknown"
                           className="w-full px-2.5 py-1.5 border border-gray-200 rounded-lg text-xs focus:outline-none focus:border-school-navy"
                         />
                       </div>

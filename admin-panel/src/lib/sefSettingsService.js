@@ -56,7 +56,8 @@ export async function deleteSefAcademicYear(id) {
 }
 
 export async function setSefCurrentYear(id) {
-  await supabase.from("sef_academic_years").update({ is_current: false }).not("id", "is", null);
+  const { error: clearErr } = await supabase.from("sef_academic_years").update({ is_current: false }).not("id", "is", null);
+  if (clearErr) throw clearErr;
   const { error } = await supabase.from("sef_academic_years").update({ is_current: true }).eq("id", id);
   if (error) throw error;
 }

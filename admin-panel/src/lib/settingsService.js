@@ -119,17 +119,29 @@ export async function getHelpDeskAdminNumbers() {
 
 // Wholesale replace — simplest correct approach for a small admin-managed
 // list that already lives inside one form-level Save (no per-row diffing).
+// Insert-then-delete-old (not delete-then-insert): if the insert fails, the
+// old rows are still there and nothing is lost.
 export async function saveHelpDeskAdminNumbers(numbers) {
-  const { error: delErr } = await supabase
+  const { data: existing, error: fetchErr } = await supabase
     .from("helpdesk_admin_numbers")
-    .delete()
-    .not("id", "is", null);
-  if (delErr) throw delErr;
-  if (!numbers.length) return;
-  const { error: insErr } = await supabase
-    .from("helpdesk_admin_numbers")
-    .insert(numbers.map((n, i) => ({ label: n.label.trim(), phone: n.phone.trim(), sort_order: i })));
-  if (insErr) throw insErr;
+    .select("id");
+  if (fetchErr) throw fetchErr;
+  const oldIds = (existing || []).map(r => r.id);
+
+  if (numbers.length) {
+    const { error: insErr } = await supabase
+      .from("helpdesk_admin_numbers")
+      .insert(numbers.map((n, i) => ({ label: n.label.trim(), phone: n.phone.trim(), sort_order: i })));
+    if (insErr) throw insErr;
+  }
+
+  if (oldIds.length) {
+    const { error: delErr } = await supabase
+      .from("helpdesk_admin_numbers")
+      .delete()
+      .in("id", oldIds);
+    if (delErr) throw delErr;
+  }
 }
 
 // ── Academic Years ─────────────────────────────────────────────
@@ -161,10 +173,11 @@ export async function deleteAcademicYear(id) {
 }
 
 export async function saveCurrentYear(yearId, { admissionDate, readmissionDate }) {
-  await supabase
+  const { error: clearErr } = await supabase
     .from("academic_years")
     .update({ is_current: false })
     .not("id", "is", null);
+  if (clearErr) throw clearErr;
   const { error } = await supabase
     .from("academic_years")
     .update({
@@ -188,6 +201,33 @@ export async function getFeeStructuresForYear(yearId) {
   );
 }
 
+// REQ-BUG-034: uniform fee (per class) and the old-student-discount amount
+// for the current academic year, read live from fee_structures instead of
+// the Zustand/localStorage copy (store.js's uniformFees/oldStudentDiscount)
+// that only updates when someone saves Fee Structure on that same browser -
+// promoting a student from a different device used stale or hardcoded
+// values. Both already live in fee_structures (saveFeeStructuresForYear
+// writes old_student_discount onto every row for the year, same value
+// each time, since it's one policy setting, not truly per-class).
+export async function getCurrentYearPromotionConfig() {
+  const { data: yr } = await supabase
+    .from("academic_years")
+    .select("id")
+    .eq("is_current", true)
+    .single();
+  if (!yr) return { uniformByClass: {}, oldStudentDiscount: 1000 };
+  const { data, error } = await supabase
+    .from("fee_structures")
+    .select("uniform_amount, old_student_discount, classes(name)")
+    .eq("academic_year_id", yr.id);
+  if (error) { console.error("getCurrentYearPromotionConfig:", error); return { uniformByClass: {}, oldStudentDiscount: 1000 }; }
+  const uniformByClass = Object.fromEntries(
+    (data || []).filter(r => r.classes?.name).map(r => [r.classes.name, Number(r.uniform_amount) || 0])
+  );
+  const oldStudentDiscount = (data || []).find(r => r.old_student_discount != null)?.old_student_discount ?? 1000;
+  return { uniformByClass, oldStudentDiscount: Number(oldStudentDiscount) || 1000 };
+}
+
 // { [className]: tuition+uniform } for the current academic year — used to
 // auto-fill a student's fee total from their class instead of manual entry.
 export async function getCurrentYearClassFees() {
@@ -201,6 +241,7 @@ export async function getCurrentYearClassFees() {
     .from("fee_structures")
     .select("tuition_amount, uniform_amount, classes(name)")
     .eq("academic_year_id", yr.id);
+  if (error) console.error("getCurrentYearClassFees:", error);
   if (error || !data) return {};
   return Object.fromEntries(
     data

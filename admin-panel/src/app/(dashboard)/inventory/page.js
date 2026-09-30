@@ -8,6 +8,7 @@ import {
   getInventoryItems, addInventoryItem, updateItemAddress, addBatch, addUsage,
   getAssets, addAsset, takeAsset, returnAsset,
 } from "@/lib/inventoryService";
+import { bagItemAllowedForClass } from "@/lib/studentService";
 import supabase from "@/lib/supabase";
 import {
   Package, Plus, AlertTriangle, Search, TrendingDown,
@@ -22,8 +23,8 @@ const TODAY     = new Date().toISOString().split("T")[0];
 
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-const totalIn   = (item) => item.batches.reduce((s, b) => s + b.qty, 0);
-const totalUsed = (item) => item.usages.reduce((s, u) => s + u.qty, 0);
+const totalIn   = (item) => item.batches.reduce((s, b) => s + (Number(b.qty) || 0), 0);
+const totalUsed = (item) => item.usages.reduce((s, u) => s + (Number(u.qty) || 0), 0);
 const avail     = (item) => totalIn(item) - totalUsed(item);
 const isLow     = (item) => avail(item) > 0 && avail(item) <= item.lowStockAt;
 const isOut     = (item) => avail(item) <= 0;
@@ -800,16 +801,23 @@ export default function InventoryPage() {
       const currentYearId = yearData.data?.id || null;
       const [itemsData] = await Promise.all([getInventoryItems(currentYearId)]);
       let studentCount = 0;
+      let classNames = [];
       if (currentYearId) {
-        const { count } = await supabase
+        const { data: enrollRows, count } = await supabase
           .from("student_enrollments")
-          .select("id", { count: "exact", head: true })
+          .select("class:classes!student_enrollments_class_id_fkey(name)", { count: "exact" })
           .eq("academic_year_id", currentYearId);
         studentCount = count || 0;
+        classNames = (enrollRows || []).map(r => r.class?.name);
       }
       setTotalStudents(studentCount);
+      // REQ-BUG-036: bag items (Red Bag/Blue Bag) only apply to some
+      // classes — "pending" must count against that eligible subset, not
+      // every enrolled student, or it massively overstates the tile.
       setItems(itemsData.map(it =>
-        it.category === "student" ? { ...it, studentsTotal: studentCount } : it
+        it.category === "student"
+          ? { ...it, studentsTotal: classNames.filter(cls => bagItemAllowedForClass(it.name, cls)).length }
+          : it
       ));
       setAssets(assetsData);
     } catch {

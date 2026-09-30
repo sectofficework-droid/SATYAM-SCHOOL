@@ -44,14 +44,6 @@ const useStore = create(
         sessionFeesStructure: { ...s.sessionFeesStructure, [session]: amounts },
       })),
 
-      // ── Uniform Fees ───────────────────────────────────────────
-      uniformFees: {},
-      setUniformFees: (fees) => set({ uniformFees: fees }),
-
-      // ── Old Student Discount ────────────────────────────────────
-      oldStudentDiscount: 1000,
-      setOldStudentDiscount: (amount) => set({ oldStudentDiscount: amount }),
-
       // ── Employees ──────────────────────────────────────────────
       // Seeded with core staff so Super Admin Salary panel works without visiting Employee module first
       employees: [

@@ -37,7 +37,11 @@ const POSTED_BY_LIST = [
   "Sandeep Pradhan", "Gaurang Polai",
 ];
 
-const TODAY = new Date().toISOString().split("T")[0];
+// REQ-BUG-053: a function, not a frozen module-load-time constant - a
+// long-open tab (this is a client bundle, so the module only re-evaluates
+// on a full page reload) would otherwise keep using the date the page was
+// first opened, drifting expiry badges/auto-archive past midnight.
+function today() { return new Date().toISOString().split("T")[0]; }
 
 function fmtDate(d) {
   try { return new Date(d).toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" }); }
@@ -46,7 +50,7 @@ function fmtDate(d) {
 
 function daysUntil(dateStr) {
   if (!dateStr) return null;
-  const diff = new Date(dateStr + "T00:00:00") - new Date(TODAY + "T00:00:00");
+  const diff = new Date(dateStr + "T00:00:00") - new Date(today() + "T00:00:00");
   return Math.ceil(diff / 86400000);
 }
 
@@ -57,7 +61,7 @@ function NoticeModal({ initial, onClose, onSave }) {
   const [content,    setContent]    = useState(initial?.content    ?? "");
   const [type,       setType]       = useState(initial?.type       ?? NOTICE_TYPES[0]);
   const [audience,   setAudience]   = useState(initial?.audience   ?? AUDIENCES[0]);
-  const [date,       setDate]       = useState(initial?.date       ?? TODAY);
+  const [date,       setDate]       = useState(initial?.date       ?? today());
   const [expiryDate, setExpiryDate] = useState(initial?.expiryDate ?? "");
   const [postedBy,   setPostedBy]   = useState(initial?.postedBy   ?? POSTED_BY_LIST[0]);
   const [pinned,     setPinned]     = useState(initial?.pinned     ?? false);
@@ -144,7 +148,7 @@ function NoticeModal({ initial, onClose, onSave }) {
             </label>
             <div className="relative">
               <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none"/>
-              <DateInputDMY value={expiryDate} min={date || TODAY} onChange={e => setExpiryDate(e.target.value)}
+              <DateInputDMY value={expiryDate} min={date || today()} onChange={e => setExpiryDate(e.target.value)}
                 className="w-full border border-gray-200 rounded-xl pl-9 pr-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"/>
             </div>
             {expiryDate && !expiryDateValid && (
@@ -269,7 +273,7 @@ export default function NoticePage() {
     try {
       const data = await getNotices();
       // Auto-archive expired notices in DB
-      const toArchive = data.filter(n => !n.archived && n.expiryDate && n.expiryDate < TODAY);
+      const toArchive = data.filter(n => !n.archived && n.expiryDate && n.expiryDate < today());
       if (toArchive.length > 0) {
         await Promise.all(toArchive.map(n => updateNotice(n.id, { archived: true, pinned: false })));
         const refreshed = await getNotices();

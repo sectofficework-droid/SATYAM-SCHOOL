@@ -699,9 +699,6 @@ function AcademicYearTab() {
 
 // ── Tab: Fee Structure ─────────────────────────────────────────────────────────
 function FeeStructureTab() {
-  const setUniformFeesStore        = useStore(s => s.setUniformFees);
-  const setOldStudentDiscountStore = useStore(s => s.setOldStudentDiscount);
-
   const [years,          setYears]          = useState([]);
   const [allClasses,     setAllClasses]     = useState([]);
   const [selectedYearId, setSelectedYearId] = useState(null);
@@ -763,10 +760,6 @@ function FeeStructureTab() {
   async function save() {
     try {
       await saveFeeStructuresForYear(selectedYearId, rows, oldDiscount);
-      const uniformMap = {};
-      rows.forEach(r => { uniformMap[r.cls] = r.uniform; });
-      setUniformFeesStore(uniformMap);
-      setOldStudentDiscountStore(oldDiscount);
       setEditing(null);
       setBulkUniform("");
       setSaved(true);

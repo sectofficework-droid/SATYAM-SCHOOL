@@ -25,13 +25,18 @@ export async function getPendingLeaveRequests() {
 }
 
 // All dates from from_date to to_date inclusive, as 'YYYY-MM-DD' strings.
+// Uses Date.UTC/setUTCDate throughout so the result never depends on the
+// browser's local timezone (a local-time Date + toISOString() shifts every
+// date back a day in IST, since toISOString() always renders in UTC).
 function dateRange(fromDate, toDate) {
   const dates = [];
-  const cursor = new Date(fromDate + "T00:00:00");
-  const end = new Date(toDate + "T00:00:00");
+  const [fy, fm, fd] = fromDate.split("-").map(Number);
+  const [ty, tm, td] = toDate.split("-").map(Number);
+  const cursor = new Date(Date.UTC(fy, fm - 1, fd));
+  const end = new Date(Date.UTC(ty, tm - 1, td));
   while (cursor <= end) {
     dates.push(cursor.toISOString().slice(0, 10));
-    cursor.setDate(cursor.getDate() + 1);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return dates;
 }

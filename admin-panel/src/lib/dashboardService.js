@@ -11,8 +11,16 @@ export async function getTodaysBirthdays() {
   return data || { students: [], staff: [] };
 }
 
+// REQ-BUG-043: new Date().toISOString() renders in UTC, not IST - for ~5.5
+// hours after midnight IST on the 1st of the month, that read the previous
+// month's date, so "this month" totals queried the wrong month.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000;
+function todayIST() {
+  return new Date(Date.now() + IST_OFFSET_MS).toISOString();
+}
+
 export async function getDashboardStats(selectedDate) {
-  const curMonth = new Date().toISOString().slice(0, 7);
+  const curMonth = todayIST().slice(0, 7);
 
   const { data: year } = await supabase
     .from("academic_years")
@@ -30,6 +38,11 @@ export async function getDashboardStats(selectedDate) {
     supabase.from("fee_payments").select("amount, payment_date").gte("payment_date", curMonth + "-01"),
     supabase.from("expenses").select("amount, expense_date").gte("expense_date", curMonth + "-01"),
   ]);
+  // REQ-BUG-040: these were never checked - a failed query silently
+  // rendered as "0"/"₹0" instead of surfacing the failure.
+  [studentsRes, staffRes, feesRes, expRes].forEach(r => {
+    if (r.error) console.error("getDashboardStats:", r.error);
+  });
 
   const feeRows = (feesRes.data || []).map(p => ({
     amount: Number(p.amount),

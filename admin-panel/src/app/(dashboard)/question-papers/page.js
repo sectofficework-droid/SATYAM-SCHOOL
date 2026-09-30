@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { FileText, Download } from "lucide-react";
 import { getTeacherDocuments } from "@/lib/teacherDocumentsService";
 import { getS3ViewUrl } from "@/lib/s3Upload";
@@ -35,11 +35,16 @@ export default function QuestionBankPage() {
   const [yearFilter, setYearFilter] = useState("");
   const [search, setSearch] = useState("");
   const [opening, setOpening] = useState(null);
+  const loadReqId = useRef(0);
 
   useEffect(() => {
+    const reqId = ++loadReqId.current;
     setLoading(true);
     setClassFilter(""); setSubjectFilter(""); setYearFilter(""); setSearch("");
-    getTeacherDocuments(section).then(setDocs).catch(() => setDocs([])).finally(() => setLoading(false));
+    getTeacherDocuments(section)
+      .then(d => { if (reqId === loadReqId.current) setDocs(d); })
+      .catch(() => { if (reqId === loadReqId.current) setDocs([]); })
+      .finally(() => { if (reqId === loadReqId.current) setLoading(false); });
   }, [section]);
 
   const classes  = useMemo(() => [...new Set(docs.map(d => d.class))].sort(), [docs]);

@@ -389,10 +389,15 @@ function OverviewTab({ calendarEvents }) {
   const [sentFor, setSentFor] = useState(null); // sectionId a reminder was just sent for
   const [notifyingAll, setNotifyingAll] = useState(false);
   const [notifyAllResult, setNotifyAllResult] = useState(null); // {sent, skipped} or null
+  const loadReqId = useRef(0);
 
   const load = useCallback(() => {
+    const reqId = ++loadReqId.current;
     setLoading(true);
-    getAttendanceOverviewForDate(date).then(setRows).catch(() => setRows([])).finally(() => setLoading(false));
+    getAttendanceOverviewForDate(date)
+      .then(rows => { if (reqId === loadReqId.current) setRows(rows); })
+      .catch(() => { if (reqId === loadReqId.current) setRows([]); })
+      .finally(() => { if (reqId === loadReqId.current) setLoading(false); });
   }, [date]);
 
   useEffect(() => { load(); }, [load]);
@@ -853,6 +858,7 @@ function SummaryCard({ label, count, color }) {
 function HistoryModal({ student, onClose }) {
   const [rows, setRows] = useState(null);
   const [monthOffset, setMonthOffset] = useState(0); // 0 = current month, 1 = previous, ...
+  const loadReqId = useRef(0);
 
   const range = useMemo(() => {
     const base = new Date();
@@ -868,10 +874,11 @@ function HistoryModal({ student, onClose }) {
   }, [monthOffset]);
 
   useEffect(() => {
+    const reqId = ++loadReqId.current;
     setRows(null);
     getStudentAttendanceHistory(student._studentId, range.from, range.to)
-      .then(setRows)
-      .catch(() => setRows([]));
+      .then(r => { if (reqId === loadReqId.current) setRows(r); })
+      .catch(() => { if (reqId === loadReqId.current) setRows([]); });
   }, [student, range.from, range.to]);
 
   const present = (rows || []).filter(r => r.status === "P").length;

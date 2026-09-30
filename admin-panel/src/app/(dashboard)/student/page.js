@@ -18,7 +18,7 @@ import {
   resetStudentPassword as svcResetPassword,
 } from "@/lib/studentService";
 import { createImpersonationCode } from "@/lib/impersonationService";
-import { getActiveClasses } from "@/lib/settingsService";
+import { getActiveClasses, getCurrentYearPromotionConfig } from "@/lib/settingsService";
 import { getFeeStructure } from "@/lib/feesService";
 import {
   Plus, Search, GraduationCap, Phone, Calendar, Edit, Trash2,
@@ -390,10 +390,21 @@ const PROMOTE_DISCOUNT_REASONS = [
 ];
 
 function PromoteModal({ student, onClose, onPromote, router }) {
-  const nextClass          = getNextClass(student.std);
-  const uniformFees        = useStore(s => s.uniformFees);
-  const uniformFee         = (nextClass && uniformFees[nextClass]) ? uniformFees[nextClass] : 1500;
-  const oldStudentFixedAmt = useStore(s => s.oldStudentDiscount) ?? 1000;
+  const nextClass = getNextClass(student.std);
+
+  // REQ-BUG-034: read live from the DB (fee_structures), not the per-browser
+  // Zustand/localStorage copy, which only updates when someone saves Fee
+  // Structure on this same device - promoting from elsewhere used stale
+  // values. Falls back to the same hardcoded defaults while loading / if
+  // nothing is configured yet, same as before this fix.
+  const [promotionConfig, setPromotionConfig] = useState({ uniformByClass: {}, oldStudentDiscount: 1000 });
+  useEffect(() => {
+    let cancelled = false;
+    getCurrentYearPromotionConfig().then(cfg => { if (!cancelled) setPromotionConfig(cfg); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+  const uniformFee         = (nextClass && promotionConfig.uniformByClass[nextClass]) ? promotionConfig.uniformByClass[nextClass] : 1500;
+  const oldStudentFixedAmt = promotionConfig.oldStudentDiscount ?? 1000;
 
   // step: "action" → choose promote or leave | "discount" → fill discounts then confirm
   const [step, setStep] = useState("action");
@@ -423,9 +434,13 @@ function PromoteModal({ student, onClose, onPromote, router }) {
 
   const handleConfirmPromote = async () => {
     if (!extraValid) return;
-    const discReason = oldStudentOn
-      ? "Old Student Discount"
-      : extraOn ? (extraReason === "Other" ? extraCustom : extraReason) : "";
+    // REQ-BUG-039: both discounts can be on at once — record both reasons,
+    // not just Old Student's, or the Extra discount's real reason is lost
+    // from the audit trail.
+    const discReason = [
+      oldStudentOn ? "Old Student Discount" : null,
+      extraOn ? (extraReason === "Other" ? extraCustom : extraReason) : null,
+    ].filter(Boolean).join(" + ");
     try {
       await onPromote({ discount: totalDiscount, discountReason: discReason });
       const enr = encodeURIComponent(student.enrollment);

@@ -13,6 +13,7 @@ function fmtDateTime(iso) {
 export default function QueriesPage() {
   const [rows, setRows]       = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
   const [search, setSearch]   = useState("");
@@ -21,7 +22,8 @@ export default function QueriesPage() {
 
   function load() {
     setLoading(true);
-    getQueries().then(setRows).catch(() => {}).finally(() => setLoading(false));
+    setLoadError("");
+    getQueries().then(setRows).catch(e => setLoadError(e?.message || "Failed to load queries.")).finally(() => setLoading(false));
   }
   useEffect(load, []);
 
@@ -121,6 +123,11 @@ export default function QueriesPage() {
       {/* List */}
       {loading ? (
         <div className="flex items-center justify-center py-24 text-sm text-gray-400">Loading…</div>
+      ) : loadError ? (
+        <div className="flex flex-col items-center justify-center py-24 gap-3 bg-white rounded-2xl border border-red-100">
+          <p className="text-sm text-red-500">{loadError}</p>
+          <button onClick={load} className="text-xs font-semibold text-school-navy hover:underline">Retry</button>
+        </div>
       ) : filtered.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-24 gap-3 bg-white rounded-2xl border border-gray-100">
           <MessageSquareText className="w-10 h-10 text-gray-200" />

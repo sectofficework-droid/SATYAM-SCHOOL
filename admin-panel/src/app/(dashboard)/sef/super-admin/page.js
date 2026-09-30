@@ -143,7 +143,12 @@ function FeesPanel() {
 
   function setFee(id, value) { setRows(prev => prev.map(r => r.id === id ? { ...r, monthly_fee: value } : r)); setDirty(prev => new Set(prev).add(id)); }
   async function saveRow(r) {
-    await updateStudent(r.id, { name: r.name, std: r.std, mobile1: r.mobile_1, monthlyFee: r.monthly_fee });
+    await updateStudent(r.id, {
+      name: r.name, std: r.std, medium: r.medium, schoolName: r.school_name, dob: r.dob,
+      fatherName: r.father_name, motherName: r.mother_name, mobile1: r.mobile_1, mobile2: r.mobile_2,
+      address: r.address, aadharNo: r.aadhar_no, aadharName: r.aadhar_name, aadharDocKey: r.aadhar_doc_key,
+      monthlyFee: r.monthly_fee,
+    });
     setDirty(prev => { const n = new Set(prev); n.delete(r.id); return n; });
   }
 
@@ -182,8 +187,11 @@ function EmployeePanel() {
   function setField(id, field, value) { setRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r)); setDirty(prev => new Set(prev).add(id)); }
   async function saveRow(r) {
     await updateEmployee(r.id, {
-      name: r.name, phone: r.phone, joiningDate: r.joining_date, roleType: r.role_type,
-      designation: r.designation, status: r.status, subjectMappings: r.subject_mappings, documents: r.documents,
+      name: r.name, gender: r.gender, dob: r.dob, phone: r.phone, altPhone: r.alt_phone,
+      email: r.email, address: r.address, aadhar: r.aadhar, pan: r.pan,
+      roleType: r.role_type, designation: r.designation, joiningDate: r.joining_date,
+      employmentType: r.employment_type, status: r.status, photoKey: r.photo_key,
+      subjectMappings: r.subject_mappings, documents: r.documents,
     });
     setDirty(prev => { const n = new Set(prev); n.delete(r.id); return n; });
   }

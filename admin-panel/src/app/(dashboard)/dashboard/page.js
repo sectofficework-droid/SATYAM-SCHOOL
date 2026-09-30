@@ -198,13 +198,15 @@ export default function DashboardPage() {
   const isToday   = selectedDate === todayStr;
   const dateLabel = isToday ? "Today" : formatDateLabel(selectedDate);
 
-  const curMonth = new Date().toISOString().slice(0, 7);
+  // REQ-BUG-043: IST, not UTC - new Date().toISOString() renders in UTC, so
+  // for ~5.5 hours after midnight IST on the 1st this read the previous month.
+  const curMonth = new Date(Date.now() + 5.5 * 60 * 60 * 1000).toISOString().slice(0, 7);
   function fmtAmt(n) { return n === 0 ? "₹0" : "₹" + n.toLocaleString("en-IN"); }
 
-  const feeMonthTotal = dbFeePayments.filter(p => p.date?.startsWith(curMonth)).reduce((s, p) => s + p.amount, 0);
-  const feeDateTotal  = dbFeePayments.filter(p => p.date === selectedDate).reduce((s, p) => s + p.amount, 0);
-  const expMonthTotal = dbExpenses.filter(e => e.date?.startsWith(curMonth)).reduce((s, e) => s + e.amount, 0);
-  const expDateTotal  = dbExpenses.filter(e => e.date === selectedDate).reduce((s, e) => s + e.amount, 0);
+  const feeMonthTotal = dbFeePayments.filter(p => p.date?.startsWith(curMonth)).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const feeDateTotal  = dbFeePayments.filter(p => p.date === selectedDate).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  const expMonthTotal = dbExpenses.filter(e => e.date?.startsWith(curMonth)).reduce((s, e) => s + (Number(e.amount) || 0), 0);
+  const expDateTotal  = dbExpenses.filter(e => e.date === selectedDate).reduce((s, e) => s + (Number(e.amount) || 0), 0);
 
   const empChartData = useMemo(
     () => attendanceSummary?.grouped ? buildEmpChartData(attendanceSummary.grouped) : [],

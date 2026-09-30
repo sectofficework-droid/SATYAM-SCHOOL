@@ -135,13 +135,14 @@ export async function updateFeesForEnrollment(enrollmentId, { discount, discount
   // 3. Update existing payments (UUID ids from DB)
   const existingPayments = payments.filter(p => typeof p.id === "string");
   for (const p of existingPayments) {
-    await supabase
+    const { error: updErr } = await supabase
       .from("fee_payments")
       .update({
         amount: p.paid, payment_date: p.paidDate || null,
         due_amount: p.amount ?? null, due_date: p.dueDate || null, label: p.label || null,
       })
       .eq("id", p.id);
+    if (updErr) throw updErr;
   }
 
   // 4. Insert new payments (numeric ids from Date.now())

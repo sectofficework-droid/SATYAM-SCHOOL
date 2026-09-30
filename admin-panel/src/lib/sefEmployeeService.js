@@ -76,7 +76,7 @@ export async function getAttendanceHistory(employeeId, fromDate, toDate) {
 
 // ── Salary (direct-entry, same as the school's Super Admin Salary Panel) ──
 export async function getSalaryPayments(employeeId) {
-  let query = supabase.from("sef_salary_payments").select("*").order("month", { ascending: false });
+  let query = supabase.from("sef_salary_payments").select("*").order("month", { ascending: false }).order("id", { ascending: false });
   if (employeeId) query = query.eq("employee_id", employeeId);
   const { data, error } = await query;
   if (error) throw error;

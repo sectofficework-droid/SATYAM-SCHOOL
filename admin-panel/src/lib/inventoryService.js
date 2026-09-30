@@ -5,7 +5,7 @@ import supabase from "./supabase";
 function mapItem(row) {
   const batches = (row.inventory_batches || []).map(b => ({
     id:       b.id,
-    qty:      b.qty,
+    qty:      Number(b.qty) || 0,
     date:     b.received_date,
     by:       b.received_by || "",
     note:     b.note        || "",
@@ -13,7 +13,7 @@ function mapItem(row) {
   }));
   const usages = (row.inventory_usages || []).map(u => ({
     id:      u.id,
-    qty:     u.qty,
+    qty:     Number(u.qty) || 0,
     date:    u.usage_date,
     purpose: u.purpose,
     by:      u.used_by || "",

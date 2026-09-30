@@ -1397,7 +1397,36 @@ function AttendanceSection({ employees, setAttendanceSummary }) {
     const monthStr  = fromDate.slice(0, 7);
     const monthDate = monthStr + "-01";
     const paid = records.filter(r => r.emp);
-    const rows = paid.map(r => ({
+    if (!paid.length) { setSavedKey(periodKey); return; }
+
+    // REQ-BUG-025: salary_payments has UNIQUE(employee_id, month) - a plain
+    // insert() rejects the WHOLE batch if even one employee already has a
+    // row for this month (e.g. a second "15 Days" run in the same month),
+    // silently dropping everyone else's payment too. Check first, skip only
+    // the employees who already have a row, and tell the admin by name.
+    const { data: existing, error: existErr } = await supabase
+      .from("salary_payments")
+      .select("employee_id")
+      .eq("month", monthDate)
+      .in("employee_id", paid.map(r => r.emp.id));
+    if (existErr) {
+      alert("Failed to check existing salary payments: " + existErr.message);
+      return;
+    }
+    const alreadyPaidIds = new Set((existing || []).map(r => r.employee_id));
+    const toPay   = paid.filter(r => !alreadyPaidIds.has(r.emp.id));
+    const skipped = paid.filter(r => alreadyPaidIds.has(r.emp.id));
+
+    if (skipped.length) {
+      const names = skipped.map(r => r.emp.name).join(", ");
+      alert(
+        "Skipped " + skipped.length + " employee(s) already paid for " + monthStr +
+        " (a salary payment already exists for this month): " + names +
+        ". Everyone else was processed."
+      );
+    }
+
+    const rows = toPay.map(r => ({
       employee_id: r.emp.id,
       month:       monthDate,
       amount:      r.net,
@@ -1410,7 +1439,7 @@ function AttendanceSection({ employees, setAttendanceSummary }) {
         alert("Failed to save salary payments: " + error.message);
         return;
       }
-      await Promise.allSettled(paid.map(r =>
+      await Promise.allSettled(toPay.map(r =>
         addExpense({
           title:   "Salary \u2014 " + label + " \u2014 " + r.emp.name,
           category: "Salary",
@@ -1932,13 +1961,16 @@ function MarkStaffAttendanceTab({ employees }) {
   const [saved, setSaved] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [selectedEmpIds, setSelectedEmpIds] = useState(new Set());
+  const loadReqId = useRef(0);
 
   const activeEmployees = employees.filter(e => e.status !== "Inactive");
 
   const loadData = useCallback(() => {
+    const reqId = ++loadReqId.current;
     setLoading(true);
     Promise.all([getEmployeeAttendanceForDate(date), getEmployeeShiftsForDate(date)])
       .then(([rows, shifts]) => {
+        if (reqId !== loadReqId.current) return; // a newer date's load started - discard this stale result
         const map = {};
         const recorded = new Set();
         rows.forEach(r => {
@@ -1949,7 +1981,7 @@ function MarkStaffAttendanceTab({ employees }) {
         setStatus(map);
         setRecordedAttIds(recorded);
         setShiftsByEmployee(shifts);
-      }).finally(() => setLoading(false));
+      }).finally(() => { if (reqId === loadReqId.current) setLoading(false); });
   }, [date, activeEmployees]);
 
   useEffect(() => {

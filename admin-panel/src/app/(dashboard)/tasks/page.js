@@ -612,6 +612,7 @@ export default function TasksPage() {
       setModal(null);
     } catch (e) {
       console.error("Save task error:", e);
+      alert("Failed to save task: " + (e?.message || "Unknown error"));
     }
   }
 
@@ -621,6 +622,7 @@ export default function TasksPage() {
       setTasks(prev => prev.filter(t => t.id !== id));
     } catch (e) {
       console.error("Delete task error:", e);
+      alert("Failed to delete task: " + (e?.message || "Unknown error"));
     }
     setDeleteId(null);
   }
@@ -631,6 +633,7 @@ export default function TasksPage() {
       setTasks(prev => prev.map(t => t.id === id ? { ...t, status } : t));
     } catch (e) {
       console.error("Status change error:", e);
+      alert("Failed to update task status: " + (e?.message || "Unknown error"));
     }
   }
 

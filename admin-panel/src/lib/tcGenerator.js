@@ -162,8 +162,11 @@ export function studentToTcRow(student, overrides = {}) {
     dateOfAdmission: admDayMonthYear,
     progress: overrides.progress || "VERY GOOD",
     conduct: overrides.conduct || "VERY GOOD",
-    attendancePresent: overrides.attendancePresent || "210",
-    attendanceTotal: overrides.attendanceTotal || "235",
+    // REQ-BUG-037: no fabricated fallback — a blank field on the printed TC
+    // is honest and visible; a hardcoded "210"/"235" printed as if real
+    // isn't. The admin supplies the real figures via tcOptions.
+    attendancePresent: overrides.attendancePresent || "",
+    attendanceTotal: overrides.attendanceTotal || "",
     attendanceClass: stdUpper,
     attendanceFrom: overrides.attendanceFrom || (student.session || "JUNE 2025"),
     dateOfLeaving: dateOfLeaving,

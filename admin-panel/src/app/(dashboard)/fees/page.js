@@ -63,7 +63,7 @@ function calcSummary(student, feesMap) {
   const actualFees = Math.max(totalFees - discount, 0);
   // Only count payments recorded for the student's current class
   const classPayments = (student.payments ?? []).filter(p => !p.std || p.std === student.std);
-  const paidFees   = classPayments.reduce((s, p) => s + p.amount, 0);
+  const paidFees   = classPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
   const dueFees    = Math.max(actualFees - paidFees, 0);
   return { totalFees, discount, actualFees, paidFees, dueFees, classPayments };
 }
@@ -998,14 +998,14 @@ export default function FeesPage() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Standard</label>
-                <SelectField value={entryStd} onChange={(e) => { setEntryStd(e.target.value); setEntryRoll(""); setPendingInventory(new Set()); }}>
+                <SelectField value={entryStd} onChange={(e) => { setEntryStd(e.target.value); setEntryRoll(""); setPendingInventory(new Set()); setNewAmt(""); setNewDate(todayStr); setNewAdmin(""); setNewAdminCustom(""); }}>
                   <option value="">Select Standard</option>
                   {stdList.map((s) => <option key={s}>{s}</option>)}
                 </SelectField>
               </div>
               <div>
                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-wide mb-1.5">Roll Number</label>
-                <SelectField value={entryRoll} onChange={(e) => { setEntryRoll(e.target.value); setPendingInventory(new Set()); }} disabled={!entryStd}>
+                <SelectField value={entryRoll} onChange={(e) => { setEntryRoll(e.target.value); setPendingInventory(new Set()); setNewAmt(""); setNewDate(todayStr); setNewAdmin(""); setNewAdminCustom(""); }} disabled={!entryStd}>
                   <option value="">{entryStd ? "Select Roll No" : "Select standard first"}</option>
                   {rollsForStd.map((r) => <option key={r}>{r}</option>)}
                 </SelectField>

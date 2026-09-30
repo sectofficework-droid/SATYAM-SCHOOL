@@ -64,8 +64,9 @@ export async function getGrBookEntries() {
       class:classes!student_enrollments_class_id_fkey(name),
       admission_class:classes!student_enrollments_admission_class_id_fkey(name)
     `).order("date_of_join", { ascending: true }),
-    supabase.from("transfer_certificates").select("student_id, tc_number, leaving_date, issue_date")
-      .order("issue_date", { ascending: false }),
+    supabase.from("transfer_certificates").select("student_id, tc_number, leaving_date, issue_date, created_at")
+      .order("issue_date", { ascending: false })
+      .order("created_at", { ascending: false }),
     supabase.from("gr_book_imports").select("*"),
   ]);
   if (studentsRes.error) throw studentsRes.error;

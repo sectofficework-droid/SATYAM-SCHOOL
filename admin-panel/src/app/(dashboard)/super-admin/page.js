@@ -1743,7 +1743,8 @@ function SalaryPanel({ employees: propEmployees }) {
     try {
       const { error } = await supabase.rpc("admin_record_salary_payment", { p_employee_id: emp.id, p_month: monthDate, p_amount: amount, p_paid_on: date, p_paid_by: "Sunil Pradhan" });
       if (error) throw error;
-      await addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount, date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId }).catch(() => {});
+      await addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount, date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId })
+        .catch(err => console.error("payOne: expense record failed for " + emp.name, err));
       await loadPayments(month);
       await loadAllPayments();
     } catch (err) {
@@ -1762,9 +1763,16 @@ function SalaryPanel({ employees: propEmployees }) {
     try {
       const { error } = await supabase.rpc("admin_record_salary_payments_bulk", { p_rows: rows });
       if (error) throw error;
-      await Promise.allSettled(unpaidThisMonth.map(emp =>
+      const expenseResults = await Promise.allSettled(unpaidThisMonth.map(emp =>
         addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount: getSal(emp), date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId })
       ));
+      const failedExpenses = expenseResults
+        .map((r, i) => r.status === "rejected" ? unpaidThisMonth[i].name : null)
+        .filter(Boolean);
+      if (failedExpenses.length) {
+        console.error("payAll: expense record failed for", failedExpenses);
+        alert("Salary payments saved, but the expense record failed for: " + failedExpenses.join(", "));
+      }
       await loadPayments(month);
       await loadAllPayments();
     } catch (err) {
@@ -1983,8 +1991,12 @@ function EmployeePanel({ employees: propEmployees }) {
   const [employees, setEmployeesLocal] = useState(propEmployees || []);
   function setEmployees(updated) { setEmployeesLocal(updated); setStoreEmployees(updated); }
 
-  // Sync when prop changes (initial load)
-  useState(() => { if (propEmployees?.length) setEmployeesLocal(propEmployees); }, [propEmployees]);
+  // Sync when prop changes (initial load). REQ-BUG-051: this was
+  // useState(fn, [propEmployees]) - useState's initializer only ever runs
+  // once on mount, so this never actually re-synced on a later prop update;
+  // if the panel opened before the parent's fetch resolved, it stayed
+  // stuck on "No employee data yet" until remounted.
+  useEffect(() => { if (propEmployees?.length) setEmployeesLocal(propEmployees); }, [propEmployees]);
 
   const [search, setSearch] = useState("");
   const [typeF,  setTypeF]  = useState("All");
@@ -3277,7 +3289,7 @@ export default function SuperAdminPage() {
     students:  [`${dbStudents.length} Students`, `${dbClasses.length} Classes`, `${dbStudents.filter(s=>(s.status||"Active")==="Active").length} Active`],
     fees:      [`${fmtAmt(feeCollected)} Collected`, `${fmtAmt(feePending)} Pending`, `${dbFees.length} Records`],
     inventory: ["Assets & Stock", "Item Tracking", "Student Items"],
-    employee:  [`${dbEmployees.length} Staff`, `${dbEmployees.filter(e=>e.type==="Teacher").length} Teachers`, `${dbEmployees.filter(e=>e.type!=="Teacher").length} Support`],
+    employee:  [`${dbEmployees.length} Staff`, `${dbEmployees.filter(e=>e.type==="teaching").length} Teachers`, `${dbEmployees.filter(e=>e.type!=="teaching").length} Support`],
     salary:    ["Management Only", "Auto Expense Sync", "Private"],
   };
 
