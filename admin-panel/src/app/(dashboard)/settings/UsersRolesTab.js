@@ -4,7 +4,27 @@ import { useState, useEffect, useCallback } from "react";
 import { Check, UserPlus, X, Pencil, Trash2, Save, Smartphone } from "lucide-react";
 import supabase from "@/lib/supabase";
 import useStore from "@/lib/store";
-import { isValidName, isNonEmpty, hasNoErrors } from "@/lib/validators";
+import { isValidName, isNonEmpty, hasNoErrors, isValidEmail, isStrongPassword } from "@/lib/validators";
+
+// The Auth side (email/password) lives server-side only (/api/admin-users -
+// needs the service_role key to create/rename/delete a Supabase Auth
+// account, which must never touch the browser) - these are thin fetch
+// wrappers, each attaching the caller's own session token so the route can
+// re-verify who's asking instead of trusting the client.
+async function authedFetch(url, options = {}) {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + (session?.access_token || ""),
+      ...(options.headers || {}),
+    },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || "Request failed");
+  return body;
+}
 
 // Standalone file (not defined inside settings/page.js) so it can be
 // imported from both the school's Settings and SEF's Settings
@@ -77,10 +97,11 @@ export default function UsersRolesTab() {
   // restricted this - and creating/editing/deleting senior_admin+
   // management accounts - to management only; the user asked 2026-09-22
   // to give senior_admin full parity with management for all Users & Roles
-  // management, so this now matches the server-side rule (admin_create_
-  // user/admin_update_user/admin_delete_user/admin_set_employee_link all
-  // allow senior_admin+management alike). Server-enforced regardless of
-  // what this flag hides/shows.
+  // management, so this now matches the server-side rule (/api/admin-users
+  // and admin_set_employee_link both allow senior_admin+management alike;
+  // the former replaced the old admin_create_user/admin_update_user/
+  // admin_delete_user RPCs 2026-09-30, see requireCaller() there). Server-
+  // enforced regardless of what this flag hides/shows.
   const isManagement = authUser?.role === "management" || authUser?.role === "senior_admin";
 
   // ── Users (real DB data) ──
@@ -129,16 +150,21 @@ export default function UsersRolesTab() {
     loadEmployeeLinks();
   }
 
-  const blank = { name:"", initials:"", role:"normal_admin" };
+  const blank = { name:"", initials:"", role:"normal_admin", email:"", password:"" };
   const [form, setForm] = useState(blank);
   const [userErrors, setUserErrors] = useState({});
   const setF = k => e => { setForm(p => ({ ...p, [k]: e.target.value })); setUserErrors(p => ({ ...p, [k]: "" })); };
 
   const loadUsers = useCallback(async () => {
     setUsersLoading(true);
-    const { data } = await supabase.from("admin_users").select("id, name, initials, role").order("name");
-    setUsers(data || []);
-    setUsersLoading(false);
+    try {
+      const { data } = await authedFetch("/api/admin-users");
+      setUsers(data || []);
+    } catch {
+      setUsers([]);
+    } finally {
+      setUsersLoading(false);
+    }
   }, []);
 
   useEffect(() => { loadUsers(); }, [loadUsers]);
@@ -148,33 +174,51 @@ export default function UsersRolesTab() {
   function cancel()    { setShowForm(false); setEditId(null); setEditMode(false); setUserSaveErr(""); }
 
   function openAdd()   { setForm(blank); setEditId(null); setUserErrors({}); setUserSaveErr(""); setShowForm(true); }
-  function openEdit(u) { setForm({ name: u.name, initials: u.initials || "", role: u.role }); setEditId(u.id); setUserErrors({}); setUserSaveErr(""); setShowForm(true); }
+  function openEdit(u) { setForm({ name: u.name, initials: u.initials || "", role: u.role, email: u.email || "", password: "" }); setEditId(u.id); setUserErrors({}); setUserSaveErr(""); setShowForm(true); }
 
   async function saveUser() {
     const e = {};
     if (!isValidName(form.name, { max: 80 })) e.name = "Enter a valid full name.";
     if (!isNonEmpty(form.initials) || form.initials.trim().length > 3) e.initials = "Enter 1-3 character initials.";
+    if (!isValidEmail(form.email)) e.email = "Enter a valid email address.";
+    // On add, a password is required. On edit, blank means "keep the
+    // current password" - only validate strength if they typed one.
+    if (!editId && !isStrongPassword(form.password)) e.password = "At least 6 characters.";
+    else if (editId && form.password && !isStrongPassword(form.password)) e.password = "At least 6 characters.";
     setUserErrors(e);
     if (!hasNoErrors(e)) return;
 
     setUserSaveErr("");
-    if (editId) {
-      const { data, error } = await supabase.rpc("admin_update_user", {
-        p_target_id: editId,
-        p_name: form.name.trim(),
-        p_initials: form.initials.trim().toUpperCase(),
-        p_role: form.role,
-      });
-      if (error) { setUserSaveErr("Failed to update: " + error.message); return; }
-      setUsers(prev => prev.map(u => u.id === editId ? data : u));
-    } else {
-      const { data, error } = await supabase.rpc("admin_create_user", {
-        p_name: form.name.trim(),
-        p_initials: form.initials.trim().toUpperCase(),
-        p_role: form.role,
-      });
-      if (error) { setUserSaveErr("Failed to add: " + error.message); return; }
-      setUsers(prev => [...prev, data]);
+    try {
+      if (editId) {
+        const { data } = await authedFetch("/api/admin-users", {
+          method: "PATCH",
+          body: JSON.stringify({
+            targetId: editId,
+            name: form.name.trim(),
+            initials: form.initials.trim().toUpperCase(),
+            role: form.role,
+            email: form.email.trim(),
+            password: form.password,
+          }),
+        });
+        setUsers(prev => prev.map(u => u.id === editId ? data : u));
+      } else {
+        const { data } = await authedFetch("/api/admin-users", {
+          method: "POST",
+          body: JSON.stringify({
+            name: form.name.trim(),
+            initials: form.initials.trim().toUpperCase(),
+            role: form.role,
+            email: form.email.trim(),
+            password: form.password,
+          }),
+        });
+        setUsers(prev => [...prev, data]);
+      }
+    } catch (err) {
+      setUserSaveErr((editId ? "Failed to update: " : "Failed to add: ") + err.message);
+      return;
     }
     setShowForm(false);
     setEditId(null);
@@ -183,9 +227,14 @@ export default function UsersRolesTab() {
   }
 
   async function deleteUser(id) {
-    if (!confirm("Remove this user's admin access? Their Supabase Auth account will remain.")) return;
-    const { error } = await supabase.rpc("admin_delete_user", { p_target_id: id });
-    if (error) { alert("Failed to remove user: " + error.message); return; }
+    if (!confirm("Remove this user's admin access and delete their login account? This cannot be undone.")) return;
+    try {
+      const result = await authedFetch("/api/admin-users", { method: "DELETE", body: JSON.stringify({ targetId: id }) });
+      if (result.warning) alert(result.warning);
+    } catch (err) {
+      alert("Failed to remove user: " + err.message);
+      return;
+    }
     setUsers(prev => prev.filter(u => u.id !== id));
   }
 
@@ -215,11 +264,6 @@ export default function UsersRolesTab() {
             <p className="text-xs font-bold text-school-navy uppercase tracking-wide mb-4">
               {editId ? "Edit User" : "Add New User"}
             </p>
-            {!editId && (
-              <div className="mb-4 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-700">
-                <b>Note:</b> To add a new admin, first create them in Supabase Auth (Authentication → Users → Add User), then edit their name, initials &amp; role here.
-              </div>
-            )}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
               <Field label="Full Name">
                 <input className={inp} placeholder="Enter name" value={form.name} onChange={setF("name")}/>
@@ -233,6 +277,14 @@ export default function UsersRolesTab() {
                 <select className={sel} value={form.role} onChange={setF("role")}>
                   {DB_ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
                 </select>
+              </Field>
+              <Field label="Login Email">
+                <input className={inp} type="email" placeholder="name@example.com" value={form.email} onChange={setF("email")} autoComplete="off"/>
+                <FieldError msg={userErrors.email}/>
+              </Field>
+              <Field label={editId ? "New Password (leave blank to keep current)" : "Password"}>
+                <input className={inp} type="password" placeholder={editId ? "••••••••" : "At least 6 characters"} value={form.password} onChange={setF("password")} autoComplete="new-password"/>
+                <FieldError msg={userErrors.password}/>
               </Field>
             </div>
             {userSaveErr && <p className="text-xs text-red-500 mt-2">{userSaveErr}</p>}
@@ -265,7 +317,7 @@ export default function UsersRolesTab() {
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-gray-800">{u.name}</p>
-                    <p className="text-xs text-gray-400 font-mono">{u.id.slice(0, 8)}…</p>
+                    <p className="text-xs text-gray-400">{u.email || u.id.slice(0, 8) + "…"}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
