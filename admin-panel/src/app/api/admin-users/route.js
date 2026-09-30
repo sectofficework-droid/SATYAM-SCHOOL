@@ -80,17 +80,59 @@ export async function POST(request) {
   const role = body.role;
   const email = (body.email || "").trim();
   const password = body.password || "";
+  const linkExistingId = body.linkExistingId || null;
 
   if (!name) return NextResponse.json({ error: "Enter a valid full name." }, { status: 400 });
   if (!initials || initials.length > 3) return NextResponse.json({ error: "Enter 1-3 character initials." }, { status: 400 });
   if (!ROLES.includes(role)) return NextResponse.json({ error: "Invalid role." }, { status: 400 });
   if (!isValidEmail(email)) return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
-  if (password.length < 6) return NextResponse.json({ error: "Password must be at least 6 characters." }, { status: 400 });
+  // A password is only needed when actually creating a new login - linking
+  // an existing one keeps its current password untouched.
+  if (!linkExistingId && password.length < 6) {
+    return NextResponse.json({ error: "Password must be at least 6 characters." }, { status: 400 });
+  }
+
+  // ── Link an already-confirmed existing Auth account (client resubmits
+  // with this after the "needsLink" response below) ──────────────────────
+  if (linkExistingId) {
+    const { data: alreadyLinked } = await supabaseAdmin.from("admin_users").select("id").eq("id", linkExistingId).single();
+    if (alreadyLinked) return NextResponse.json({ error: "This account is already an admin." }, { status: 409 });
+
+    const { data: row, error: insertErr } = await supabaseAdmin
+      .from("admin_users")
+      .insert({ id: linkExistingId, name, initials, role })
+      .select()
+      .single();
+    if (insertErr) return NextResponse.json({ error: "Failed to save admin: " + insertErr.message }, { status: 400 });
+
+    return NextResponse.json({ data: { ...row, email } });
+  }
 
   const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
     email, password, email_confirm: true,
   });
-  if (createErr) return NextResponse.json({ error: "Failed to create login: " + createErr.message }, { status: 400 });
+  if (createErr) {
+    // "This email is already registered" - offer to link the existing Auth
+    // account instead of just failing (REQ-BUG-059: no way to add an admin
+    // for an email that already has a login, e.g. a pre-existing account
+    // created before this route existed).
+    const isDuplicateEmail = createErr.code === "email_exists" || /already.*registered|already.*exists/i.test(createErr.message || "");
+    if (isDuplicateEmail) {
+      const { data: authList, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+      const existing = listErr ? null : (authList?.users || []).find(u => u.email?.toLowerCase() === email.toLowerCase());
+      if (existing) {
+        const { data: alreadyLinked } = await supabaseAdmin.from("admin_users").select("id").eq("id", existing.id).single();
+        if (alreadyLinked) {
+          return NextResponse.json({ error: "This email is already registered to an admin." }, { status: 409 });
+        }
+        return NextResponse.json(
+          { needsLink: true, existingUserId: existing.id, error: "An account already exists for this email." },
+          { status: 409 }
+        );
+      }
+    }
+    return NextResponse.json({ error: "Failed to create login: " + createErr.message }, { status: 400 });
+  }
 
   const { data: row, error: insertErr } = await supabaseAdmin
     .from("admin_users")

@@ -22,7 +22,11 @@ async function authedFetch(url, options = {}) {
     },
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || "Request failed");
+  if (!res.ok) {
+    const err = new Error(body.error || "Request failed");
+    err.body = body; // callers may need fields beyond `error`, e.g. needsLink
+    throw err;
+  }
   return body;
 }
 
@@ -204,16 +208,33 @@ export default function UsersRolesTab() {
         });
         setUsers(prev => prev.map(u => u.id === editId ? data : u));
       } else {
-        const { data } = await authedFetch("/api/admin-users", {
-          method: "POST",
-          body: JSON.stringify({
-            name: form.name.trim(),
-            initials: form.initials.trim().toUpperCase(),
-            role: form.role,
-            email: form.email.trim(),
-            password: form.password,
-          }),
-        });
+        const payload = {
+          name: form.name.trim(),
+          initials: form.initials.trim().toUpperCase(),
+          role: form.role,
+          email: form.email.trim(),
+          password: form.password,
+        };
+        let data;
+        try {
+          ({ data } = await authedFetch("/api/admin-users", { method: "POST", body: JSON.stringify(payload) }));
+        } catch (err) {
+          // REQ-BUG-059: this email already has a Supabase Auth login (e.g.
+          // created before this flow existed) - offer to link it instead of
+          // just failing. Their existing password is left untouched.
+          if (err.body?.needsLink) {
+            const wantsLink = confirm(
+              "An account already exists for " + payload.email + ". Link it as this admin instead? Their existing password will not be changed."
+            );
+            if (!wantsLink) { setUserSaveErr("Add cancelled - that email is already registered."); return; }
+            ({ data } = await authedFetch("/api/admin-users", {
+              method: "POST",
+              body: JSON.stringify({ ...payload, linkExistingId: err.body.existingUserId }),
+            }));
+          } else {
+            throw err;
+          }
+        }
         setUsers(prev => [...prev, data]);
       }
     } catch (err) {
