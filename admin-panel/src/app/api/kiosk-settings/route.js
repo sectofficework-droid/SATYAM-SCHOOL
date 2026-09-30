@@ -7,12 +7,15 @@ export async function POST(request) {
     const { expectedStartTime, lateGraceMinutes, absentCutoffTime, shiftEndTime } = body;
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    // No hardcoded fallback here, ever — a leaked service_role key bypasses
+    // all RLS on every table. It must come from environment configuration
+    // only, and this route must fail loudly (not silently fall back to a
+    // committed secret) if that configuration is missing.
     const serviceKey =
       process.env.SUPABASE_SERVICE_ROLE_KEY ||
       process.env.SUPABASE_SERVICE_KEY ||
       process.env.SUPABASE_SECRET_KEY ||
-      process.env.SUPABASE_KEY ||
-      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh4a293ZGF1Z2trdW12enlmc2FpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4MTY0NjQwOSwiZXhwIjoyMDk3MjIyNDA5fQ.pdr16s6KS1qeH0KzlUXRLF7BoLm8otOO7JxF8ESPbiY";
+      process.env.SUPABASE_KEY;
 
     if (!supabaseUrl || !serviceKey) {
       return NextResponse.json(
