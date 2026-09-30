@@ -45,7 +45,8 @@ BEGIN
     late_grace_minutes  = GREATEST(p_late_grace_minutes, 0),
     absent_cutoff_time  = p_absent_cutoff_time,
     shift_end_time      = p_shift_end_time,
-    updated_at          = now();
+    updated_at          = now()
+  WHERE id IS NOT NULL;
 END;
 $$;
 
