@@ -20,6 +20,7 @@ import 'admin_expenses_page.dart';
 import 'admin_gr_book_page.dart';
 import 'admin_users_roles_page.dart';
 import 'admin_salary_page.dart';
+import '../my_attendance/teacher_my_attendance_page.dart';
 
 // Admin Workspace home — full admin-web parity, phase 2 (2026-09-19: user
 // asked for a richer dashboard + full feature parity, not the phase-1
@@ -84,6 +85,11 @@ class _AdminWorkspaceHomeState extends State<AdminWorkspaceHome> {
             _Tile('Employees', Icons.badge_rounded, AppColors.teal, AppColors.tealLight, () => Get.to(() => const AdminEmployeesPage())),
             _Tile('Attendance', Icons.fact_check_rounded, AppColors.indigo, AppColors.indigoLight, () => Get.to(() => const AdminAttendancePage())),
             _Tile('Punch Code', Icons.qr_code_2_rounded, AppColors.amber, AppColors.amberLight, () => Get.to(() => const AdminPunchCodePage())),
+            // REQ-BUG-056: a non-teaching admin-linked account's entire app
+            // is this screen (no Teacher tabs, so no route to My Attendance
+            // otherwise) - without this tile there was no way to check
+            // themselves out at all.
+            _Tile('My Attendance', Icons.event_available_rounded, AppColors.indigo, AppColors.indigoLight, () => Get.to(() => const TeacherMyAttendancePage())),
           ]),
           const SizedBox(height: 22),
 
