@@ -24,6 +24,7 @@ import {
   studentToTcRow,
   generateSchoolLeavingCertificateHTML,
   generateSchoolLeavingCertificateSingle,
+  generateSchoolLeavingCertificateSheet,
 } from "@/lib/tcGenerator";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1434,7 +1435,7 @@ function TcPreview({ row }) {
   return (
     <div style={{
       width: 295,
-      height: 418,
+      height: 209,
       overflow: "hidden",
       position: "relative",
       borderRadius: 8,
@@ -1446,13 +1447,13 @@ function TcPreview({ row }) {
       <style>{TC_STYLES}</style>
       <div
         style={{
-          width: "210mm",
-          height: "297mm",
-          transform: "scale(0.3715)",
+          width: "297mm",
+          height: "210mm",
+          transform: "scale(0.2628)",
           transformOrigin: "top left",
           pointerEvents: "none"
         }}
-        dangerouslySetInnerHTML={{ __html: generateSchoolLeavingCertificateSingle(r) }}
+        dangerouslySetInnerHTML={{ __html: generateSchoolLeavingCertificateSheet(r) }}
       />
     </div>
   );
@@ -1999,7 +2000,7 @@ export default function DocumentsPage() {
           </div>
 
           <p className="text-xs text-gray-400 text-center -mt-2">
-            One full A4 page per certificate, formatted according to the official School Leaving Certificate standard (LAKSHITA RAULA TC).
+            One full A4 landscape page per certificate (duplicate 2-up with scissor cut line for student &amp; office filing).
           </p>
         </div>
       )}

@@ -436,13 +436,81 @@ export function generateSchoolLeavingCertificateSingle(r) {
 
 export const TC_STYLES = `
   @page {
-    size: A4 portrait;
+    size: A4 landscape;
     margin: 0;
   }
   * {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
+  }
+  html, body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+    width: 297mm !important;
+    height: 210mm !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .tc-landscape-sheet {
+    width: 297mm;
+    height: 210mm;
+    max-height: 210mm;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    page-break-after: always;
+    page-break-inside: avoid;
+    overflow: hidden;
+    position: relative;
+    background: #fff;
+  }
+  .tc-landscape-sheet:last-child {
+    page-break-after: avoid;
+  }
+  .tc-half-pane {
+    flex: 1;
+    height: 210mm;
+    max-height: 210mm;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+  .tc-scaled-card {
+    width: 210mm;
+    height: 297mm;
+    transform: scale(0.685);
+    transform-origin: center center;
+    flex-shrink: 0;
+  }
+  .tc-scissor-divider {
+    width: 8mm;
+    height: 200mm;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .tc-cut-line {
+    width: 0;
+    flex: 1;
+    border-left: 1.5px dashed #777;
+  }
+  .tc-cut-icon {
+    font-size: 16px;
+    line-height: 1;
+    color: #444;
+    padding: 6px 0;
+    transform: rotate(90deg);
+    user-select: none;
   }
   .tc-page {
     width: 210mm;
@@ -451,7 +519,6 @@ export const TC_STYLES = `
     margin: 0 auto;
     padding: 8mm 12mm 7mm 12mm;
     background: #fff;
-    page-break-after: always;
     page-break-inside: avoid;
     font-family: Arial, Helvetica, sans-serif;
     color: #000;
@@ -460,31 +527,31 @@ export const TC_STYLES = `
     box-sizing: border-box;
     overflow: hidden;
   }
-  .tc-page:last-child {
-    page-break-after: avoid;
-  }
   @media print {
     html, body {
       margin: 0 !important;
       padding: 0 !important;
       background: #fff !important;
-      width: 210mm !important;
-      height: 297mm !important;
+      width: 297mm !important;
+      height: 210mm !important;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
-    .tc-page {
-      width: 210mm !important;
-      height: 297mm !important;
-      max-height: 297mm !important;
-      padding: 8mm 12mm 7mm 12mm !important;
-      margin: 0 !important;
+    .tc-landscape-sheet {
+      width: 297mm !important;
+      height: 210mm !important;
+      max-height: 210mm !important;
       page-break-after: always !important;
       page-break-inside: avoid !important;
       overflow: hidden !important;
     }
-    .tc-page:last-child {
+    .tc-landscape-sheet:last-child {
       page-break-after: auto !important;
+    }
+    .tc-page {
+      page-break-after: avoid !important;
+      page-break-inside: avoid !important;
+      margin: 0 !important;
     }
   }
   .tc-box-main {
@@ -681,8 +748,30 @@ export const TC_STYLES = `
   }
 `;
 
+export function generateSchoolLeavingCertificateSheet(r) {
+  const single = generateSchoolLeavingCertificateSingle(r);
+  return `
+  <div class="tc-landscape-sheet">
+    <div class="tc-half-pane">
+      <div class="tc-scaled-card">
+        ${single}
+      </div>
+    </div>
+    <div class="tc-scissor-divider">
+      <div class="tc-cut-line"></div>
+      <div class="tc-cut-icon">&#9986;</div>
+      <div class="tc-cut-line"></div>
+    </div>
+    <div class="tc-half-pane">
+      <div class="tc-scaled-card">
+        ${single}
+      </div>
+    </div>
+  </div>`;
+}
+
 export function generateSchoolLeavingCertificateHTML(rows) {
-  const pagesHTML = rows.map(r => generateSchoolLeavingCertificateSingle(r)).join("");
+  const pagesHTML = rows.map(r => generateSchoolLeavingCertificateSheet(r)).join("");
 
   return `<!DOCTYPE html>
 <html lang="en">

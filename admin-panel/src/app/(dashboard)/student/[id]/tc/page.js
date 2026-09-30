@@ -77,6 +77,7 @@ import {
   studentToTcRow,
   generateSchoolLeavingCertificateHTML,
   generateSchoolLeavingCertificateSingle,
+  generateSchoolLeavingCertificateSheet,
   TC_STYLES,
 } from "@/lib/tcGenerator";
 
@@ -91,9 +92,11 @@ function TcCertificate({ student, tcData }) {
   });
 
   return (
-    <div className="bg-white border rounded-2xl p-4 max-w-2xl mx-auto shadow-sm overflow-hidden" id="tc-print">
+    <div className="bg-white border rounded-2xl p-4 max-w-5xl mx-auto shadow-sm overflow-hidden" id="tc-print">
       <style>{TC_STYLES}</style>
-      <div dangerouslySetInnerHTML={{ __html: generateSchoolLeavingCertificateSingle(row) }} />
+      <div className="overflow-x-auto flex justify-center">
+        <div dangerouslySetInnerHTML={{ __html: generateSchoolLeavingCertificateSheet(row) }} />
+      </div>
     </div>
   );
 }
