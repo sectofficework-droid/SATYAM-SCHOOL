@@ -46,6 +46,45 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
 ---
 
 ## 🛑 CRITICAL — needs an explicit decision before any fix is attempted
+- [~] **REQ-SEC-011 — Supabase `service_role` key hardcoded as a literal
+      fallback in two committed API routes, already pushed to a PUBLIC
+      GitHub repo. Found 2026-09-30 while building the admin-creation
+      feature below.** `admin-panel/src/app/api/kiosk-settings/route.js:15`
+      and `admin-panel/src/app/api/staff-attendance/sync-absent/route.js:20`
+      both had the actual `service_role` JWT (bypasses all RLS, full
+      read/write/delete on every table) hardcoded as the last fallback in
+      the `serviceKey = process.env.X || process.env.Y || ... || "eyJ..."`
+      chain. Introduced in commit `27e8918` (2026-09-29), still present at
+      `main` HEAD `10637bf` when found. Confirmed via `git branch -vv` that
+      local `main` is fully in sync with `origin/main` (not ahead/behind)
+      — these commits are already pushed. Confirmed via `curl -o /dev/null
+      -w '%{http_code}' https://github.com/sectofficework-droid/SATYAM-SCHOOL`
+      → `200` unauthenticated, meaning the repo is **public** — this key
+      was readable by anyone. **Must be treated as compromised.**
+      **CODE FIXED 2026-09-30**: hardcoded fallback removed from both
+      files (now `serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      ... || process.env.SUPABASE_KEY`, no literal secret, ever — the
+      route now fails loudly with a 500 if none of those are set, same as
+      it already did for a missing `supabaseUrl`). Swept the whole repo
+      (`grep` for the JWT header + `"iss":"supabase"` prefix, excluding
+      `node_modules`) for any other copy — found one more hit,
+      `mobile-app/lib/app_bootstrap.dart:15`, but that one decodes to
+      `"role":"anon"`, the public anon key, which is safe and expected to
+      ship in a mobile client (protected by RLS) — not a second instance
+      of this issue. `npm run lint` clean after the fix.
+      **STILL YOUR ACTION NEEDED, not something I can do:** (1) **rotate
+      the `service_role` key** in Supabase Dashboard → Settings → API
+      (user said 2026-09-30 they'd do this now); (2) update
+      `admin-panel/.env.local` (git-ignored) and the Vercel project's
+      environment variables with the new key — every API route in this
+      list reads from env, not a redeployed default, so both places need
+      the new value or these routes break; (3) optionally scrub the old
+      key out of git history (e.g. `git filter-repo`/BFG) — lower priority
+      once rotated, since the exposed key is worthless after that, but
+      still good hygiene since it's sitting in public commit history
+      either way; (4) consider whether the repo should be private going
+      forward — flagged, not decided, your call, separate from key
+      rotation.
 - [x] **REQ-SEC-006 — `_app_password_backup_20260821` still holds every
       student's/employee's original PLAINTEXT password, fully exposed to
       anon (no login required). Found 2026-09-19 during a REQ-SEC-002
@@ -1853,6 +1892,307 @@ password-change flows, PDF generation utilities.
       valid arguments (a future deep link, GetX state restoration
       replaying the route), `initState` throws instead of degrading.
       Found via code reading, not yet observed in practice.
+
+### found 2026-09-30 (admin-panel bug-hunting review, via subagent code
+### review — user reported "lot of bug in admin panel" with no specific
+### repro; `diagnostic_reports` was checked first and is empty (logging
+### currently off), so this is a full-file review, not confirmed live
+### incidents). Priority: fix one by one per user's 2026-09-30 instruction.
+None of these are fixed yet — all await action.
+
+#### 🛑 CRITICAL (data loss / wrong money or attendance)
+- [x] **REQ-BUG-021 — SEF bulk employee-edit silently nulls unrelated
+      fields.** `sef/super-admin/page.js:183-189` → `sefEmployeeService.js
+      :16-36`. `saveRow()` sends a partial payload; `toRow()` treats
+      missing fields as a full-row overwrite. Editing just a designation
+      silently nulls `gender, dob, alt_phone, email, address, aadhar, pan,
+      photo_key` and resets `employment_type` to "Permanent."
+- [x] **REQ-BUG-022 — SEF bulk fees-edit silently nulls unrelated student
+      fields, including the Aadhar document reference.**
+      `sef/super-admin/page.js:145-148`, same partial-payload/full-row-
+      overwrite pattern as REQ-BUG-021 via `updateStudent`. Saving a
+      monthly-fee change wipes `medium, school_name, dob, father_name,
+      mother_name, mobile_2, address, aadhar_no, aadhar_name,
+      aadhar_doc_key`.
+- [x] **REQ-BUG-023 — Editing an existing fee payment can silently fail.**
+      `feesService.js:137-145` (`updateFeesForEnrollment`) never checks the
+      `{error}` from the existing-payment `update` call, unlike the sibling
+      insert/delete steps in the same function — the function reports
+      success regardless.
+- [x] **REQ-BUG-024 — Approving staff leave marks the wrong dates
+      (IST/UTC off-by-one).** `staffLeaveService.js:28-37` (`dateRange`,
+      used by `approveLeaveRequest`) builds a local-midnight `Date` then
+      calls `.toISOString().slice(0,10)`, shifting every date back one day
+      in IST. Approving leave for 2026-06-05→06-07 marks
+      `employee_attendance` for 06-04→06-06 instead, with no error shown.
+- [x] **REQ-BUG-025 — Running payroll twice in one month silently drops the
+      second batch.** `employee/page.js:1394-1425`
+      (`AttendanceSection.handleGenerate`) keys `salary_payments` by
+      `month` only (`YYYY-MM-01`), colliding with the DB's
+      `UNIQUE(employee_id, month)` constraint. The insert is rejected for
+      every already-paid employee on a second run (e.g. two "15 Days"
+      batches), and the linked `addExpense` calls for that batch never run
+      either.
+- [x] **REQ-BUG-026 — Two academic years can end up simultaneously flagged
+      "current".** `settingsService.js:163-177` (`saveCurrentYear`) and
+      `sefSettingsService.js:58-62` never check the error from the "clear
+      all `is_current`" update before setting the new year's flag true —
+      a failure there leaves two rows current, breaking any `.single()`
+      lookup downstream.
+- [x] **REQ-BUG-027 — A failed fee-structure lookup silently returns
+      empty instead of erroring.** `settingsService.js:193-199`
+      (`getCurrentYearClassFees`) drops the query `error` entirely; any
+      failure (including the REQ-BUG-026 dual-current-year state) silently
+      returns `{}`, quietly breaking the admission form's fee auto-fill
+      with no feedback.
+- [x] **REQ-BUG-028 — Help-desk phone numbers can be wiped entirely on a
+      save failure.** `settingsService.js:120-133`
+      (`saveHelpDeskAdminNumbers`) does delete-then-insert with no
+      transaction; if the insert throws after the delete succeeds, every
+      help-desk number (shown in the Student app) is gone, not just the
+      one being edited.
+- [x] **REQ-BUG-029 — A failed enrollment insert can leave an orphaned,
+      invisible student row.** `studentService.js:466-632` (`addStudent`)
+      has no rollback if the `student_enrollments` insert fails after the
+      `students` row is already inserted — the orphan still occupies
+      GR No./Aadhar uniqueness with no way to see or remove it normally.
+- [x] **REQ-BUG-030 — Concurrent admissions/promotions can generate
+      duplicate enrollment/roll numbers.** `studentService.js:305-329`
+      (`getNextEnrollmentNo`/`getNextRollNo`) reads current max then writes
+      max+1 client-side with no uniqueness guard against a second
+      concurrent admission computing the same number.
+- [x] **REQ-BUG-031 — Switching the student dropdown mid-payment-entry can
+      carry over the previous student's amount.** `fees/page.js:1001,1008`
+      — changing the Standard/Roll Number dropdown clears only
+      `pendingInventory`, not the amount/date/received-by fields.
+- [x] **REQ-BUG-032 — "Total Fees" drift (REQ-BUG-001's class of bug)
+      reintroduced on functions the original fix didn't touch.**
+      `reportService.js:219` vs `:334`, `feesService.js:38` —
+      `getFeesForReport`/`getStudentsForFees` use `fee_total || 0` while
+      `getFeesForSuperAdmin` falls back to the live class-fee structure.
+      Legacy rows with no `fee_total` snapshot show ₹0 due on Report/Fees
+      pages but the real amount on Super Admin.
+- [x] **REQ-BUG-033 — Attendance Overview silently drops several class
+      sections.** `attendanceService.js:58-104`
+      (`getAttendanceOverviewForDate`) never applies the class-name
+      normalization (`"JR KG"` DB form vs `"JR.KG"` app form, documented as
+      needed in `studentService.js`) — JR KG, SR KG, and 11th/12th Commerce
+      get zero roster matches and vanish from the Overview and reminder
+      emails.
+- [x] **REQ-BUG-034 — Student-promotion discount math can use stale
+      figures from a different device/session.** `store.js:47-53` +
+      `settings/page.js:766-769` + `student/page.js:394-396` —
+      `uniformFees`/`oldStudentDiscount` live in Zustand/localStorage,
+      refreshed only by a Fee Structure save on that specific browser.
+      Promoting from a different device uses stale or hardcoded-fallback
+      values (1500/1000), silently saving a wrong discount to the
+      student's fee record.
+- [x] **REQ-BUG-035 — Main (non-SEF) Inventory page can show `NaN` stock
+      figures.** `inventory/page.js:25-26,30,831` + `inventoryService.js
+      :8,16` are missing the `|| 0` null-guard the Inventory *Report* and
+      `sefInventoryService.js` already have (REQ-BUG-005's fix wasn't
+      applied here) — a null `qty` on any batch/usage row turns Available
+      Qty and the low-stock flag into `NaN`.
+- [x] **REQ-BUG-036 — Bag-item "pending" tiles massively overstate
+      counts.** `inventory/page.js:811-813` vs `inventoryService.js:24-26`
+      — the tile uses the entire student count as denominator instead of
+      the class-filtered eligible count `mapItem()` correctly computes.
+- [x] **REQ-BUG-037 — TC "Select Students" flow prints fake attendance
+      figures as if real.** `documents/page.js` (TC row builder) +
+      `tcGenerator.js:165-166` never supply real attendance for this flow,
+      so generated certificates print hardcoded sample figures
+      (`"210"/"235"`) regardless of the student's actual record.
+- [x] **REQ-BUG-038 — Second guardian phone number never appears on
+      ID cards/exports.** `documents/page.js:255-257,314-316,434-436,
+      543-545,598,1314-1316,1379-1381` reference a non-existent
+      `s.mobile1` field (real fields are `mobile`/`mobile2`), so that
+      branch can never fire.
+- [x] **REQ-BUG-039 — Combined Old-Student + Extra discount loses the
+      Extra discount's real reason in the audit trail.**
+      `student/page.js:424-428` (`PromoteModal.handleConfirmPromote`)
+      hardcodes `discReason` to "Old Student Discount" when both discounts
+      apply together — amount charged is correct, saved reason is not.
+
+#### ⚠️ MODERATE
+- [x] **REQ-BUG-040 — Dashboard stats can silently show ₹0 on a failed
+      query.** `dashboardService.js:25-49` (`getDashboardStats`) never
+      checks `error` on any of its 4 parallel queries.
+- [x] **REQ-BUG-041 — Missing null-guards can turn fee/expense totals into
+      `NaN`.** `dashboard/page.js:204-207` and `fees/page.js:66`
+      (`calcSummary`) lack `|| 0` on amount reduces (the adjacent
+      `discount` calc has it).
+- [x] **REQ-BUG-042 — Same missing-`|| 0` pattern as REQ-BUG-041, SEF
+      side.** `sefFeesService.js:38` (`getThisMonthCollection`),
+      `Number(p.amount)` unguarded.
+- [x] **REQ-BUG-043 — "This month" totals can query the wrong month for
+      ~5.5 hours after midnight IST on the 1st.** `dashboardService.js:15`,
+      `sefFeesService.js:32` compute the current month via
+      `new Date().toISOString().slice(0,7)` (UTC), not IST.
+- [x] **REQ-BUG-044 — Payroll expense entries can be silently
+      under-recorded.** `super-admin/page.js:1746,1765` (SalaryPanel) —
+      post-payment `addExpense` failures are swallowed
+      (`.catch(()=>{})`/unchecked `allSettled`).
+- [x] **REQ-BUG-045 — Employee-module "Teachers" banner count always shows
+      0 (recurrence of REQ-BUG-002 in a new location).**
+      `super-admin/page.js:3280` filters `e.type === "Teacher"` against
+      real values, which are lowercase (`"teaching"`).
+- [x] **REQ-BUG-046 — Inventory & Asset Report filters/tiles silently
+      return zero rows.** `report/page.js:670-671,685-695` +
+      `reportService.js:355-381` — Category/Status filter options and two
+      summary tiles use values (`"student"`, `"Active"`, `"Maintenance"`)
+      that never match what the service actually returns.
+- [x] **REQ-BUG-047 — Tasks page failures look like silent no-ops.**
+      `tasks/page.js:603-635` — Save/Delete/Status-change catch blocks
+      only `console.error`, no user-facing alert, unlike comparable
+      handlers elsewhere in the app.
+- [x] **REQ-BUG-048 — Several loads are missing the stale-response guard
+      added for REQ-BUG-004, and one can re-save under the wrong date.**
+      `attendance/page.js:393-396,870-875` (Overview tab, student History
+      modal) and `employee/page.js:1938-1953` (Mark Staff Attendance) lack
+      the request-id guard; rapid date/filter changes can let a stale
+      response overwrite newer state.
+- [x] **REQ-BUG-049 — "Latest TC per student" can nondeterministically show
+      the wrong TC.** `grBookService.js:67-68,83-84` has no tiebreaker
+      beyond `issue_date` for same-day reissues.
+- [x] **REQ-BUG-050 — TC report's fallback enrollment selection is
+      nondeterministic across reloads.** `reportService.js:121-138`
+      (`getTcIssuedForReport`) has no `.order()` on its nested enrollment
+      sub-select.
+- [x] **REQ-BUG-051 — Employee panel can get stuck on "No employee data
+      yet" until remounted.** `super-admin/page.js:1987` (EmployeePanel)
+      uses `useState(() => {...}, [propEmployees])`, which is not a valid
+      re-sync mechanism if opened before the parent's fetch resolves.
+
+#### MINOR / UI-only
+- [x] **REQ-BUG-052 — Fast section-switching can show documents from the
+      wrong section.** `question-papers/page.js:39-43` has no request-id
+      guard on section-change loads.
+- [x] **REQ-BUG-053 — Notice expiry badges/auto-archive drift after
+      midnight in a long-open session.** `notice/page.js:40` — `TODAY` is
+      computed once at module load.
+- [x] **REQ-BUG-054 — Failed loads are indistinguishable from genuinely
+      empty lists.** `queries/page.js:24`, `diagnostics/page.js:34` —
+      fetch errors swallowed via bare `.catch(()=>{})`.
+- [x] **REQ-BUG-055 — Same-day recent-payment/salary rows can display in a
+      nondeterministic order.** `sefFeesService.js:43-51`,
+      `sefEmployeeService.js:78-84` — ordered by date only, no id
+      tiebreaker.
+
+**FIXED 2026-09-30, one by one per user's explicit "code it" per-item
+gate.** All 35 checked items above are done — smallest-correct-change
+fixes at the exact sites this review named, `npm run lint` clean across
+the whole admin-panel after all of them. Full detail in
+`governance/work-log/LOG-2026-09-30.md` Sessions 2 and 3.
+
+The last 3 (REQ-BUG-025/030/034) needed a decision first — asked one by
+one, then fixed per the answer, not guessed:
+- **REQ-BUG-025** — user chose "block and warn" over overwrite/accumulate/
+  schema change. `employee/page.js handleGenerate()` now checks which
+  employees already have a `salary_payments` row for the target month
+  before inserting, skips only those, and alerts the admin by name —
+  everyone else in the batch still gets paid instead of the whole run
+  failing.
+- **REQ-BUG-030** — user chose the DB-guard fix. Turned out both needed
+  unique constraints (`enrollment_no`; `academic_year_id, class_id,
+  section_id, roll_no`) already existed in production (confirmed via
+  Supabase MCP, no migration needed). The actual gap was purely
+  client-side: `studentService.addStudent` now retries the enrollment
+  insert (regenerating the next number) up to 5 times on a `23505`
+  unique-violation instead of surfacing a raw DB error.
+- **REQ-BUG-034** — user chose the DB migration. Turned out no schema
+  change was needed either: `fee_structures` already has `uniform_amount`
+  and `old_student_discount` columns, already written by
+  `saveFeeStructuresForYear` — Settings just never had a reader for them
+  besides the Zustand store. Added `settingsService.
+  getCurrentYearPromotionConfig()` (reads live from `fee_structures` for
+  the current year) and pointed `PromoteModal` at it instead of
+  `useStore(s => s.uniformFees / s.oldStudentDiscount)`. Removed the two
+  now-fully-unused store fields/setters (`store.js`) and their now-dead
+  writes in `settings/page.js`'s `FeeStructureTab.save()`, rather than
+  leave dead plumbing behind.
+
+### found 2026-09-30 (user, live-testing the Staff App unification /
+### REQ-FEAT-001 build: "in this there is no own attendance punch out
+### button")
+- [x] **REQ-BUG-056 — Non-teaching admin-linked staff have no way to punch
+      themselves out (or see their own attendance) anywhere in the app.**
+      `mobile-app/lib/app/modules/teacher/dashboard/teacher_home.dart:168-173`
+      — the `!isTeacher && hasAdminWorkspace` branch (a linked account whose
+      `employees.type != 'teaching'`) makes `AdminWorkspaceHome` the
+      person's entire app, with no bottom nav at all ("a single destination
+      needs none" per the comment at line 37-41). But the self check-in/
+      check-out screen (`teacher/my_attendance/teacher_my_attendance_page.dart`
+      — has the "Check Out" button, `_buildShiftRow()`) is only reachable
+      via the Teacher tabs' Home dashboard tile
+      (`teacher_dashboard_tab.dart:115`, route `Routes.teacherMyAttend`),
+      which this account type never sees. `AdminWorkspaceHome`'s own
+      "Attendance" tile (`admin_workspace_home.dart:85`) opens
+      `AdminAttendancePage`, which marks *other* people's/students'
+      attendance ("Mark Attendance"/"Edit Requests" tabs) — nothing about
+      the logged-in admin's own shift. **Confirmed via code reading**, not
+      yet reproduced on a real non-teaching-admin device login this
+      session. A Teacher+Admin combo account is unaffected (keeps all 5
+      Teacher tabs, including My Attendance, plus Admin as a 6th tab) —
+      this only affects a purely non-teaching admin-linked account.
+      **FIXED 2026-09-30 — user chose option (a).** Added a "My Attendance"
+      tile to `AdminWorkspaceHome`'s People grid
+      (`admin_workspace_home.dart`), `Get.to(() =>
+      TeacherMyAttendancePage())` — same Check Out screen Teacher tabs use,
+      no nav redesign. "code it" given 2026-09-30. `flutter analyze`: 10
+      pre-existing info-level style nits elsewhere in the file/repo
+      (const-constructor suggestions on `_SectionHeader` calls,
+      BuildContext-across-async-gap notes in other admin_workspace pages),
+      none introduced by this change, none on the new line. **Not yet
+      device-tested** as a real non-teaching-admin login — same caveat as
+      the rest of REQ-FEAT-001's on-device verification gap.
+- [x] **REQ-BUG-057 — "Add User" (Settings → Users & Roles) has always
+      been completely broken, not just missing email/password. Found
+      2026-09-30 while building the feature the user asked for.**
+      `admin_create_user(p_name, p_initials, p_role)` never supplied an
+      `id`, and `admin_users.id` has no default/trigger — confirmed via a
+      rolled-back test transaction (`BEGIN; INSERT INTO admin_users
+      (name, initials, role) VALUES (...); ROLLBACK;`) that this always
+      throws `23502 null value in column "id" violates not-null
+      constraint`. The only way an admin had ever actually been added was
+      the documented manual workaround (create the Auth user by hand in
+      the Supabase dashboard, then use this broken form anyway — which
+      still would have failed). **User's request:** create/edit/remove
+      should happen "at the DB level" with email+password, not just
+      name/initials.
+      **FIXED 2026-09-30.** New `admin-panel/src/app/api/admin-users/
+      route.js` (GET/POST/PATCH/DELETE) replaces the three old RPCs
+      entirely — it needs the service_role key for the Supabase Auth side
+      anyway (found and fixed REQ-SEC-011 while building this, see above),
+      so it also owns the `admin_users` writes directly instead of
+      splitting one action across a client RPC call and a separate server
+      call. Every handler re-derives the caller's identity from their own
+      session token (`supabaseAdmin.auth.getUser(token)`) and checks their
+      `admin_users.role` server-side — never trusts a client-asserted
+      role, same rule the old RPCs enforced (`senior_admin`/`management`
+      only). **Create:** `auth.admin.createUser({ email, password,
+      email_confirm: true })`, then inserts `admin_users` using that same
+      id — fixes the NOT NULL bug as a side effect of fixing the root
+      cause (no id was ever the actual bug; wiring through the real Auth
+      id is the actual fix, not a workaround). Insert failure compensates
+      by deleting the just-created Auth account. **Edit:** name/initials/
+      role always; email/password only touched if provided (blank
+      password = unchanged) — mirrors the old RPC's "can't change your own
+      role" rule. **Remove:** deletes the Auth account too, not just the
+      `admin_users` row (user confirmed this explicitly, not the old
+      "Auth account will remain" behavior). List now also returns each
+      user's real login email (`auth.admin.listUsers()`, since
+      `admin_users` itself doesn't store it) instead of just name/
+      initials. `UsersRolesTab.js` updated to match: Email/Password fields
+      on the form, `authedFetch()` helper attaches the caller's session
+      token to each request, removed the now-obsolete "create them in
+      Supabase Auth manually first" note. Old RPCs
+      (`admin_create_user`/`admin_update_user`/`admin_delete_user`) left
+      in the DB, unused — harmless, no client code calls them anymore.
+      "code it" given 2026-09-30 (same turn as REQ-SEC-011's fix).
+      `npm run lint` clean. **Not yet click-tested** — actually creating
+      an admin, logging in as them, and confirming Remove really deletes
+      the Auth account are all still unverified in a running dev server
+      this session.
 
 ## FEATURE INITIATIVES (large, multi-session — own plan file, own mini gate checklist)
 - [ ] **REQ-FEAT-001 — Staff App unification: evolve `mobile-app/` teacher
