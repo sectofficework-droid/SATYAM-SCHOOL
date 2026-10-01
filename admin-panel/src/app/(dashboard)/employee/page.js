@@ -15,6 +15,7 @@ import { getEmployees, addEmployee, updateEmployee, resetEmployeePassword, gener
 import { createImpersonationCode } from "@/lib/impersonationService";
 import { uploadFileToS3, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile, formatFileSize } from "@/lib/fileCompression";
+import { toIsoDateLocal } from "@/lib/utils";
 import S3Image from "@/components/S3Image";
 import DateInputDMY from "@/components/DateInputDMY";
 import {
@@ -1697,7 +1698,7 @@ function LiveStatusTab({ employees }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toIsoDateLocal(new Date());
   const activeEmployees = employees.filter(e => e.status !== "Inactive");
 
   const load = useCallback(() => {
@@ -1950,7 +1951,7 @@ function fmtPunchTime(iso) {
 }
 
 function MarkStaffAttendanceTab({ employees }) {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(toIsoDateLocal(new Date()));
   const [status, setStatus] = useState({}); // employee_id -> 'P'|'A'
   const [shiftsByEmployee, setShiftsByEmployee] = useState({}); // employee_id -> [{ check_in_at, check_out_at, punch_method }]
   const [recordedAttIds, setRecordedAttIds] = useState(new Set()); // employee_ids with actual attendance row in DB
@@ -2538,7 +2539,7 @@ function DailyTaskModal({ task, employees, initialTargetType = "all", onClose, o
 }
 
 function DailyTaskStatusTab() {
-  const [date, setDate]       = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate]       = useState(toIsoDateLocal(new Date()));
   const [board, setBoard]     = useState({ tasks: [], rows: [] });
   const [loading, setLoading] = useState(true);
 

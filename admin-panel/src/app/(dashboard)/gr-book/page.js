@@ -13,7 +13,7 @@ import {
 import { addStudent } from "@/lib/studentService";
 import { renderTablePdf } from "@/lib/pdfTableExport";
 import DateInputDMY from "@/components/DateInputDMY";
-import { fmtDMY } from "@/lib/utils";
+import { fmtDMY, toIsoDateLocal } from "@/lib/utils";
 
 // Fixed field order, exactly as specified by the school for the paper register.
 const FIELD_DEFS = [
@@ -183,7 +183,7 @@ export default function GrBookPage() {
   function sourceLabel(e) { return e._source === "system" ? "In System" : "Imported Record"; }
 
   function doExportExcel() {
-    const isoToday = new Date().toISOString().slice(0, 10);
+    const isoToday = toIsoDateLocal(new Date());
     const headerRow = ["Status", "Source", ...REGISTER_COLUMNS.map(f => f.label)];
     const rows = [
       ["Satyam Stars International School"],
@@ -205,7 +205,7 @@ export default function GrBookPage() {
   }
 
   async function doExportPDF() {
-    const isoToday = new Date().toISOString().slice(0, 10);
+    const isoToday = toIsoDateLocal(new Date());
     const columns = [{ key: "status", label: "Status" }, { key: "source", label: "Source" }, ...REGISTER_COLUMNS];
     const rows = filtered.map(e => ({
       status: e.status,

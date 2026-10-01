@@ -32,7 +32,7 @@ import {
 } from "@/lib/inventoryService";
 import * as XLSX from "xlsx";
 import DateInputDMY from "@/components/DateInputDMY";
-import { fmtDMY } from "@/lib/utils";
+import { fmtDMY, toIsoDateLocal } from "@/lib/utils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -1290,7 +1290,7 @@ function InventoryPanel({ students }) {
 
   async function addHistEntry(assetId) {
     try {
-      const entry = await addAssetHistoryEntry(assetId, { date: new Date().toISOString().slice(0, 10), action: "Assigned", from: "", to: "", note: "" });
+      const entry = await addAssetHistoryEntry(assetId, { date: toIsoDateLocal(new Date()), action: "Assigned", from: "", to: "", note: "" });
       setAssets(prev=>prev.map(a=>a.id===assetId?{...a,history:[...a.history,entry]}:a));
     } catch (err) {
       alert("Failed to add history entry: " + err.message);
@@ -1675,7 +1675,7 @@ function SalaryPanel({ employees: propEmployees }) {
   const [employees, setEmployees] = useState(propEmployees || []);
   useEffect(() => { setEmployees(propEmployees || []); }, [propEmployees]);
 
-  const curMonth = new Date().toISOString().slice(0, 7);
+  const curMonth = toIsoDateLocal(new Date()).slice(0, 7);
   const [month,      setMonth]      = useState(curMonth);
   const [search,     setSearch]     = useState("");
   const [typeF,      setTypeF]      = useState("All");

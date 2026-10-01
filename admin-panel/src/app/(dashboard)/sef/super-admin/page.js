@@ -5,6 +5,7 @@ import {
   ShieldCheck, GraduationCap, IndianRupee, Users, Package, Wallet, Upload, Save, Search, Plus,
 } from "lucide-react";
 import useStore from "@/lib/store";
+import { toIsoDateLocal } from "@/lib/utils";
 import { getStudents, addStudent, updateStudent } from "@/lib/sefStudentService";
 import { getEmployees, updateEmployee, getSalaryPayments, addSalaryPayment } from "@/lib/sefEmployeeService";
 import { getItems } from "@/lib/sefInventoryService";
@@ -261,7 +262,7 @@ function SalaryPanel() {
   const [employees, setEmployees] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [amount, setAmount] = useState("");
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [month, setMonth] = useState(toIsoDateLocal(new Date()).slice(0, 7));
   const [paidBy, setPaidBy] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -274,7 +275,7 @@ function SalaryPanel() {
     if (!selectedId || !amount) return;
     setSaving(true);
     try {
-      await addSalaryPayment({ employeeId: selectedId, amount: Number(amount), month: month + "-01", paidOn: new Date().toISOString().slice(0, 10), paidBy });
+      await addSalaryPayment({ employeeId: selectedId, amount: Number(amount), month: month + "-01", paidOn: toIsoDateLocal(new Date()), paidBy });
       setSaved(true); setTimeout(() => setSaved(false), 2000);
       setAmount("");
       getSalaryPayments(selectedId).then(setHistory);

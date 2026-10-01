@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   Plus, X, Search, User, Upload, FileText, Pencil, Power, Users, CalendarCheck, IndianRupee, Check,
 } from "lucide-react";
+import { toIsoDateLocal } from "@/lib/utils";
 import {
   getEmployees, addEmployee, updateEmployee, setEmployeeStatus,
   getAttendanceForDate, saveAttendanceForDate,
@@ -455,7 +456,7 @@ function StdMappingCard({ mapping, onRemove, onToggleSubject }) {
 
 // ── Mark Attendance ────────────────────────────────────────────────
 function MarkAttendanceTab({ employees }) {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(toIsoDateLocal(new Date()));
   const [status, setStatus] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -614,8 +615,8 @@ function EmployeeSalaryPanel({ employee }) {
 
 function AddSalaryModal({ employeeId, onClose, onSaved }) {
   const [amount, setAmount] = useState("");
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-  const [paidOn, setPaidOn] = useState(new Date().toISOString().slice(0, 10));
+  const [month, setMonth] = useState(toIsoDateLocal(new Date()).slice(0, 7));
+  const [paidOn, setPaidOn] = useState(toIsoDateLocal(new Date()));
   const [paidBy, setPaidBy] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);

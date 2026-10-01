@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getStudents } from "@/lib/studentService";
 import { getS3ViewUrl } from "@/lib/s3Upload";
-import { fmtDMY } from "@/lib/utils";
+import { fmtDMY, toIsoDateLocal } from "@/lib/utils";
 import { normalizeDate } from "@/lib/importUtils";
 import { getMarksheetsForClass, getSingleExamMarksheet, getCurrentOfficialExams } from "@/lib/marksheetService";
 import { isExamUnlocked } from "@/lib/examService";
@@ -606,7 +606,7 @@ async function exportForCanva(students) {
   ws["!cols"] = Object.keys(rows[0] || {}).map(k => ({ wch: k === "Photo" ? 60 : 20 }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "ID Card Data");
-  XLSX.writeFile(wb, `ID_Card_Data_For_Canva_${new Date().toISOString().slice(0,10)}.xlsx`);
+  XLSX.writeFile(wb, `ID_Card_Data_For_Canva_${toIsoDateLocal(new Date())}.xlsx`);
 }
 
 // ── Bonafide Certificate: matches the school's real pre-printed form

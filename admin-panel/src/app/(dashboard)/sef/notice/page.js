@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { Plus, X, Pin, PinOff, Pencil, Archive, ArchiveRestore, Trash2, Bell } from "lucide-react";
 import { getNotices, addNotice, updateNotice, deleteNotice } from "@/lib/sefNoticeService";
+import { toIsoDateLocal } from "@/lib/utils";
 import DateInputDMY from "@/components/DateInputDMY";
 
 const IPT = "w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy transition-colors bg-white";
@@ -24,7 +25,7 @@ export default function SefNoticePage() {
   const load = useCallback(() => {
     setLoading(true);
     getNotices().then(async (rows) => {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = toIsoDateLocal(new Date());
       const toExpire = rows.filter(n => !n.archived && n.expiry_date && n.expiry_date < today);
       await Promise.all(toExpire.map(n => updateNotice(n.id, { archived: true, pinned: false })));
       setNotices(toExpire.length ? await getNotices() : rows);
@@ -120,7 +121,7 @@ function NoticeModal({ notice, onClose, onSaved }) {
   const [title, setTitle] = useState(notice.title || "");
   const [content, setContent] = useState(notice.content || "");
   const [type, setType] = useState(notice.type || "General");
-  const [date, setDate] = useState(notice.posted_date || new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(notice.posted_date || toIsoDateLocal(new Date()));
   const [expiryDate, setExpiryDate] = useState(notice.expiry_date || "");
   const [postedBy, setPostedBy] = useState(notice.posted_by || "");
   const [pinned, setPinned] = useState(notice.pinned || false);

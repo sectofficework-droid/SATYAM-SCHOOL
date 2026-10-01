@@ -11,6 +11,7 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { isPositiveAmount, isValidLength } from "@/lib/validators";
+import { toIsoDateLocal } from "@/lib/utils";
 
 // ── Constants ──────────────────────────────────────────────────
 const CATEGORIES = ["Salary", "Infrastructure", "Supplies", "Utilities", "Events", "Maintenance", "Transport", "Chai", "Coffee", "Nasta", "Other"];
@@ -257,7 +258,7 @@ export default function ExpensesPage() {
   }).sort((a, b) => b.date.localeCompare(a.date)), [expenses, search, catFilter, monthFilter]);
 
   const totalAll     = expenses.reduce((s, e) => s + e.amount, 0);
-  const thisMonth    = new Date().toISOString().slice(0, 7);
+  const thisMonth    = toIsoDateLocal(new Date()).slice(0, 7);
   const totalMonth   = expenses.filter(e => e.date.startsWith(thisMonth)).reduce((s, e) => s + e.amount, 0);
   const catTotals    = CATEGORIES.map(c => ({ cat: c, total: expenses.filter(e => e.category === c).reduce((s, e) => s + e.amount, 0) }));
   const topCat       = [...catTotals].sort((a, b) => b.total - a.total)[0];

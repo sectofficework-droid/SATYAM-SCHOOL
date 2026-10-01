@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Download, GraduationCap, IndianRupee, Users, Package } from "lucide-react";
 import { getStudentsForReport, getFeesForReport, getEmployeesForReport, getInventoryForReport } from "@/lib/sefReportService";
+import { toIsoDateLocal } from "@/lib/utils";
 
 const REPORTS = [
   { key: "student", label: "Student Report", icon: GraduationCap },
@@ -17,7 +18,7 @@ function exportXlsx(rows, headers, fileName) {
     const ws = XLSX.utils.aoa_to_sheet(aoa);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, fileName.slice(0, 31));
-    XLSX.writeFile(wb, `${fileName}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `${fileName}_${toIsoDateLocal(new Date())}.xlsx`);
   });
 }
 

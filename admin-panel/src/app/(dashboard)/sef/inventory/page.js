@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Plus, X, Package, AlertTriangle, ArrowDownCircle, ArrowUpCircle, ChevronDown, ChevronUp } from "lucide-react";
 import { getItems, addItem, addBatch, addUsage, getHistory } from "@/lib/sefInventoryService";
+import { toIsoDateLocal } from "@/lib/utils";
 import DateInputDMY from "@/components/DateInputDMY";
 
 const IPT = "w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy transition-colors bg-white";
@@ -171,7 +172,7 @@ function AddItemModal({ onClose, onSaved }) {
 function StockModal({ type, item, onClose, onSaved }) {
   const isBatch = type === "batch";
   const [qty, setQty] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState(toIsoDateLocal(new Date()));
   const [who, setWho] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);

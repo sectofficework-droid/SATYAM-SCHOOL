@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { Search, IndianRupee, Plus, X } from "lucide-react";
 import { getStudents } from "@/lib/sefStudentService";
 import { getPaymentsForStudent, addPayment } from "@/lib/sefFeesService";
+import { toIsoDateLocal } from "@/lib/utils";
 import DateInputDMY from "@/components/DateInputDMY";
 
 const IPT = "w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy transition-colors bg-white";
@@ -160,7 +161,7 @@ function StudentFeesPanel({ student }) {
 
 function AddPaymentModal({ studentId, onClose, onSaved }) {
   const [amount, setAmount] = useState("");
-  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState(toIsoDateLocal(new Date()));
   const [receivedBy, setReceivedBy] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);

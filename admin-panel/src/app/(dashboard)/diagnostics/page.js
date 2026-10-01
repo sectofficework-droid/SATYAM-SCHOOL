@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Bug, Search, CheckCircle2, Eye, ChevronDown, ChevronUp, Download, Power } from "lucide-react";
 import { getDiagnosticReports, markDiagnosticReport, getDiagnosticsEnabled, setDiagnosticsEnabled } from "@/lib/diagnosticsService";
 import useStore from "@/lib/store";
+import { toIsoDateLocal } from "@/lib/utils";
 
 function fmtDateTime(iso) {
   if (!iso) return "";
@@ -94,7 +95,7 @@ export default function DiagnosticsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `diagnostic-reports-${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `diagnostic-reports-${toIsoDateLocal(new Date())}.json`;
     a.click();
     URL.revokeObjectURL(url);
   }

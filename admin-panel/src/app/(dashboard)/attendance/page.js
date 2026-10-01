@@ -17,6 +17,7 @@ import { getCalendarEvents, addCalendarEvent, updateCalendarEvent, deleteCalenda
 import { isWorkingDay, nonWorkingReason } from "@/lib/attendanceRules";
 import { getActiveClasses } from "@/lib/settingsService";
 import { YEAR_PLAN_CATEGORIES } from "@/lib/yearPlanData";
+import { toIsoDateLocal } from "@/lib/utils";
 import S3Image from "@/components/S3Image";
 import DateInputDMY from "@/components/DateInputDMY";
 
@@ -867,8 +868,8 @@ function HistoryModal({ student, onClose }) {
     const from = new Date(base.getFullYear(), base.getMonth(), 1);
     const to   = new Date(base.getFullYear(), base.getMonth() + 1, 0);
     return {
-      from: from.toISOString().slice(0, 10),
-      to:   to.toISOString().slice(0, 10),
+      from: toIsoDateLocal(from),
+      to:   toIsoDateLocal(to),
       label: base.toLocaleDateString("en-IN", { month: "long", year: "numeric" }),
     };
   }, [monthOffset]);

@@ -1,4 +1,5 @@
 import supabase from "./supabase";
+import { toIsoDateLocal } from "./utils";
 
 // ── Monthly Test — default full marks (admin-configurable, still 25 by default) ──
 // Stored on the single-row school_profile table. The teacher app reads this
@@ -100,7 +101,7 @@ export async function deleteOfficialExam(id) {
 
 // Marks entry unlocks the day the exam ends - no separate stored status.
 export function isExamUnlocked(exam) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = toIsoDateLocal(new Date());
   return today >= exam.end_date;
 }
 

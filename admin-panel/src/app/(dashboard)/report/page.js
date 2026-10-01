@@ -16,6 +16,7 @@ import {
   getStaffAttendanceForReport, rollupStaffAttendance,
 } from "@/lib/reportService";
 import { MM, computeColumnLayout, triggerPdfDownload } from "@/lib/pdfTableExport";
+import { toIsoDateLocal } from "@/lib/utils";
 import DateInputDMY from "@/components/DateInputDMY";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -74,19 +75,6 @@ function fmtDateTime(value) {
 // of zero a bare number sits on.
 function round1(n) {
   return Math.round(n * 10) / 10;
-}
-
-// Local calendar date as YYYY-MM-DD - deliberately NOT
-// d.toISOString().slice(0,10), which converts to UTC first and lands on the
-// wrong calendar day for any positive UTC offset (e.g. IST, UTC+5:30): a
-// Date built from a local "T00:00:00" string rolls back an extra day once
-// converted to UTC, which made the Staff Attendance date arrows skip an
-// extra day going back and get stuck going forward.
-function toIsoDateLocal(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
 }
 
 function fmtBalance(v) {
