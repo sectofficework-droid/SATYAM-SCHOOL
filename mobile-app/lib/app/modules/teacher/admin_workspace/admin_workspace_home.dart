@@ -20,6 +20,11 @@ import 'admin_expenses_page.dart';
 import 'admin_gr_book_page.dart';
 import 'admin_users_roles_page.dart';
 import 'admin_salary_page.dart';
+import 'admin_kiosk_settings_page.dart';
+import 'admin_staff_attendance_report_page.dart';
+import 'admin_rules_page.dart';
+import 'admin_year_planning_page.dart';
+import 'admin_impersonation_log_page.dart';
 import '../my_attendance/teacher_my_attendance_page.dart';
 
 // Admin Workspace home — full admin-web parity, phase 2 (2026-09-19: user
@@ -125,10 +130,23 @@ class _AdminWorkspaceHomeState extends State<AdminWorkspaceHome> {
 
           if (_isSeniorOrMgmt) ...[
             const SizedBox(height: 22),
+            _SectionHeader(icon: Icons.sensor_door_rounded, color: AppColors.navy, title: 'Kiosk'),
+            const SizedBox(height: 10),
+            _ModuleGrid(tiles: [
+              _Tile('Kiosk Settings', Icons.settings_applications_rounded, AppColors.navy, AppColors.blueLight, () => Get.to(() => const AdminKioskSettingsPage())),
+              _Tile('Staff Attendance', Icons.fact_check_rounded, AppColors.indigo, AppColors.indigoLight, () => Get.to(() => const AdminStaffAttendanceReportPage())),
+            ]),
+          ],
+
+          if (_isSeniorOrMgmt) ...[
+            const SizedBox(height: 22),
             _SectionHeader(icon: Icons.admin_panel_settings_rounded, color: AppColors.navy, title: 'Administration'),
             const SizedBox(height: 10),
             _ModuleGrid(tiles: [
               _Tile('Users & Roles', Icons.manage_accounts_rounded, AppColors.navy, AppColors.blueLight, () => Get.to(() => const AdminUsersRolesPage())),
+              _Tile('Year Planning', Icons.calendar_month_rounded, AppColors.teal, AppColors.tealLight, () => Get.to(() => const AdminYearPlanningPage())),
+              _Tile('Rules & Regulations', Icons.gavel_rounded, AppColors.purple, AppColors.purpleLight, () => Get.to(() => const AdminRulesPage())),
+              _Tile('Access Code Log', Icons.key_rounded, AppColors.stone, AppColors.stoneLight, () => Get.to(() => const AdminImpersonationLogPage())),
             ]),
           ],
         ],

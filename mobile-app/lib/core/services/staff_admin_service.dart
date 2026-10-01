@@ -480,4 +480,110 @@ class StaffAdminService {
       'p_amount': amount, 'p_paid_on': paidOn, 'p_paid_by': paidBy,
     });
   }
+
+  // ── Kiosk Settings (senior_admin/management only) ─────────────────────────
+  static Future<Map<String, dynamic>> kioskGetSettings(String employeeId) async {
+    final res = await client.rpc('staff_admin_kiosk_get_settings', params: {'p_employee_id': employeeId});
+    return Map<String, dynamic>.from((res as List).first as Map);
+  }
+
+  static Future<void> kioskSaveSettings(String employeeId, {
+    required String? expectedStartTime, required int lateGraceMinutes, required String? absentCutoffTime, required String? shiftEndTime,
+  }) async {
+    await client.rpc('staff_admin_kiosk_save_settings', params: {
+      'p_employee_id': employeeId,
+      'p_expected_start_time': expectedStartTime,
+      'p_late_grace_minutes': lateGraceMinutes,
+      'p_absent_cutoff_time': absentCutoffTime,
+      'p_shift_end_time': shiftEndTime,
+    });
+  }
+
+  static Future<void> kioskSetPin(String employeeId, String pin) async {
+    await client.rpc('staff_admin_kiosk_set_pin', params: {'p_employee_id': employeeId, 'p_pin': pin});
+  }
+
+  static Future<List<Map<String, dynamic>>> kioskListSpecialDays(String employeeId) async {
+    final res = await client.rpc('staff_admin_kiosk_list_special_days', params: {'p_employee_id': employeeId});
+    return _list(res);
+  }
+
+  static Future<void> kioskSaveSpecialDay(String employeeId, {
+    required String date, String? expectedStartTime, int? lateGraceMinutes, String? absentCutoffTime, String? shiftEndTime, String? reason,
+  }) async {
+    await client.rpc('staff_admin_kiosk_save_special_day', params: {
+      'p_employee_id': employeeId,
+      'p_date': date,
+      'p_expected_start_time': expectedStartTime,
+      'p_late_grace_minutes': lateGraceMinutes,
+      'p_absent_cutoff_time': absentCutoffTime,
+      'p_shift_end_time': shiftEndTime,
+      'p_reason': reason,
+    });
+  }
+
+  static Future<void> kioskDeleteSpecialDay(String employeeId, String date) async {
+    await client.rpc('staff_admin_kiosk_delete_special_day', params: {'p_employee_id': employeeId, 'p_date': date});
+  }
+
+  // ── Staff Attendance (Kiosk) report, date-range scoped ────────────────────
+  static Future<List<Map<String, dynamic>>> kioskAttendanceReport(String employeeId, {required String fromDate, required String toDate}) async {
+    final res = await client.rpc('staff_admin_kiosk_attendance_report', params: {
+      'p_employee_id': employeeId, 'p_from_date': fromDate, 'p_to_date': toDate,
+    });
+    return _list(res);
+  }
+
+  // ── Rules & Regulations ────────────────────────────────────────────────────
+  // Reads go direct (anon already has SELECT on school_rules) - only the
+  // save needs a tier-checked RPC.
+  static Future<Map<String, String>> getSchoolRules() async {
+    final res = await client.from('school_rules').select('audience, content');
+    final byAudience = {'teacher': '', 'student': ''};
+    for (final row in List<Map<String, dynamic>>.from(res as List)) {
+      byAudience[row['audience'] as String] = row['content'] as String? ?? '';
+    }
+    return byAudience;
+  }
+
+  static Future<void> saveSchoolRules(String employeeId, String audience, String content) async {
+    await client.rpc('staff_admin_save_school_rules', params: {
+      'p_employee_id': employeeId, 'p_audience': audience, 'p_content': content,
+    });
+  }
+
+  // ── Year Planning (school calendar events) ─────────────────────────────────
+  static Future<List<Map<String, dynamic>>> getCalendarEvents({String? startDate, String? endDate}) async {
+    var query = client.from('school_calendar_events').select('*');
+    if (startDate != null) query = query.gte('event_date', startDate);
+    if (endDate != null) query = query.lte('event_date', endDate);
+    final res = await query.order('event_date');
+    return _list(res);
+  }
+
+  static Future<void> addCalendarEvent(String employeeId, {
+    required String date, required String category, required String label, String? icon, List<String>? classes,
+  }) async {
+    await client.rpc('staff_admin_calendar_add_event', params: {
+      'p_employee_id': employeeId, 'p_date': date, 'p_category': category, 'p_label': label, 'p_icon': icon, 'p_classes': classes,
+    });
+  }
+
+  static Future<void> updateCalendarEvent(String employeeId, String id, {
+    required String date, required String category, required String label, String? icon,
+  }) async {
+    await client.rpc('staff_admin_calendar_update_event', params: {
+      'p_employee_id': employeeId, 'p_id': id, 'p_date': date, 'p_category': category, 'p_label': label, 'p_icon': icon,
+    });
+  }
+
+  static Future<void> deleteCalendarEvent(String employeeId, String id) async {
+    await client.rpc('staff_admin_calendar_delete_event', params: {'p_employee_id': employeeId, 'p_id': id});
+  }
+
+  // ── Impersonation audit log (senior_admin/management only) ─────────────────
+  static Future<List<Map<String, dynamic>>> impersonationLog(String employeeId, {int limit = 200}) async {
+    final res = await client.rpc('staff_admin_impersonation_log', params: {'p_employee_id': employeeId, 'p_limit': limit});
+    return _list(res);
+  }
 }
