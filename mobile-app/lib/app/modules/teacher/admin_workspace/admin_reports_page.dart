@@ -1,8 +1,11 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:printing/printing.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/staff_admin_service.dart';
+import '../../../../core/services/pdf_reports_service.dart';
 import '../../../../common/widgets/admin_workspace_common.dart';
 import 'admin_staff_attendance_report_page.dart';
 
@@ -33,31 +36,125 @@ class AdminReportsPage extends StatelessWidget {
       ('Inventory', Icons.inventory_2_rounded, () => _openList(context, 'Inventory', StaffAdminService.reportInventory)),
     ];
 
+    final downloadTiles = <(String, IconData, VoidCallback)>[
+      ('Download ID Cards (PDF)', Icons.badge_outlined, () => _downloadIdCards(context)),
+      ('Download Bonafide Certificate (PDF)', Icons.file_present_rounded, () => _downloadBonafide(context)),
+      ('Download Transfer Certificate (PDF)', Icons.move_up_rounded, () => _downloadTc(context)),
+      ('Download Marksheet (PDF)', Icons.assignment_rounded, () => _downloadMarksheet(context)),
+      ('Download Attendance Report (PDF)', Icons.event_note_rounded, () => _downloadAttendance(context)),
+      if (_isMgmt) ('Download Salary Report (PDF)', Icons.currency_rupee_rounded, () => _downloadSalary(context)),
+    ];
+
     return Scaffold(
       appBar: const AdminAppBar(title: 'Reports'),
-      body: ListView.separated(
+      body: ListView(
         padding: const EdgeInsets.all(16),
-        itemCount: tiles.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 8),
-        itemBuilder: (_, i) {
-          final (title, icon, onTap) = tiles[i];
-          return AdminCard(
-            onTap: onTap,
-            child: Row(children: [
-              Container(width: 36, height: 36, decoration: BoxDecoration(color: AppColors.blueLight, borderRadius: BorderRadius.circular(10)),
-                child: Icon(icon, color: AppColors.navy, size: 18)),
-              const SizedBox(width: 12),
-              Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
-              const Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
-            ]),
-          );
-        },
+        children: [
+          const Text('View', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.textLight)),
+          const SizedBox(height: 8),
+          ..._tilesWithGaps(tiles),
+          const SizedBox(height: 20),
+          const Text('Download', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12, color: AppColors.textLight)),
+          const SizedBox(height: 8),
+          ..._tilesWithGaps(downloadTiles),
+        ],
       ),
     );
   }
 
+  List<Widget> _tilesWithGaps(List<(String, IconData, VoidCallback)> tiles) {
+    final widgets = <Widget>[];
+    for (final (title, icon, onTap) in tiles) {
+      if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 8));
+      widgets.add(AdminCard(
+        onTap: onTap,
+        child: Row(children: [
+          Container(width: 36, height: 36, decoration: BoxDecoration(color: AppColors.blueLight, borderRadius: BorderRadius.circular(10)),
+            child: Icon(icon, color: AppColors.navy, size: 18)),
+          const SizedBox(width: 12),
+          Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+          const Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
+        ]),
+      ));
+    }
+    return widgets;
+  }
+
   void _openList(BuildContext context, String title, Future<List<Map<String, dynamic>>> Function(String) loader) {
     Navigator.push(context, MaterialPageRoute(builder: (_) => _ReportListPage(title: title, loader: loader)));
+  }
+
+  String _employeeIdOf(BuildContext context) => AuthService.to.profile.value?['id'] as String? ?? '';
+
+  Future<void> _runDownload(BuildContext context, String filename, Future<List<int>> Function() generate) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(const SnackBar(content: Text('Generating PDF…'), duration: Duration(seconds: 2)));
+    try {
+      final bytes = await generate();
+      await Printing.sharePdf(bytes: Uint8List.fromList(bytes), filename: filename);
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Failed: $e')));
+    }
+  }
+
+  Future<String?> _promptText(BuildContext context, String title, String hint) {
+    final controller = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(controller: controller, decoration: InputDecoration(hintText: hint)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('OK')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _downloadIdCards(BuildContext context) async {
+    final studentId = await _promptText(context, 'ID Card', 'Student ID');
+    if (studentId == null || studentId.isEmpty) return;
+    final empId = _employeeIdOf(context);
+    await _runDownload(context, 'ID_Cards.pdf', () => PdfReportsService.idCard(empId, [studentId]));
+  }
+
+  Future<void> _downloadBonafide(BuildContext context) async {
+    final studentId = await _promptText(context, 'Bonafide Certificate', 'Student ID');
+    if (studentId == null || studentId.isEmpty) return;
+    final empId = _employeeIdOf(context);
+    await _runDownload(context, 'Bonafide_Certificate.pdf', () => PdfReportsService.bonafide(empId, [studentId]));
+  }
+
+  Future<void> _downloadTc(BuildContext context) async {
+    final studentId = await _promptText(context, 'Transfer Certificate', 'Student ID');
+    if (studentId == null || studentId.isEmpty) return;
+    final empId = _employeeIdOf(context);
+    await _runDownload(context, 'Transfer_Certificate.pdf', () => PdfReportsService.tc(empId, studentId));
+  }
+
+  Future<void> _downloadMarksheet(BuildContext context) async {
+    final studentId = await _promptText(context, 'Marksheet', 'Student ID');
+    if (studentId == null || studentId.isEmpty) return;
+    final className = await _promptText(context, 'Marksheet', 'Class (e.g. 6th)');
+    if (className == null || className.isEmpty) return;
+    final empId = _employeeIdOf(context);
+    await _runDownload(context, 'Marksheet.pdf', () => PdfReportsService.marksheet(empId, studentId, className));
+  }
+
+  Future<void> _downloadAttendance(BuildContext context) async {
+    final fromDate = await _promptText(context, 'Attendance Report', 'From date (YYYY-MM-DD)');
+    if (fromDate == null || fromDate.isEmpty) return;
+    final toDate = await _promptText(context, 'Attendance Report', 'To date (YYYY-MM-DD)');
+    if (toDate == null || toDate.isEmpty) return;
+    final empId = _employeeIdOf(context);
+    await _runDownload(context, 'Attendance_Report.pdf', () => PdfReportsService.attendance(empId, fromDate, toDate));
+  }
+
+  Future<void> _downloadSalary(BuildContext context) async {
+    final month = await _promptText(context, 'Salary Report', 'Month (YYYY-MM-DD, optional)');
+    final empId = _employeeIdOf(context);
+    await _runDownload(context, 'Salary_Report.pdf', () => PdfReportsService.salary(empId, month?.isEmpty == true ? null : month));
   }
 }
 
