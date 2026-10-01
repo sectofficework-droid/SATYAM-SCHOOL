@@ -98,7 +98,35 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Committed and pushed 2026-09-30 (session 1)** — admin panel: implemented **Duplicate 2-Up A4 Landscape Transfer Certificate** in `admin-panel/src/lib/tcGenerator.js`, `admin-panel/src/app/(dashboard)/documents/page.js`, and `admin-panel/src/app/(dashboard)/student/[id]/tc/page.js`. Retained 100% of authentic single portrait certificate layout, fonts, and elements with zero alteration. Wrapped into an A4 landscape sheet (`297mm × 210mm`) featuring the same student's certificate duplicated twice side-by-side with a central vertical broken line and scissor cut icon (`✂`) separating the student copy from the office/filing copy. Live previews updated. Verified strictly 1 page per student (`841.92 × 594.96 pt`) via Chromium headless print-to-pdf. `npm run build` compiled clean (47/47 routes). See `ai-context\SESSION-2026-09-30-1.md` and `work-log\LOG-2026-09-30.md`.
+**Current — Committed and pushed 2026-10-01** — admin panel: Staff Attendance
+(Kiosk) report UX (today-default date + prev/next-day arrows, a Staff
+Type filter — "School Staff" [Teaching + Care Taker] vs "Admin &
+Management" — defaulted on open), an app-wide sweep of a real IST
+timezone bug (`toISOString().slice(0,10)` silently reads/writes the
+wrong local date for roughly the first ~5.5 hours of each IST day; fixed
+in 16 files via a new shared `toIsoDateLocal()` in `src/lib/utils.js`,
+traced-and-left-alone in 4 others that were already correct via a
+different technique), and a real **Staff Attendance delete bug chased to
+its actual root cause**: the delete API always worked (live-verified
+directly against production, 3 code paths, twice) — it just got silently
+undone on the next report refresh by `sync-absent` auto-reinserting
+today's "Absent" row. Fixed with a new `employee_attendance_sync_exclusions`
+table that all **three** independent absence-marking paths now respect
+(`sync-absent`, the `admin_delete_staff_attendance` RPC fallback, and
+`auto_mark_absent_staff`). Finding the third path turned up a **leftover
+security gap from REQ-SEC-010** (found 2026-09-19, only half-fixed at the
+time): an unsecured, anon-callable `auto_mark_absent_staff(date)` overload
+that was never dropped when the secured 2-arg version was added. User
+confirmed; dropped it live — closes REQ-SEC-010 item 2 for real. 11
+commits (`5518d65`..`ab22bd9`), each confirmed `READY` on the production
+alias before moving on. 3 Supabase migrations applied live (saved to
+`admin-panel/database/SUPABASE_STAFF_ATTENDANCE_SYNC_EXCLUSIONS.sql`).
+**Not verified in-browser** — the Chrome extension wasn't connected all
+session; every check was `eslint`, direct `curl`/Supabase calls against
+live production, or hand-traced logic. See
+`ai-context\SESSION-2026-10-01-1.md`, `work-log\LOG-2026-10-01.md`.
+
+**Prior — Committed and pushed 2026-09-30 (session 1)** — admin panel: implemented **Duplicate 2-Up A4 Landscape Transfer Certificate** in `admin-panel/src/lib/tcGenerator.js`, `admin-panel/src/app/(dashboard)/documents/page.js`, and `admin-panel/src/app/(dashboard)/student/[id]/tc/page.js`. Retained 100% of authentic single portrait certificate layout, fonts, and elements with zero alteration. Wrapped into an A4 landscape sheet (`297mm × 210mm`) featuring the same student's certificate duplicated twice side-by-side with a central vertical broken line and scissor cut icon (`✂`) separating the student copy from the office/filing copy. Live previews updated. Verified strictly 1 page per student (`841.92 × 594.96 pt`) via Chromium headless print-to-pdf. `npm run build` compiled clean (47/47 routes). See `ai-context\SESSION-2026-09-30-1.md` and `work-log\LOG-2026-09-30.md`.
 
 **Prior — Committed and pushed 2026-09-29 (session 3)** — admin panel: finalized **Official Portrait & Clean Landscape ID Card Generation** in `admin-panel/src/app/(dashboard)/documents/page.js` and `admin-panel/public/id-card-*`. Portrait design matches official `id card protrait template.png` ($685 \times 1157\text{ px}$, $80\text{ mm} \times 135.1\text{ mm}$ on A4, 4 per sheet) with rounded orange frame, centered bold uppercase name, navy STD pill, colon-aligned dynamic fields, and principal signature. Landscape design matches clean CR80 card ($1011 \times 639\text{ px}$, $90\text{ mm} \times 56.9\text{ mm}$ on A4, 8 per sheet) with all legacy sample photo/text erased, zero opaque gray cover shapes, and direct alignment after pre-printed labels/colons. Live previews, bulk A4 PDF generation, and single-card PNG downloads verified for both formats. Verified clean via `npm run lint` and `npm run build` (46/46 pages). Commit `9fb659e`, pushed to `origin/main`. See `ai-context\SESSION-2026-09-29-3.md` and `work-log\LOG-2026-09-29.md`.
 
@@ -280,7 +308,39 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-09-30 (session 1) — Duplicate 2-up A4 Landscape TC, Kiosk Safeupdate Fix, Lateness Recalculation & Auto-Absent Sync.**
+**Current — Session 2026-10-01 — Staff Attendance (Kiosk) report UX, app-wide IST date-bug sweep, delete-action root cause + REQ-SEC-010 closure.**
+1. Staff Attendance (Kiosk) report now defaults to today's date (prev/next
+   arrows, right disabled at today) and a Staff Type filter ("School Staff"
+   [Teaching + Care Taker] vs "Admin & Management"), defaulted to School
+   Staff on open. Also fixed a real pre-existing bug found along the way:
+   the "Per Employee" rollup view ignored every quick filter and the date
+   range entirely.
+2. Root-caused "date arrow going back then forward doesn't work" to
+   `toISOString().slice(0,10)` converting to UTC first, which silently
+   loses/gains a day under IST (+5:30) for part of each day. Fixed the
+   immediate bug, then swept the whole `toISOString().slice(0,` pattern
+   across the repo on request — 16 files genuinely fixed, 4 more traced by
+   hand and correctly left alone (different, already-correct techniques).
+   New shared `toIsoDateLocal()` in `src/lib/utils.js`.
+3. Chased "delete action... not working" to its real root cause: the
+   delete API always worked (proven via live production testing, not
+   assumed) — `sync-absent` was silently re-creating today's deleted
+   "Absent" row on the next refresh. Fixed with a new
+   `employee_attendance_sync_exclusions` table, applied to **all three**
+   independent absence-marking paths (`sync-absent` route, the RPC delete
+   fallback, and `auto_mark_absent_staff`). The third path turned up a
+   real leftover gap from REQ-SEC-010 (2026-09-19, half-fixed then): an
+   unsecured, anon-callable `auto_mark_absent_staff(date)` overload that
+   was never dropped. User confirmed; dropped it live.
+4. Every fix this session was live-verified against real production (API
+   calls, direct Supabase queries, redeploy confirmation via the Vercel
+   MCP connection) rather than assumed from reading code — but **no
+   in-browser/visual check happened at all**, the Chrome extension was
+   never connected this session. 11 commits, `5518d65`..`ab22bd9`, pushed
+   to `origin/main`. See `ai-context\SESSION-2026-10-01-1.md`,
+   `work-log\LOG-2026-10-01.md`.
+
+**Prior — Session 2026-09-30 (session 1) — Duplicate 2-up A4 Landscape TC, Kiosk Safeupdate Fix, Lateness Recalculation & Auto-Absent Sync.**
 1. Delivered 2-up A4 landscape TC output with vertical scissor cut line (`✂`) and scoped print styles to prevent dashboard CSS leakage.
 2. Resolved PostgreSQL `safeupdate` error (`code: 21000`) on `save_kiosk_settings` by recreating RPC with `WHERE id IS NOT NULL;` and adding Vercel server-side route `/api/kiosk-settings` with `SUPABASE_SERVICE_ROLE_KEY`.
 3. Added automatic punctuality recalculation when kiosk timings change; recalculated 17 punches today turning 7 false lates into "On Time".
@@ -704,6 +764,15 @@ Earlier checkpoints, one line each (full detail in the linked files):
 Open items, most recent first (superseded/completed items removed — see
 the checkpoint list above for what already shipped):
 
+-3. **No in-browser/visual verification happened at all in the 2026-10-01
+    session** — the Chrome extension was never connected. Every fix that
+    session (Staff Attendance report UX/date arrows/Staff Type filter,
+    the IST date-bug sweep, the delete-action fix) was verified via
+    `eslint`, direct `curl`/Supabase calls against live production, or
+    hand-traced logic — real, but not a visual check. Worth a quick
+    click-through of the Staff Attendance (Kiosk) report (date arrows,
+    Staff Type dropdown wording, column layout) next time a browser
+    session is available. See `work-log\LOG-2026-10-01.md`.
 -2. **Cat3 Group A DB restriction is LIVE right now (re-applied
     2026-09-22), and every device still on versionCode 1/2 is currently
     broken on 9 features (Mark Attendance's edit-request check, Leave
