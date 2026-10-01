@@ -1338,6 +1338,28 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
          Verified live: wrong secret → `Not authorized`; correct secret →
          runs cleanly (returned 0, no-op since `absent_cutoff_time` isn't
          configured — no real attendance rows touched).
+         **2026-10-01: loose end closed.** The 2026-09-19 fix added the
+         secret-protected overload but never dropped the original
+         unsecured `auto_mark_absent_staff(p_date)` — Postgres allows
+         function overloading, so both signatures coexisted and the old,
+         anon-callable one was still live. Found while debugging an
+         unrelated "Staff Attendance delete doesn't stick" report: a
+         brand-new `employee_attendance_sync_exclusions` table/exclusion
+         check (added to stop the Report page's delete action from being
+         silently undone by `sync-absent`) worked against the secured
+         2-arg RPC and the Next.js route, but a deleted-today row still
+         came back — traced to something still calling the unsecured
+         1-arg overload. Re-grepped the whole repo (`mobile-app` +
+         `admin-panel`) for any caller: only
+         `admin-panel/src/app/api/cron/mark-staff-absent/route.js` calls
+         it, and only the secured 2-arg form. No DB-internal dependents
+         either (no trigger, no other function calls it). `DROP FUNCTION
+         auto_mark_absent_staff(date)` — only the secured overload
+         remains. Both overloads also now skip any employee with a
+         today exclusion (`employee_attendance_sync_exclusions`), so a
+         manual delete sticks regardless of which path re-triggers
+         absence-marking. See
+         `admin-panel/database/SUPABASE_STAFF_ATTENDANCE_SYNC_EXCLUSIONS.sql`.
       3. **`verify_kiosk_admin_pin(p_pin)` — FIXED 2026-09-19.** Added a
          simple fail-counter + lockout directly on `kiosk_settings`
          (`pin_fail_count`, `pin_locked_until` columns — single-row table,

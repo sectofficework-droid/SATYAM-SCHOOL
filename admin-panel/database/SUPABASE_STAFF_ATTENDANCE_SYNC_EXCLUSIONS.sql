@@ -151,11 +151,7 @@ GRANT EXECUTE ON FUNCTION admin_delete_staff_attendance(uuid[], date, uuid, date
 -- undone by whichever of the three paths ran next. The 1-arg overload below
 -- has no secret check at all and is granted to anon (confirmed via
 -- has_function_privilege) - no caller for it was found anywhere in this
--- repo (mobile-app or admin-panel), so it's most likely a leftover from
--- before the 2-arg version was added, or still being called by an
--- un-updated APK in the field. Left in place (not dropped) since this fix
--- only needed it to also respect exclusions, not to close that gap - flag
--- separately if you want it secured or removed.
+-- repo (mobile-app or admin-panel).
 -- ─────────────────────────────────────────────────────────────────────────────
 CREATE OR REPLACE FUNCTION public.auto_mark_absent_staff(p_date date)
  RETURNS integer
@@ -227,3 +223,15 @@ BEGIN
   RETURN v_count;
 END;
 $function$;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Closes REQ-SEC-010 item 2 (TODO.md) for real: the 2026-09-19 fix added the
+-- secret-protected overload above but never dropped the original
+-- auto_mark_absent_staff(p_date) - Postgres function overloading let both
+-- signatures coexist, so the unsecured one (no auth check, granted to anon)
+-- stayed live and callable by anyone with the public anon key. Confirmed no
+-- caller anywhere in this repo (mobile-app or admin-panel; only the cron
+-- route above calls the secured 2-arg form) and no DB-internal dependents
+-- (no trigger, no other function references it) before dropping.
+-- ─────────────────────────────────────────────────────────────────────────────
+DROP FUNCTION IF EXISTS public.auto_mark_absent_staff(date);
