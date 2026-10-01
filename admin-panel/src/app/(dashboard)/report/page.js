@@ -5,7 +5,7 @@ import {
   GraduationCap, IndianRupee, Users, Package, Search,
   RefreshCw, Download, FileText, ShieldCheck, BookOpen, Landmark, IdCard,
   CheckSquare, X, LogOut, Fingerprint, ArrowUp, ArrowDown, ChevronsUpDown,
-  Trash2,
+  Trash2, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -592,6 +592,9 @@ const REPORT_CONFIGS = {
     label:"Staff Attendance (Kiosk)", icon:Fingerprint,
     // Has a second (per-employee) view - see staffAttendanceView below.
     isDualView: true,
+    // Daily view is a single-day report, not a range: one "Date" field with
+    // prev/next-day arrows instead of the generic Date From/To pair.
+    isDailyDate: true,
     // designation/department options are patched in at render time from the
     // live data (activeQuickFilters below) - actual values are free text set
     // per-employee in the Employee module, not a fixed enum like EMP_ROLES.
@@ -1038,7 +1041,10 @@ export default function ReportPage() {
     setShowAddExtra(false);
     setExtraFieldKey(""); setExtraFieldPos(1);
     setFilters({});
-    setDateFrom(""); setDateTo(""); setSearch(""); setPartialMaxAmount("");
+    // Staff Attendance (Kiosk) defaults to today's date rather than an open
+    // range - every other report defaults to "show everything".
+    const defaultDate = rType === "staffAttendance" ? new Date().toISOString().slice(0,10) : "";
+    setDateFrom(defaultDate); setDateTo(defaultDate); setSearch(""); setPartialMaxAmount("");
     setSort({});
     setSelectedStaffRows(new Set());
     if (!cfg.isFeesModule) setFeesView("status");
@@ -1081,6 +1087,18 @@ export default function ReportPage() {
   // the rollup too, instead of re-filters being applied to rows that no longer
   // carry those fields.
   if (isStaffRollup) data = rollupStaffAttendance(data);
+  // Prev/next-day arrows for the Staff Attendance (Kiosk) daily date field -
+  // steps the single selected day, clamped so it can't move into the future.
+  const todayStr = new Date().toISOString().slice(0, 10);
+  function shiftStaffDate(deltaDays) {
+    const base = dateFrom || todayStr;
+    const d = new Date(base + "T00:00:00");
+    d.setDate(d.getDate() + deltaDays);
+    const next = d.toISOString().slice(0, 10);
+    const clamped = next > todayStr ? todayStr : next;
+    setDateFrom(clamped);
+    setDateTo(clamped);
+  }
   // Sorted against the ACTIVE view's columns, not a hardcoded config - the two
   // staff views have different keys, and every other report type sorts its own
   // columns (a numeric one would otherwise degrade to string order).
@@ -1547,7 +1565,27 @@ export default function ReportPage() {
                 className="border-2 border-school-navy rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy"/>
             </div>
           )}
-          {ecfg.dateField && (<>
+          {ecfg.isDailyDate && (
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{ecfg.dateLabel}</label>
+              <div className="flex items-center gap-1">
+                <button type="button" onClick={() => shiftStaffDate(-1)} title="Previous day"
+                  className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
+                  <ChevronLeft className="w-3.5 h-3.5"/>
+                </button>
+                <DateInputDMY
+                  value={dateFrom === dateTo && dateFrom ? dateFrom : ""}
+                  onChange={e => { setDateFrom(e.target.value); setDateTo(e.target.value); }}
+                  className="border-2 border-school-navy rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy"/>
+                <button type="button" onClick={() => shiftStaffDate(1)} title="Next day"
+                  disabled={dateFrom === todayStr || !dateFrom}
+                  className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:text-gray-500">
+                  <ChevronRight className="w-3.5 h-3.5"/>
+                </button>
+              </div>
+            </div>
+          )}
+          {ecfg.dateField && !ecfg.isDailyDate && (<>
             <div className="flex flex-col gap-1">
               <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{ecfg.dateLabel} From</label>
               <DateInputDMY value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
@@ -1567,7 +1605,12 @@ export default function ReportPage() {
                 placeholder="Search by name or enroll no" value={search} onChange={e=>setSearch(e.target.value)}/>
             </div>
           </div>
-          <button onClick={()=>{setFilters({});setDateFrom("");setDateTo("");setSearch("");setPartialMaxAmount("");}}
+          <button onClick={()=>{
+              setFilters({});
+              const resetDate = ecfg.isDailyDate ? todayStr : "";
+              setDateFrom(resetDate); setDateTo(resetDate);
+              setSearch(""); setPartialMaxAmount("");
+            }}
             className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-red-300 hover:text-red-500 transition-colors self-end">
             <RefreshCw className="w-3 h-3"/>Reset
           </button>
