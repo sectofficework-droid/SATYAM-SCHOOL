@@ -1050,7 +1050,9 @@ export default function ReportPage() {
     setHiddenFixedCols([]);
     setShowAddExtra(false);
     setExtraFieldKey(""); setExtraFieldPos(1);
-    setFilters({});
+    // Staff Attendance (Kiosk) defaults to Teaching staff rather than
+    // everyone mixed together - every other report defaults to no filter.
+    setFilters(rType === "staffAttendance" ? { staffType: "Teaching" } : {});
     // Staff Attendance (Kiosk) defaults to today's date rather than an open
     // range - every other report defaults to "show everything".
     const defaultDate = rType === "staffAttendance" ? new Date().toISOString().slice(0,10) : "";
@@ -1617,7 +1619,7 @@ export default function ReportPage() {
             </div>
           </div>
           <button onClick={()=>{
-              setFilters({});
+              setFilters(rType === "staffAttendance" ? { staffType: "Teaching" } : {});
               const resetDate = ecfg.isDailyDate ? todayStr : "";
               setDateFrom(resetDate); setDateTo(resetDate);
               setSearch(""); setPartialMaxAmount("");
