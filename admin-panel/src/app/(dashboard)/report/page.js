@@ -76,6 +76,19 @@ function round1(n) {
   return Math.round(n * 10) / 10;
 }
 
+// Local calendar date as YYYY-MM-DD - deliberately NOT
+// d.toISOString().slice(0,10), which converts to UTC first and lands on the
+// wrong calendar day for any positive UTC offset (e.g. IST, UTC+5:30): a
+// Date built from a local "T00:00:00" string rolls back an extra day once
+// converted to UTC, which made the Staff Attendance date arrows skip an
+// extra day going back and get stuck going forward.
+function toIsoDateLocal(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function fmtBalance(v) {
   const n = Number(v);
   if (!n) return "";
@@ -1057,7 +1070,7 @@ export default function ReportPage() {
     setFilters(rType === "staffAttendance" ? { staffType: "School Staff" } : {});
     // Staff Attendance (Kiosk) defaults to today's date rather than an open
     // range - every other report defaults to "show everything".
-    const defaultDate = rType === "staffAttendance" ? new Date().toISOString().slice(0,10) : "";
+    const defaultDate = rType === "staffAttendance" ? toIsoDateLocal(new Date()) : "";
     setDateFrom(defaultDate); setDateTo(defaultDate); setSearch(""); setPartialMaxAmount("");
     setSort({});
     setSelectedStaffRows(new Set());
@@ -1104,12 +1117,12 @@ export default function ReportPage() {
   if (isStaffRollup) data = rollupStaffAttendance(data);
   // Prev/next-day arrows for the Staff Attendance (Kiosk) daily date field -
   // steps the single selected day, clamped so it can't move into the future.
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = toIsoDateLocal(new Date());
   function shiftStaffDate(deltaDays) {
     const base = dateFrom || todayStr;
     const d = new Date(base + "T00:00:00");
     d.setDate(d.getDate() + deltaDays);
-    const next = d.toISOString().slice(0, 10);
+    const next = toIsoDateLocal(d);
     const clamped = next > todayStr ? todayStr : next;
     setDateFrom(clamped);
     setDateTo(clamped);
