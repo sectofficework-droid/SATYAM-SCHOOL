@@ -15,7 +15,7 @@ import {
   getPaymentsForReport, getAcademicYearLabels, getTcIssuedForReport,
   getStaffAttendanceForReport, rollupStaffAttendance,
 } from "@/lib/reportService";
-import { MM, computeColumnLayout, triggerPdfDownload } from "@/lib/pdfTableExport";
+import { MM, computeColumnLayout, triggerPdfDownload, renderTablePdf } from "@/lib/pdfTableExport";
 import { toIsoDateLocal } from "@/lib/utils";
 import DateInputDMY from "@/components/DateInputDMY";
 
@@ -1481,6 +1481,97 @@ export default function ReportPage() {
     triggerPdfDownload(bytes, `${ecfg.label.replace(/[\s/]+/g,"_")}${labelSuffix}_${isoToday}.pdf`);
   }
 
+  // ── Monthly Attendance Register (one A4 page per staff-type group) ────────
+  // A condensed month-end summary, not the row-per-day/row-per-employee dump
+  // the generic exporters above produce - one row per employee with totals
+  // for the selected period plus a late-minute fine (flat Rs 1/minute, no
+  // grace, per the office's payroll rule). Split into School Staff and Admin
+  // / Management as two separate files, rather than one combined report,
+  // so each stays on as few pages as possible instead of one long mixed
+  // list. Only meaningful for the per-employee rollup view - the data here
+  // (`data`) is already the rolled-up, currently-filtered set, independent
+  // of whatever the Staff Type quick filter happens to be set to.
+  const MONTHLY_REGISTER_COLUMNS = [
+    { key:"empCode",      label:"Emp Code" },
+    { key:"name",         label:"Employee Name" },
+    { key:"designation",  label:"Designation" },
+    { key:"present",      label:"Present" },
+    { key:"absent",       label:"Absent" },
+    { key:"leave",        label:"Leave" },
+    { key:"lateDays",     label:"Late Days" },
+    { key:"lateMinutes",  label:"Late (min)" },
+    { key:"fine",         label:"Fine (Rs)" },
+    { key:"reward",       label:"Punctuality Reward" },
+    { key:"otHours",      label:"OT (hrs)" },
+    { key:"shortHours",   label:"Shortfall (hrs)" },
+  ];
+
+  function buildRegisterRows(rows) {
+    const out = rows.map(r => {
+      const bal = r.hoursBalance === "" ? 0 : Number(r.hoursBalance) || 0;
+      return {
+        empCode: r.empCode || "-",
+        name: r.name,
+        designation: r.designation || "-",
+        present: r.present,
+        absent: r.absent,
+        leave: r.leave,
+        lateDays: r.lateDays,
+        lateMinutes: r.lateMinutes,
+        fine: r.lateMinutes,
+        // Perfect punctuality (never late, not merely "on time on average")
+        // over the whole period is what the school rewards - a single late
+        // day anywhere in the range disqualifies it, same as the fine side
+        // is all-or-nothing per minute rather than averaged.
+        reward: (r.present > 0 && r.lateDays === 0) ? "Yes" : "-",
+        otHours: bal > 0 ? round1(bal) : 0,
+        shortHours: bal < 0 ? round1(-bal) : 0,
+      };
+    });
+    const totals = {
+      empCode: "", name: "TOTAL", designation: "",
+      present: out.reduce((s,x)=>s+x.present,0),
+      absent:  out.reduce((s,x)=>s+x.absent,0),
+      leave:   out.reduce((s,x)=>s+x.leave,0),
+      lateDays:    out.reduce((s,x)=>s+x.lateDays,0),
+      lateMinutes: out.reduce((s,x)=>s+x.lateMinutes,0),
+      fine:        out.reduce((s,x)=>s+x.fine,0),
+      reward:      `${out.filter(x=>x.reward==="Yes").length} eligible`,
+      otHours:     round1(out.reduce((s,x)=>s+x.otHours,0)),
+      shortHours:  round1(out.reduce((s,x)=>s+x.shortHours,0)),
+    };
+    return out.length ? [...out, totals] : out;
+  }
+
+  async function doExportMonthlyRegister() {
+    const isoToday = toIsoDateLocal(new Date());
+    const periodStr = data[0]?.period
+      || `${dateFrom ? fmtDate(dateFrom) : "-"} to ${dateTo ? fmtDate(dateTo) : "-"}`;
+
+    const isSchoolStaff = r => r.type === "Teaching" || r.designation === "Care Taker";
+    const groups = [
+      { label: "School Staff",        rows: data.filter(isSchoolStaff) },
+      { label: "Admin / Management",  rows: data.filter(r => !isSchoolStaff(r)) },
+    ];
+
+    for (const g of groups) {
+      if (!g.rows.length) continue;
+      const rows = buildRegisterRows(g.rows);
+      await renderTablePdf({
+        bandLabel: `Monthly Attendance Register - ${g.label}`,
+        columns: MONTHLY_REGISTER_COLUMNS,
+        rows,
+        infoLines: [
+          `Period: ${periodStr}`,
+          `Employees: ${g.rows.length}`,
+          `Fine Rule: Rs 1 per late minute, no grace period`,
+        ],
+        filename: `Monthly_Attendance_Register_${g.label.replace(/[\s/]+/g,"_")}_${isoToday}.pdf`,
+        landscape: true,
+      });
+    }
+  }
+
   if (dbLoading) return (
     <div className="flex items-center justify-center py-24 text-sm text-gray-400">
       Loading report data…
@@ -1862,6 +1953,12 @@ export default function ReportPage() {
             className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
             <FileText className="w-4 h-4"/>Export PDF
           </button>
+          {isStaffRollup && (
+            <button onClick={() => doExportMonthlyRegister()}
+              className="flex items-center gap-2 bg-school-navy hover:bg-school-navy/90 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
+              <FileText className="w-4 h-4"/>Monthly Register (A4)
+            </button>
+          )}
         </div>
       </div>
 
