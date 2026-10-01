@@ -601,12 +601,13 @@ const REPORT_CONFIGS = {
     quickFilters:[
       {key:"designation", label:"Designation",  options:["All"]},
       {key:"department",  label:"Department",   options:["All"]},
-      // Teaching staff and admin/management work under different attendance
-      // expectations (periods vs. fixed shifts), so they're reported
-      // separately rather than mixed into one set of totals. Non-Teaching
-      // and Media are grouped with Management on the "Admin / Management"
-      // side - Teaching is the only side that stands alone.
-      {key:"staffType",   label:"Staff Type",   options:["All","Teaching","Admin / Management"]},
+      // Staff on the campus/school-day routine (teachers + the Care Taker,
+      // who keeps the same on-site hours) work under different attendance
+      // expectations than office/admin staff (Accountant, Clerk, Management,
+      // Media, etc.), so they're reported separately rather than mixed into
+      // one set of totals. Care Taker's employees.type is "Non-Teaching" -
+      // this filter is a reporting grouping, not a redefinition of that field.
+      {key:"staffType",   label:"Staff Type",   options:["All","School Staff","Admin / Management"]},
       {key:"status",      label:"Status",       options:["All","Present","Absent","Leave"]},
       {key:"punchMethod", label:"Punch Method", options:["All","face","qr","code"]},
       {key:"punctuality", label:"Punctuality",  options:["All","Late","On Time"]},
@@ -636,8 +637,8 @@ const REPORT_CONFIGS = {
       let d = sourceData || [];
       if (f.designation && f.designation !== "All") d = d.filter(x => x.designation === f.designation);
       if (f.department  && f.department  !== "All") d = d.filter(x => x.department  === f.department);
-      if (f.staffType === "Teaching")            d = d.filter(x => x.type === "Teaching");
-      if (f.staffType === "Admin / Management")  d = d.filter(x => x.type && x.type !== "Teaching");
+      if (f.staffType === "School Staff")        d = d.filter(x => x.type === "Teaching" || x.designation === "Care Taker");
+      if (f.staffType === "Admin / Management")  d = d.filter(x => x.type && x.type !== "Teaching" && x.designation !== "Care Taker");
       if (f.status      && f.status      !== "All") d = d.filter(x => x.status      === f.status);
       if (f.punchMethod && f.punchMethod !== "All") d = d.filter(x => x.punchMethod === f.punchMethod);
       if (f.punctuality && f.punctuality !== "All") d = d.filter(x => x.punctuality?.startsWith(f.punctuality === "Late" ? "Late" : "On Time"));
@@ -1050,9 +1051,10 @@ export default function ReportPage() {
     setHiddenFixedCols([]);
     setShowAddExtra(false);
     setExtraFieldKey(""); setExtraFieldPos(1);
-    // Staff Attendance (Kiosk) defaults to Teaching staff rather than
-    // everyone mixed together - every other report defaults to no filter.
-    setFilters(rType === "staffAttendance" ? { staffType: "Teaching" } : {});
+    // Staff Attendance (Kiosk) defaults to School Staff (teachers + Care
+    // Taker) rather than everyone mixed together - every other report
+    // defaults to no filter.
+    setFilters(rType === "staffAttendance" ? { staffType: "School Staff" } : {});
     // Staff Attendance (Kiosk) defaults to today's date rather than an open
     // range - every other report defaults to "show everything".
     const defaultDate = rType === "staffAttendance" ? new Date().toISOString().slice(0,10) : "";
@@ -1619,7 +1621,7 @@ export default function ReportPage() {
             </div>
           </div>
           <button onClick={()=>{
-              setFilters(rType === "staffAttendance" ? { staffType: "Teaching" } : {});
+              setFilters(rType === "staffAttendance" ? { staffType: "School Staff" } : {});
               const resetDate = ecfg.isDailyDate ? todayStr : "";
               setDateFrom(resetDate); setDateTo(resetDate);
               setSearch(""); setPartialMaxAmount("");
