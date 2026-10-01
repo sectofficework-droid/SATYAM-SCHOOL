@@ -141,3 +141,89 @@ $$;
 
 REVOKE EXECUTE ON FUNCTION admin_delete_staff_attendance(uuid[], date, uuid, date[], jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION admin_delete_staff_attendance(uuid[], date, uuid, date[], jsonb) TO authenticated, anon;
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- auto_mark_absent_staff - the THIRD place that auto-marks absence (besides
+-- sync-absent's route and this file's RPC fallback above): the Vercel daily
+-- cron (/api/cron/mark-staff-absent) calls the 2-arg, secret-protected
+-- overload. Live-testing this fix turned up that BOTH overloads needed the
+-- same exclusion check - without it, a delete could still be silently
+-- undone by whichever of the three paths ran next. The 1-arg overload below
+-- has no secret check at all and is granted to anon (confirmed via
+-- has_function_privilege) - no caller for it was found anywhere in this
+-- repo (mobile-app or admin-panel), so it's most likely a leftover from
+-- before the 2-arg version was added, or still being called by an
+-- un-updated APK in the field. Left in place (not dropped) since this fix
+-- only needed it to also respect exclusions, not to close that gap - flag
+-- separately if you want it secured or removed.
+-- ─────────────────────────────────────────────────────────────────────────────
+CREATE OR REPLACE FUNCTION public.auto_mark_absent_staff(p_date date)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+DECLARE
+  v_settings kiosk_settings%ROWTYPE;
+  v_count INT;
+BEGIN
+  SELECT * INTO v_settings FROM kiosk_settings LIMIT 1;
+  IF v_settings.absent_cutoff_time IS NULL THEN
+    RETURN 0;
+  END IF;
+  IF (now() AT TIME ZONE 'Asia/Kolkata')::TIME < v_settings.absent_cutoff_time THEN
+    RETURN 0;
+  END IF;
+
+  INSERT INTO employee_attendance (employee_id, date, status)
+  SELECT e.id, p_date, 'A'
+  FROM employees e
+  WHERE e.status = 'Active'
+    AND NOT EXISTS (
+      SELECT 1 FROM employee_attendance ea WHERE ea.employee_id = e.id AND ea.date = p_date
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM employee_attendance_sync_exclusions x WHERE x.employee_id = e.id AND x.date = p_date
+    );
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$function$;
+
+CREATE OR REPLACE FUNCTION public.auto_mark_absent_staff(p_date date, p_secret text)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+DECLARE
+  v_settings kiosk_settings%ROWTYPE;
+  v_count INT;
+  v_hash text;
+BEGIN
+  SELECT secret_hash INTO v_hash FROM cron_secrets WHERE name = 'mark_staff_absent';
+  IF v_hash IS NULL OR p_secret IS NULL OR crypt(p_secret, v_hash) <> v_hash THEN
+    RAISE EXCEPTION 'Not authorized';
+  END IF;
+
+  SELECT * INTO v_settings FROM kiosk_settings LIMIT 1;
+  IF v_settings.absent_cutoff_time IS NULL THEN
+    RETURN 0;
+  END IF;
+  IF (now() AT TIME ZONE 'Asia/Kolkata')::TIME < v_settings.absent_cutoff_time THEN
+    RETURN 0;
+  END IF;
+
+  INSERT INTO employee_attendance (employee_id, date, status)
+  SELECT e.id, p_date, 'A'
+  FROM employees e
+  WHERE e.status = 'Active'
+    AND NOT EXISTS (
+      SELECT 1 FROM employee_attendance ea WHERE ea.employee_id = e.id AND ea.date = p_date
+    )
+    AND NOT EXISTS (
+      SELECT 1 FROM employee_attendance_sync_exclusions x WHERE x.employee_id = e.id AND x.date = p_date
+    );
+  GET DIAGNOSTICS v_count = ROW_COUNT;
+  RETURN v_count;
+END;
+$function$;
