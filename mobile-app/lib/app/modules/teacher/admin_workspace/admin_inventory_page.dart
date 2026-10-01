@@ -137,11 +137,23 @@ class _ItemsTabState extends State<_ItemsTab> {
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (_, i) {
               final it = _items[i];
+              final available = (it['available'] as num?)?.toInt() ?? 0;
+              final lowStockAt = (it['low_stock_at'] as num?)?.toInt() ?? 0;
+              final String stockLabel;
+              final Color stockColor;
+              if (available <= 0) { stockLabel = 'Out of Stock'; stockColor = AppColors.red; }
+              else if (available <= lowStockAt) { stockLabel = 'Low Stock'; stockColor = AppColors.amber; }
+              else { stockLabel = 'In Stock'; stockColor = AppColors.green; }
               return AdminCard(onTap: () => _addBatch(it), child: Row(children: [
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(it['name'] as String? ?? '', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
                   Text('${it['category'] ?? ''} • ${it['unit'] ?? ''}', style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
                 ])),
+                Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  Text('$available ${it['unit'] ?? ''}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                  AdminStatusPill(label: stockLabel, color: stockColor, light: stockColor.withValues(alpha: .15)),
+                ]),
+                const SizedBox(width: 8),
                 const Icon(Icons.add_box_rounded, color: AppColors.teal),
               ]));
             },

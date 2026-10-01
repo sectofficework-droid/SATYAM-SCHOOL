@@ -4,11 +4,15 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/staff_admin_service.dart';
 import '../../../../common/widgets/admin_workspace_common.dart';
+import 'admin_staff_attendance_report_page.dart';
 
 // Mobile port of the web admin panel's Report Builder (/report page), slice
-// 5 of this effort - a hub listing the 7 report types beyond Staff
-// Attendance (already shipped 2026-10-01 as its own screen). Deliberately
-// condensed, not field-for-field parity - see
+// 5 of this effort - a hub listing all 8 report types, including Staff
+// Attendance (shipped 2026-10-01 as its own screen, with a date-range picker
+// rather than the generic list below - listed here too for discoverability,
+// per user feedback that it wasn't found under its original Kiosk-section
+// tile alone; that tile stays too, this is additive). Deliberately condensed
+// for the other 7, not field-for-field parity - see
 // mobile-app/SUPABASE_STAFF_APP_REPORTS_ADMIN.sql's header comment for why.
 // Senior Admin/Management only (Fees - Super Admin is management-only).
 class AdminReportsPage extends StatelessWidget {
@@ -18,14 +22,15 @@ class AdminReportsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tiles = <(String, IconData, Future<List<Map<String, dynamic>>> Function(String))>[
-      ('Students', Icons.school_rounded, StaffAdminService.reportStudents),
-      ('TC Issued', Icons.description_rounded, StaffAdminService.reportTcIssued),
-      ('Fee Payments', Icons.payments_rounded, StaffAdminService.reportPayments),
-      ('Fees (Current Year)', Icons.receipt_long_rounded, StaffAdminService.reportFees),
-      if (_isMgmt) ('Fees — Super Admin', Icons.account_balance_wallet_rounded, StaffAdminService.reportFeesSuperAdmin),
-      ('Employees', Icons.badge_rounded, StaffAdminService.reportEmployees),
-      ('Inventory', Icons.inventory_2_rounded, StaffAdminService.reportInventory),
+    final tiles = <(String, IconData, VoidCallback)>[
+      ('Staff Attendance', Icons.fact_check_rounded, () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminStaffAttendanceReportPage()))),
+      ('Students', Icons.school_rounded, () => _openList(context, 'Students', StaffAdminService.reportStudents)),
+      ('TC Issued', Icons.description_rounded, () => _openList(context, 'TC Issued', StaffAdminService.reportTcIssued)),
+      ('Fee Payments', Icons.payments_rounded, () => _openList(context, 'Fee Payments', StaffAdminService.reportPayments)),
+      ('Fees (Current Year)', Icons.receipt_long_rounded, () => _openList(context, 'Fees (Current Year)', StaffAdminService.reportFees)),
+      if (_isMgmt) ('Fees — Super Admin', Icons.account_balance_wallet_rounded, () => _openList(context, 'Fees — Super Admin', StaffAdminService.reportFeesSuperAdmin)),
+      ('Employees', Icons.badge_rounded, () => _openList(context, 'Employees', StaffAdminService.reportEmployees)),
+      ('Inventory', Icons.inventory_2_rounded, () => _openList(context, 'Inventory', StaffAdminService.reportInventory)),
     ];
 
     return Scaffold(
@@ -35,9 +40,9 @@ class AdminReportsPage extends StatelessWidget {
         itemCount: tiles.length,
         separatorBuilder: (_, __) => const SizedBox(height: 8),
         itemBuilder: (_, i) {
-          final (title, icon, loader) = tiles[i];
+          final (title, icon, onTap) = tiles[i];
           return AdminCard(
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _ReportListPage(title: title, loader: loader))),
+            onTap: onTap,
             child: Row(children: [
               Container(width: 36, height: 36, decoration: BoxDecoration(color: AppColors.blueLight, borderRadius: BorderRadius.circular(10)),
                 child: Icon(icon, color: AppColors.navy, size: 18)),
@@ -49,6 +54,10 @@ class AdminReportsPage extends StatelessWidget {
         },
       ),
     );
+  }
+
+  void _openList(BuildContext context, String title, Future<List<Map<String, dynamic>>> Function(String) loader) {
+    Navigator.push(context, MaterialPageRoute(builder: (_) => _ReportListPage(title: title, loader: loader)));
   }
 }
 
@@ -107,13 +116,21 @@ class _ReportListPageState extends State<_ReportListPage> {
     return _rows.where((r) => r.values.any((v) => v != null && v.toString().toLowerCase().contains(q))).toList();
   }
 
-  // The first non-null text-ish field is used as the row's title; the rest
-  // render as a label:value grid.
-  String _titleFor(Map<String, dynamic> row) {
-    for (final v in row.values) {
-      if (v is String && v.isNotEmpty) return v;
+  // Prefers a "name"-shaped field for the row's title (e.g. o_name,
+  // o_student_name) over whatever happens to come first in the RPC's column
+  // order - a bare enrollment/code number first in o_enroll_no made a much
+  // worse title than the actual name sitting two columns later. Falls back
+  // to the first non-empty string field when nothing name-shaped exists.
+  String? _titleKeyFor(Map<String, dynamic> row) {
+    for (final key in row.keys) {
+      final v = row[key];
+      if (v is String && v.isNotEmpty && key.toLowerCase().contains('name')) return key;
     }
-    return 'Row';
+    for (final key in row.keys) {
+      final v = row[key];
+      if (v is String && v.isNotEmpty) return key;
+    }
+    return null;
   }
 
   @override
@@ -141,11 +158,11 @@ class _ReportListPageState extends State<_ReportListPage> {
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (_, i) {
                     final row = rows[i];
-                    final entries = row.entries.toList();
-                    final titleEntry = entries.firstWhere((e) => e.value is String && (e.value as String).isNotEmpty, orElse: () => entries.first);
-                    final rest = entries.where((e) => e.key != titleEntry.key).toList();
+                    final titleKey = _titleKeyFor(row);
+                    final title = titleKey != null ? row[titleKey] as String : 'Row';
+                    final rest = row.entries.where((e) => e.key != titleKey).toList();
                     return AdminCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(_titleFor(row), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                      Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
                       const SizedBox(height: 6),
                       Wrap(spacing: 14, runSpacing: 4, children: rest.map((e) => Text(
                         '${_label(e.key)}: ${_fmtValue(e.value)}',

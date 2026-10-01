@@ -317,6 +317,13 @@ GRANT EXECUTE ON FUNCTION public.staff_admin_employee_search(uuid, text) TO anon
 -- ═══════════════════════════════════════════════════════════════════════
 -- 5. Inventory — usage + asset checkout/return (any linked tier)
 -- ═══════════════════════════════════════════════════════════════════════
+-- 2026-10-02 fix: originally returned no stock numbers at all (just
+-- id/name/unit/category), so the Items & Stock tab had nothing to show
+-- besides a bare "add batch" button - an admin had no way to tell what was
+-- actually low/out of stock without opening Record Usage first. Now
+-- computes available = total_in - total_used the same way the Reports
+-- module's staff_admin_report_inventory does, plus low_stock_at so the app
+-- can render an Out of Stock/Low Stock/In Stock pill.
 CREATE OR REPLACE FUNCTION public.staff_admin_inventory_items(p_employee_id uuid)
 RETURNS json
 LANGUAGE plpgsql
@@ -326,8 +333,14 @@ AS $$
 BEGIN
   IF staff_admin_tier(p_employee_id) IS NULL THEN RAISE EXCEPTION 'Not authorized'; END IF;
   RETURN COALESCE((
-    SELECT json_agg(json_build_object('id', id, 'name', name, 'unit', unit, 'category', category) ORDER BY name)
-    FROM inventory_items
+    SELECT json_agg(json_build_object(
+      'id', i.id, 'name', i.name, 'unit', i.unit, 'category', i.category,
+      'available', COALESCE(bat.total_in, 0) - COALESCE(usg.total_used, 0),
+      'low_stock_at', i.low_stock_at
+    ) ORDER BY i.name)
+    FROM inventory_items i
+    LEFT JOIN LATERAL (SELECT SUM(b.qty) AS total_in FROM inventory_batches b WHERE b.item_id = i.id) bat ON TRUE
+    LEFT JOIN LATERAL (SELECT SUM(u.qty) AS total_used FROM inventory_usages u WHERE u.item_id = i.id) usg ON TRUE
   ), '[]'::json);
 END;
 $$;

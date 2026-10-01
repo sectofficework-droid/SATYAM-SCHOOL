@@ -118,7 +118,7 @@ class _StudentsFeesTabState extends State<_StudentsFeesTab> {
                   Text('${r['class_name'] ?? ''} - ${r['section_name'] ?? ''}', style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
                 ])),
                 Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                  Text('₹$paid / ₹$total', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                  Text('Paid ₹$paid of ₹$total', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                   Text(due > 0 ? 'Due ₹$due' : 'Paid up', style: TextStyle(fontSize: 11, color: due > 0 ? AppColors.red : AppColors.green)),
                 ]),
               ]));
