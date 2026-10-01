@@ -160,14 +160,14 @@ function computeElig(st) {
 // ── Fee Collection Period Summaries ──────────────────────────────────────────
 function computeCollectionSummary(payments) {
   const now      = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
+  const todayStr = toIsoDateLocal(now);
 
   // Start of this week (Monday)
   const day = now.getDay(); // 0=Sun
   const diffToMon = (day === 0 ? -6 : 1 - day);
   const weekStart = new Date(now);
   weekStart.setDate(now.getDate() + diffToMon);
-  const weekStartStr = weekStart.toISOString().slice(0, 10);
+  const weekStartStr = toIsoDateLocal(weekStart);
 
   const monthStartStr = todayStr.slice(0, 7) + "-01";
   const yearStartStr  = todayStr.slice(0, 4) + "-01-01";
@@ -1301,7 +1301,7 @@ export default function ReportPage() {
   }
 
   function doExportExcel(exportData = data, labelSuffix = "") {
-    const isoToday     = new Date().toISOString().slice(0,10);
+    const isoToday     = toIsoDateLocal(new Date());
     const todayDisplay = fmtDate(isoToday);
     const exportSummary = ecfg.getSummary(exportData);
     let rows;
@@ -1356,7 +1356,7 @@ export default function ReportPage() {
   }
 
   async function doExportPDF(exportData = data, labelSuffix = "") {
-    const isoToday      = new Date().toISOString().slice(0,10);
+    const isoToday      = toIsoDateLocal(new Date());
     const todayDisplay   = fmtDate(isoToday);
     const exportSummary  = ecfg.getSummary(exportData);
     const isElig         = ecfg.isEligibility;
@@ -1836,7 +1836,7 @@ export default function ReportPage() {
                       Rs {c.value.toLocaleString("en-IN")}
                     </p>
                     <p className={`text-[10px] mt-1 ${cm.label} opacity-70`}>
-                      {(sourceData || []).filter(p => p.date >= c.period && p.date <= new Date().toISOString().slice(0,10)).length} transactions
+                      {(sourceData || []).filter(p => p.date >= c.period && p.date <= toIsoDateLocal(new Date())).length} transactions
                     </p>
                   </div>
                 );
