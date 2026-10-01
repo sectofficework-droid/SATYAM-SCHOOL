@@ -27,6 +27,7 @@ import 'admin_year_planning_page.dart';
 import 'admin_impersonation_log_page.dart';
 import 'admin_exams_page.dart';
 import 'admin_attendance_overview_page.dart';
+import 'admin_diagnostics_page.dart';
 import '../my_attendance/teacher_my_attendance_page.dart';
 
 // Admin Workspace home — full admin-web parity, phase 2 (2026-09-19: user
@@ -153,6 +154,7 @@ class _AdminWorkspaceHomeState extends State<AdminWorkspaceHome> {
               _Tile('Year Planning', Icons.calendar_month_rounded, AppColors.teal, AppColors.tealLight, () => Get.to(() => const AdminYearPlanningPage())),
               _Tile('Rules & Regulations', Icons.gavel_rounded, AppColors.purple, AppColors.purpleLight, () => Get.to(() => const AdminRulesPage())),
               _Tile('Access Code Log', Icons.key_rounded, AppColors.stone, AppColors.stoneLight, () => Get.to(() => const AdminImpersonationLogPage())),
+              _Tile('Diagnostics', Icons.bug_report_rounded, AppColors.red, AppColors.redLight, () => Get.to(() => const AdminDiagnosticsPage())),
             ]),
           ],
         ],

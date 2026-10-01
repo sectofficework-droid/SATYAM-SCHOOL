@@ -688,4 +688,25 @@ class StaffAdminService {
     });
     return Map<String, dynamic>.from((res as List).first as Map);
   }
+
+  // ── Diagnostics (senior_admin/management only) ─────────────────────────────
+  static Future<List<Map<String, dynamic>>> diagnosticReports(String employeeId) async {
+    final res = await client.rpc('staff_admin_diagnostic_reports', params: {'p_employee_id': employeeId});
+    return _list(res);
+  }
+
+  static Future<void> markDiagnosticReport(String employeeId, String reportId, String status) async {
+    await client.rpc('staff_admin_mark_diagnostic_report', params: {
+      'p_employee_id': employeeId, 'p_report_id': reportId, 'p_status': status,
+    });
+  }
+
+  static Future<bool> getDiagnosticsEnabled(String employeeId) async {
+    final res = await client.rpc('staff_admin_get_diagnostics_enabled', params: {'p_employee_id': employeeId});
+    return res as bool? ?? false;
+  }
+
+  static Future<void> setDiagnosticsEnabled(String employeeId, bool enabled) async {
+    await client.rpc('staff_admin_set_diagnostics_enabled', params: {'p_employee_id': employeeId, 'p_enabled': enabled});
+  }
 }
