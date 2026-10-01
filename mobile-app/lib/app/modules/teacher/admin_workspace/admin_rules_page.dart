@@ -70,31 +70,35 @@ class _AdminRulesPageState extends State<AdminRulesPage> with SingleTickerProvid
         Text('Shown read-only to ${label.toLowerCase()}s in the mobile app, under Rules & Regulations.',
           style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
         const SizedBox(height: 12),
-        TextField(
-          controller: _controllers[audience],
-          maxLines: 16,
-          decoration: InputDecoration(
-            hintText: 'Type the ${label.toLowerCase()} rules and regulations here.',
-            border: const OutlineInputBorder(), alignLabelWithHint: true,
+        // Fixed-height + internally-scrolling, not maxLines: N - a tall
+        // maxLines value here was measuring out far taller than it painted
+        // on at least one real device, pushing the Save button below any
+        // reachable scroll extent and silently eating every save. A bounded
+        // SizedBox is unambiguous regardless of platform text metrics.
+        SizedBox(
+          height: 320,
+          child: TextField(
+            controller: _controllers[audience],
+            maxLines: null,
+            expands: true,
+            textAlignVertical: TextAlignVertical.top,
+            decoration: InputDecoration(
+              hintText: 'Type the ${label.toLowerCase()} rules and regulations here.',
+              border: const OutlineInputBorder(), alignLabelWithHint: true,
+            ),
           ),
         ),
-        const SizedBox(height: 14),
-        Row(children: [
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy, padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 20)),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy),
             onPressed: _saving[audience]! ? null : () => _save(audience),
-            icon: _saving[audience]!
-              ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : const Icon(Icons.save_rounded, size: 18),
-            label: Text(_saving[audience]! ? 'Saving…' : 'Save'),
+            child: Text(_saving[audience]! ? 'Saving…' : (_saved[audience]! ? 'Saved ✓' : 'Save')),
           ),
-          if (_saved[audience]!) ...[
-            const SizedBox(width: 12),
-            const Icon(Icons.check_circle_rounded, color: AppColors.green, size: 18),
-            const SizedBox(width: 4),
-            const Text('Saved', style: TextStyle(color: AppColors.green, fontWeight: FontWeight.w600)),
-          ],
-        ]),
+        ),
+        const SizedBox(height: 20),
       ]),
     );
   }
