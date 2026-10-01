@@ -709,4 +709,27 @@ class StaffAdminService {
   static Future<void> setDiagnosticsEnabled(String employeeId, bool enabled) async {
     await client.rpc('staff_admin_set_diagnostics_enabled', params: {'p_employee_id': employeeId, 'p_enabled': enabled});
   }
+
+  // ── Reports (condensed mobile versions; senior_admin/management only,
+  // Fees Super Admin is management-only) ─────────────────────────────────────
+  static Future<List<Map<String, dynamic>>> reportStudents(String employeeId) async =>
+    _list(await client.rpc('staff_admin_report_students', params: {'p_employee_id': employeeId}));
+
+  static Future<List<Map<String, dynamic>>> reportTcIssued(String employeeId) async =>
+    _list(await client.rpc('staff_admin_report_tc_issued', params: {'p_employee_id': employeeId}));
+
+  static Future<List<Map<String, dynamic>>> reportPayments(String employeeId) async =>
+    _list(await client.rpc('staff_admin_report_payments', params: {'p_employee_id': employeeId}));
+
+  static Future<List<Map<String, dynamic>>> reportFees(String employeeId) async =>
+    _list(await client.rpc('staff_admin_report_fees', params: {'p_employee_id': employeeId}));
+
+  static Future<List<Map<String, dynamic>>> reportFeesSuperAdmin(String employeeId) async =>
+    _list(await client.rpc('staff_admin_report_fees_super_admin', params: {'p_employee_id': employeeId}));
+
+  static Future<List<Map<String, dynamic>>> reportEmployees(String employeeId) async =>
+    _list(await client.rpc('staff_admin_report_employees', params: {'p_employee_id': employeeId}));
+
+  static Future<List<Map<String, dynamic>>> reportInventory(String employeeId) async =>
+    _list(await client.rpc('staff_admin_report_inventory', params: {'p_employee_id': employeeId}));
 }

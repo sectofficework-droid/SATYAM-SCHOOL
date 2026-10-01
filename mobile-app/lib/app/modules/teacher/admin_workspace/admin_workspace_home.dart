@@ -28,6 +28,7 @@ import 'admin_impersonation_log_page.dart';
 import 'admin_exams_page.dart';
 import 'admin_attendance_overview_page.dart';
 import 'admin_diagnostics_page.dart';
+import 'admin_reports_page.dart';
 import '../my_attendance/teacher_my_attendance_page.dart';
 
 // Admin Workspace home — full admin-web parity, phase 2 (2026-09-19: user
@@ -142,6 +143,7 @@ class _AdminWorkspaceHomeState extends State<AdminWorkspaceHome> {
             _ModuleGrid(tiles: [
               _Tile('Kiosk Settings', Icons.settings_applications_rounded, AppColors.navy, AppColors.blueLight, () => Get.to(() => const AdminKioskSettingsPage())),
               _Tile('Staff Attendance', Icons.fact_check_rounded, AppColors.indigo, AppColors.indigoLight, () => Get.to(() => const AdminStaffAttendanceReportPage())),
+              _Tile('Reports', Icons.analytics_rounded, AppColors.navy, AppColors.blueLight, () => Get.to(() => const AdminReportsPage())),
             ]),
           ],
 
