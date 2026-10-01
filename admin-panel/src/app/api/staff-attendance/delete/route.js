@@ -1,6 +1,29 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+// Matches sync-absent's own "today" (Asia/Kolkata, not server/UTC today).
+function todayIST() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
+}
+
+// sync-absent (run on every report load) re-inserts "Absent" for today for
+// any active employee still missing a row past the cutoff - so deleting
+// today's auto-marked row would otherwise come right back on the next
+// refresh. Recording an exclusion for any deleted pair dated today makes the
+// delete stick for the rest of the day; past dates are never touched by
+// sync-absent, so nothing is recorded for them.
+async function recordTodayExclusions(supabaseAdmin, pairs) {
+  const today = todayIST();
+  const rows = (pairs || [])
+    .filter((p) => p.date === today)
+    .map((p) => ({ employee_id: p.employeeId, date: p.date }));
+  if (!rows.length) return;
+  const { error } = await supabaseAdmin
+    .from("employee_attendance_sync_exclusions")
+    .upsert(rows, { onConflict: "employee_id,date" });
+  if (error) console.error("Failed to record sync-absent exclusion:", error.message);
+}
+
 export async function POST(request) {
   try {
     const body = await request.json();
@@ -45,6 +68,8 @@ export async function POST(request) {
         if (shiftRes.error) throw shiftRes.error;
         if (attRes.error) throw attRes.error;
 
+        await recordTodayExclusions(supabaseAdmin, [{ employeeId, date }]);
+
         return NextResponse.json({
           success: true,
           deleted: { employeeId, date },
@@ -70,6 +95,8 @@ export async function POST(request) {
         if (shiftRes.error) throw shiftRes.error;
         if (attRes.error) throw attRes.error;
 
+        await recordTodayExclusions(supabaseAdmin, employeeIds.map((id) => ({ employeeId: id, date })));
+
         return NextResponse.json({
           success: true,
           deleted: { employeeIdsCount: employeeIds.length, date },
@@ -94,6 +121,8 @@ export async function POST(request) {
 
         if (shiftRes.error) throw shiftRes.error;
         if (attRes.error) throw attRes.error;
+
+        await recordTodayExclusions(supabaseAdmin, dates.map((d) => ({ employeeId, date: d })));
 
         return NextResponse.json({
           success: true,
@@ -122,6 +151,11 @@ export async function POST(request) {
         if (shiftRes.error) throw shiftRes.error;
         if (attRes.error) throw attRes.error;
 
+        const today = todayIST();
+        if (today >= fromDate && today <= toDate) {
+          await recordTodayExclusions(supabaseAdmin, [{ employeeId, date: today }]);
+        }
+
         return NextResponse.json({
           success: true,
           deleted: { employeeId, fromDate, toDate },
@@ -148,6 +182,11 @@ export async function POST(request) {
           if (shiftRes.error) throw shiftRes.error;
           if (attRes.error) throw attRes.error;
         }
+
+        await recordTodayExclusions(
+          supabaseAdmin,
+          items.filter((i) => i.employeeId && i.date).map((i) => ({ employeeId: i.employeeId, date: i.date }))
+        );
 
         return NextResponse.json({
           success: true,

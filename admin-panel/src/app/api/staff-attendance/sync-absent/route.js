@@ -82,14 +82,20 @@ async function handleSyncAbsent() {
       }
     }
 
-    // 4. Find all active employees who haven't punched yet
-    const [{ data: emps }, { data: existingAtt }] = await Promise.all([
+    // 4. Find all active employees who haven't punched yet - excluding anyone
+    // an admin has already explicitly deleted today's record for (see
+    // SUPABASE_STAFF_ATTENDANCE_SYNC_EXCLUSIONS.sql): without this, deleting
+    // today's auto-marked "Absent" row just gets it re-inserted on the very
+    // next report load, making the delete look like it did nothing.
+    const [{ data: emps }, { data: existingAtt }, { data: excluded }] = await Promise.all([
       supabaseAdmin.from("employees").select("id").eq("status", "Active"),
       supabaseAdmin.from("employee_attendance").select("employee_id").eq("date", todayDate),
+      supabaseAdmin.from("employee_attendance_sync_exclusions").select("employee_id").eq("date", todayDate),
     ]);
 
     const existingSet = new Set((existingAtt || []).map((a) => a.employee_id));
-    const missingEmps = (emps || []).filter((e) => !existingSet.has(e.id));
+    const excludedSet = new Set((excluded || []).map((e) => e.employee_id));
+    const missingEmps = (emps || []).filter((e) => !existingSet.has(e.id) && !excludedSet.has(e.id));
 
     if (!missingEmps.length) {
       return NextResponse.json({ marked: 0, message: "All active employees already recorded" });
