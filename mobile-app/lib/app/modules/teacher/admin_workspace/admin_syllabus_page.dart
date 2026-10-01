@@ -14,7 +14,19 @@ class _AdminSyllabusPageState extends State<AdminSyllabusPage> {
   List<Map<String, dynamic>> _chapters = [];
   bool _loading = true;
   String? _error;
+  String _query = '';
   String get _employeeId => AuthService.to.profile.value?['id'] as String? ?? '';
+
+  // No server-side filter exists for this list and schools can have 1000+
+  // chapters across every class/subject combined - without this, "Syllabus"
+  // was an unscrollable wall with no way to find one class's chapters.
+  List<Map<String, dynamic>> get _filtered {
+    if (_query.trim().isEmpty) return _chapters;
+    final q = _query.toLowerCase();
+    return _chapters.where((ch) =>
+      '${ch['class']} ${ch['subject']} ${ch['chapter']} ${ch['teacher_name']}'.toLowerCase().contains(q)
+    ).toList();
+  }
 
   @override
   void initState() { super.initState(); _load(); }
@@ -113,12 +125,22 @@ class _AdminSyllabusPageState extends State<AdminSyllabusPage> {
       body: _loading ? const AdminLoading()
         : _error != null ? AdminErrorState(message: _error!, onRetry: _load)
         : _chapters.isEmpty ? const AdminEmptyState(icon: Icons.menu_book_rounded, title: 'No chapters', subtitle: 'Tap + to add one.')
-        : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
+        : Column(children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: TextField(
+                decoration: const InputDecoration(prefixIcon: Icon(Icons.search_rounded), hintText: 'Search class, subject, chapter, teacher…', border: OutlineInputBorder(), isDense: true),
+                onChanged: (v) => setState(() => _query = v),
+              ),
+            ),
+            Expanded(child: _filtered.isEmpty
+              ? const AdminEmptyState(icon: Icons.search_off_rounded, title: 'No matches', subtitle: 'Try a different search.')
+              : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
             padding: const EdgeInsets.all(16),
-            itemCount: _chapters.length,
+            itemCount: _filtered.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (_, i) {
-              final ch = _chapters[i];
+              final ch = _filtered[i];
               final status = ch['status'] as String? ?? 'Not Started';
               final color = status == 'Completed' ? AppColors.green : status == 'In Progress' ? AppColors.amber : AppColors.stone;
               final light = status == 'Completed' ? AppColors.greenLight : status == 'In Progress' ? AppColors.amberLight : AppColors.stoneLight;
@@ -131,7 +153,8 @@ class _AdminSyllabusPageState extends State<AdminSyllabusPage> {
                 AdminStatusPill(label: status, color: color, light: light),
               ]));
             },
-          )),
+          ))),
+          ]),
     );
   }
 }
