@@ -586,4 +586,93 @@ class StaffAdminService {
     final res = await client.rpc('staff_admin_impersonation_log', params: {'p_employee_id': employeeId, 'p_limit': limit});
     return _list(res);
   }
+
+  // ── Exams: Monthly Test default max marks ──────────────────────────────────
+  static Future<int> getMonthlyTestMaxMarks() async {
+    final res = await client.from('school_profile').select('monthly_test_max_marks').limit(1).maybeSingle();
+    return (res?['monthly_test_max_marks'] as num?)?.toInt() ?? 25;
+  }
+
+  static Future<void> saveMonthlyTestMaxMarks(String employeeId, int maxMarks) async {
+    await client.rpc('staff_admin_save_monthly_test_max_marks', params: {'p_employee_id': employeeId, 'p_max_marks': maxMarks});
+  }
+
+  // ── Exams: Monthly Tests, read-only visibility ──────────────────────────────
+  static Future<List<Map<String, dynamic>>> monthlyTests(String employeeId) async {
+    final res = await client.rpc('staff_admin_monthly_tests', params: {'p_employee_id': employeeId});
+    return _list(res);
+  }
+
+  static Future<List<Map<String, dynamic>>> monthlyTestMarks(String employeeId, String examId) async {
+    final res = await client.rpc('staff_admin_monthly_test_marks', params: {'p_employee_id': employeeId, 'p_exam_id': examId});
+    return _list(res);
+  }
+
+  // ── Exams: Official Exams CRUD ──────────────────────────────────────────────
+  static Future<List<Map<String, dynamic>>> getAcademicYears() async {
+    final res = await client.from('academic_years').select('*');
+    return _list(res);
+  }
+
+  static Future<List<Map<String, dynamic>>> getActiveClasses(String employeeId) async {
+    final res = await client.rpc('staff_admin_class_list', params: {'p_employee_id': employeeId});
+    return _list(res);
+  }
+
+  static Future<List<Map<String, dynamic>>> getClassSubjects() async {
+    final res = await client.from('class_subjects').select('class_name, subject_name').order('sort_order');
+    return _list(res);
+  }
+
+  static Future<List<Map<String, dynamic>>> getOfficialExams({String? academicYearId}) async {
+    var query = client.from('official_exams').select('*');
+    if (academicYearId != null) query = query.eq('academic_year_id', academicYearId);
+    final res = await query.order('sort_order');
+    return _list(res);
+  }
+
+  static Future<Map<String, dynamic>> createOfficialExam(String employeeId, {
+    required String name, required String startDate, required String endDate, String? academicYearId, int sortOrder = 0,
+  }) async {
+    final res = await client.rpc('staff_admin_official_exam_create', params: {
+      'p_employee_id': employeeId, 'p_name': name, 'p_start_date': startDate, 'p_end_date': endDate,
+      'p_academic_year_id': academicYearId, 'p_sort_order': sortOrder,
+    });
+    return Map<String, dynamic>.from(res as Map);
+  }
+
+  static Future<void> updateOfficialExam(String employeeId, String id, {
+    required String name, required String startDate, required String endDate, required int sortOrder,
+  }) async {
+    await client.rpc('staff_admin_official_exam_update', params: {
+      'p_employee_id': employeeId, 'p_id': id, 'p_name': name, 'p_start_date': startDate, 'p_end_date': endDate, 'p_sort_order': sortOrder,
+    });
+  }
+
+  static Future<void> deleteOfficialExam(String employeeId, String id) async {
+    await client.rpc('staff_admin_official_exam_delete', params: {'p_employee_id': employeeId, 'p_id': id});
+  }
+
+  static Future<List<Map<String, dynamic>>> getExamSubjectConfig(String examId) async {
+    final res = await client.from('official_exam_subject_config').select('class_name, subject_name, max_marks').eq('exam_id', examId);
+    return _list(res);
+  }
+
+  static Future<void> saveExamSubjectMaxMarks(String employeeId, String examId, String className, String subjectName, int maxMarks) async {
+    await client.rpc('staff_admin_exam_subject_max_marks_save', params: {
+      'p_employee_id': employeeId, 'p_exam_id': examId, 'p_class_name': className, 'p_subject_name': subjectName, 'p_max_marks': maxMarks,
+    });
+  }
+
+  static Future<void> saveExamSubjectMaxMarksBulk(String employeeId, String examId, List<Map<String, dynamic>> rows) async {
+    if (rows.isEmpty) return;
+    await client.rpc('staff_admin_exam_subject_max_marks_bulk', params: {'p_employee_id': employeeId, 'p_exam_id': examId, 'p_rows': rows});
+  }
+
+  static Future<List<Map<String, dynamic>>> officialExamMarksEntered(String employeeId, String examId, String className) async {
+    final res = await client.rpc('staff_admin_official_exam_marks_entered', params: {
+      'p_employee_id': employeeId, 'p_exam_id': examId, 'p_class_name': className,
+    });
+    return _list(res);
+  }
 }

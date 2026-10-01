@@ -25,6 +25,7 @@ import 'admin_staff_attendance_report_page.dart';
 import 'admin_rules_page.dart';
 import 'admin_year_planning_page.dart';
 import 'admin_impersonation_log_page.dart';
+import 'admin_exams_page.dart';
 import '../my_attendance/teacher_my_attendance_page.dart';
 
 // Admin Workspace home — full admin-web parity, phase 2 (2026-09-19: user
@@ -104,6 +105,8 @@ class _AdminWorkspaceHomeState extends State<AdminWorkspaceHome> {
             _Tile('Syllabus', Icons.auto_stories_rounded, AppColors.green, AppColors.greenLight, () => Get.to(() => const AdminSyllabusPage())),
             if (_isSeniorOrMgmt)
               _Tile('Syllabus Requests', Icons.rule_rounded, AppColors.green, AppColors.greenLight, () => Get.to(() => const AdminSyllabusRequestsPage())),
+            if (_isSeniorOrMgmt)
+              _Tile('Exams', Icons.emoji_events_rounded, AppColors.amber, AppColors.amberLight, () => Get.to(() => const AdminExamsPage())),
             _Tile('GR Book', Icons.book_rounded, AppColors.cyan, AppColors.cyanLight, () => Get.to(() => const AdminGrBookPage())),
             _Tile('Question Papers', Icons.description_rounded, AppColors.purple, AppColors.purpleLight, () => Get.to(() => const AdminDocumentsPage())),
           ]),
