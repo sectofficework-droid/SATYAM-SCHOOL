@@ -1519,17 +1519,45 @@ export default function ReportPage() {
       {/* Filters */}
       <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-4">
 
-        {/* Staff Attendance view toggle — daily rows vs per-employee rollup */}
-        {cfg.isDualView && (
-          <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-            <button onClick={() => setStaffView("daily")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${staffView === "daily" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-              Daily
-            </button>
-            <button onClick={() => setStaffView("employee")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${staffView === "employee" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-              Per Employee
-            </button>
+        {/* Staff Attendance view toggle (left) + the daily date navigator
+            (right) share a row above the quick filters - the date control
+            used to live inside the wrapping filter grid, where it drifted to
+            whichever line it happened to wrap onto. A dedicated row keeps it
+            pinned to the right every time. */}
+        {(cfg.isDualView || ecfg.isDailyDate) && (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            {cfg.isDualView ? (
+              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+                <button onClick={() => setStaffView("daily")}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${staffView === "daily" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                  Daily
+                </button>
+                <button onClick={() => setStaffView("employee")}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${staffView === "employee" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                  Per Employee
+                </button>
+              </div>
+            ) : <div />}
+            {ecfg.isDailyDate && (
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{ecfg.dateLabel}</label>
+                <div className="flex items-center gap-1">
+                  <button type="button" onClick={() => shiftStaffDate(-1)} title="Previous day"
+                    className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
+                    <ChevronLeft className="w-3.5 h-3.5"/>
+                  </button>
+                  <DateInputDMY
+                    value={dateFrom === dateTo && dateFrom ? dateFrom : ""}
+                    onChange={e => { setDateFrom(e.target.value); setDateTo(e.target.value); }}
+                    className="border-2 border-school-navy rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy"/>
+                  <button type="button" onClick={() => shiftStaffDate(1)} title="Next day"
+                    disabled={dateFrom === todayStr || !dateFrom}
+                    className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:text-gray-500">
+                    <ChevronRight className="w-3.5 h-3.5"/>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1600,26 +1628,6 @@ export default function ReportPage() {
                 placeholder="Search by name or enroll no" value={search} onChange={e=>setSearch(e.target.value)}/>
             </div>
           </div>
-          {ecfg.isDailyDate && (
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{ecfg.dateLabel}</label>
-              <div className="flex items-center gap-1">
-                <button type="button" onClick={() => shiftStaffDate(-1)} title="Previous day"
-                  className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
-                  <ChevronLeft className="w-3.5 h-3.5"/>
-                </button>
-                <DateInputDMY
-                  value={dateFrom === dateTo && dateFrom ? dateFrom : ""}
-                  onChange={e => { setDateFrom(e.target.value); setDateTo(e.target.value); }}
-                  className="border-2 border-school-navy rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy"/>
-                <button type="button" onClick={() => shiftStaffDate(1)} title="Next day"
-                  disabled={dateFrom === todayStr || !dateFrom}
-                  className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:border-gray-200 disabled:hover:text-gray-500">
-                  <ChevronRight className="w-3.5 h-3.5"/>
-                </button>
-              </div>
-            </div>
-          )}
           <button onClick={()=>{
               setFilters(rType === "staffAttendance" ? { staffType: "School Staff" } : {});
               const resetDate = ecfg.isDailyDate ? todayStr : "";
