@@ -26,6 +26,7 @@ import 'admin_rules_page.dart';
 import 'admin_year_planning_page.dart';
 import 'admin_impersonation_log_page.dart';
 import 'admin_exams_page.dart';
+import 'admin_attendance_overview_page.dart';
 import '../my_attendance/teacher_my_attendance_page.dart';
 
 // Admin Workspace home — full admin-web parity, phase 2 (2026-09-19: user
@@ -90,6 +91,8 @@ class _AdminWorkspaceHomeState extends State<AdminWorkspaceHome> {
             _Tile('Students', Icons.school_rounded, AppColors.blue, AppColors.blueLight, () => Get.to(() => const AdminStudentsPage())),
             _Tile('Employees', Icons.badge_rounded, AppColors.teal, AppColors.tealLight, () => Get.to(() => const AdminEmployeesPage())),
             _Tile('Attendance', Icons.fact_check_rounded, AppColors.indigo, AppColors.indigoLight, () => Get.to(() => const AdminAttendancePage())),
+            if (_isSeniorOrMgmt)
+              _Tile('Attendance Overview', Icons.visibility_rounded, AppColors.indigo, AppColors.indigoLight, () => Get.to(() => const AdminAttendanceOverviewPage())),
             _Tile('Punch Code', Icons.qr_code_2_rounded, AppColors.amber, AppColors.amberLight, () => Get.to(() => const AdminPunchCodePage())),
             // REQ-BUG-056: a non-teaching admin-linked account's entire app
             // is this screen (no Teacher tabs, so no route to My Attendance

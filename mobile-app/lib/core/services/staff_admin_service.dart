@@ -675,4 +675,17 @@ class StaffAdminService {
     });
     return _list(res);
   }
+
+  // ── Attendance Overview + reminders (senior_admin/management only) ─────────
+  static Future<List<Map<String, dynamic>>> attendanceOverview(String employeeId, String date) async {
+    final res = await client.rpc('staff_admin_attendance_overview', params: {'p_employee_id': employeeId, 'p_date': date});
+    return _list(res);
+  }
+
+  static Future<Map<String, dynamic>> sendAttendanceReminders(String employeeId, String date, {List<String>? sectionIds}) async {
+    final res = await client.rpc('staff_admin_send_attendance_reminders', params: {
+      'p_employee_id': employeeId, 'p_date': date, 'p_section_ids': sectionIds,
+    });
+    return Map<String, dynamic>.from((res as List).first as Map);
+  }
 }
