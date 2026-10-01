@@ -408,6 +408,15 @@ export async function getInventoryForReport() {
 // null after the first punch.
 const STAFF_ATTENDANCE_STATUS_LABELS = { P: "Present", A: "Absent", L: "Leave" };
 
+// Matches the Employee module's own TYPE_LABEL (admin-panel/src/app/(dashboard)/employee/page.js)
+// so the two reports use the same wording for the same employees.type values.
+const EMPLOYEE_TYPE_LABELS = {
+  management:     "Management",
+  teaching:       "Teaching",
+  "non-teaching": "Non-Teaching",
+  media:          "Media",
+};
+
 // Standard working day, in hours. Everything overtime/shortfall is measured
 // against this: worked = hoursWorked - STANDARD_DAY_HOURS, so a partial day
 // reads as shortfall and a long day reads as overtime. Kept as a plain
@@ -440,7 +449,7 @@ export async function getStaffAttendanceForReport() {
       .select(STAFF_ATTENDANCE_SHIFT_FIELDS),
     supabase
       .from("employees")
-      .select("id, emp_code, name, designation, department, status"),
+      .select("id, emp_code, name, designation, department, status, type"),
   ]);
   if (attRes.error) throw attRes.error;
   if (shiftRes.error) throw shiftRes.error;
@@ -493,6 +502,7 @@ export async function getStaffAttendanceForReport() {
       name:        emp.name || "Unknown",
       designation: emp.designation || "",
       department:  emp.department || "",
+      type:        EMPLOYEE_TYPE_LABELS[emp.type] || emp.type || "",
       empStatus:   emp.status || "",
       date:        row.date,
       dayIndex,
@@ -563,6 +573,7 @@ export function rollupStaffAttendance(rows) {
       name:         first.name,
       designation:  first.designation,
       department:   first.department,
+      type:         first.type,
       period:       periodLabel(sorted),
       daysRecorded: days.length,
       present,

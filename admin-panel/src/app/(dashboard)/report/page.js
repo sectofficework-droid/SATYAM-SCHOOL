@@ -601,6 +601,12 @@ const REPORT_CONFIGS = {
     quickFilters:[
       {key:"designation", label:"Designation",  options:["All"]},
       {key:"department",  label:"Department",   options:["All"]},
+      // Teaching staff and admin/management work under different attendance
+      // expectations (periods vs. fixed shifts), so they're reported
+      // separately rather than mixed into one set of totals. Non-Teaching
+      // and Media are grouped with Management on the "Admin / Management"
+      // side - Teaching is the only side that stands alone.
+      {key:"staffType",   label:"Staff Type",   options:["All","Teaching","Admin / Management"]},
       {key:"status",      label:"Status",       options:["All","Present","Absent","Leave"]},
       {key:"punchMethod", label:"Punch Method", options:["All","face","qr","code"]},
       {key:"punctuality", label:"Punctuality",  options:["All","Late","On Time"]},
@@ -614,6 +620,7 @@ const REPORT_CONFIGS = {
       {key:"name",        label:"Employee Name",  dflt:true  },
       {key:"designation", label:"Designation",    dflt:true  },
       {key:"department",  label:"Department",     dflt:false },
+      {key:"type",        label:"Staff Type",     dflt:false },
       {key:"status",      label:"Status",         dflt:true  },
       {key:"checkIn",     label:"Check-In",       dflt:true,  isDateTime:true },
       {key:"checkOut",    label:"Check-Out",      dflt:true,  isDateTime:true },
@@ -629,6 +636,8 @@ const REPORT_CONFIGS = {
       let d = sourceData || [];
       if (f.designation && f.designation !== "All") d = d.filter(x => x.designation === f.designation);
       if (f.department  && f.department  !== "All") d = d.filter(x => x.department  === f.department);
+      if (f.staffType === "Teaching")            d = d.filter(x => x.type === "Teaching");
+      if (f.staffType === "Admin / Management")  d = d.filter(x => x.type && x.type !== "Teaching");
       if (f.status      && f.status      !== "All") d = d.filter(x => x.status      === f.status);
       if (f.punchMethod && f.punchMethod !== "All") d = d.filter(x => x.punchMethod === f.punchMethod);
       if (f.punctuality && f.punctuality !== "All") d = d.filter(x => x.punctuality?.startsWith(f.punctuality === "Late" ? "Late" : "On Time"));
@@ -798,6 +807,7 @@ const STAFF_ATTENDANCE_EMPLOYEE_CONFIG = {
     {key:"name",          label:"Employee Name",  dflt:true  },
     {key:"designation",   label:"Designation",    dflt:true  },
     {key:"department",    label:"Department",     dflt:false },
+    {key:"type",          label:"Staff Type",     dflt:false },
     {key:"daysRecorded",  label:"Days Recorded", dflt:true,  isNumber:true },
     {key:"present",       label:"Present Days",   dflt:true,  isNumber:true },
     {key:"absent",        label:"Absent Days",    dflt:true,  isNumber:true },
@@ -1074,18 +1084,19 @@ export default function ReportPage() {
     rType === "staffAttendance"                   ? dbStaffAttendance :
     /* student, eligibility, grRegister, udiseEntry, penEntry */ dbStudents;
 
-  let data = ecfg.getData(sourceData, filters, dateFrom, dateTo, search);
+  // The per-employee view is a rollup OF the filtered day rows, not a separate
+  // query: run the daily config's getData (cfg, not ecfg - ecfg is the
+  // rollup config here, whose getData is a trivial passthrough) against the
+  // raw day rows first, then collapse below. That way every filter above
+  // (including the date range) narrows the rollup too, instead of being
+  // applied to rows that no longer carry those fields.
+  let data = (isStaffRollup ? cfg : ecfg).getData(sourceData, filters, dateFrom, dateTo, search);
   if (rType === "fees" && feesView === "status" && filters.status === "Partial" && partialMaxAmount !== "") {
     const maxAmt = Number(partialMaxAmount);
     if (!isNaN(maxAmt) && maxAmt >= 0) {
       data = data.filter(x => x.totalPaid <= maxAmt).sort((a, b) => b.totalPaid - a.totalPaid);
     }
   }
-  // The per-employee view is a rollup OF the filtered day rows, not a separate
-  // query: run the daily config's getData against the raw day rows first, then
-  // collapse. That way every filter above (including the date range) narrows
-  // the rollup too, instead of re-filters being applied to rows that no longer
-  // carry those fields.
   if (isStaffRollup) data = rollupStaffAttendance(data);
   // Prev/next-day arrows for the Staff Attendance (Kiosk) daily date field -
   // steps the single selected day, clamped so it can't move into the future.
