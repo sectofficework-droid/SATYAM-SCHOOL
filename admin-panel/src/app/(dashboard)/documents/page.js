@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import { getStudents } from "@/lib/studentService";
 import { getS3ViewUrl } from "@/lib/s3Upload";
 import { fmtDMY, toIsoDateLocal } from "@/lib/utils";
@@ -1249,7 +1249,12 @@ function MarksheetPreview({ student, sheet, mode, examNames, examName, logoUrl, 
 }
 
 // ── Bonafide Certificate: live preview (React, matches jsPDF output) ──────────
-// Shows one full page - the second printed page is identical.
+// Shows one full page - the second printed page is identical. Mirrors the
+// PDF side's shrink-to-fit: long student data (name, address, etc.) can wrap
+// the body paragraphs into more lines than the fixed base font size allows
+// for, so a layout effect measures the actual rendered height against the
+// card's inner border and shrinks the body font (lineHeight is unitless, so
+// it scales down with it) until the content stops overflowing the frame.
 function BonafidePreview({ student, logoUrl }) {
   const s = student || {};
   const paragraphs = bonafideParagraphs(s);
@@ -1259,15 +1264,37 @@ function BonafidePreview({ student, logoUrl }) {
       ? { textDecoration: "underline" }
       : undefined;
 
+  const cardRef = useRef(null);
+  const wrapperRef = useRef(null);
+  const bodyRef = useRef(null);
+  const BASE_BODY_FONT_SIZE = 8;
+  const MIN_BODY_FONT_SIZE = 5.5;
+
+  useLayoutEffect(() => {
+    const card = cardRef.current, wrapper = wrapperRef.current, bodyEl = bodyRef.current;
+    if (!card || !wrapper || !bodyEl) return;
+
+    let fontSize = BASE_BODY_FONT_SIZE;
+    bodyEl.style.fontSize = `${fontSize}px`;
+
+    const cardBottom = card.getBoundingClientRect().bottom - 12;
+    let guard = 0;
+    while (wrapper.getBoundingClientRect().bottom > cardBottom && fontSize > MIN_BODY_FONT_SIZE && guard < 40) {
+      fontSize -= 0.25;
+      bodyEl.style.fontSize = `${fontSize}px`;
+      guard++;
+    }
+  }, [s.enrollment, s.name, s.fatherName, s.gender, s.std, s.session, s.dob]);
+
   return (
-    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, position: "relative" }}>
+    <div ref={cardRef} style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, position: "relative" }}>
       <div style={{ position: "absolute", inset: 7, border: "1.4px solid #1a2b6b" }} />
       <div style={{ position: "absolute", inset: 9, border: "0.5px solid #1a2b6b" }} />
 
       {/* Content starts a fixed distance from the top and flows down - it
           isn't centered/stretched to fill the page; leftover space at the
           bottom is fine, matching drawBonafidePage(). */}
-      <div style={{ padding: "22px 22px 0" }}>
+      <div ref={wrapperRef} style={{ padding: "22px 22px 0" }}>
         {/* Letterhead matches the school's own reference (Header.png):
             logo, then "SATYAM STARS" / "INTERNATIONAL SCHOOL" as two big
             serif lines, a black rule under them, then the address
@@ -1306,7 +1333,7 @@ function BonafidePreview({ student, logoUrl }) {
         {/* Justified (both edges flush) except each paragraph's last line,
             matching drawWrappedLines() on the PDF side - the browser's own
             justify engine does the same job that function does manually. */}
-        <div style={{ fontSize: 8, lineHeight: 1.85, color: "#111", textAlign: "justify" }}>
+        <div ref={bodyRef} style={{ fontSize: BASE_BODY_FONT_SIZE, lineHeight: 1.85, color: "#111", textAlign: "justify" }}>
           {paragraphs.map((para, i) => (
             <p key={i} style={{ margin: "0 0 7px" }}>
               {para.map((seg, j) => <span key={j} style={segStyle(seg.mode)}>{seg.text} </span>)}
