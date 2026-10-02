@@ -836,15 +836,40 @@ function drawBonafidePage(doc, s, logoB64) {
 
   doc.setTextColor(0, 0, 0);
   doc.setFont("helvetica", "normal");
-  const bodyFontSize = 13.5;
-  doc.setFontSize(bodyFontSize);
-  const lineHeight = 8.6;
-  const paraGap = 6.5;
   const left = marginX + 5;
   const bodyWidth = PW - marginX * 2 - 10;
-  const wrappedParas = bonafideParagraphs(s).map(p => wrapParagraph(doc, p, bodyWidth));
+  const bodyStartY = headerRuleY + 16;
+  // Content below the body must still leave room for the paraGap(s) + the
+  // "+2.2 lineHeight" footer gap + the footer line itself before hitting the
+  // inner frame's bottom border (PH - 13) - this is the same budget the
+  // footer's own Math.min(..., PH - 25) assumes. Longer student data (name,
+  // address baked into the body text, etc.) can wrap into more lines than a
+  // fixed font size allows for, so shrink the body font/line-height (same
+  // pattern as the letterhead's fitFontSize above) until everything actually
+  // fits that budget, instead of letting it silently run past the frame.
+  const maxBodyBottom = PH - 45;
+  const paragraphTokens = bonafideParagraphs(s);
 
-  let y = headerRuleY + 16;
+  let bodyFontSize = 13.5;
+  let lineHeight = 8.6;
+  let paraGap = 6.5;
+  let wrappedParas, endY;
+  do {
+    doc.setFontSize(bodyFontSize);
+    wrappedParas = paragraphTokens.map(p => wrapParagraph(doc, p, bodyWidth));
+    endY = bodyStartY;
+    wrappedParas.forEach((lines, i) => {
+      endY += lines.length * lineHeight;
+      if (i < wrappedParas.length - 1) endY += paraGap;
+    });
+    if (endY <= maxBodyBottom || bodyFontSize <= 9.5) break;
+    bodyFontSize -= 0.5;
+    lineHeight -= 0.32;
+    paraGap -= 0.24;
+  } while (true);
+
+  doc.setFontSize(bodyFontSize);
+  let y = bodyStartY;
   wrappedParas.forEach((lines, i) => {
     y = drawWrappedLines(doc, lines, left, y, lineHeight, bodyWidth);
     if (i < wrappedParas.length - 1) y += paraGap;
