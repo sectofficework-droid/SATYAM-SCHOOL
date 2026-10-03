@@ -305,10 +305,17 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
                 ),
                 const SizedBox(height: 10),
                 GestureDetector(
-                  onTap: () => _sendLeaveWhatsApp(
-                    fromDate: fromDate, toDate: toDate, reason: reasonCtrl.text,
-                    managedRows: managedRows, teacherName: teacherName,
-                  ),
+                  onTap: () {
+                    if (_isToday(fromDate) && managementPhone != null && managementPhone.isNotEmpty && !informedViaCall) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Please call management first for a same-day leave'), behavior: SnackBarBehavior.floating));
+                      return;
+                    }
+                    _sendLeaveWhatsApp(
+                      fromDate: fromDate, toDate: toDate, reason: reasonCtrl.text,
+                      managedRows: managedRows, teacherName: teacherName,
+                    );
+                  },
                   child: Container(
                     height: 52,
                     decoration: BoxDecoration(
