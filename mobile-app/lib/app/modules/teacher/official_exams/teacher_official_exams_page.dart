@@ -12,10 +12,21 @@ class TeacherOfficialExamsPage extends StatefulWidget {
   final bool embedded;
   const TeacherOfficialExamsPage({super.key, this.embedded = false});
   @override
-  State<TeacherOfficialExamsPage> createState() => _TeacherOfficialExamsPageState();
+  State<TeacherOfficialExamsPage> createState() => TeacherOfficialExamsPageState();
 }
 
-class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
+// Public (not _-prefixed) so an embedding parent (TeacherExamsPage) can hold
+// a GlobalKey<TeacherOfficialExamsPageState> and drive the back-step flow
+// itself - needed because this page is always used with embedded: true in
+// practice (inside TeacherExamsPage's tab switcher), which skips this
+// class's own Scaffold/AppBar entirely, so its own leading-icon back
+// handling below never actually runs. Without this, the parent's default
+// back button/system back gesture pops the WHOLE pushed route straight to
+// wherever it was opened from (e.g. the dashboard), rather than stepping
+// back one screen inside this exam-entry flow - confirmed as a real,
+// reported bug (teacher fills one subject's marks, presses back, lands on
+// the dashboard instead of the subject list).
+class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
   // 'list' -> 'class' -> 'subject' -> 'entry' (Enter Marks scope)
   // 'list' -> 'overview' (My Class - All Subjects scope, class teachers only)
   String _step = 'list';
@@ -147,22 +158,39 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
             'marks_obtained': double.tryParse(_markCtrl[sid]!.text) ?? 0,
           };
         }).toList();
-    if (teacherId != null && sessionToken != null) {
-      await SupabaseService.saveOfficialMarksBatch(teacherId, sessionToken, records);
-    }
-    if (mounted) {
-      setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Row(children: [
-          Icon(Icons.check_circle, color: Colors.white, size: 18),
-          SizedBox(width: 8),
-          Text('Marks saved successfully!'),
-        ]),
-        backgroundColor: AppColors.green,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.all(16),
-      ));
+    try {
+      if (teacherId != null && sessionToken != null) {
+        await SupabaseService.saveOfficialMarksBatch(teacherId, sessionToken, records);
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Row(children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 18),
+            SizedBox(width: 8),
+            Text('Marks saved successfully!'),
+          ]),
+          backgroundColor: AppColors.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Row(children: [
+            Icon(Icons.error_outline, color: Colors.white, size: 18),
+            SizedBox(width: 8),
+            Expanded(child: Text('Failed to save marks. Please try again.')),
+          ]),
+          backgroundColor: AppColors.red,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
@@ -199,6 +227,11 @@ class _TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
       default:         return 'Official Exams';
     }
   }
+
+  // Public API for the embedding parent (TeacherExamsPage) - see the class-
+  // level comment above for why this is needed.
+  bool get isAtRoot => _step == 'list';
+  void goBack() => _goBack();
 
   void _goBack() {
     setState(() {
