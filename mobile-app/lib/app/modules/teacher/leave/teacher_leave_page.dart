@@ -54,6 +54,11 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
     final otherTeachers = employeeId != null
         ? await SupabaseService.fetchOtherTeachers(employeeId)
         : <Map<String, dynamic>>[];
+    // Fetched up front (not lazily on tap, like the WhatsApp send) because a
+    // same-day request needs to know on sheet-build whether a number even
+    // exists, to decide if the call-first gate applies at all.
+    final principalContact = await SupabaseService.fetchPrincipalContact();
+    final managementPhone = principalContact?['phone']?.toString().trim();
 
     // One row per (subject being covered, teacher covering it) - both
     // optional per row until the teacher actually picks something, so an
@@ -62,6 +67,11 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
     final managedRows = <Map<String, dynamic>>[
       {'id': 0, 'pairKey': null, 'teacherId': null, 'teacherName': null},
     ];
+
+    // Same-day leave (From Date = today) requires calling management
+    // before Submit unlocks - unless no number is on file, in which case
+    // there's nothing to gate on and the normal flow applies.
+    bool informedViaCall = false;
 
     if (!mounted) return;
     showModalBottomSheet(
@@ -105,7 +115,13 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
                       context: ctx, initialDate: DateTime.now(),
                       firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)),
                     );
-                    if (d != null) setS(() { fromDate = d; if (toDate == null || toDate!.isBefore(d)) toDate = d; });
+                    if (d != null) {
+                      setS(() {
+                        fromDate = d;
+                        if (toDate == null || toDate!.isBefore(d)) toDate = d;
+                        informedViaCall = false; // re-gate: date changed, same-day status may have changed
+                      });
+                    }
                   },
                   child: _dateBox('From Date', fromDate),
                 ),
@@ -130,6 +146,47 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
                     prefixIcon: Icon(Icons.edit_outlined, color: AppColors.navy, size: 20),
                   ),
                 ),
+                if (_isToday(fromDate) && managementPhone != null && managementPhone.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.orangeLight,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.orange.withValues(alpha: .4)),
+                    ),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      const Text('Same-Day Leave', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
+                      const SizedBox(height: 3),
+                      Text(
+                        "Leave for today needs a heads-up call to ${principalContact?['name'] ?? 'management'} before you can submit.",
+                        style: const TextStyle(fontSize: 11.5, color: AppColors.textLight),
+                      ),
+                      const SizedBox(height: 10),
+                      GestureDetector(
+                        onTap: () async {
+                          await _callManagement(managementPhone);
+                          setS(() => informedViaCall = true);
+                        },
+                        child: Container(
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: informedViaCall ? AppColors.green : AppColors.orange,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(informedViaCall ? Icons.check_circle_rounded : Icons.call_rounded, color: Colors.white, size: 18),
+                            const SizedBox(width: 8),
+                            Text(
+                              informedViaCall ? 'Informed Via Call' : 'Call ${principalContact?['name'] ?? 'Management'} ($managementPhone)',
+                              style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w700),
+                            ),
+                          ])),
+                        ),
+                      ),
+                    ]),
+                  ),
+                ],
                 if (classSubjectPairs.isNotEmpty) ...[
                   const SizedBox(height: 20),
                   const Text('Managed By (optional)', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.text)),
@@ -214,6 +271,11 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
                     if (reasonCtrl.text.trim().isEmpty) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                         content: Text('Please enter a reason'), behavior: SnackBarBehavior.floating));
+                      return;
+                    }
+                    if (_isToday(fromDate) && managementPhone != null && managementPhone.isNotEmpty && !informedViaCall) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Please call management first for a same-day leave'), behavior: SnackBarBehavior.floating));
                       return;
                     }
                     if (employeeId == null || sessionToken == null) return;
@@ -371,6 +433,17 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
     final waPhone = digits.length == 10 ? '91$digits' : digits; // bare 10-digit Indian numbers need a country code for wa.me
     final url = Uri.parse('https://wa.me/$waPhone?text=${Uri.encodeComponent(message)}');
     await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _callManagement(String rawPhone) async {
+    final digits = rawPhone.replaceAll(RegExp(r'\D'), '');
+    await launchUrl(Uri(scheme: 'tel', path: digits), mode: LaunchMode.externalApplication);
+  }
+
+  bool _isToday(DateTime? date) {
+    if (date == null) return false;
+    final now = DateTime.now();
+    return date.year == now.year && date.month == now.month && date.day == now.day;
   }
 
   Widget _dateBox(String label, DateTime? date) => Container(
