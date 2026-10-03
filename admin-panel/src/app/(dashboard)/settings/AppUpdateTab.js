@@ -14,7 +14,17 @@ function fmtDate(iso) {
   return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+// Must match exactly what each Flutter flavor sends via
+// AppConfig.lockedRole.name - the Attendance flavor locks UserRole.kiosk,
+// not 'attendance' (see mobile-app/lib/main_attendance.dart).
+const APPS = [
+  { value: "teacher", label: "Teacher App" },
+  { value: "student", label: "Student App" },
+  { value: "kiosk",   label: "Attendance Kiosk" },
+];
+
 export default function AppUpdateTab() {
+  const [app, setApp] = useState("teacher");
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -30,9 +40,9 @@ export default function AppUpdateTab() {
 
   const latest = history[0] || null;
 
-  function load() {
+  function load(forApp) {
     setLoading(true);
-    getAppVersionHistory()
+    getAppVersionHistory(forApp)
       .then(rows => {
         setHistory(rows);
         setVersionCode(String((rows[0]?.version_code || 0) + 1));
@@ -41,7 +51,7 @@ export default function AppUpdateTab() {
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(app); }, [app]);
 
   async function handlePublish() {
     setError("");
@@ -53,14 +63,17 @@ export default function AppUpdateTab() {
 
     setPublishing(true);
     try {
-      const key = `app/v${code}-${slugify(versionName)}.apk`;
+      // Flavor-prefixed - pubspec.yaml's version number is shared across all
+      // three flavors, so the same version code can legitimately belong to
+      // a different APK per app.
+      const key = `app/${app}-v${code}-${slugify(versionName)}.apk`;
       await uploadFileToS3Presigned(file, key);
-      await publishAppVersion({ versionName: versionName.trim(), versionCode: code, apkKey: key, releaseNotes, forceUpdate });
+      await publishAppVersion({ app, versionName: versionName.trim(), versionCode: code, apkKey: key, releaseNotes, forceUpdate });
       setPublished(true);
       setFile(null);
       setReleaseNotes("");
       setForceUpdate(false);
-      load();
+      load(app);
       setTimeout(() => setPublished(false), 3000);
     } catch (e) {
       setError(e.message || "Failed to publish this version.");
@@ -86,6 +99,18 @@ export default function AppUpdateTab() {
         </div>
 
         <div className="flex flex-col gap-3.5">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">App</label>
+            <div className="flex gap-1 bg-gray-100 rounded-lg p-1 w-fit">
+              {APPS.map(a => (
+                <button key={a.value} onClick={() => setApp(a.value)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${app === a.value ? "bg-white text-school-navy shadow-sm" : "text-gray-500 hover:text-gray-700"}`}>
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">APK file</label>
             <input type="file" accept=".apk"

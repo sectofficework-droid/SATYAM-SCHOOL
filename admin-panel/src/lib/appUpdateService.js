@@ -4,19 +4,27 @@ import supabase from "./supabase";
 // installed build number against the highest version_code here and, if
 // behind, offers an update - see SUPABASE_APP_VERSIONS.sql.
 
-export async function getAppVersionHistory() {
+// app matches exactly what each Flutter flavor sends via
+// AppConfig.lockedRole.name in app_update.dart's checkForAppUpdate() -
+// 'teacher' / 'student' / 'kiosk' (the Attendance flavor locks UserRole.kiosk,
+// not 'attendance' - see main_attendance.dart). app_versions.app is NOT NULL
+// with no default, so every one of these must always pass it.
+
+export async function getAppVersionHistory(app) {
   const { data, error } = await supabase
     .from("app_versions")
     .select("*")
+    .eq("app", app)
     .order("version_code", { ascending: false });
   if (error) throw error;
   return data || [];
 }
 
-export async function getLatestAppVersion() {
+export async function getLatestAppVersion(app) {
   const { data, error } = await supabase
     .from("app_versions")
     .select("*")
+    .eq("app", app)
     .order("version_code", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -24,8 +32,9 @@ export async function getLatestAppVersion() {
   return data;
 }
 
-export async function publishAppVersion({ versionName, versionCode, apkKey, releaseNotes, forceUpdate }) {
+export async function publishAppVersion({ app, versionName, versionCode, apkKey, releaseNotes, forceUpdate }) {
   const { error } = await supabase.from("app_versions").insert({
+    app,
     version_name:  versionName,
     version_code:  versionCode,
     apk_key:       apkKey,
