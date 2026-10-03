@@ -151,6 +151,72 @@ export async function getMarksheetsForClass(students, className) {
   return withRank(sheets);
 }
 
+// Same shape as getSingleExamMarksheet, but for the Exams report (Documents
+// → Report, not the Marksheet PDF) - keeps the distinction between "not
+// entered yet" and a genuine 0 instead of collapsing both to 0, since the
+// report needs to flag incomplete entry rather than silently show a false
+// zero. Totals/percentage/grade/rank still treat a missing mark as 0 in the
+// arithmetic, same numbers the Marksheet PDF would show for this student -
+// only the per-subject cell and the new marksEntered/subjectsTotal count
+// distinguish "pending" from "scored zero".
+export async function getExamReportForClass(students, className, examId) {
+  if (!students.length) return [];
+
+  const subjects = await getClassSubjects(className);
+
+  const { data: configRows, error: configErr } = await supabase
+    .from("official_exam_subject_config")
+    .select("subject_name, max_marks")
+    .eq("exam_id", examId)
+    .eq("class_name", className);
+  if (configErr) throw configErr;
+  const maxBySubject = {};
+  (configRows || []).forEach(c => { maxBySubject[c.subject_name] = Number(c.max_marks) || 100; });
+
+  const { data: markRows, error: markErr } = await supabase
+    .from("official_exam_marks")
+    .select("student_id, subject_name, marks_obtained")
+    .eq("exam_id", examId)
+    .eq("class_name", className);
+  if (markErr) throw markErr;
+  const marksByStudentSubject = {};
+  (markRows || []).forEach(m => {
+    marksByStudentSubject[`${m.student_id}:${m.subject_name}`] = Number(m.marks_obtained) || 0;
+  });
+
+  const sheets = students.map(s => {
+    let totalObtained = 0, totalMax = 0, marksEntered = 0;
+    const subjectRows = subjects.map(subject => {
+      const max = maxBySubject[subject] ?? 100;
+      const key = `${s._studentId}:${subject}`;
+      const entered = Object.prototype.hasOwnProperty.call(marksByStudentSubject, key);
+      const obtained = entered ? marksByStudentSubject[key] : null;
+      if (entered) marksEntered += 1;
+      totalObtained += obtained || 0;
+      totalMax += max;
+      const pct = max ? ((obtained || 0) / max) * 100 : 0;
+      return { subject, obtained, max, grade: entered ? gradeFor(pct) : null };
+    });
+
+    const percentage = totalMax ? (totalObtained / totalMax) * 100 : 0;
+
+    return {
+      studentId:     s._studentId,
+      name:          s.name,
+      subjectRows,
+      totalObtained,
+      totalMax,
+      percentage,
+      grade:         gradeFor(percentage),
+      result:        percentage >= 33 ? "Pass" : "Fail",
+      marksEntered,
+      subjectsTotal: subjects.length,
+    };
+  });
+
+  return withRank(sheets);
+}
+
 // Same as getMarksheetsForClass but for a single official exam - subjectRows
 // has one {obtained,max,grade} entry per subject instead of a per-exam array.
 export async function getSingleExamMarksheet(students, className, examId) {
