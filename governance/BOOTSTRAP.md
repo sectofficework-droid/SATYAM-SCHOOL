@@ -308,7 +308,52 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-10-01 — Staff Attendance (Kiosk) report UX, app-wide IST date-bug sweep, delete-action root cause + REQ-SEC-010 closure.**
+**Current — Session 2026-10-03 — Standing QA test teacher account ("ZZ-TEST Satyam", EMP999), full class access without impersonating a real account.**
+User wanted a dedicated test account with full teacher+admin access to
+everything (all subjects/classes), explicitly ruling out the existing Admin
+Access Code impersonation feature (2026-08-28) since that still means
+logging into a real person's account. This is the second attempt at this
+pattern — the first (`ADMIN TESTSTUDENT`/`ADMIN TESTSTAFF`, an isolated
+"ADMIN QA" class) was deleted 2026-08-28 in favor of impersonation; this
+time the requirement is different (see every real class, not an isolated
+empty one).
+
+Traced how `is_teacher_of_class()` (the real server-side gate behind every
+REQ-SEC-002 Group A/B/C RPC) actually resolves access **before** building
+anything: `class_teacher_of_section_id` / `section_supporting_teachers` /
+`timetables.teacher` name-match — **not** `subject_mappings`, which only
+drives the Flutter UI's own picker defaults. Flagged one real tradeoff to
+the user before acting: populating this account's "My Timetable" tab for
+every class would require writing its name into the shared `timetables`
+grid, which every real student/teacher reads directly as the live schedule
+— user confirmed to leave that one tab empty rather than touch it.
+
+Built `mobile-app/SUPABASE_ADD_QA_TEST_TEACHER_FULL_ACCESS.sql` (applied
+live): new employee `EMP999` / "ZZ-TEST Satyam" (`999` matches this
+project's existing reserved/test-number convention — `ADMIN QA`
+sort_order=999, `EMP900` "Play Store Reviewer"), `subject_mappings` from
+every real `class_subjects` row, and a `section_supporting_teachers` row for
+all 12 real active sections (the actual permission grant). Live-verified:
+`is_teacher_of_class` true for all 12; false for `10th`/`11th -
+Commerce`/`12th - Commerce` — those three classes have **zero sections in
+production at all**, a pre-existing gap unrelated to this task. Admin
+Workspace access (management tier) needs a real Supabase Auth login, which
+needs the service-role key — not touched directly; instead drove the admin
+panel's own "Add User" + "Link to employee" UI via Claude in Chrome (user's
+own already-logged-in session) to create "ZZ-TEST Satyam Admin" and link it
+to EMP999. Live-verified end to end: `teacher_login('EMP999','Satyam@123')`
+returns `admin_role: {linked: true, tier: "management"}`. No Dart/admin-
+panel code touched — pure data/account setup, nothing to commit. Full
+detail: `work-log\LOG-2026-10-03.md`.
+
+**Note:** this checkpoint follows directly from 2026-10-01 below — the
+2026-10-02 session (5 sub-sessions: Attendance Overview, Diagnostics viewer,
+Report Builder, on-device audit + fixes) has its own `work-log\
+LOG-2026-10-02.md` but was never folded into this file's checkpoint
+rotation before now; flagged, not backfilled further than this note, per
+this file's own "flagged not backfilled" convention used elsewhere.
+
+**Prior — Session 2026-10-01 — Staff Attendance (Kiosk) report UX, app-wide IST date-bug sweep, delete-action root cause + REQ-SEC-010 closure.**
 1. Staff Attendance (Kiosk) report now defaults to today's date (prev/next
    arrows, right disabled at today) and a Staff Type filter ("School Staff"
    [Teaching + Care Taker] vs "Admin & Management"), defaulted to School
