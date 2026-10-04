@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Overrides the shared main/res white background (#FFFFFF) for Teacher only,
+     so the transparent safe-zone margin added around ic_launcher_foreground.png
+     blends into the artwork's own blue instead of showing a white ring. -->
+<resources>
+    <color name="ic_launcher_background">#003FA8</color>
+</resources>
