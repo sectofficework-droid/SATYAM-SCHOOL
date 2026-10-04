@@ -32,6 +32,28 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
   bool _saving        = false;
   bool _isClassTeacher = false;
 
+  // Marks above the exam's max_marks (or negative) - same reported bug as
+  // Official Exams: nothing stopped it from being saved. _maxMarks here is
+  // whatever the teacher set as "Full Marks" when creating this monthly
+  // test (see _showCreateExamSheet), not an admin-wide setting.
+  final Set<String> _invalidIds = {};
+  num get _maxMarks => (_selExam?['max_marks'] as num?) ?? 100;
+
+  bool _isMarkValid(String text) {
+    if (text.isEmpty) return true;
+    final v = double.tryParse(text);
+    return v != null && v >= 0 && v <= _maxMarks;
+  }
+
+  void _onMarkChanged(String studentId, String value) {
+    final nowInvalid = !_isMarkValid(value);
+    if (nowInvalid != _invalidIds.contains(studentId)) {
+      setState(() {
+        if (nowInvalid) { _invalidIds.add(studentId); } else { _invalidIds.remove(studentId); }
+      });
+    }
+  }
+
   // Class -> subjects this teacher actually teaches there, from the real
   // Timetable (see SupabaseService.fetchTeacherSubjectsByClass) - drives the
   // Create Monthly Test sheet's Subject dropdown so it only offers what this
@@ -127,7 +149,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
       ));
       return;
     }
-    setState(() { _selExam = exam; _markCtrl.clear(); _students = []; _loadingRoster = true; });
+    setState(() { _selExam = exam; _markCtrl.clear(); _invalidIds.clear(); _students = []; _loadingRoster = true; });
 
     final profile     = AuthService.to.profile.value ?? {};
     final employeeId  = profile['id'] as String?;
@@ -328,10 +350,6 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
   }
 
   Future<void> _saveMarks() async {
-    setState(() => _saving = true);
-    final profile   = AuthService.to.profile.value ?? {};
-    final teacherId = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
     final records   = _students
         .where((s) => _markCtrl[s['id']]?.text.isNotEmpty == true)
         .map((s) {
@@ -341,6 +359,30 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
             'marks_obtained': double.tryParse(_markCtrl[sid]!.text) ?? 0,
           };
         }).toList();
+
+    // Reported bug: a mark above the exam's Full Marks (or negative) saved
+    // with no pushback. Block outright rather than silently clamping - this
+    // is almost always a typo the teacher needs to notice.
+    final badCount = records.where((r) {
+      final m = r['marks_obtained'] as num;
+      return m < 0 || m > _maxMarks;
+    }).length;
+    if (badCount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('$badCount mark${badCount == 1 ? '' : 's'} above the maximum '
+            '($_maxMarks) or negative - fix the highlighted field${badCount == 1 ? '' : 's'} before saving.'),
+        backgroundColor: AppColors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ));
+      return;
+    }
+
+    setState(() => _saving = true);
+    final profile   = AuthService.to.profile.value ?? {};
+    final teacherId = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     try {
       if (teacherId != null && sessionToken != null) {
         await SupabaseService.saveMarksBatch(teacherId, sessionToken, _selExam!['id'] as String, records);
@@ -687,25 +729,26 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                       width: 88,
                       child: TextField(
                         controller: _markCtrl[id],
+                        onChanged: (v) => _onMarkChanged(id, v),
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                        style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: _invalidIds.contains(id) ? AppColors.red : null),
                         decoration: InputDecoration(
                           hintText: '—',
                           hintStyle: const TextStyle(color: AppColors.textHint),
                           contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: AppColors.border),
+                            borderSide: BorderSide(color: _invalidIds.contains(id) ? AppColors.red : AppColors.border, width: _invalidIds.contains(id) ? 1.5 : 1),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: AppColors.navy, width: 2),
+                            borderSide: BorderSide(color: _invalidIds.contains(id) ? AppColors.red : AppColors.navy, width: 2),
                           ),
                           filled: true,
                           fillColor: AppColors.bg,
                           suffixText: '/$maxMarks',
-                          suffixStyle: const TextStyle(fontSize: 10, color: AppColors.textHint),
+                          suffixStyle: TextStyle(fontSize: 10, color: _invalidIds.contains(id) ? AppColors.red : AppColors.textHint),
                         ),
                       ),
                     ),
