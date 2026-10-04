@@ -69,11 +69,16 @@ async function handleSyncAbsent() {
     // 3. Check if today is a working day (calendar events)
     const { data: events } = await supabaseAdmin
       .from("school_calendar_events")
-      .select("category")
+      .select("category, applies_to_classes")
       .eq("event_date", todayDate);
 
-    const isWorkingOverride = events?.some((e) => e.category === "working_day");
-    const isHoliday = events?.some((e) => e.category === "holiday" || e.category === "govt");
+    // Staff have no "class", so only a school-wide event (applies_to_classes
+    // null/empty) can affect them - a working_day/holiday scoped to specific
+    // classes (e.g. a Sunday makeup class for one grade) must not turn that
+    // Sunday into a staff working day or exempt staff from it.
+    const isGlobal = (e) => !e.applies_to_classes || e.applies_to_classes.length === 0;
+    const isWorkingOverride = events?.some((e) => e.category === "working_day" && isGlobal(e));
+    const isHoliday = events?.some((e) => (e.category === "holiday" || e.category === "govt") && isGlobal(e));
     const weekday = new Date(`${todayDate}T00:00:00`).getDay(); // 0 = Sunday
 
     if (!isWorkingOverride) {

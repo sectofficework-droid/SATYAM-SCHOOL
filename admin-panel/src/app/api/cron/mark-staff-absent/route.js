@@ -24,7 +24,14 @@ export const GET = withDiagnostics(async function GET(request) {
   const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date());
 
   try {
-    const calendarEvents = await getCalendarEvents();
+    // Staff have no "class", so a working_day override scoped to specific
+    // classes (e.g. a Sunday makeup class for one grade) must not count here
+    // - only a school-wide override (classes null/empty) can turn a Sunday
+    // into a working day for staff. isWorkingDay's own className=null
+    // fallback treats every event as applicable regardless of scope, which
+    // is right for "no class context to check against" call sites but wrong
+    // here, so the class-scoped events are filtered out before the call.
+    const calendarEvents = (await getCalendarEvents()).filter(e => !e.classes || e.classes.length === 0);
     if (!isWorkingDay(today, calendarEvents, null)) {
       return NextResponse.json({ date: today, marked: 0, reason: "non-working day" });
     }

@@ -128,11 +128,16 @@ export async function POST(request) {
         if (curTotalMins >= cutTotalMins) {
           const { data: events } = await supabaseAdmin
             .from("school_calendar_events")
-            .select("category")
+            .select("category, applies_to_classes")
             .eq("event_date", todayDate);
 
-          const isWorking = events?.some((e) => e.category === "working_day");
-          const isHoliday = events?.some((e) => e.category === "holiday" || e.category === "govt");
+          // Staff have no "class" - a working_day/holiday scoped to specific
+          // classes (e.g. a Sunday makeup class for one grade) must not
+          // affect staff absence, same fix as the mark-staff-absent cron and
+          // the sync-absent route.
+          const isGlobal = (e) => !e.applies_to_classes || e.applies_to_classes.length === 0;
+          const isWorking = events?.some((e) => e.category === "working_day" && isGlobal(e));
+          const isHoliday = events?.some((e) => (e.category === "holiday" || e.category === "govt") && isGlobal(e));
           const weekday = new Date(`${todayDate}T00:00:00`).getDay();
 
           if (isWorking || (weekday !== 0 && !isHoliday)) {
