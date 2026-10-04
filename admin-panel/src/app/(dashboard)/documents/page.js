@@ -959,7 +959,6 @@ function drawMarksheetHeader(doc, s, title, logoB64) {
   ];
   const infoRight = [
     ["Session", s.session || "—"],
-    ["DOB", fmtDMY(s.dob) || "—"],
   ];
   infoLeft.forEach(([label, val], i) => {
     doc.setFont("helvetica", "bold");
