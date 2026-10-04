@@ -434,7 +434,18 @@ class _FaceEnrollCapturePageState extends State<FaceEnrollCapturePage> {
     } catch (e, st) {
       debugPrint('Face enroll capture failed: $e\n$st');
       if (!mounted) return;
-      setState(() { _busy = false; _stage = _Stage.camera; _message = 'Something went wrong. Please try again.'; });
+      // REQ-BUG-064 (2026-10-04): resetting to the camera stage without
+      // clearing _embeddings left it at _totalShots elements whenever this
+      // catch fired after the last shot (e.g. saveFaceEmbedding network
+      // failure inside _finishEnrollment) - the next detected frame then
+      // indexed _prompts[_embeddings.length] past the end of _prompts,
+      // throwing RangeError on a ~300ms loop with no recovery short of
+      // restarting the whole enrollment. Same reset already done correctly
+      // on the "cancelled" duplicate-check path below.
+      setState(() {
+        _busy = false; _stage = _Stage.camera; _message = 'Something went wrong. Please try again.';
+        _embeddings.clear(); _poses.clear();
+      });
     }
   }
 

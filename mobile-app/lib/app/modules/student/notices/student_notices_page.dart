@@ -15,17 +15,25 @@ class _StudentNoticesPageState extends State<StudentNoticesPage> {
   List<Map<String, dynamic>> _notices = [];
   String _typeFilter = 'All';
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-10-04): no try/catch at all - any network blip left
+  // this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    // A student should see notices meant for students, plus anything meant
-    // for everyone - not notices aimed only at staff/management.
-    final notices = await SupabaseService.fetchNotices(
-      audiences: const ['Everyone', 'All Students', 'Parents'],
-    );
-    if (mounted) setState(() { _notices = notices; _loading = false; });
+    setState(() { _loading = true; _error = null; });
+    try {
+      // A student should see notices meant for students, plus anything meant
+      // for everyone - not notices aimed only at staff/management.
+      final notices = await SupabaseService.fetchNotices(
+        audiences: const ['Everyone', 'All Students', 'Parents'],
+      );
+      if (mounted) setState(() { _notices = notices; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load notices.'; });
+    }
   }
 
   List<Map<String, dynamic>> get _filtered => _typeFilter == 'All'
@@ -37,6 +45,8 @@ class _StudentNoticesPageState extends State<StudentNoticesPage> {
     final filtered = _filtered;
     final listArea = _loading
         ? const Center(child: CircularProgressIndicator())
+        : _error != null
+            ? Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)))
         : filtered.isEmpty
             ? const Center(child: Text('No notices.', style: TextStyle(color: AppColors.textLight)))
             : RefreshIndicator(

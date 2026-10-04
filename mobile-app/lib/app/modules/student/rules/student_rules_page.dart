@@ -13,19 +13,30 @@ class StudentRulesPage extends StatefulWidget {
 class _StudentRulesPageState extends State<StudentRulesPage> {
   String _content = '';
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-10-04): no try/catch at all - any network blip left
+  // this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final content = await SupabaseService.fetchSchoolRules('student');
-    if (mounted) setState(() { _content = content; _loading = false; });
+    setState(() { _loading = true; _error = null; });
+    try {
+      final content = await SupabaseService.fetchSchoolRules('student');
+      if (mounted) setState(() { _content = content; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load rules.'; });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final body = _loading ? _buildShimmer() : _buildContent();
+    final body = _loading
+        ? _buildShimmer()
+        : _error != null
+            ? Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)))
+            : _buildContent();
     if (widget.embedded) return body;
     return Scaffold(
       appBar: AppBar(

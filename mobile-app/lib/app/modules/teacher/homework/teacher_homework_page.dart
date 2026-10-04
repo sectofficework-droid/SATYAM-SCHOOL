@@ -241,16 +241,30 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
                       return;
                     }
                     final sessionToken = AuthService.to.sessionToken;
-                    if (sessionToken == null) return;
-                    await SupabaseService.createHomework({
-                      'class':       selectedClass,
-                      'subject':     selectedSubject,
-                      'description': descCtrl.text.trim(),
-                      'due_date':    DateFormat('yyyy-MM-dd').format(dueDate!),
-                      'created_by':  profile['id'],
-                    }, sessionToken);
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    _load();
+                    if (sessionToken == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Session error - please sign in again.'), behavior: SnackBarBehavior.floating));
+                      return;
+                    }
+                    // REQ-BUG-069 (2026-10-04): no try/catch at all - a
+                    // network blip left the sheet open with no feedback and
+                    // silently dropped the homework.
+                    try {
+                      await SupabaseService.createHomework({
+                        'class':       selectedClass,
+                        'subject':     selectedSubject,
+                        'description': descCtrl.text.trim(),
+                        'due_date':    DateFormat('yyyy-MM-dd').format(dueDate!),
+                        'created_by':  profile['id'],
+                      }, sessionToken);
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      _load();
+                    } catch (e) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                          content: Text('Failed to assign homework. Please try again.'), behavior: SnackBarBehavior.floating));
+                      }
+                    }
                   },
                   child: Container(
                     height: 52,

@@ -138,20 +138,36 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
   }
 
   Future<void> _save() async {
-    setState(() => _saving = true);
     final profile   = AuthService.to.profile.value ?? {};
     final teacherId = profile['id'] as String?;
     final sessionToken = AuthService.to.sessionToken;
+    // REQ-BUG-066 (2026-10-04): this guard used to let the method fall
+    // through to the unconditional "saved" success state below with no
+    // RPC call ever made - a stale/null session silently discarded the
+    // whole attendance mark while the UI said it saved. Fail loudly instead.
+    if (teacherId == null || sessionToken == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Session error - please sign in again.'), backgroundColor: AppColors.red, behavior: SnackBarBehavior.floating));
+      return;
+    }
+    setState(() => _saving = true);
     final className = profile['class_name'] as String? ?? '';
     final dateStr   = DateFormat('yyyy-MM-dd').format(_date);
     final records   = _students.map((s) => {
       'student_id': s['id'],
       'status':     _status[s['id'] as String] ?? 'P',
     }).toList();
-    if (teacherId != null && sessionToken != null) {
+    try {
       await SupabaseService.saveAttendanceBatch(
         className: className, sessionToken: sessionToken, date: dateStr, employeeId: teacherId, records: records,
       );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to save attendance: $e'), backgroundColor: AppColors.red, behavior: SnackBarBehavior.floating));
+      }
+      return;
     }
     _countdownTimer?.cancel();
     if (mounted) {

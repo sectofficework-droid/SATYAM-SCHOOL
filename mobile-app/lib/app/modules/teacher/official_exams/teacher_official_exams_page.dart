@@ -52,6 +52,22 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
   bool _loadingRoster = false;
   bool _saving = false;
 
+  // REQ-BUG-067 (2026-10-04): _markCtrl.clear() alone leaked one
+  // TextEditingController per student every time the teacher switched
+  // subject/exam (this class never overrode dispose() either, so even
+  // closing the page leaked whatever was left) - dispose each controller
+  // before dropping it from the map.
+  void _clearMarkControllers() {
+    for (final c in _markCtrl.values) { c.dispose(); }
+    _markCtrl.clear();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _markCtrl.values) { c.dispose(); }
+    super.dispose();
+  }
+
   // Marks above max_marks (set by admin in Settings -> Exams) or negative -
   // reported by teachers as a bug (nothing stopped e.g. 90/50 being saved).
   // Tracked reactively so the field itself turns red as soon as it happens,
@@ -137,7 +153,8 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
   }
 
   Future<void> _selectSubject(String subject) async {
-    setState(() { _selectedSubject = subject; _step = 'entry'; _loadingRoster = true; _students = []; _markCtrl.clear(); _invalidIds.clear(); });
+    _clearMarkControllers();
+    setState(() { _selectedSubject = subject; _step = 'entry'; _loadingRoster = true; _students = []; _invalidIds.clear(); });
     final examId = _selectedExam!['id'] as String;
     final profile = AuthService.to.profile.value ?? {};
     final employeeId = profile['id'] as String?;
@@ -196,14 +213,21 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
       return;
     }
 
-    setState(() => _saving = true);
     final profile   = AuthService.to.profile.value ?? {};
     final teacherId = profile['id'] as String?;
     final sessionToken = AuthService.to.sessionToken;
+    // REQ-BUG-066 (2026-10-04): this guard used to let the method fall
+    // through to the unconditional "saved" success state below with no RPC
+    // call ever made - a stale/null session silently discarded the marks
+    // while the UI said it saved. Fail loudly instead, before the try block.
+    if (teacherId == null || sessionToken == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Session error - please sign in again.'), backgroundColor: AppColors.red, behavior: SnackBarBehavior.floating));
+      return;
+    }
+    setState(() => _saving = true);
     try {
-      if (teacherId != null && sessionToken != null) {
-        await SupabaseService.saveOfficialMarksBatch(teacherId, sessionToken, records);
-      }
+      await SupabaseService.saveOfficialMarksBatch(teacherId, sessionToken, records);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: const Row(children: [
@@ -276,6 +300,7 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
   void goBack() => _goBack();
 
   void _goBack() {
+    if (_step == 'entry') _clearMarkControllers();
     setState(() {
       switch (_step) {
         case 'class':
@@ -285,7 +310,7 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
           _step = 'class'; _subjects = [];
           break;
         case 'entry':
-          _step = 'subject'; _students = []; _markCtrl.clear();
+          _step = 'subject'; _students = [];
           break;
         case 'overview':
           _step = 'list'; _selectedExam = null;

@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/supabase_service.dart';
-import '../../../../core/utils/notice_types.dart';
 import '../../../../common/widgets/notice_type_filter.dart';
+import '../../../../common/widgets/notice_card.dart';
 
 class TeacherNoticesPage extends StatefulWidget {
   final bool embedded;
@@ -17,18 +16,25 @@ class _TeacherNoticesPageState extends State<TeacherNoticesPage> {
   List<Map<String, dynamic>> _notices = [];
   String _typeFilter = 'All';
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-10-04): no try/catch at all - any network blip left
+  // this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() => _loading = true);
-    // A teacher should see notices meant for staff, plus anything meant for
-    // everyone - not notices aimed only at students/parents.
-    final notices = await SupabaseService.fetchNotices(
-      audiences: const ['Everyone', 'All Staff', 'Management'],
-    );
-    if (mounted) setState(() { _notices = notices; _loading = false; });
+    setState(() { _loading = true; _error = null; });
+    try {
+      // A teacher should see notices meant for staff, plus anything meant for
+      // everyone - not notices aimed only at students/parents.
+      final notices = await SupabaseService.fetchNotices(
+        audiences: const ['Everyone', 'All Staff', 'Management'],
+      );
+      if (mounted) setState(() { _notices = notices; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load notices.'; });
+    }
   }
 
   List<Map<String, dynamic>> get _filtered => _typeFilter == 'All'
@@ -42,6 +48,8 @@ class _TeacherNoticesPageState extends State<TeacherNoticesPage> {
 
     if (_loading) {
       listArea = _buildShimmer();
+    } else if (_error != null) {
+      listArea = Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)));
     } else if (filtered.isEmpty) {
       listArea = _emptyState();
     } else {
@@ -58,7 +66,7 @@ class _TeacherNoticesPageState extends State<TeacherNoticesPage> {
             curve: Curves.easeOut,
             builder: (_, v, child) => Opacity(opacity: v,
               child: Transform.translate(offset: Offset(0, 20 * (1-v)), child: child)),
-            child: _NoticeCard(notice: filtered[i]),
+            child: NoticeCard(notice: filtered[i]),
           ),
         ),
       );
@@ -108,74 +116,4 @@ class _TeacherNoticesPageState extends State<TeacherNoticesPage> {
       const Text('School notices will appear here.', style: TextStyle(fontSize: 13, color: AppColors.textLight)),
     ]),
   ));
-}
-
-class _NoticeCard extends StatelessWidget {
-  final Map<String, dynamic> notice;
-  const _NoticeCard({required this.notice});
-
-  Color get _color => noticeTypeColor(notice['type'] as String?);
-  Color get _lightColor => noticeTypeLight(notice['type'] as String?);
-
-  @override
-  Widget build(BuildContext context) {
-    // posted_date is the date admin set for the notice; created_at (insert
-    // time) is only a fallback for older rows that predate posted_date.
-    final dateStr = (notice['posted_date'] ?? notice['created_at']) as String?;
-    final date = dateStr != null ? DateTime.tryParse(dateStr) : null;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: AppShadows.card,
-      ),
-      child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Container(
-          width: 5,
-          decoration: BoxDecoration(
-            color: _color,
-            borderRadius: const BorderRadius.horizontal(left: Radius.circular(16)),
-          ),
-        ),
-        Expanded(child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(color: _lightColor, borderRadius: BorderRadius.circular(12)),
-              child: Icon(Icons.campaign_rounded, color: _color, size: 22),
-            ),
-            const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              if ((notice['type'] ?? '').toString().isNotEmpty)
-                Container(
-                  margin: const EdgeInsets.only(bottom: 5),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(color: _lightColor, borderRadius: BorderRadius.circular(6)),
-                  child: Text(notice['type'].toString(),
-                    style: TextStyle(color: _color, fontSize: 11, fontWeight: FontWeight.w700)),
-                ),
-              Text(notice['title'] ?? '',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: AppColors.text)),
-              if ((notice['content'] ?? '').toString().isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(notice['content'].toString(), maxLines: 2, overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.4)),
-              ],
-              if (date != null) ...[
-                const SizedBox(height: 6),
-                Row(children: [
-                  const Icon(Icons.access_time_rounded, size: 12, color: AppColors.textHint),
-                  const SizedBox(width: 4),
-                  Text(DateFormat('d MMM yyyy').format(date),
-                    style: const TextStyle(fontSize: 11, color: AppColors.textHint)),
-                ]),
-              ],
-            ])),
-          ]),
-        )),
-      ])),
-    );
-  }
 }

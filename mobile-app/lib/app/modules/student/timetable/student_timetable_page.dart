@@ -18,33 +18,40 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> {
   Map<String, dynamic>? _dayGroupWeekdays;
   Map<String, List<Map<String, dynamic>>> _rowsByGroupSlot = {};
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-10-04): no try/catch at all - any network blip left
+  // this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final profile   = AuthService.to.profile.value ?? {};
-    final className = profile['class_name'] as String? ?? '';
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile   = AuthService.to.profile.value ?? {};
+      final className = profile['class_name'] as String? ?? '';
 
-    final year = await SupabaseService.fetchCurrentAcademicYearLabel();
-    final defs = await SupabaseService.fetchPeriodDefs();
-    final weekdaysMap = await SupabaseService.fetchDayGroupWeekdays();
-    final rows = (year != null && className.isNotEmpty)
-        ? await SupabaseService.fetchTimetableForClass(year, className)
-        : <Map<String, dynamic>>[];
+      final year = await SupabaseService.fetchCurrentAcademicYearLabel();
+      final defs = await SupabaseService.fetchPeriodDefs();
+      final weekdaysMap = await SupabaseService.fetchDayGroupWeekdays();
+      final rows = (year != null && className.isNotEmpty)
+          ? await SupabaseService.fetchTimetableForClass(year, className)
+          : <Map<String, dynamic>>[];
 
-    final map = <String, List<Map<String, dynamic>>>{};
-    for (final r in rows) {
-      map.putIfAbsent('${r['day_group']}|${r['slot_id']}', () => []).add(r);
-    }
-    if (mounted) {
-      setState(() {
-      _periodDefs = defs;
-      _dayGroupWeekdays = weekdaysMap;
-      _rowsByGroupSlot = map;
-      _loading = false;
-    });
+      final map = <String, List<Map<String, dynamic>>>{};
+      for (final r in rows) {
+        map.putIfAbsent('${r['day_group']}|${r['slot_id']}', () => []).add(r);
+      }
+      if (mounted) {
+        setState(() {
+          _periodDefs = defs;
+          _dayGroupWeekdays = weekdaysMap;
+          _rowsByGroupSlot = map;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load timetable.'; });
     }
   }
 
@@ -52,6 +59,8 @@ class _StudentTimetablePageState extends State<StudentTimetablePage> {
   Widget build(BuildContext context) {
     final body = _loading
         ? const Center(child: CircularProgressIndicator(color: AppColors.navy))
+        : _error != null
+            ? Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)))
         : TimetableView(
             periodDefs: _periodDefs,
             dayGroupWeekdays: _dayGroupWeekdays,

@@ -14,6 +14,7 @@ class StudentOfficialResultsPage extends StatefulWidget {
 class _StudentOfficialResultsPageState extends State<StudentOfficialResultsPage> {
   List<Map<String, dynamic>> _results = [];
   bool _loading = true;
+  String? _error;
   final Set<String> _expanded = {};
 
   @override
@@ -28,8 +29,11 @@ class _StudentOfficialResultsPageState extends State<StudentOfficialResultsPage>
     return todayDay.isBefore(endDay);
   }
 
+  // REQ-BUG-069 (2026-10-04): no try/catch at all - any network blip left
+  // this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() { _loading = true; _error = null; });
+    try {
     final profile   = AuthService.to.profile.value ?? {};
     final className = profile['class_name'] as String? ?? '';
     final studentId = profile['id'] as String? ?? '';
@@ -78,12 +82,17 @@ class _StudentOfficialResultsPageState extends State<StudentOfficialResultsPage>
       });
     }
     if (mounted) setState(() { _results = results; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load results.'; });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final body = _loading
         ? const Center(child: CircularProgressIndicator(color: AppColors.navy))
+        : _error != null
+            ? Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)))
         : _results.isEmpty
             ? const Center(child: Text('No official exams yet.', style: TextStyle(color: AppColors.textLight)))
             : RefreshIndicator(

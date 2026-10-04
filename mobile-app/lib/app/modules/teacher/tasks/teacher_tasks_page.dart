@@ -46,12 +46,22 @@ class _TeacherTasksPageState extends State<TeacherTasksPage> {
     final employeeId = _employeeId;
     final sessionToken = AuthService.to.sessionToken;
     if (employeeId == null || sessionToken == null) return;
-    await SupabaseService.updateTaskAssigneeStatus(taskId, employeeId, sessionToken, newStatus);
-    if (!mounted) return;
-    setState(() {
-      final idx = _assignments.indexWhere((a) => a['task_id'] == taskId);
-      if (idx != -1) _assignments[idx]['status'] = newStatus;
-    });
+    // REQ-BUG-069 (2026-10-04): no try/catch at all - a network blip left
+    // this as a silent no-op with the status shown unchanged and no
+    // indication to the teacher that the update failed.
+    try {
+      await SupabaseService.updateTaskAssigneeStatus(taskId, employeeId, sessionToken, newStatus);
+      if (!mounted) return;
+      setState(() {
+        final idx = _assignments.indexWhere((a) => a['task_id'] == taskId);
+        if (idx != -1) _assignments[idx]['status'] = newStatus;
+      });
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Failed to update task status. Please try again.'), behavior: SnackBarBehavior.floating));
+      }
+    }
   }
 
   @override

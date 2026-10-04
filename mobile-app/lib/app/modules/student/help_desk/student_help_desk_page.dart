@@ -15,16 +15,23 @@ class StudentHelpDeskPage extends StatefulWidget {
 class _StudentHelpDeskPageState extends State<StudentHelpDeskPage> {
   Map<String, dynamic> _contacts = {};
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-10-04): no try/catch at all - any network blip left
+  // this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final profile   = AuthService.to.profile.value ?? {};
-    final sectionId = profile['section_id'] as String?;
-    final contacts   = await SupabaseService.fetchHelpDeskContacts(sectionId);
-    if (mounted) setState(() { _contacts = contacts; _loading = false; });
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile   = AuthService.to.profile.value ?? {};
+      final sectionId = profile['section_id'] as String?;
+      final contacts   = await SupabaseService.fetchHelpDeskContacts(sectionId);
+      if (mounted) setState(() { _contacts = contacts; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load help desk contacts.'; });
+    }
   }
 
   Future<void> _call(String phone) async {
@@ -34,7 +41,11 @@ class _StudentHelpDeskPageState extends State<StudentHelpDeskPage> {
 
   @override
   Widget build(BuildContext context) {
-    final body = _loading ? _buildShimmer() : _buildContent();
+    final body = _loading
+        ? _buildShimmer()
+        : _error != null
+            ? Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)))
+            : _buildContent();
     if (widget.embedded) return body;
     return Scaffold(
       appBar: AppBar(

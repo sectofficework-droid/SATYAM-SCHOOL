@@ -27,7 +27,7 @@ class _StaffEnrollListPageState extends State<StaffEnrollListPage> {
   @override
   void initState() {
     super.initState();
-    _kioskToken = Get.arguments as String;
+    _kioskToken = Get.arguments as String? ?? '';
     _load();
   }
 

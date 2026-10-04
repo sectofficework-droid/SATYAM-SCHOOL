@@ -278,7 +278,11 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
                         content: Text('Please call management first for a same-day leave'), behavior: SnackBarBehavior.floating));
                       return;
                     }
-                    if (employeeId == null || sessionToken == null) return;
+                    if (employeeId == null || sessionToken == null) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text('Session error - please sign in again.'), behavior: SnackBarBehavior.floating));
+                      return;
+                    }
                     await SupabaseService.submitLeaveRequest(
                       employeeId: employeeId,
                       sessionToken: sessionToken,

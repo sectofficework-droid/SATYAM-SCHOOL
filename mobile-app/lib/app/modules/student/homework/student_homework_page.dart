@@ -14,6 +14,7 @@ class StudentHomeworkPage extends StatefulWidget {
 class _StudentHomeworkPageState extends State<StudentHomeworkPage> {
   List<Map<String, dynamic>> _list = [];
   bool _loading = true;
+  String? _error;
 
   // Homework is just a reminder for the student to do at home - once its due
   // date has passed there's nothing left to act on, so it drops out of the
@@ -25,14 +26,21 @@ class _StudentHomeworkPageState extends State<StudentHomeworkPage> {
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-10-04): no try/catch at all - any network blip left
+  // this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    final profile   = AuthService.to.profile.value ?? {};
-    final studentId = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    final hw = (studentId != null && sessionToken != null)
-        ? await SupabaseService.fetchHomeworkForStudent(studentId, sessionToken)
-        : <Map<String, dynamic>>[];
-    setState(() { _list = hw; _loading = false; });
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile   = AuthService.to.profile.value ?? {};
+      final studentId = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      final hw = (studentId != null && sessionToken != null)
+          ? await SupabaseService.fetchHomeworkForStudent(studentId, sessionToken)
+          : <Map<String, dynamic>>[];
+      if (mounted) setState(() { _list = hw; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load homework.'; });
+    }
   }
 
   DateTime? _dueDate(Map<String, dynamic> hw) => DateTime.tryParse(hw['due_date'] ?? '');
@@ -60,6 +68,8 @@ class _StudentHomeworkPageState extends State<StudentHomeworkPage> {
 
     final list = _loading
         ? const Center(child: CircularProgressIndicator())
+        : _error != null
+            ? Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)))
         : shownList.isEmpty
             ? Center(child: Text(
                 _tab == 0 ? 'No homework assigned.' : 'No archived homework.',

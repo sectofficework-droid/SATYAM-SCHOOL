@@ -41,7 +41,12 @@ class _StudentQueryPageState extends State<StudentQueryPage> {
     final profile  = AuthService.to.profile.value ?? {};
     final fullName = '${profile['first_name'] ?? ''} ${profile['last_name'] ?? ''}'.trim();
     final sessionToken = AuthService.to.sessionToken;
-    if (sessionToken == null) return;
+    if (sessionToken == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Session error - please sign in again.'), backgroundColor: AppColors.red),
+      );
+      return;
+    }
     setState(() => _submitting = true);
     try {
       await SupabaseService.submitQuery({

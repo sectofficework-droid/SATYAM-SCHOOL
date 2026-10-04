@@ -14,25 +14,35 @@ class StudentAttendancePage extends StatefulWidget {
 class _StudentAttendancePageState extends State<StudentAttendancePage> {
   List<Map<String, dynamic>> _records = [];
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-10-04): no try/catch at all - any network blip left
+  // this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    final profile   = AuthService.to.profile.value ?? {};
-    final studentId = profile['id'] as String? ?? '';
-    final sessionToken = AuthService.to.sessionToken;
-    final records = sessionToken != null
-        ? await SupabaseService.fetchStudentAttendance(studentId, sessionToken)
-        : <Map<String, dynamic>>[];
-    if (mounted) setState(() { _records = records; _loading = false; });
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile   = AuthService.to.profile.value ?? {};
+      final studentId = profile['id'] as String? ?? '';
+      final sessionToken = AuthService.to.sessionToken;
+      final records = sessionToken != null
+          ? await SupabaseService.fetchStudentAttendance(studentId, sessionToken)
+          : <Map<String, dynamic>>[];
+      if (mounted) setState(() { _records = records; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load attendance.'; });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final body = _loading
         ? const Center(child: CircularProgressIndicator(color: AppColors.navy))
-        : AttendanceView(records: _records);
+        : _error != null
+            ? Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)))
+            : AttendanceView(records: _records);
 
     if (widget.embedded) return body;
     return Scaffold(

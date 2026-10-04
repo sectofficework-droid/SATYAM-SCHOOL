@@ -230,8 +230,16 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     if (employeeId == null || sessionToken == null) return;
     final current = _statuses.indexOf(chapter['status'] ?? 'Not Started');
     final next = _statuses[(current + 1) % _statuses.length];
+    final original = chapter['status'];
     setState(() => chapter['status'] = next);
-    await SupabaseService.updateSyllabusStatus(chapter['id'] as String, next, employeeId, sessionToken);
+    // REQ-BUG-069 (2026-10-04): optimistic update with no rollback on
+    // failure - a failed save silently left the UI showing a status that
+    // was never actually saved.
+    try {
+      await SupabaseService.updateSyllabusStatus(chapter['id'] as String, next, employeeId, sessionToken);
+    } catch (_) {
+      if (mounted) setState(() => chapter['status'] = original);
+    }
   }
 
   Future<void> _cycleSubtopicStatus(Map<String, dynamic> subtopic) async {
@@ -240,8 +248,13 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     if (employeeId == null || sessionToken == null) return;
     final current = _statuses.indexOf(subtopic['status'] ?? 'Not Started');
     final next = _statuses[(current + 1) % _statuses.length];
+    final original = subtopic['status'];
     setState(() => subtopic['status'] = next);
-    await SupabaseService.updateSubtopicStatus(subtopic['id'] as String, next, employeeId, sessionToken);
+    try {
+      await SupabaseService.updateSubtopicStatus(subtopic['id'] as String, next, employeeId, sessionToken);
+    } catch (_) {
+      if (mounted) setState(() => subtopic['status'] = original);
+    }
   }
 
   Future<void> _deleteChapter(Map<String, dynamic> chapter) async {
@@ -267,8 +280,15 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     final employeeId = _employeeId;
     final sessionToken = AuthService.to.sessionToken;
     if (employeeId == null || sessionToken == null) return;
-    await SupabaseService.deleteSyllabusChapter(chapter['id'] as String, employeeId, sessionToken);
-    _load();
+    try {
+      await SupabaseService.deleteSyllabusChapter(chapter['id'] as String, employeeId, sessionToken);
+      _load();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Failed to delete chapter. Please try again.'), behavior: SnackBarBehavior.floating));
+      }
+    }
   }
 
   Future<void> _renameChapter(Map<String, dynamic> chapter) async {
@@ -297,8 +317,13 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     final employeeId = _employeeId;
     final sessionToken = AuthService.to.sessionToken;
     if (employeeId == null || sessionToken == null) return;
+    final original = chapter['chapter'];
     setState(() => chapter['chapter'] = newName);
-    await SupabaseService.updateSyllabusChapterName(chapter['id'] as String, newName, employeeId, sessionToken);
+    try {
+      await SupabaseService.updateSyllabusChapterName(chapter['id'] as String, newName, employeeId, sessionToken);
+    } catch (_) {
+      if (mounted) setState(() => chapter['chapter'] = original);
+    }
   }
 
   Future<void> _deleteSubtopic(Map<String, dynamic> subtopic) async {
@@ -322,8 +347,15 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     final employeeId = _employeeId;
     final sessionToken = AuthService.to.sessionToken;
     if (employeeId == null || sessionToken == null) return;
-    await SupabaseService.deleteSubtopic(subtopic['id'] as String, employeeId, sessionToken);
-    _load();
+    try {
+      await SupabaseService.deleteSubtopic(subtopic['id'] as String, employeeId, sessionToken);
+      _load();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Failed to delete subtopic. Please try again.'), behavior: SnackBarBehavior.floating));
+      }
+    }
   }
 
   Future<void> _confirmLock(String className, String subject) async {
@@ -348,15 +380,29 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     );
     final sessionToken = AuthService.to.sessionToken;
     if (confirm != true || _employeeId == null || sessionToken == null) return;
-    await SupabaseService.lockSyllabus(teacherId: _employeeId!, sessionToken: sessionToken, className: className, subject: subject);
-    _load();
+    try {
+      await SupabaseService.lockSyllabus(teacherId: _employeeId!, sessionToken: sessionToken, className: className, subject: subject);
+      _load();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Failed to lock syllabus. Please try again.'), behavior: SnackBarBehavior.floating));
+      }
+    }
   }
 
   Future<void> _saveAndLock(Map<String, dynamic> request) async {
     final sessionToken = AuthService.to.sessionToken;
     if (_employeeId == null || sessionToken == null) return;
-    await SupabaseService.closeSyllabusEditWindow(request['id'] as String, _employeeId!, sessionToken);
-    _load();
+    try {
+      await SupabaseService.closeSyllabusEditWindow(request['id'] as String, _employeeId!, sessionToken);
+      _load();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Failed to save. Please try again.'), behavior: SnackBarBehavior.floating));
+      }
+    }
   }
 
   Future<void> _openRequestEditSheet(String className, String subject) async {

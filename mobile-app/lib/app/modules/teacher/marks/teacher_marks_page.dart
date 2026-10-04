@@ -32,6 +32,22 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
   bool _saving        = false;
   bool _isClassTeacher = false;
 
+  // REQ-BUG-067 (2026-10-04): _markCtrl.clear() alone leaked one
+  // TextEditingController per student every time the teacher switched exam
+  // (this class never overrode dispose() either, so even closing the page
+  // leaked whatever was left) - dispose each controller before dropping it
+  // from the map.
+  void _clearMarkControllers() {
+    for (final c in _markCtrl.values) { c.dispose(); }
+    _markCtrl.clear();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _markCtrl.values) { c.dispose(); }
+    super.dispose();
+  }
+
   // Marks above the exam's max_marks (or negative) - same reported bug as
   // Official Exams: nothing stopped it from being saved. _maxMarks here is
   // whatever the teacher set as "Full Marks" when creating this monthly
@@ -149,7 +165,8 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
       ));
       return;
     }
-    setState(() { _selExam = exam; _markCtrl.clear(); _invalidIds.clear(); _students = []; _loadingRoster = true; });
+    _clearMarkControllers();
+    setState(() { _selExam = exam; _invalidIds.clear(); _students = []; _loadingRoster = true; });
 
     final profile     = AuthService.to.profile.value ?? {};
     final employeeId  = profile['id'] as String?;
@@ -379,14 +396,23 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
       return;
     }
 
-    setState(() => _saving = true);
     final profile   = AuthService.to.profile.value ?? {};
     final teacherId = profile['id'] as String?;
     final sessionToken = AuthService.to.sessionToken;
+    // REQ-BUG-066 (2026-10-04): this guard used to let the method fall
+    // through to the unconditional "saved" success state below with no RPC
+    // call ever made - a stale/null session silently discarded the marks
+    // while the UI said it saved. Fail loudly instead, before the try block
+    // (so the catch's network/auth framing below is only ever about a real
+    // save attempt).
+    if (teacherId == null || sessionToken == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Session error - please sign in again.'), backgroundColor: AppColors.red, behavior: SnackBarBehavior.floating));
+      return;
+    }
+    setState(() => _saving = true);
     try {
-      if (teacherId != null && sessionToken != null) {
-        await SupabaseService.saveMarksBatch(teacherId, sessionToken, _selExam!['id'] as String, records);
-      }
+      await SupabaseService.saveMarksBatch(teacherId, sessionToken, _selExam!['id'] as String, records);
       if (mounted) {
         setState(() => _saving = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -466,7 +492,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
         flexibleSpace: Container(decoration: const BoxDecoration(gradient: AppColors.navyGradient)),
         title: Text(_selExam == null ? 'Monthly Test' : _selExam!['name'] ?? 'Enter Marks'),
         leading: _selExam != null
-            ? IconButton(icon: const Icon(Icons.arrow_back_ios_rounded), onPressed: () => setState(() { _selExam = null; _markCtrl.clear(); }))
+            ? IconButton(icon: const Icon(Icons.arrow_back_ios_rounded), onPressed: () { _clearMarkControllers(); setState(() => _selExam = null); })
             : null,
       ),
       floatingActionButton: fab,

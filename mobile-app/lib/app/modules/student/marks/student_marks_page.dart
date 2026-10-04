@@ -14,6 +14,7 @@ class StudentMarksPage extends StatefulWidget {
 class _StudentMarksPageState extends State<StudentMarksPage> {
   List<Map<String, dynamic>> _marks  = [];
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() { super.initState(); _load(); }
@@ -31,30 +32,39 @@ class _StudentMarksPageState extends State<StudentMarksPage> {
     return examDay.isAfter(todayDay);
   }
 
+  // REQ-BUG-069 (2026-10-04): no try/catch at all - any network blip left
+  // this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    final profile   = AuthService.to.profile.value ?? {};
-    final studentId = profile['id'] as String? ?? '';
-    final sessionToken = AuthService.to.sessionToken;
-    if (sessionToken == null) { if (mounted) setState(() => _loading = false); return; }
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile   = AuthService.to.profile.value ?? {};
+      final studentId = profile['id'] as String? ?? '';
+      final sessionToken = AuthService.to.sessionToken;
+      if (sessionToken == null) { if (mounted) setState(() => _loading = false); return; }
 
-    final exams = await SupabaseService.fetchExamsForStudent(studentId, sessionToken);
-    // Collect all marks for this student across all exams
-    final List<Map<String, dynamic>> allMarks = [];
-    for (final e in exams) {
-      final myMark = await SupabaseService.fetchMyExamMark(studentId, sessionToken, e['id'] as String);
-      if (myMark.isNotEmpty) {
-        allMarks.add({...e, 'obtained': myMark.first['marks_obtained']});
-      } else {
-        allMarks.add({...e, 'obtained': null});
+      final exams = await SupabaseService.fetchExamsForStudent(studentId, sessionToken);
+      // Collect all marks for this student across all exams
+      final List<Map<String, dynamic>> allMarks = [];
+      for (final e in exams) {
+        final myMark = await SupabaseService.fetchMyExamMark(studentId, sessionToken, e['id'] as String);
+        if (myMark.isNotEmpty) {
+          allMarks.add({...e, 'obtained': myMark.first['marks_obtained']});
+        } else {
+          allMarks.add({...e, 'obtained': null});
+        }
       }
+      if (mounted) setState(() { _marks = allMarks; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load marks.'; });
     }
-    if (mounted) setState(() { _marks = allMarks; _loading = false; });
   }
 
   @override
   Widget build(BuildContext context) {
     final body = _loading
         ? const Center(child: CircularProgressIndicator())
+        : _error != null
+            ? Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)))
         : _marks.isEmpty
             ? const Center(child: Text('No exam results yet.', style: TextStyle(color: AppColors.textLight)))
             : ListView.separated(

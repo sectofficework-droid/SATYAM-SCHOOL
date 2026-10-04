@@ -49,7 +49,13 @@ class _StudentHomeState extends State<StudentHome> {
     });
   }
 
+  // REQ-BUG-069 (2026-10-04): no try/catch at all - a network blip here
+  // silently dropped the whole recent-notices feed with no indication to
+  // the student. Non-critical background feed, not a full-page load, so
+  // on failure this just quietly leaves _recent empty rather than showing
+  // an alarming error banner on the home dashboard.
   Future<void> _loadNotifications() async {
+    try {
     final profile     = AuthService.to.profile.value ?? {};
     final studentId   = profile['id'] as String?;
     final sessionToken = AuthService.to.sessionToken;
@@ -100,6 +106,9 @@ class _StudentHomeState extends State<StudentHome> {
 
     final shouldShow = await shouldShowNoticePopupToday('notif_popup_shown_student_$studentId');
     if (shouldShow && mounted) _showNotifications();
+    } catch (e) {
+      debugPrint('Failed to load student notifications: $e');
+    }
   }
 
   void _showNotifications() {

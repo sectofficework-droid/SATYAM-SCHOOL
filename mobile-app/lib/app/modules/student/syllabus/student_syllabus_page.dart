@@ -63,6 +63,7 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
   List<Map<String, dynamic>> _chapters = [];
   Map<String, List<Map<String, dynamic>>> _subtopicsByChapter = {};
   bool _loading = true;
+  String? _error;
 
   // null = showing the subject grid; set = drilled into that subject's chapters.
   String? _selectedSubject;
@@ -70,22 +71,28 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-10-04): no try/catch at all - any network blip left
+  // this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final profile   = AuthService.to.profile.value ?? {};
-    final studentId = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    final chapters = (studentId != null && sessionToken != null)
-        ? await SupabaseService.fetchSyllabusForStudent(studentId, sessionToken)
-        : <Map<String, dynamic>>[];
-    final subtopics = (studentId != null && sessionToken != null)
-        ? await SupabaseService.fetchSubtopicsForStudent(studentId, sessionToken, chapters.map((c) => c['id'] as String).toList())
-        : <Map<String, dynamic>>[];
-    final subMap = <String, List<Map<String, dynamic>>>{};
-    for (final s in subtopics) {
-      subMap.putIfAbsent(s['chapter_id'] as String, () => []).add(s);
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile   = AuthService.to.profile.value ?? {};
+      final studentId = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      final chapters = (studentId != null && sessionToken != null)
+          ? await SupabaseService.fetchSyllabusForStudent(studentId, sessionToken)
+          : <Map<String, dynamic>>[];
+      final subtopics = (studentId != null && sessionToken != null)
+          ? await SupabaseService.fetchSubtopicsForStudent(studentId, sessionToken, chapters.map((c) => c['id'] as String).toList())
+          : <Map<String, dynamic>>[];
+      final subMap = <String, List<Map<String, dynamic>>>{};
+      for (final s in subtopics) {
+        subMap.putIfAbsent(s['chapter_id'] as String, () => []).add(s);
+      }
+      if (mounted) setState(() { _chapters = chapters; _subtopicsByChapter = subMap; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load syllabus.'; });
     }
-    if (mounted) setState(() { _chapters = chapters; _subtopicsByChapter = subMap; _loading = false; });
   }
 
   // Same derivation as the teacher app: a chapter with subtopics shows a
@@ -140,6 +147,8 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
     Widget body;
     if (_loading) {
       body = _buildShimmer();
+    } else if (_error != null) {
+      body = Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)));
     } else if (_chapters.isEmpty) {
       body = _emptyState();
     } else {
