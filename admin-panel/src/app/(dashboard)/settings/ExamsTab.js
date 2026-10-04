@@ -80,7 +80,7 @@ function ExamSubjectConfig({ examId, classesWithSections, classSubjectsMap }) {
                   type="number"
                   min="1"
                   className={inp + " text-center"}
-                  defaultValue={config[subject] ?? 100}
+                  defaultValue={config[subject] ?? 50}
                   onBlur={e => handleSave(subject, e.target.value)}
                 />
                 {savedSubject === subject && <Check className="w-3.5 h-3.5 text-green-500 flex-shrink-0"/>}
@@ -313,7 +313,7 @@ export default function ExamsTab() {
   const [newName, setNewName] = useState("");
   const [newStartDate, setNewStartDate] = useState("");
   const [newEndDate, setNewEndDate] = useState("");
-  const [newFullMarks, setNewFullMarks] = useState("100");
+  const [newFullMarks, setNewFullMarks] = useState("50");
   const [addError, setAddError] = useState("");
   const [adding, setAdding] = useState(false);
 
@@ -362,7 +362,7 @@ export default function ExamsTab() {
       });
       await saveExamSubjectMaxMarksBulk(exam.id, configRows);
       setExams(prev => [...prev, exam]);
-      setNewName(""); setNewStartDate(""); setNewEndDate(""); setNewFullMarks("100");
+      setNewName(""); setNewStartDate(""); setNewEndDate(""); setNewFullMarks("50");
     } catch (err) {
       setAddError(err?.message || "Failed to add exam.");
     } finally {
