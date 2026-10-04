@@ -69,15 +69,23 @@ android {
     // Store listings; the app_name resValue drives the label on the device's
     // home screen (see AndroidManifest.xml's android:label="@string/app_name").
     // Launcher icons can be overridden per flavor by adding files under
-    // android/app/src/teacher/res/mipmap-*/ and android/app/src/student/res/mipmap-*/
-    // (Android merges flavor-specific res/ on top of src/main/res/) - both
-    // flavors still share the src/main/res/ icon until distinct ones are provided.
+    // android/app/src/<flavor>/res/mipmap-*/ic_launcher.png (legacy square
+    // icon) and res/drawable-*/ic_launcher_foreground.png (adaptive icon
+    // layer, Android 8+) - Android merges flavor-specific res/ on top of
+    // src/main/res/, so only the overridden densities need to exist per
+    // flavor. Teacher has its own custom artwork (provided by the project
+    // owner, not auto-generated - see android/app/src/teacher/res/), with
+    // its own mipmap-anydpi-v26/ic_launcher.xml dropping the shared 16%
+    // foreground inset since that artwork already has its own padding
+    // baked in; student and attendance still share the plain school crest
+    // in src/main/res/ (with the default inset) until distinct icons are
+    // provided for them too.
     flavorDimensions += "role"
     productFlavors {
         create("teacher") {
             dimension = "role"
             applicationId = "com.satyamstars.teacher"
-            resValue("string", "app_name", "Teacher App - Satyam School")
+            resValue("string", "app_name", "Teacher (SSIS)")
         }
         create("student") {
             dimension = "role"

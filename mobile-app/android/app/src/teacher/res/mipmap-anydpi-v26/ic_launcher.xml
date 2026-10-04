@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Overrides the shared main/res version (which wraps the foreground in a
+     16% inset) for Teacher only - the provided icon artwork already has its
+     own internal padding baked in (the crest/illustration sit well inside
+     the card with room to spare), so an extra system inset just shrinks it
+     and makes the small text ("TEACHER") harder to read at launcher sizes
+     for no benefit. No inset here; the OS still applies its own mask shape
+     (circle/squircle/rounded-square) on top. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+  <background android:drawable="@color/ic_launcher_background"/>
+  <foreground android:drawable="@drawable/ic_launcher_foreground"/>
+</adaptive-icon>
