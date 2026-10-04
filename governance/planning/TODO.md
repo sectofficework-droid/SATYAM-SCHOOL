@@ -2429,6 +2429,56 @@ report is wrong until that constant is corrected.
 
 ---
 
+## App Update feature — found 2026-10-04, deferred by user ("do later")
+
+- [ ] **REQ-BUG-060 — App Update's APK upload blocked by S3 CORS (needs AWS
+      console access, blocks on user).** Settings → App Update ("Publish App
+      Update") has two real bugs fixed this session (see
+      `work-log\LOG-2026-10-04.md`): `publishAppVersion()` never set
+      `app_versions.app` (NOT NULL, no default — every publish had always
+      failed outright, which is why `app_versions` has been empty since the
+      feature was built), and the AWS SDK v3 default
+      `requestChecksumCalculation: WHEN_SUPPORTED` was attaching
+      `x-amz-checksum-*` headers to the presigned PutObject URL. Both fixed
+      and deployed (commits `712b229`, `f6e3a5e`). **Still blocked**: live-
+      traced via Chrome's network panel — the browser's CORS preflight
+      `OPTIONS` to the S3 bucket for the direct browser→S3 presigned upload
+      (`uploadFileToS3Presigned`, the only caller of this code path — strong
+      evidence it was never actually exercised end-to-end before) returns
+      **403** even with the checksum fix, meaning the bucket's CORS policy
+      itself doesn't allow PUT from the admin panel's origin — not fixable
+      from application code. **Fix:** add a CORS rule to the
+      `satyam-stars-international-school` bucket (AWS Console → bucket →
+      Permissions → CORS):
+      ```json
+      [{
+        "AllowedHeaders": ["*"],
+        "AllowedMethods": ["PUT"],
+        "AllowedOrigins": [
+          "https://satyam-stars-international-school-a-six.vercel.app",
+          "https://satyam-stars-international-school-*.vercel.app"
+        ],
+        "ExposeHeaders": []
+      }]
+      ```
+      merged into whatever CORS config already exists, not overwriting it.
+      **Blocks on:** the user's own AWS login — neither a direct AWS console
+      session nor entering AWS credentials is something to do on their
+      behalf. User said "keep it in to do, will work later" (2026-10-04) —
+      explicitly deferred, not forgotten.
+- [ ] **Teacher app v4 (1.0.0+4) still not distributed to existing
+      installs.** Built and signed this session
+      (`mobile-app/build/app/outputs/flutter-apk/app-teacher-release.apk`,
+      142.3MB, real release cert confirmed via `apksigner verify`) — contains
+      the back-navigation fix and marks-entry error-handling fix (commit
+      `fb78746`). Play Store closed-testing AAB was uploaded and saved as a
+      draft release (not yet sent to Google for review — that's the user's
+      own next click in Publishing overview). The S3/`app_versions` path
+      (the one that actually reaches teachers who already have the app
+      installed) is blocked on REQ-BUG-060 above.
+
+---
+
 **How to use this file going forward:** when a session finds something
 out-of-scope, add it here under the right severity per AJ14 rather than
 fixing it inline. When you approve a fix, move it to an "in progress" note

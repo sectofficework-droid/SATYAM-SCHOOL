@@ -156,6 +156,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
 
   void _showCreateExamSheet() {
     final nameCtrl = TextEditingController();
+    final marksCtrl = TextEditingController(text: '$_monthlyTestMaxMarks');
     final profile  = AuthService.to.profile.value ?? {};
     final myClasses = teacherClasses(profile);
     String? selectedClass = (profile['class_name'] as String?)?.isNotEmpty == true
@@ -197,9 +198,9 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                       child: const Icon(Icons.grading_rounded, color: Colors.white, size: 22),
                     ),
                     const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      const Text('Create Monthly Test', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text)),
-                      Text('Set up a new monthly test for your class · out of $_monthlyTestMaxMarks', style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
+                    const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('Create Monthly Test', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.text)),
+                      Text('Set up a new monthly test for your class', style: TextStyle(fontSize: 12, color: AppColors.textLight)),
                     ])),
                     IconButton(icon: const Icon(Icons.close_rounded, color: AppColors.textHint), onPressed: () => Navigator.pop(ctx)),
                   ]),
@@ -207,6 +208,12 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                   TextField(
                     controller: nameCtrl,
                     decoration: const InputDecoration(labelText: 'Test Name (e.g. Monthly Test - August)', prefixIcon: Icon(Icons.edit_outlined, color: AppColors.navy, size: 20)),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: marksCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Full Marks', prefixIcon: Icon(Icons.grading_outlined, color: AppColors.navy, size: 20)),
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
@@ -273,6 +280,14 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                         ));
                         return;
                       }
+                      final fullMarks = int.tryParse(marksCtrl.text.trim());
+                      if (fullMarks == null || fullMarks <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                          content: Text('Enter valid full marks'),
+                          behavior: SnackBarBehavior.floating,
+                        ));
+                        return;
+                      }
                       final sessionToken = AuthService.to.sessionToken;
                       if (sessionToken == null) return;
                       await SupabaseService.createExam({
@@ -280,7 +295,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
                         'class':      selectedClass,
                         'subject':    selectedSubject!.trim(),
                         'date':       DateFormat('yyyy-MM-dd').format(examDate!),
-                        'max_marks':  _monthlyTestMaxMarks,
+                        'max_marks':  fullMarks,
                         'created_by': profile['id'],
                       }, sessionToken);
                       if (ctx.mounted) Navigator.pop(ctx);

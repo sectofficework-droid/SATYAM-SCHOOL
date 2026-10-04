@@ -455,7 +455,7 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('${_selectedExam?['name'] ?? ''} — $_selectedSubject', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15)),
-          Text('$_selectedClass  ·  Max Marks: ${_maxMarks.toStringAsFixed(0)}', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+          Text('$_selectedClass  ·  Max Marks: ${_maxMarks.toStringAsFixed(0)} (set by admin)', style: const TextStyle(color: Colors.white70, fontSize: 12)),
         ])),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
