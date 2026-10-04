@@ -1,5 +1,6 @@
 import supabase from "./supabase";
 import { getFeeStructure } from "./feesService";
+import authedFetch from "./authedFetch";
 
 const CLASS_NAME_MAP = {
   "JR KG": "JR.KG", "SR KG": "SR.KG",
@@ -247,16 +248,23 @@ export async function getFeesForReport() {
 }
 
 // ── Employees ──────────────────────────────────────────────────────────────────
-export async function getEmployeesForReport() {
+// REQ-BUG-062 (2026-10-04 audit): includeSalary defaults false so a caller
+// that forgets to pass it fails closed, not open - salary_payments is
+// RLS-gated to "any admin" (is_admin_user(), REQ-SEC-002), not
+// management-only, so the real enforcement has to happen here: never issue
+// the query at all for a non-management caller, rather than fetch it and
+// hide it client-side (which would still put the raw figures on the wire
+// and in devtools). Matches the management-only rule already established
+// for Settings -> Users & Roles' Salary tab (REQ-SEC-007).
+export async function getEmployeesForReport(includeSalary = false) {
   const [empRes, salRes] = await Promise.all([
     supabase
       .from("employees")
       .select("id, name, type, designation, department, phone, email, joining_date, status, subject_mappings")
       .order("name"),
-    supabase
-      .from("salary_payments")
-      .select("employee_id, amount, month")
-      .order("month", { ascending: false }),
+    includeSalary
+      ? supabase.from("salary_payments").select("employee_id, amount, month").order("month", { ascending: false })
+      : Promise.resolve({ data: [] }),
   ]);
   if (empRes.error) throw empRes.error;
 
@@ -435,7 +443,7 @@ export async function getStaffAttendanceForReport() {
   // Ensure unpunched staff are marked absent if cutoff has passed
   try {
     if (typeof window !== "undefined") {
-      await fetch("/api/staff-attendance/sync-absent", { method: "POST" }).catch(() => {});
+      await authedFetch("/api/staff-attendance/sync-absent", { method: "POST" }).catch(() => {});
     }
   } catch (_) {}
 

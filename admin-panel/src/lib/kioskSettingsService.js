@@ -24,9 +24,10 @@ export async function saveKioskSettings({ expectedStartTime, lateGraceMinutes, a
   // First attempt via internal server API (uses service key and WHERE id IS NOT NULL
   // to avoid PostgreSQL safeupdate constraint errors)
   try {
+    const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch("/api/kiosk-settings", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + (session?.access_token || "") },
       body: JSON.stringify({
         expectedStartTime,
         lateGraceMinutes: Number(lateGraceMinutes) || 0,

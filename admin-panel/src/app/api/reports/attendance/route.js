@@ -4,13 +4,14 @@ import { generateTabularPdf } from "@/lib/pdfReportsServer";
 
 export async function POST(request) {
   try {
-    const { employeeId, fromDate, toDate } = await request.json();
-    const auth = await requireStaffAdminTier(employeeId, null);
+    const { employeeId, sessionToken, fromDate, toDate } = await request.json();
+    const auth = await requireStaffAdminTier(employeeId, sessionToken, null);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     if (!fromDate || !toDate) return NextResponse.json({ error: "fromDate and toDate required" }, { status: 400 });
 
     const supabase = supabaseServiceClient();
+    if (!supabase) return NextResponse.json({ error: "Server configuration error: missing service key" }, { status: 500 });
     const { data, error } = await supabase
       .from("employee_attendance")
       .select("date, status, is_late, employees(name, emp_code)")

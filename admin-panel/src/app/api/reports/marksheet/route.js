@@ -5,8 +5,8 @@ import { getMarksheetsForClass, getCurrentOfficialExams } from "@/lib/marksheetS
 
 export async function POST(request) {
   try {
-    const { employeeId, studentId, className } = await request.json();
-    const auth = await requireStaffAdminTier(employeeId, null);
+    const { employeeId, sessionToken, studentId, className } = await request.json();
+    const auth = await requireStaffAdminTier(employeeId, sessionToken, null);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     if (!studentId || !className) {
@@ -14,6 +14,7 @@ export async function POST(request) {
     }
 
     const supabase = supabaseServiceClient();
+    if (!supabase) return NextResponse.json({ error: "Server configuration error: missing service key" }, { status: 500 });
     const { data: student, error } = await supabase.from("students").select("*").eq("id", studentId).single();
     if (error) throw error;
     student._studentId = student.id;

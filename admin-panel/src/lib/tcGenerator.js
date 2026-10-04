@@ -3,6 +3,20 @@ import { normalizeDate } from "./importUtils.js";
 import { fmtDMY } from "./utils.js";
 import { TC_LOGO_BASE64, TC_SARASWATI_BASE64 } from "./tcAssets.js";
 
+// REQ-SEC-015 (2026-10-04 audit): generateSchoolLeavingCertificateSingle
+// interpolates student fields straight into an HTML string with no
+// escaping, rendered via dangerouslySetInnerHTML elsewhere - TC data can
+// be bulk-imported from an uploaded spreadsheet or typed by any admin with
+// student-write access, so a payload like <img src=x onerror=...> in
+// "Remarks"/"Reason for Leaving" would execute JS in whichever admin's
+// browser later opens that student's TC. Every other PDF in this codebase
+// goes through pdf-lib primitives instead of HTML injection - this file is
+// the one exception that needs escaping at the point of interpolation.
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+function esc(v) {
+  return String(v ?? "").replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
+}
+
 export const TC_FIELDS = [
   { key: "certificateNo",      label: "Certificate No",                                required: true  },
   { key: "registerNo",         label: "Register No. of the Pupil",                     required: false },
@@ -243,7 +257,7 @@ export function generateSchoolLeavingCertificateSingle(r) {
   const { words: dobWords, dmy: dobDmy } = dobParts(r.dob);
   const admissionDmy = r.dateOfAdmission ? fmtTcDate(r.dateOfAdmission) : "";
   const leavingDmy = r.dateOfLeaving ? fmtTcDate(r.dateOfLeaving) : "";
-  const religionCaste = [r.religion, r.caste].filter(Boolean).join(" , ");
+  const religionCaste = [r.religion, r.caste].filter(Boolean).map(esc).join(" , ");
 
   return `
   <div class="tc-page">
@@ -275,40 +289,40 @@ export function generateSchoolLeavingCertificateSingle(r) {
         <!-- Certificate No and Register No -->
         <div class="tc-row" style="margin-bottom: 2px;">
           <span class="tc-lbl" style="font-weight: 700;">Certificate No:</span>
-          <span class="tc-line tc-val-center" style="flex: 0 0 180px;">${r.certificateNo || "&nbsp;"}</span>
+          <span class="tc-line tc-val-center" style="flex: 0 0 180px;">${esc(r.certificateNo) || "&nbsp;"}</span>
           <span style="flex: 1;"></span>
           <span class="tc-lbl" style="font-weight: 700;">Register No. of the pupil :</span>
-          <span class="tc-line tc-val-center" style="flex: 1;">${r.registerNo || "&nbsp;"}</span>
+          <span class="tc-line tc-val-center" style="flex: 1;">${esc(r.registerNo) || "&nbsp;"}</span>
         </div>
 
         <!-- U-DISE -->
         <div class="tc-row">
           <span class="tc-lbl">U-DISE Number of the Student :</span>
-          <span class="tc-line tc-val-left">${r.udiseNo || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${esc(r.udiseNo) || "&nbsp;"}</span>
         </div>
 
         <!-- 1. Name -->
         <div class="tc-row">
           <span class="tc-col-lbl"><span>1. Name of the Pupil</span><span>:</span></span>
-          <span class="tc-line tc-val-left">${r.name || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${esc(r.name) || "&nbsp;"}</span>
         </div>
 
         <!-- 2. Father -->
         <div class="tc-row">
           <span class="tc-col-lbl"><span>2. Father&rsquo;s Name</span><span>:</span></span>
-          <span class="tc-line tc-val-left">${r.fatherName || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${esc(r.fatherName) || "&nbsp;"}</span>
         </div>
 
         <!-- 3. Mother -->
         <div class="tc-row">
           <span class="tc-col-lbl"><span>3. Mother&rsquo;s Name</span><span>:</span></span>
-          <span class="tc-line tc-val-left">${r.motherName || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${esc(r.motherName) || "&nbsp;"}</span>
         </div>
 
         <!-- 4. Aadhar -->
         <div class="tc-row">
           <span class="tc-col-lbl"><span>4. Pupil Aadhar No.</span><span>:</span></span>
-          <span class="tc-line tc-val-left">${r.aadhar || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${esc(r.aadhar) || "&nbsp;"}</span>
         </div>
 
         <!-- 5. Religion and Caste -->
@@ -320,7 +334,7 @@ export function generateSchoolLeavingCertificateSingle(r) {
         <!-- 6. Place of Birth -->
         <div class="tc-row">
           <span class="tc-col-lbl"><span>6. Place of Birth</span><span>:</span></span>
-          <span class="tc-line tc-val-left">${r.placeOfBirth || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${esc(r.placeOfBirth) || "&nbsp;"}</span>
         </div>
 
         <!-- 7. DOB -->
@@ -337,7 +351,7 @@ export function generateSchoolLeavingCertificateSingle(r) {
         <!-- 8. Last School Attended -->
         <div class="tc-row">
           <span class="tc-col-lbl"><span>8. Last School Attended</span><span>:</span></span>
-          <span class="tc-line tc-val-left">${r.lastSchoolAttended || "SATYAM STARS INTERNATIONAL SCHOOL"}</span>
+          <span class="tc-line tc-val-left">${esc(r.lastSchoolAttended) || "SATYAM STARS INTERNATIONAL SCHOOL"}</span>
         </div>
 
         <!-- 9. Date of Admission -->
@@ -349,21 +363,21 @@ export function generateSchoolLeavingCertificateSingle(r) {
         <!-- 10 & 11. Progress and Conduct -->
         <div class="tc-row">
           <span class="tc-lbl">10. Progress :</span>
-          <span class="tc-line tc-val-center" style="flex: 1; margin-right: 16px;">${r.progress || "VERY GOOD"}</span>
+          <span class="tc-line tc-val-center" style="flex: 1; margin-right: 16px;">${esc(r.progress) || "VERY GOOD"}</span>
           <span class="tc-lbl">11. Conduct :</span>
-          <span class="tc-line tc-val-center" style="flex: 1;">${r.conduct || "VERY GOOD"}</span>
+          <span class="tc-line tc-val-center" style="flex: 1;">${esc(r.conduct) || "VERY GOOD"}</span>
         </div>
 
         <!-- 12. Attendance -->
         <div class="tc-row">
           <span class="tc-lbl">12. Attendance :</span>
-          <span class="tc-line tc-val-center" style="flex: 0 0 65px; margin: 0 4px;">${r.attendancePresent || "&nbsp;"}</span>
+          <span class="tc-line tc-val-center" style="flex: 0 0 65px; margin: 0 4px;">${esc(r.attendancePresent) || "&nbsp;"}</span>
           <span class="tc-lbl" style="margin: 0 4px;">Out of</span>
-          <span class="tc-line tc-val-center" style="flex: 0 0 65px; margin: 0 4px;">${r.attendanceTotal || "&nbsp;"}</span>
+          <span class="tc-line tc-val-center" style="flex: 0 0 65px; margin: 0 4px;">${esc(r.attendanceTotal) || "&nbsp;"}</span>
           <span class="tc-lbl" style="margin: 0 4px;">in Class</span>
-          <span class="tc-line tc-val-center" style="flex: 0 0 75px; margin: 0 4px;">${r.attendanceClass || "&nbsp;"}</span>
+          <span class="tc-line tc-val-center" style="flex: 0 0 75px; margin: 0 4px;">${esc(r.attendanceClass) || "&nbsp;"}</span>
           <span class="tc-lbl" style="margin: 0 4px;">From</span>
-          <span class="tc-line tc-val-center" style="flex: 1; margin-left: 4px;">${r.attendanceFrom || "&nbsp;"}</span>
+          <span class="tc-line tc-val-center" style="flex: 1; margin-left: 4px;">${esc(r.attendanceFrom) || "&nbsp;"}</span>
         </div>
 
         <!-- 13. Date of Leaving -->
@@ -375,36 +389,36 @@ export function generateSchoolLeavingCertificateSingle(r) {
         <!-- 14. Exam Passed / Promoted -->
         <div class="tc-row">
           <span class="tc-lbl">14. Whether he/she has Passed the examination</span>
-          <span class="tc-line tc-val-left">${r.passedExamText || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${esc(r.passedExamText) || "&nbsp;"}</span>
         </div>
 
         <div class="tc-row">
           <span class="tc-lbl" style="padding-left: 20px;">or Promoted to the next Higher Class</span>
-          <span class="tc-line tc-val-left">${r.promotedText || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${esc(r.promotedText) || "&nbsp;"}</span>
         </div>
 
         <!-- 15. Class Studying Since -->
         <div class="tc-row">
           <span class="tc-lbl">15. Class in which Studying and Since When</span>
-          <span class="tc-line tc-val-left">${r.studyingClassSince || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${esc(r.studyingClassSince) || "&nbsp;"}</span>
         </div>
 
         <!-- 16. Reason -->
         <div class="tc-row">
           <span class="tc-lbl">16. Reason for Leaving The School</span>
-          <span class="tc-line tc-val-left">${r.reasonForLeaving || "TO STUDY ELSEWHERE"}</span>
+          <span class="tc-line tc-val-left">${esc(r.reasonForLeaving) || "TO STUDY ELSEWHERE"}</span>
         </div>
 
         <!-- 17. PEN -->
         <div class="tc-row">
           <span class="tc-lbl">17. Student&rsquo;s PEN ( Permanent Education Number )</span>
-          <span class="tc-line tc-val-left">${r.pen || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${esc(r.pen) || "&nbsp;"}</span>
         </div>
 
         <!-- 18. Remarks -->
         <div class="tc-row">
           <span class="tc-lbl">18. Remarks</span>
-          <span class="tc-line tc-val-left">${r.remarks || "&nbsp;"}</span>
+          <span class="tc-line tc-val-left">${esc(r.remarks) || "&nbsp;"}</span>
         </div>
       </div>
     </div>

@@ -32,9 +32,10 @@ class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
     setState(() => _loading = true);
     final profile    = AuthService.to.profile.value ?? {};
     final employeeId = profile['id'] as String?;
+    final sessionToken = AuthService.to.sessionToken;
     final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final records = employeeId != null
-        ? await SupabaseService.fetchEmployeeAttendance(employeeId)
+    final records = employeeId != null && sessionToken != null
+        ? await SupabaseService.fetchEmployeeAttendance(employeeId, sessionToken)
         : <Map<String, dynamic>>[];
     final shifts = employeeId != null
         ? await SupabaseService.fetchEmployeeShiftsForDate(employeeId, today)

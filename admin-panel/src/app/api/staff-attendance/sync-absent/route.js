@@ -1,34 +1,29 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getAdminClient, requireAdminSession } from "@/lib/apiAuth";
 
+// REQ-SEC-012 (2026-10-04): this route had no authentication at all -
+// anyone who could reach the deployed URL could trigger bulk
+// auto-mark-absent for every active employee with no login. Confirmed
+// mobile never calls this route (grepped mobile-app/lib; the only caller
+// is reportService.js's client-side `fetch`, gated on `typeof window !==
+// "undefined"`) so a real Supabase Auth session check can't break any
+// mobile or server-to-server caller.
 export async function POST(request) {
-  return handleSyncAbsent();
+  return handleSyncAbsent(request);
 }
 
 export async function GET(request) {
-  return handleSyncAbsent();
+  return handleSyncAbsent(request);
 }
 
-async function handleSyncAbsent() {
+async function handleSyncAbsent(request) {
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    // No hardcoded fallback here, ever — a leaked service_role key bypasses
-    // all RLS on every table. It must come from environment configuration
-    // only, and this route must fail loudly (not silently fall back to a
-    // committed secret) if that configuration is missing.
-    const serviceKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.SUPABASE_SERVICE_KEY ||
-      process.env.SUPABASE_SECRET_KEY ||
-      process.env.SUPABASE_KEY;
-
-    if (!supabaseUrl || !serviceKey) {
+    const supabaseAdmin = getAdminClient();
+    if (!supabaseAdmin) {
       return NextResponse.json({ error: "Missing Supabase config" }, { status: 500 });
     }
-
-    const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false },
-    });
+    const { errorResponse } = await requireAdminSession(request, supabaseAdmin);
+    if (errorResponse) return errorResponse;
 
     // 1. Fetch kiosk settings
     const { data: settings } = await supabaseAdmin

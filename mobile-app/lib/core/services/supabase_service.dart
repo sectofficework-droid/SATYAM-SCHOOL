@@ -26,6 +26,16 @@ class SupabaseService {
     throw StateError('unreachable');
   }
 
+  // REQ-BUG-063 (2026-10-04): several kiosk RPC call sites did `res.first
+  // as Map` with no empty-list guard - a zero-row response (e.g. an empty
+  // kiosk_settings table, previously seen empty in this exact project)
+  // threw an uncaught StateError on the shared entrance kiosk's core
+  // punch-recording path. Raises a clear, catchable error instead.
+  static Map _firstRow(List res, String rpcName) {
+    if (res.isEmpty) throw Exception('No response from $rpcName - please try again.');
+    return res.first as Map;
+  }
+
   static bool _isTransientNetworkError(Object e) {
     if (e is SocketException || e is HandshakeException || e is TimeoutException) return true;
     if (e is PostgrestException) {
@@ -223,12 +233,13 @@ class SupabaseService {
 
   // No limit, same reasoning as fetchStudentAttendance above - the Yearly
   // attendance view needs the whole academic year's records.
-  static Future<List<Map<String, dynamic>>> fetchEmployeeAttendance(String employeeId) async {
-    final res = await client
-        .from('employee_attendance')
-        .select()
-        .eq('employee_id', employeeId)
-        .order('date', ascending: false);
+  // REQ-SEC-016 (2026-10-04): moved from direct anon table access to a
+  // session-token-gated RPC - same Category 3 pattern as every sibling
+  // "own record" fetch in this file.
+  static Future<List<Map<String, dynamic>>> fetchEmployeeAttendance(String employeeId, String sessionToken) async {
+    final res = await client.rpc('fetch_my_employee_attendance', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -274,7 +285,7 @@ class SupabaseService {
     final res = await client.rpc('match_face_embedding', params: {
       'p_embedding': liveEmbedding,
     }) as List;
-    final row = res.first as Map;
+    final row = _firstRow(res, 'match_face_embedding');
     return {
       'id': row['o_employee_id'] as String?,
       'name': row['o_employee_name'] as String?,
@@ -337,7 +348,7 @@ class SupabaseService {
       // redeemPunchCode below, same reasoning applies here.
       'p_check_in_at': now.toUtc().toIso8601String(),
     }) as List;
-    final row = res.first as Map;
+    final row = _firstRow(res, 'record_face_punch');
     return {
       'status': row['o_status'] as String,
       'time':   DateTime.parse(row['o_check_in_at'] as String).toLocal(),
@@ -354,7 +365,7 @@ class SupabaseService {
   // Never the PIN hash itself - see kiosk_pin_service.dart.
   static Future<Map<String, dynamic>> fetchKioskPublicSettings() async {
     final res = await client.rpc('get_kiosk_public_settings') as List;
-    final row = res.first as Map;
+    final row = _firstRow(res, 'get_kiosk_public_settings');
     return {
       'expectedStartTime': row['o_expected_start_time'] as String?, // "HH:MM:SS"
       'lateGraceMinutes':  row['o_late_grace_minutes'] as int?,
@@ -382,7 +393,7 @@ class SupabaseService {
       'p_employee_id': employeeId,
       'p_check_out_at': now.toUtc().toIso8601String(),
     }) as List;
-    final row = res.first as Map;
+    final row = _firstRow(res, 'record_check_out');
     final checkOutAt = row['o_check_out_at'] as String?;
     return {
       'status': row['o_status'] as String,
@@ -433,7 +444,7 @@ class SupabaseService {
       'p_date': date,
       'p_check_in_at': checkInAt.toUtc().toIso8601String(),
     }) as List;
-    final row = res.first as Map;
+    final row = _firstRow(res, 'redeem_punch_code');
     return {
       'employeeName': row['o_employee_name'] as String? ?? 'Staff',
       'status':       row['o_status'] as String,
@@ -453,7 +464,7 @@ class SupabaseService {
 
   static Future<Map<String, dynamic>> generateQrSession() async {
     final res = await client.rpc('generate_qr_session') as List;
-    final row = res.first as Map;
+    final row = _firstRow(res, 'generate_qr_session');
     return {
       'code':      row['o_code'] as String,
       'expiresAt': DateTime.parse(row['o_expires_at'] as String).toLocal(),
@@ -482,7 +493,7 @@ class SupabaseService {
       'p_date': date,
       'p_check_in_at': checkInAt.toUtc().toIso8601String(),
     }) as List;
-    final row = res.first as Map;
+    final row = _firstRow(res, 'redeem_qr_session');
     return {
       'status':       row['o_status'] as String,
       'employeeName': row['o_employee_name'] as String? ?? 'Staff',

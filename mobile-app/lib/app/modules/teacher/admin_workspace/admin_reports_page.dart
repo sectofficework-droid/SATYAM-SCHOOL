@@ -85,6 +85,7 @@ class AdminReportsPage extends StatelessWidget {
   }
 
   String _employeeIdOf(BuildContext context) => AuthService.to.profile.value?['id'] as String? ?? '';
+  String _sessionTokenOf(BuildContext context) => AuthService.to.sessionToken ?? '';
 
   Future<void> _runDownload(BuildContext context, String filename, Future<List<int>> Function() generate) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -116,21 +117,24 @@ class AdminReportsPage extends StatelessWidget {
     final studentId = await _promptText(context, 'ID Card', 'Student ID');
     if (studentId == null || studentId.isEmpty) return;
     final empId = _employeeIdOf(context);
-    await _runDownload(context, 'ID_Cards.pdf', () => PdfReportsService.idCard(empId, [studentId]));
+    final token = _sessionTokenOf(context);
+    await _runDownload(context, 'ID_Cards.pdf', () => PdfReportsService.idCard(empId, token, [studentId]));
   }
 
   Future<void> _downloadBonafide(BuildContext context) async {
     final studentId = await _promptText(context, 'Bonafide Certificate', 'Student ID');
     if (studentId == null || studentId.isEmpty) return;
     final empId = _employeeIdOf(context);
-    await _runDownload(context, 'Bonafide_Certificate.pdf', () => PdfReportsService.bonafide(empId, [studentId]));
+    final token = _sessionTokenOf(context);
+    await _runDownload(context, 'Bonafide_Certificate.pdf', () => PdfReportsService.bonafide(empId, token, [studentId]));
   }
 
   Future<void> _downloadTc(BuildContext context) async {
     final studentId = await _promptText(context, 'Transfer Certificate', 'Student ID');
     if (studentId == null || studentId.isEmpty) return;
     final empId = _employeeIdOf(context);
-    await _runDownload(context, 'Transfer_Certificate.pdf', () => PdfReportsService.tc(empId, studentId));
+    final token = _sessionTokenOf(context);
+    await _runDownload(context, 'Transfer_Certificate.pdf', () => PdfReportsService.tc(empId, token, studentId));
   }
 
   Future<void> _downloadMarksheet(BuildContext context) async {
@@ -139,7 +143,8 @@ class AdminReportsPage extends StatelessWidget {
     final className = await _promptText(context, 'Marksheet', 'Class (e.g. 6th)');
     if (className == null || className.isEmpty) return;
     final empId = _employeeIdOf(context);
-    await _runDownload(context, 'Marksheet.pdf', () => PdfReportsService.marksheet(empId, studentId, className));
+    final token = _sessionTokenOf(context);
+    await _runDownload(context, 'Marksheet.pdf', () => PdfReportsService.marksheet(empId, token, studentId, className));
   }
 
   Future<void> _downloadAttendance(BuildContext context) async {
@@ -148,13 +153,15 @@ class AdminReportsPage extends StatelessWidget {
     final toDate = await _promptText(context, 'Attendance Report', 'To date (YYYY-MM-DD)');
     if (toDate == null || toDate.isEmpty) return;
     final empId = _employeeIdOf(context);
-    await _runDownload(context, 'Attendance_Report.pdf', () => PdfReportsService.attendance(empId, fromDate, toDate));
+    final token = _sessionTokenOf(context);
+    await _runDownload(context, 'Attendance_Report.pdf', () => PdfReportsService.attendance(empId, token, fromDate, toDate));
   }
 
   Future<void> _downloadSalary(BuildContext context) async {
     final month = await _promptText(context, 'Salary Report', 'Month (YYYY-MM-DD, optional)');
     final empId = _employeeIdOf(context);
-    await _runDownload(context, 'Salary_Report.pdf', () => PdfReportsService.salary(empId, month?.isEmpty == true ? null : month));
+    final token = _sessionTokenOf(context);
+    await _runDownload(context, 'Salary_Report.pdf', () => PdfReportsService.salary(empId, token, month?.isEmpty == true ? null : month));
   }
 }
 

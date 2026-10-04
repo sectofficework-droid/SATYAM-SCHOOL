@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getAdminClient, requireAdminSession } from "@/lib/apiAuth";
 
 // Matches sync-absent's own "today" (Asia/Kolkata, not server/UTC today).
 function todayIST() {
@@ -24,17 +25,14 @@ async function recordTodayExclusions(supabaseAdmin, pairs) {
   if (error) console.error("Failed to record sync-absent exclusion:", error.message);
 }
 
+// REQ-SEC-012 (2026-10-04): this route had no authentication at all -
+// anyone who could reach the deployed URL could delete any employee's
+// attendance/shift rows for any date range with no login. Confirmed mobile
+// never calls this route (grepped mobile-app/lib) so a real Supabase Auth
+// session check can't break any mobile caller.
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const { employeeId, employeeIds, date, dates, fromDate, toDate, items } = body;
-
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.SUPABASE_SERVICE_KEY ||
-      process.env.SUPABASE_SECRET_KEY ||
-      process.env.SUPABASE_KEY;
     const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
     if (!supabaseUrl) {
@@ -44,11 +42,19 @@ export async function POST(request) {
       );
     }
 
+    const adminClientForAuth = getAdminClient();
+    if (!adminClientForAuth) {
+      return NextResponse.json({ error: "Server configuration error: missing service key" }, { status: 500 });
+    }
+    const { errorResponse } = await requireAdminSession(request, adminClientForAuth);
+    if (errorResponse) return errorResponse;
+
+    const body = await request.json();
+    const { employeeId, employeeIds, date, dates, fromDate, toDate, items } = body;
+
     // Attempt direct delete if service role key is present
-    if (serviceKey) {
-      const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
-        auth: { persistSession: false },
-      });
+    if (adminClientForAuth) {
+      const supabaseAdmin = adminClientForAuth;
 
       // Case 1a: Specific employee on a single date
       if (employeeId && date) {

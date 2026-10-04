@@ -1,32 +1,25 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getAdminClient, requireAdminSession } from "@/lib/apiAuth";
 
+// REQ-SEC-012 (2026-10-04): this route had no authentication at all -
+// anyone who could reach the deployed URL could POST here and change the
+// school-wide expected-start-time/grace-period/absent-cutoff with no
+// login. Confirmed mobile never calls this route (grepped mobile-app/lib)
+// so a real Supabase Auth session check can't break any mobile caller.
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const { expectedStartTime, lateGraceMinutes, absentCutoffTime, shiftEndTime } = body;
-
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    // No hardcoded fallback here, ever — a leaked service_role key bypasses
-    // all RLS on every table. It must come from environment configuration
-    // only, and this route must fail loudly (not silently fall back to a
-    // committed secret) if that configuration is missing.
-    const serviceKey =
-      process.env.SUPABASE_SERVICE_ROLE_KEY ||
-      process.env.SUPABASE_SERVICE_KEY ||
-      process.env.SUPABASE_SECRET_KEY ||
-      process.env.SUPABASE_KEY;
-
-    if (!supabaseUrl || !serviceKey) {
+    const supabaseAdmin = getAdminClient();
+    if (!supabaseAdmin) {
       return NextResponse.json(
         { error: "Server configuration error: missing service key" },
         { status: 500 }
       );
     }
+    const { errorResponse } = await requireAdminSession(request, supabaseAdmin);
+    if (errorResponse) return errorResponse;
 
-    const supabaseAdmin = createClient(supabaseUrl, serviceKey, {
-      auth: { persistSession: false },
-    });
+    const body = await request.json();
+    const { expectedStartTime, lateGraceMinutes, absentCutoffTime, shiftEndTime } = body;
 
     const updatePayload = {
       expected_start_time: expectedStartTime || "09:00",

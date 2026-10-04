@@ -58,6 +58,24 @@ class AuthService extends GetxService {
 
     try {
       final p = jsonDecode(profileJson) as Map<String, dynamic>;
+
+      // REQ-BUG-015 (2026-10-04): a session cached before Cat3 Group A
+      // shipped (2026-09-19) has no 'session_token' field at all - restoring
+      // it as fully logged-in left every session-gated RPC (leave requests,
+      // queries, alerts, tasks, daily tasks, edit requests, documents, and
+      // now attendance history) silently failing with no error shown, since
+      // each call site only guards on `sessionToken != null` rather than
+      // detecting the gap up front. Fixing at the root instead of patching
+      // every call site: don't restore a tokenless session as logged-in at
+      // all - drop the stale cache (same as the role-mismatch branch above)
+      // so the user lands on the normal login screen and gets a fresh,
+      // token-bearing session on their next successful login.
+      if (p['session_token'] == null) {
+        await _storage.delete(key: 'user_role');
+        await _storage.delete(key: 'user_profile');
+        return;
+      }
+
       profile.value    = p;
       role.value       = roleStr == 'teacher' ? UserRole.teacher : UserRole.student;
       isLoggedIn.value = true;

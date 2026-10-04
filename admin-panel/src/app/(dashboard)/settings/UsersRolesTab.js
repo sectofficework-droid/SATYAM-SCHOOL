@@ -5,30 +5,13 @@ import { Check, UserPlus, X, Pencil, Trash2, Save, Smartphone } from "lucide-rea
 import supabase from "@/lib/supabase";
 import useStore from "@/lib/store";
 import { isValidName, isNonEmpty, hasNoErrors, isValidEmail, isStrongPassword } from "@/lib/validators";
+import authedFetch from "@/lib/authedFetch";
 
 // The Auth side (email/password) lives server-side only (/api/admin-users -
 // needs the service_role key to create/rename/delete a Supabase Auth
-// account, which must never touch the browser) - these are thin fetch
-// wrappers, each attaching the caller's own session token so the route can
-// re-verify who's asking instead of trusting the client.
-async function authedFetch(url, options = {}) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + (session?.access_token || ""),
-      ...(options.headers || {}),
-    },
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(body.error || "Request failed");
-    err.body = body; // callers may need fields beyond `error`, e.g. needsLink
-    throw err;
-  }
-  return body;
-}
+// account, which must never touch the browser) - authedFetch (shared,
+// see src/lib/authedFetch.js) attaches the caller's own session token so
+// the route can re-verify who's asking instead of trusting the client.
 
 // Standalone file (not defined inside settings/page.js) so it can be
 // imported from both the school's Settings and SEF's Settings

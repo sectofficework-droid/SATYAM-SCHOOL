@@ -17,6 +17,8 @@ import {
 } from "@/lib/reportService";
 import { MM, computeColumnLayout, triggerPdfDownload, renderTablePdf } from "@/lib/pdfTableExport";
 import { toIsoDateLocal } from "@/lib/utils";
+import authedFetch from "@/lib/authedFetch";
+import useStore from "@/lib/store";
 import DateInputDMY from "@/components/DateInputDMY";
 import ExamsReportSection from "./ExamsReportSection";
 
@@ -949,6 +951,14 @@ export default function ReportPage() {
   const [extraFieldPos,  setExtraFieldPos]  = useState(1);
   const [hiddenFixedCols,setHiddenFixedCols] = useState([]); // keys of fixed cols user has hidden
 
+  // REQ-BUG-062 (2026-10-04 audit): the Employee Report's "Salary (Rs)"
+  // column/"Total Salary" summary had no role check at all, unlike
+  // Settings -> Users & Roles' Salary tab (REQ-SEC-007), which is
+  // deliberately management-only. Same rule applied here - this view was
+  // just never gated to match.
+  const authUser = useStore(s => s.authUser);
+  const isMgmt = authUser?.role === "management";
+
   // DB data
   const [dbStudents,  setDbStudents]  = useState([]);
   const [dbFees,      setDbFees]      = useState([]);
@@ -968,7 +978,7 @@ export default function ReportPage() {
         getStudentsForReport(),
         getFeesForReport(),
         getPaymentsForReport(),
-        getEmployeesForReport(),
+        getEmployeesForReport(isMgmt),
         getInventoryForReport(),
         getAcademicYearLabels(),
         getTcIssuedForReport(),
@@ -989,7 +999,7 @@ export default function ReportPage() {
       setDbLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [isMgmt]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -1202,26 +1212,20 @@ export default function ReportPage() {
         const empIds = Array.from(selectedStaffRows);
         const matchingRows = dbStaffAttendance.filter(r => empIds.includes(r.employeeId));
         const items = matchingRows.map(r => ({ employeeId: r.employeeId, date: r.date }));
-        const res = await fetch("/api/staff-attendance/delete", {
+        await authedFetch("/api/staff-attendance/delete", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ items }),
         });
-        const result = await res.json();
-        if (!res.ok) throw new Error(result.error || "Failed to delete");
         setDbStaffAttendance(prev => prev.filter(r => !empIds.includes(r.employeeId)));
       } else {
         const items = Array.from(selectedStaffRows).map(k => {
           const [employeeId, date] = k.split("|");
           return { employeeId, date };
         });
-        const res = await fetch("/api/staff-attendance/delete", {
+        await authedFetch("/api/staff-attendance/delete", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ items }),
         });
-        const result = await res.json();
-        if (!res.ok) throw new Error(result.error || "Failed to delete");
         const deleteSet = new Set(selectedStaffRows);
         setDbStaffAttendance(prev => prev.filter(r => !deleteSet.has(`${r.employeeId}|${r.date}`)));
       }
@@ -1242,13 +1246,10 @@ export default function ReportPage() {
       try {
         const empRows = dbStaffAttendance.filter(r => r.employeeId === row.employeeId);
         const dates = [...new Set(empRows.map(r => r.date))];
-        const res = await fetch("/api/staff-attendance/delete", {
+        await authedFetch("/api/staff-attendance/delete", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ employeeId: row.employeeId, dates }),
         });
-        const result = await res.json();
-        if (!res.ok) throw new Error(result.error || "Failed to delete");
         setDbStaffAttendance(prev => prev.filter(r => r.employeeId !== row.employeeId));
         setSelectedStaffRows(prev => {
           const next = new Set(prev);
@@ -1267,13 +1268,10 @@ export default function ReportPage() {
       const key = `${row.employeeId}|${row.date}`;
       setDeletingStaffKey(key);
       try {
-        const res = await fetch("/api/staff-attendance/delete", {
+        await authedFetch("/api/staff-attendance/delete", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ employeeId: row.employeeId, date: row.date }),
         });
-        const result = await res.json();
-        if (!res.ok) throw new Error(result.error || "Failed to delete");
         setDbStaffAttendance(prev => prev.filter(r => !(r.employeeId === row.employeeId && r.date === row.date)));
         setSelectedStaffRows(prev => {
           const next = new Set(prev);

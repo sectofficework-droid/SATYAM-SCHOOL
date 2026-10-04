@@ -7,11 +7,12 @@ import { generateTabularPdf } from "@/lib/pdfReportsServer";
 // all) — this mobile report route is management-only from the start.
 export async function POST(request) {
   try {
-    const { employeeId, month } = await request.json();
-    const auth = await requireStaffAdminTier(employeeId, ["management"]);
+    const { employeeId, sessionToken, month } = await request.json();
+    const auth = await requireStaffAdminTier(employeeId, sessionToken, ["management"]);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
 
     const supabase = supabaseServiceClient();
+    if (!supabase) return NextResponse.json({ error: "Server configuration error: missing service key" }, { status: 500 });
     let query = supabase.from("salary_payments").select("amount, paid_on, paid_by, employees(name, emp_code)").order("paid_on");
     if (month) query = query.eq("month", month);
     const { data, error } = await query;
