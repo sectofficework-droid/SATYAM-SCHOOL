@@ -1,6 +1,9 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
@@ -359,11 +362,20 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
     } catch (e) {
       if (mounted) {
         setState(() => _saving = false);
+        // Most failures here are a dropped/unstable connection (confirmed via
+        // diagnostic_reports - 504/handshake errors that never reach the
+        // server), not marks actually being rejected - say so explicitly so
+        // it doesn't read as silent data loss. What's typed stays in the
+        // fields (markCtrl isn't cleared), so Save can just be tapped again.
+        final isNetwork = e is SocketException || e is HandshakeException || e is TimeoutException ||
+            (e is PostgrestException && e.message != 'Not authorized');
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Row(children: [
-            Icon(Icons.error_outline, color: Colors.white, size: 18),
-            SizedBox(width: 8),
-            Text('Could not save marks. Please try again.'),
+          content: Row(children: [
+            const Icon(Icons.error_outline, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(isNetwork
+                ? 'Network issue - marks were NOT saved. Check your connection and tap Save again.'
+                : 'Could not save marks. Please try again.')),
           ]),
           backgroundColor: AppColors.red,
           behavior: SnackBarBehavior.floating,

@@ -1,7 +1,41 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseService {
   static SupabaseClient get client => Supabase.instance.client;
+
+  // Marks entry (REQ-BUG-? 2026-10-04): teachers reported marks "not saving"
+  // - traced to the request dropping before it reaches Supabase at all (504
+  // Gateway Timeout / SSL handshake failures from diagnostic_reports, with
+  // no matching request in Supabase's own edge logs), i.e. a flaky
+  // connection, not a server or RPC bug. Retrying a couple of times absorbs
+  // most of those blips. Deliberately NOT retried: "Not authorized" (the
+  // RPC's own RAISE EXCEPTION for a real permission failure) - retrying
+  // that just wastes time, it will never succeed.
+  static Future<T> _withNetworkRetry<T>(Future<T> Function() attempt, {int maxAttempts = 3}) async {
+    for (var i = 1; i <= maxAttempts; i++) {
+      try {
+        return await attempt();
+      } catch (e) {
+        final isLast = i == maxAttempts;
+        if (isLast || !_isTransientNetworkError(e)) rethrow;
+        await Future.delayed(Duration(milliseconds: 400 * i));
+      }
+    }
+    throw StateError('unreachable');
+  }
+
+  static bool _isTransientNetworkError(Object e) {
+    if (e is SocketException || e is HandshakeException || e is TimeoutException) return true;
+    if (e is PostgrestException) {
+      if (e.message == 'Not authorized') return false;
+      final code = e.code ?? '';
+      return code == '502' || code == '503' || code == '504' ||
+          (e.details ?? '').toString().toLowerCase().contains('gateway timeout');
+    }
+    return false;
+  }
 
   // Attendance ────────────────────────────────────────────────────────────────
 
@@ -619,9 +653,9 @@ class SupabaseService {
   }
 
   static Future<List<Map<String, dynamic>>> fetchExamMarks(String employeeId, String sessionToken, String examId) async {
-    final res = await client.rpc('fetch_exam_marks', params: {
+    final res = await _withNetworkRetry(() => client.rpc('fetch_exam_marks', params: {
       'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_exam_id': examId,
-    }) as List;
+    })) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -631,12 +665,12 @@ class SupabaseService {
   // this table's real UNIQUE constraint requires, previously done client-side
   // via .upsert(onConflict:).
   static Future<void> saveMarksBatch(String employeeId, String sessionToken, String examId, List<Map<String, dynamic>> records) async {
-    await client.rpc('save_marks_batch', params: {
+    await _withNetworkRetry(() => client.rpc('save_marks_batch', params: {
       'p_employee_id': employeeId,
       'p_session_token': sessionToken,
       'p_exam_id': examId,
       'p_marks': records.map((r) => {'student_id': r['student_id'], 'marks_obtained': r['marks_obtained']}).toList(),
-    });
+    }));
   }
 
   // Same shape as fetchClassStudents, but looks a class up by name instead of
