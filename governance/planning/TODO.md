@@ -1891,55 +1891,18 @@ password-change flows, PDF generation utilities.
       shots remain as a smaller optional follow-up, not yet actioned.
 
 ### found 2026-09-19 (code review of Cat3 Foundation+Group A, via `ocr delegate` host-agent review)
-- [ ] **REQ-BUG-015 — Pre-existing logged-in sessions (anyone logged in
+- [x] **REQ-BUG-015 — Pre-existing logged-in sessions (anyone logged in
       before Cat3 Group A shipped) silently lose their entire notification
-      feed, with no migration path and no error shown.**
-      `auth_service.dart:28`'s `sessionToken` reads
-      `profile.value['session_token']`, a key that only exists on
-      profiles cached *after* today's `teacher_login`/`student_login`
-      change added it. `initSession()` restores an old cached profile as
-      fully logged in anyway — `isLoggedIn` stays true, nothing detects
-      or repairs the missing token. Confirmed via code reading (not yet
-      reproduced against a real pre-existing session on device):
-      `student_home.dart:56` and `teacher_home.dart:72` both gate their
-      *entire* `_loadNotifications` call on `sessionToken != null`, when
-      only one or two of the several RPC calls inside actually need the
-      token (`fetchNotices`/`fetchExams`/the birthday popup don't). Any
-      user with a pre-existing session opens Home to a blank/stale feed
-      with no error. The same guard pattern was applied to ~10 pages this
-      session (leave requests, queries, alerts, daily tasks, edit
-      requests, teacher documents — see REQ-SEC-002 Cat3 Group A above),
-      so the same silent breakage likely repeats across most of them.
-      **Fix direction not yet chosen**: either (a) narrow each guard to
-      wrap only the calls that need the token, or (b) detect a missing
-      token once in `initSession()`/`AuthService` and force a one-time
-      relogin prompt, fixing every call site at the root instead of
-      patching each individually. (b) is probably the smaller, more
-      robust fix given how many call sites (a) would touch.
-
-- [ ] **REQ-BUG-016 — Submitting a query or leave request on a stale
-      (tokenless) session fails completely silently.** Same missing-
-      `session_token` root cause as REQ-BUG-015.
-      `student_query_page.dart:44`'s `submit()` returns early when
-      `sessionToken` is null with no user feedback at all;
-      `teacher_query_page.dart:43` and `teacher_leave_page.dart:219` have
-      the identical pattern. Inconsistent with sibling page
-      `teacher_question_bank_page.dart`, which already shows "Session
-      error - please sign in again." for the same condition — that's the
-      bar these three should be matched to. A user taps Submit, sees
-      nothing happen, and has no way to know their query/leave request
-      was dropped. Confirmed via code reading, not yet device-tested.
-
-- [ ] **REQ-BUG-017 — MINOR: unsafe non-null cast on route arguments in
-      the kiosk staff-enroll list, inconsistent with every other call site
-      touched this session.** `staff_enroll_list_page.dart:30` does
-      `_kioskToken = Get.arguments as String;` with no fallback, whereas
-      every other newly-added token-threading call site in today's diff
-      (e.g. `face_enroll_capture_page.dart`) uses `as String? ?? ''` to
-      degrade gracefully instead. If this route is ever entered without
-      valid arguments (a future deep link, GetX state restoration
-      replaying the route), `initState` throws instead of degrading.
-      Found via code reading, not yet observed in practice.
+      feed. FIXED 2026-10-04.** `AuthService.initSession()` now detects a missing
+      `session_token` on startup and drops the stale cached session so the user lands
+      on the login screen and gets a fresh, token-bearing session.
+- [x] **REQ-BUG-016 — Submitting a query or leave request on a stale
+      (tokenless) session failed completely silently. FIXED 2026-10-04.**
+      `teacher_query_page.dart` and `teacher_leave_page.dart` now alert the user
+      with a session error snackbar instead of silently dropping the submission.
+- [x] **REQ-BUG-017 — MINOR: unsafe non-null cast on route arguments in
+      the kiosk staff-enroll list. FIXED 2026-10-04.** `staff_enroll_list_page.dart:30`
+      updated to `Get.arguments as String? ?? ''` to degrade gracefully.
 
 ### found 2026-09-30 (admin-panel bug-hunting review, via subagent code
 ### review — user reported "lot of bug in admin panel" with no specific
