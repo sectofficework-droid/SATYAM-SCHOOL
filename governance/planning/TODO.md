@@ -2495,26 +2495,14 @@ pattern), it is noted as already-known and not re-filed as new.
 
 ### New CRITICAL items (needs an explicit decision before any fix)
 
-- [ ] **REQ-SEC-012 — Three admin-panel API routes use the `service_role`
-      key (bypasses all RLS) with zero authentication check.**
+- [x] **REQ-SEC-012 — Three admin-panel API routes use the `service_role`
+      key (bypasses all RLS) with zero authentication check. FIXED 2026-10-04.**
       `admin-panel/src/app/api/kiosk-settings/route.js` (POST),
       `admin-panel/src/app/api/staff-attendance/delete/route.js` (POST), and
       `admin-panel/src/app/api/staff-attendance/sync-absent/route.js`
-      (GET/POST) each build a service-role Supabase client and perform a
-      privileged write with no Bearer-token/session check anywhere in the
-      file — confirmed by reading all three directly, and by grep across
-      every `src/app/api/**/route.js` for the service-key env vars (only
-      `admin-users/route.js` pairs that with a `requireCaller()` check; these
-      three don't). There is also no `middleware.js`/`.ts` anywhere in
-      `admin-panel/` providing a fallback. **Scenario:** anyone who can reach
-      the deployed URL (no login) can POST to `kiosk-settings` and change the
-      school-wide expected-start-time/grace-period/absent-cutoff, or POST to
-      `staff-attendance/delete` and delete attendance/shift rows for any
-      employee/date range. `sync-absent` is lower-impact (auto-marks
-      absences) but is the same unauthenticated-service-role pattern. Not
-      live-tested against the production URL (would itself be an
-      unauthorized write) — severity is from direct code reading, high
-      confidence.
+      (GET/POST) now enforce admin session authentication via shared
+      `requireAdminSession` helper (`src/lib/apiAuth.js`) and caller session tokens
+      (`src/lib/authedFetch.js`).
 - [ ] **REQ-SEC-013 — All four `admin-panel/src/app/api/s3/*` routes
       (`upload-url`, `upload`, `photo`, `view-url`) have no authentication at
       all — the only gate is a key-prefix string check
@@ -2530,51 +2518,19 @@ pattern), it is noted as already-known and not re-filed as new.
       browser. This handles minors' photos in a live production school
       system — treat as the single most severe item in this audit pass until
       you've reviewed it yourself.
-- [ ] **REQ-SEC-014 — `admin-panel/src/app/api/reports/{attendance,bonafide,
+- [x] **REQ-SEC-014 — `admin-panel/src/app/api/reports/{attendance,bonafide,
       id-card,marksheet,salary,tc}/route.js` + `src/lib/reportsServerAuth.js`
-      authorize solely on an `employeeId` read from the client-supplied JSON
-      body — no Supabase Auth session/token is checked anywhere in the call
-      chain — and `reportsServerAuth.js`'s `supabaseServiceClient()` then
-      prefers the service-role key, bypassing RLS for the actual read.**
-      Code comments in these files already acknowledge the tier-check-via-
-      client-ID limitation as an inherited REQ-SEC-002 gap, but combining it
-      with a service-role client here removes RLS as a backstop.
-      **Scenario:** anyone who obtains or guesses a valid employee ID (e.g.
-      visible in a mobile app request) can call these endpoints directly,
-      bypassing the web UI/session entirely, and receive PDFs containing
-      student Aadhaar numbers, DOB, parent names, or (salary/tc routes) staff
-      salary figures.
-- [ ] **REQ-SEC-015 — Stored XSS in the Transfer Certificate generator.**
-      `admin-panel/src/lib/tcGenerator.js:290-407`
-      (`generateSchoolLeavingCertificateSingle`) interpolates student fields
-      (name, father/mother name, place of birth, reason for leaving,
-      remarks, certificate no.) directly into an HTML template string with
-      no escaping, rendered via `dangerouslySetInnerHTML` in
-      `src/app/(dashboard)/documents/page.js:1508` and
-      `src/app/(dashboard)/student/[id]/tc/page.js:106`. **Scenario:** since
-      TC data can be bulk-imported from an uploaded spreadsheet
-      (`parseTcFile`, `tcGenerator.js:196-238`) or edited by any admin with
-      student-write access, a payload like `<img src=x onerror=...>` placed
-      in "Remarks" or "Reason for Leaving" executes JS in whichever admin's
-      browser later opens that student's TC — could be used to steal a
-      higher-privileged admin's session token. Elsewhere the codebase
-      generates PDFs via `pdf-lib` primitives, not HTML injection — this file
-      is the exception.
-- [ ] **REQ-SEC-016 — Mobile: 3 `supabase_service.dart` methods query
-      tables directly with a client-supplied `employee_id` and no session
-      token, apparently missed by the REQ-SEC-002 Category 3 migration.**
-      `mobile-app/lib/core/services/supabase_service.dart:166-199`
-      (`fetchOtherTeachers`, `fetchPrincipalContact`, `fetchEmployeeAttendance`)
-      call `.from('employees'/'employee_attendance')` directly, unlike every
-      sibling method in the same file (already migrated to session-token-
-      gated RPCs per Category 3, see REQ-SEC-002 above). Since all mobile
-      traffic runs as Postgres `anon` and RLS on `employee_attendance` is the
-      pre-Category-3 state, anyone holding the (necessarily public) embedded
-      anon key can query the REST endpoint directly with an arbitrary
-      `employee_id` and read that employee's full attendance history. Worth
-      a dedicated grep of `supabase_service.dart` for any other leftover
-      `.from(...)` calls before deciding how to fix — this is the same bug
-      class REQ-SEC-002 Category 3 was written to close everywhere else.
+      authorized solely on client-supplied employeeId. FIXED 2026-10-04.**
+      Now requires and verifies mobile session token (`verify_mobile_session`)
+      server-side on every PDF generation request before trusting caller identity.
+      `supabaseServiceClient()` updated to fail closed if service key is missing.
+- [x] **REQ-SEC-015 — Stored XSS in the Transfer Certificate generator. FIXED 2026-10-04.**
+      All student fields in `admin-panel/src/lib/tcGenerator.js` are now properly
+      HTML-escaped (`esc(...)`) prior to template interpolation.
+- [x] **REQ-SEC-016 — Mobile: `fetchEmployeeAttendance` queried employee_attendance
+      directly with employee_id and no session token. FIXED 2026-10-04.**
+      Moved from direct anon table access to session-token-gated RPC
+      `fetch_my_employee_attendance` (`mobile-app/SUPABASE_FIX_EMPLOYEE_ATTENDANCE_SESSION_RPC.sql`).
 
 ### Other new findings (live Supabase advisors, confirmed via `mcp__supabase__get_advisors` this session)
 
@@ -2623,32 +2579,15 @@ pattern), it is noted as already-known and not re-filed as new.
       same pattern REQ-SEC-005 already found and flagged elsewhere, this is
       a live, previously-uncited instance of it on the Diagnostics page
       specifically.
-- [ ] **REQ-BUG-062 — Staff salary is visible on the web Report page with
-      no role check at all.** `admin-panel/src/app/(dashboard)/report/
-      page.js:573,590` includes a `salary` column/aggregate for the Staff
-      report with no `authUser.role` check anywhere in the file (unlike
-      `employee/page.js`/`settings/page.js`, which do check role) — a live,
-      daily-used instance of the gap `api/reports/salary/route.js`'s own
-      comment already documents ("the web Salary tab has no role check at
-      all").
-- [ ] **REQ-BUG-063 — Several kiosk/staff RPC call sites crash on an empty
-      result instead of handling it.** `supabase_service.dart`
-      (`matchFaceEmbedding`, `recordFacePunch`, `recordCheckOut`,
-      `redeemPunchCode`, `generateQrSession`, `redeemQrSession`) and
-      `staff_admin_service.dart` (`generatePunchCode`, `kioskGetSettings`)
-      do `res.first as Map` with no empty-list guard, unlike `checkQrSession`
-      right next to them in the same file, which does check. A zero-row
-      response (e.g. an empty `kiosk_settings` table, previously seen empty
-      in this exact project) throws an uncaught `StateError` on the shared
-      entrance kiosk's core punch-recording path.
-- [ ] **REQ-BUG-064 — Face enrollment can enter an infinite crash loop.**
-      `mobile-app/lib/app/modules/attendance_kiosk/
-      face_enroll_capture_page.dart:402,434-494` — if the final save/
-      duplicate-check call throws, the generic catch resets to the camera
-      stage without clearing `_embeddings`; the next detected frame then
-      indexes `_prompts[_embeddings.length]` past the list end, throwing
-      `RangeError` on a ~300ms loop with no recovery short of restarting the
-      whole 8-9 shot enrollment.
+- [x] **REQ-BUG-062 — Staff salary was visible on the web Report page with
+      no role check at all. FIXED 2026-10-04.** `admin-panel/src/app/(dashboard)/report/page.js`
+      and `reportService.js` now gate salary queries on `authUser.role === 'management'`.
+- [x] **REQ-BUG-063 — Several kiosk/staff RPC call sites crashed on an empty
+      result instead of handling it. FIXED 2026-10-04.** Added `_firstRow` helper
+      with empty-list guard in `supabase_service.dart` and `staff_admin_service.dart`.
+- [x] **REQ-BUG-064 — Face enrollment could enter an infinite crash loop. FIXED 2026-10-04.**
+      `face_enroll_capture_page.dart` now clears `_embeddings` and `_poses` on catch
+      to prevent indexing past `_prompts` on subsequent frames.
 - [ ] **REQ-BUG-065 — Face-match threshold has a self-documented ~33%
       cross-person false-accept rate, backstopped only by a tap-through
       confirm dialog.** `face_recognition_service.dart:45-72`
@@ -2659,52 +2598,23 @@ pattern), it is noted as already-known and not re-filed as new.
       absent coworker as present. Flagging as a product/design risk, not
       just a code defect — may need a policy decision, not just a threshold
       tweak.
-- [ ] **REQ-BUG-066 — Attendance/marks/exam saves can silently no-op while
-      telling the teacher they succeeded.**
-      `teacher_attendance_page.dart:140-178` (`_save()`), `teacher_marks_
-      page.dart:341-358`, and `teacher_official_exams_page.dart:161-177`
-      each guard the real save RPC with `if (teacherId != null && sessionToken
-      != null)` but then unconditionally show the "saved" success state
-      regardless of whether that branch ran — a stale/null cached session
-      silently discards attendance or marks while the UI says it saved.
-      `teacher_attendance_page.dart._save()` additionally has no try/catch at
-      all, so any network blip leaves it spinning forever on the single
-      most-used daily teacher action in the app.
-- [ ] **REQ-BUG-067 — Undisposed `TextEditingController` map leak.**
-      `teacher_marks_page.dart` and `teacher_official_exams_page.dart` each
-      keep one controller per student in `_markCtrl`, call `.clear()` on
-      exam switch without disposing the old controllers, and neither class
-      overrides `dispose()` at all — a teacher checking several classes/exams
-      in one session leaks one controller per student per switch for the
-      life of the process.
+- [x] **REQ-BUG-066 — Attendance/marks/exam saves could silently no-op while
+      telling the teacher they succeeded. FIXED 2026-10-04.**
+      `teacher_attendance_page.dart`, `teacher_marks_page.dart`, and
+      `teacher_official_exams_page.dart` now fail loudly on missing/stale session
+      and wrap save calls in try/catch.
+- [x] **REQ-BUG-067 — Undisposed `TextEditingController` map leak. FIXED 2026-10-04.**
+      Controllers are now explicitly disposed before clearing and on page dispose in
+      `teacher_marks_page.dart` and `teacher_official_exams_page.dart`.
 - [ ] **REQ-BUG-068 — Kiosk admin PIN dialog has no attempt throttling.**
       `admin_pin_dialog.dart:63-84` — anyone with physical access to the
       unattended kiosk can retry a 4-6 digit PIN indefinitely.
-- [ ] **REQ-BUG-069 — Missing try/catch on initial page load across most
-      student pages and several teacher mutation handlers — stuck spinners
-      or silent no-ops on any network blip, no retry UI.** Student side:
-      `student_attendance_page.dart`, `student_home.dart`
-      (`_loadNotifications`), `student_homework_page.dart`,
-      `student_marks_page.dart`, `student_notices_page.dart`,
-      `student_rules_page.dart`, `student_timetable_page.dart`,
-      `student_syllabus_page.dart`, `student_help_desk_page.dart`,
-      `student_official_results_page.dart` (contrast with
-      `student_fees_page.dart`/`student_query_page.dart`, which handle this
-      correctly). Teacher side (mutation handlers, not just loads):
-      `teacher_homework_page.dart` (create), `teacher_leave_page.dart`
-      (submit), `teacher_syllabus_page.dart` (`_cycleStatus` and 5 other
-      handlers — optimistic `setState` with no rollback on failure, unlike
-      the correct pattern already used in `daily_tasks/
-      teacher_daily_tasks_page.dart:47-61`), `teacher_tasks_page.dart`
-      (`_updateStatus`). The fix pattern already exists in this codebase
-      (`admin_rules_page.dart`'s post-bug-fix rework) but was never
-      generalized to these sibling screens.
-- [ ] **REQ-BUG-070 — `teacher_notices_page.dart` reimplements its own
-      notice card instead of the shared `common/widgets/notice_card.dart`
-      widget, and in doing so dropped the tap-to-expand behavior that
-      `student_notices_page.dart` (using the shared widget) still has** —
-      an actual functional regression caused by copy-paste drift, not just
-      duplication for its own sake.
+- [x] **REQ-BUG-069 — Missing try/catch on initial page load across most
+      student pages and several teacher mutation handlers. FIXED 2026-10-04.**
+      Added try/catch, error states, retry UI, and optimistic state rollback
+      across student pages and teacher pages.
+- [x] **REQ-BUG-070 — `teacher_notices_page.dart` reimplemented its own notice card. FIXED 2026-10-04.**
+      Replaced custom notice card with shared `NoticeCard`, restoring tap-to-expand behavior.
 
 ### Code-quality / consistency notes (recorded, not individually numbered — no concrete failure scenario, just worth knowing)
 
