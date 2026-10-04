@@ -13,6 +13,15 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 // on every call if the employee isn't linked to an admin_users row - never
 // trust a locally-cached role for gating, only what the RPC accepts.
 class StaffAdminService {
+  // REQ-BUG-063 (2026-10-04): a few call sites below did `res.first as Map`
+  // with no empty-list guard - same bug class fixed in supabase_service.dart
+  // the same session. Raises a clear, catchable error instead of an
+  // uncaught RangeError/StateError on a zero-row response.
+  static Map _firstRow(List res, String rpcName) {
+    if (res.isEmpty) throw Exception('No response from $rpcName - please try again.');
+    return res.first as Map;
+  }
+
   static SupabaseClient get client => Supabase.instance.client;
 
   static List<Map<String, dynamic>> _list(dynamic res) {
@@ -77,7 +86,7 @@ class StaffAdminService {
     final res = await client.rpc('staff_generate_punch_code', params: {
       'p_employee_id': employeeId, 'p_target_employee_id': targetEmployeeId,
     }) as List;
-    return Map<String, dynamic>.from(res.first as Map);
+    return Map<String, dynamic>.from(_firstRow(res, 'staff_generate_punch_code'));
   }
 
   static Future<List<Map<String, dynamic>>> searchEmployees(String employeeId, String query) async {
@@ -263,15 +272,42 @@ class StaffAdminService {
     });
   }
 
+  // Full field set added 2026-10-04 to reach parity with the admin-panel
+  // web form (AddStudentForm.js, ~30 fields) - mobile previously only ever
+  // collected 9 basic fields. All new params optional, matching the
+  // staff_admin_student_add RPC's new overload (same name/order as the
+  // web form's own field keys for easy cross-reference).
   static Future<Map<String, dynamic>> addStudent(String employeeId, {
     required String firstName, required String lastName, required String dob, required String gender,
     required String fatherName, required String motherName, required String mobile1,
     required String classId, required String sectionId, String? address,
+    String? mobile2,
+    String? religion, String? caste, String? subCaste, String? motherTongue,
+    num? heightCm, num? weightKg,
+    String? roomPlotNo, String? society, String? landmark, String? area, String? pincode,
+    String? aadhar, String? aadharName,
+    String? fatherAadhar, String? fatherAadharName,
+    String? motherAadhar, String? motherAadharName,
+    String? placeOfBirth,
+    String? birthCity, String? birthVillage, String? birthDistrict, String? birthState,
+    String? birthCertRegNo, String? birthCertRegDate,
+    String? udise, String? pen, String? apaar,
   }) async {
     final res = await client.rpc('staff_admin_student_add', params: {
       'p_employee_id': employeeId, 'p_first_name': firstName, 'p_last_name': lastName, 'p_dob': dob,
       'p_gender': gender, 'p_father_name': fatherName, 'p_mother_name': motherName, 'p_mobile1': mobile1,
       'p_class_id': classId, 'p_section_id': sectionId, 'p_address': address,
+      'p_mobile2': mobile2,
+      'p_religion': religion, 'p_caste': caste, 'p_sub_caste': subCaste, 'p_mother_tongue': motherTongue,
+      'p_height_cm': heightCm, 'p_weight_kg': weightKg,
+      'p_room_plot_no': roomPlotNo, 'p_society': society, 'p_landmark': landmark, 'p_area': area, 'p_pincode': pincode,
+      'p_aadhar': aadhar, 'p_aadhar_name': aadharName,
+      'p_father_aadhar': fatherAadhar, 'p_father_aadhar_name': fatherAadharName,
+      'p_mother_aadhar': motherAadhar, 'p_mother_aadhar_name': motherAadharName,
+      'p_place_of_birth': placeOfBirth,
+      'p_birth_city': birthCity, 'p_birth_village': birthVillage, 'p_birth_district': birthDistrict, 'p_birth_state': birthState,
+      'p_birth_cert_reg_no': birthCertRegNo, 'p_birth_cert_reg_date': birthCertRegDate,
+      'p_udise': udise, 'p_pen': pen, 'p_apaar': apaar,
     });
     return Map<String, dynamic>.from(res as Map);
   }
@@ -484,7 +520,7 @@ class StaffAdminService {
   // ── Kiosk Settings (senior_admin/management only) ─────────────────────────
   static Future<Map<String, dynamic>> kioskGetSettings(String employeeId) async {
     final res = await client.rpc('staff_admin_kiosk_get_settings', params: {'p_employee_id': employeeId});
-    return Map<String, dynamic>.from((res as List).first as Map);
+    return Map<String, dynamic>.from(_firstRow(res as List, 'staff_admin_kiosk_get_settings'));
   }
 
   static Future<void> kioskSaveSettings(String employeeId, {
@@ -686,7 +722,7 @@ class StaffAdminService {
     final res = await client.rpc('staff_admin_send_attendance_reminders', params: {
       'p_employee_id': employeeId, 'p_date': date, 'p_section_ids': sectionIds,
     });
-    return Map<String, dynamic>.from((res as List).first as Map);
+    return Map<String, dynamic>.from(_firstRow(res as List, 'staff_admin_send_attendance_reminders'));
   }
 
   // ── Diagnostics (senior_admin/management only) ─────────────────────────────

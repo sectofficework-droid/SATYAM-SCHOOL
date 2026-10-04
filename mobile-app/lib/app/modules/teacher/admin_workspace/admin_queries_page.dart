@@ -14,7 +14,14 @@ class _AdminQueriesPageState extends State<AdminQueriesPage> {
   List<Map<String, dynamic>> _queries = [];
   bool _loading = true;
   String? _error;
+  String? _statusFilter = 'Pending';
   String get _employeeId => AuthService.to.profile.value?['id'] as String? ?? '';
+
+  List<Map<String, dynamic>> get _filtered {
+    if (_statusFilter == null) return _queries;
+    final wantResolved = _statusFilter == 'Resolved';
+    return _queries.where((q) => (q['status'] == 'Resolved') == wantResolved).toList();
+  }
 
   @override
   void initState() { super.initState(); _load(); }
@@ -80,15 +87,20 @@ class _AdminQueriesPageState extends State<AdminQueriesPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const AdminAppBar(title: 'Queries'),
-      body: _loading ? const AdminLoading()
-        : _error != null ? AdminErrorState(message: _error!, onRetry: _load)
-        : _queries.isEmpty ? const AdminEmptyState(icon: Icons.forum_rounded, title: 'No queries', subtitle: 'Queries and suggestions will appear here.')
-        : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: AdminFilterBar(options: const ['Pending', 'Resolved'], selected: _statusFilter, onChanged: (v) => setState(() => _statusFilter = v)),
+        ),
+        Expanded(child: _loading ? const AdminLoading()
+          : _error != null ? AdminErrorState(message: _error!, onRetry: _load)
+          : _filtered.isEmpty ? const AdminEmptyState(icon: Icons.forum_rounded, title: 'No queries', subtitle: 'Queries and suggestions will appear here.')
+          : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
             padding: const EdgeInsets.all(16),
-            itemCount: _queries.length,
+            itemCount: _filtered.length,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (_, i) {
-              final q = _queries[i];
+              final q = _filtered[i];
               final resolved = q['status'] == 'Resolved';
               return AdminCard(onTap: () => _openThread(q), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
@@ -101,6 +113,8 @@ class _AdminQueriesPageState extends State<AdminQueriesPage> {
               ]));
             },
           )),
+        ),
+      ]),
     );
   }
 }

@@ -15,7 +15,15 @@ class _AdminTasksPageState extends State<AdminTasksPage> {
   List<Map<String, dynamic>> _tasks = [];
   bool _loading = true;
   String? _error;
+  String? _statusFilter;
+  String? _priorityFilter;
   String get _employeeId => AuthService.to.profile.value?['id'] as String? ?? '';
+
+  List<Map<String, dynamic>> get _filtered => _tasks.where((t) {
+    if (_statusFilter != null && (t['status'] as String? ?? '') != _statusFilter) return false;
+    if (_priorityFilter != null && (t['priority'] as String? ?? '') != _priorityFilter) return false;
+    return true;
+  }).toList();
 
   @override
   void initState() { super.initState(); _load(); }
@@ -139,15 +147,24 @@ class _AdminTasksPageState extends State<AdminTasksPage> {
     return Scaffold(
       appBar: const AdminAppBar(title: 'Tasks'),
       floatingActionButton: FloatingActionButton(backgroundColor: AppColors.navy, onPressed: _createTask, child: const Icon(Icons.add)),
-      body: _loading ? const AdminLoading()
-        : _error != null ? AdminErrorState(message: _error!, onRetry: _load)
-        : _tasks.isEmpty ? const AdminEmptyState(icon: Icons.task_alt_rounded, title: 'No tasks', subtitle: 'Tap + to create one.')
-        : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: AdminFilterBar(options: const ['Pending', 'Completed'], selected: _statusFilter, onChanged: (v) => setState(() => _statusFilter = v)),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: AdminFilterBar(options: const ['Low', 'Medium', 'High'], selected: _priorityFilter, onChanged: (v) => setState(() => _priorityFilter = v)),
+        ),
+        Expanded(child: _loading ? const AdminLoading()
+          : _error != null ? AdminErrorState(message: _error!, onRetry: _load)
+          : _filtered.isEmpty ? const AdminEmptyState(icon: Icons.task_alt_rounded, title: 'No tasks', subtitle: 'Tap + to create one, or clear your filters.')
+          : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
             padding: const EdgeInsets.all(16),
-            itemCount: _tasks.length,
+            itemCount: _filtered.length,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (_, i) {
-              final t = _tasks[i];
+              final t = _filtered[i];
               final completed = t['status'] == 'Completed';
               final assignees = (t['assignees'] as List?)?.cast<Map>() ?? [];
               return AdminCard(onTap: () => _manage(t), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -170,6 +187,8 @@ class _AdminTasksPageState extends State<AdminTasksPage> {
               ]));
             },
           )),
+        ),
+      ]),
     );
   }
 }

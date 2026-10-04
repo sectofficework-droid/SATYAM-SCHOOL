@@ -18,7 +18,15 @@ class _AdminEmployeesPageState extends State<AdminEmployeesPage> {
   bool _loading = true;
   String? _error;
   final _searchCtrl = TextEditingController();
+  String? _typeFilter;
+  String? _statusFilter;
   String get _employeeId => AuthService.to.profile.value?['id'] as String? ?? '';
+
+  List<Map<String, dynamic>> get _filtered => _employees.where((e) {
+    if (_typeFilter != null && (e['type'] as String? ?? '') != _typeFilter) return false;
+    if (_statusFilter != null && (e['status'] as String? ?? 'Active') != _statusFilter) return false;
+    return true;
+  }).toList();
 
   @override
   void initState() { super.initState(); _load(); }
@@ -87,22 +95,33 @@ class _AdminEmployeesPageState extends State<AdminEmployeesPage> {
       floatingActionButton: FloatingActionButton(backgroundColor: AppColors.navy, onPressed: _addEmployee, child: const Icon(Icons.person_add_alt_1_rounded)),
       body: Column(children: [
         Padding(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           child: TextField(
             controller: _searchCtrl,
             decoration: const InputDecoration(labelText: 'Search by name, code', border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)),
             onSubmitted: (v) => _load(search: v),
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: AdminFilterBar(
+            options: const ['teaching', 'non-teaching', 'management', 'media'],
+            selected: _typeFilter, onChanged: (v) => setState(() => _typeFilter = v),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: AdminFilterBar(options: const ['Active', 'Inactive'], selected: _statusFilter, onChanged: (v) => setState(() => _statusFilter = v)),
+        ),
         Expanded(child: _loading ? const AdminLoading()
           : _error != null ? AdminErrorState(message: _error!, onRetry: () => _load())
-          : _employees.isEmpty ? const AdminEmptyState(icon: Icons.badge_rounded, title: 'No employees', subtitle: 'Try a different search.')
+          : _filtered.isEmpty ? const AdminEmptyState(icon: Icons.badge_rounded, title: 'No employees', subtitle: 'Try a different search or filter.')
           : RefreshIndicator(color: AppColors.navy, onRefresh: () => _load(search: _searchCtrl.text), child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _employees.length,
+              itemCount: _filtered.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (_, i) {
-                final e = _employees[i];
+                final e = _filtered[i];
                 return AdminCard(
                   onTap: () => Get.to(() => AdminEmployeeDetailPage(employeeId: e['id'] as String))?.then((_) => _load()),
                   child: Row(children: [

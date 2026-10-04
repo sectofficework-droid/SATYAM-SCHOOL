@@ -18,6 +18,12 @@ class _AdminImpersonationLogPageState extends State<AdminImpersonationLogPage> {
   List<Map<String, dynamic>> _rows = [];
   bool _loading = true;
   String? _error;
+  String? _eventFilter;
+
+  List<Map<String, dynamic>> get _filtered {
+    if (_eventFilter == null) return _rows;
+    return _rows.where((r) => (r['event_type'] as String? ?? '') == _eventFilter).toList();
+  }
 
   static const _eventLabels = {
     'created': ('Code Generated', AppColors.blue),
@@ -53,18 +59,30 @@ class _AdminImpersonationLogPageState extends State<AdminImpersonationLogPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AdminAppBar(title: 'Access Code Log', actions: [IconButton(icon: const Icon(Icons.refresh_rounded), onPressed: _load)]),
-      body: _loading
-        ? const AdminLoading()
-        : _error != null
-          ? AdminErrorState(message: _error!, onRetry: _load)
-          : _rows.isEmpty
-            ? const AdminEmptyState(icon: Icons.key_off_rounded, title: 'No access codes yet', subtitle: 'Generated, redeemed, and failed access codes will appear here.')
-            : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: SizedBox(
+            height: 36,
+            child: ListView(scrollDirection: Axis.horizontal, children: [
+              _eventChip(null, 'All'),
+              const SizedBox(width: 8),
+              ..._eventLabels.entries.expand((e) => [_eventChip(e.key, e.value.$1), const SizedBox(width: 8)]),
+            ]),
+          ),
+        ),
+        Expanded(child: _loading
+          ? const AdminLoading()
+          : _error != null
+            ? AdminErrorState(message: _error!, onRetry: _load)
+            : _filtered.isEmpty
+              ? const AdminEmptyState(icon: Icons.key_off_rounded, title: 'No access codes', subtitle: 'Generated, redeemed, and failed access codes will appear here.')
+              : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
                 padding: const EdgeInsets.all(16),
-                itemCount: _rows.length,
+                itemCount: _filtered.length,
                 separatorBuilder: (_, __) => const SizedBox(height: 8),
                 itemBuilder: (_, i) {
-                  final r = _rows[i];
+                  final r = _filtered[i];
                   final ev = _eventLabels[r['event_type'] as String?] ?? ((r['event_type'] ?? '') as String, AppColors.textLight);
                   return AdminCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Row(children: [
@@ -80,6 +98,23 @@ class _AdminImpersonationLogPageState extends State<AdminImpersonationLogPage> {
                   ]));
                 },
               )),
+        ),
+      ]),
+    );
+  }
+
+  Widget _eventChip(String? value, String label) {
+    final isSelected = _eventFilter == value;
+    final color = value == null ? AppColors.navy : (_eventLabels[value]?.$2 ?? AppColors.textLight);
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (_) => setState(() => _eventFilter = value),
+      showCheckmark: false,
+      selectedColor: color,
+      backgroundColor: AppColors.card,
+      labelStyle: TextStyle(color: isSelected ? Colors.white : AppColors.text, fontWeight: FontWeight.w600, fontSize: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: isSelected ? color : AppColors.stoneLight)),
     );
   }
 }

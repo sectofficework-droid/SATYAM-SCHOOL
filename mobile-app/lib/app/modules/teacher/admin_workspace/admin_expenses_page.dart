@@ -15,7 +15,25 @@ class _AdminExpensesPageState extends State<AdminExpensesPage> {
   List<Map<String, dynamic>> _expenses = [];
   bool _loading = true;
   String? _error;
+  String? _categoryFilter;
+  DateTimeRange? _dateRange;
   String get _employeeId => AuthService.to.profile.value?['id'] as String? ?? '';
+
+  List<Map<String, dynamic>> get _filtered => _expenses.where((e) {
+    if (_categoryFilter != null && (e['category'] as String? ?? '') != _categoryFilter) return false;
+    if (_dateRange != null) {
+      final d = DateTime.tryParse(e['expense_date'] as String? ?? '');
+      if (d == null) return false;
+      final day = DateTime(d.year, d.month, d.day);
+      if (day.isBefore(_dateRange!.start) || day.isAfter(_dateRange!.end)) return false;
+    }
+    return true;
+  }).toList();
+
+  Future<void> _pickDateRange() async {
+    final picked = await showDateRangePicker(context: context, firstDate: DateTime(2020, 1, 1), lastDate: DateTime.now(), initialDateRange: _dateRange);
+    if (picked != null) setState(() => _dateRange = picked);
+  }
 
   @override
   void initState() { super.initState(); _load(); }
@@ -82,18 +100,32 @@ class _AdminExpensesPageState extends State<AdminExpensesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final categories = _expenses.map((e) => e['category'] as String? ?? '').where((c) => c.isNotEmpty).toSet().toList()..sort();
     return Scaffold(
       appBar: const AdminAppBar(title: 'Expenses'),
       floatingActionButton: FloatingActionButton(backgroundColor: AppColors.navy, onPressed: _add, child: const Icon(Icons.add)),
-      body: _loading ? const AdminLoading()
-        : _error != null ? AdminErrorState(message: _error!, onRetry: _load)
-        : _expenses.isEmpty ? const AdminEmptyState(icon: Icons.receipt_rounded, title: 'No expenses', subtitle: 'Tap + to add one.')
-        : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(children: [
+            Expanded(child: AdminFilterBar(options: categories, selected: _categoryFilter, onChanged: (v) => setState(() => _categoryFilter = v))),
+            IconButton(
+              icon: Icon(Icons.date_range_rounded, color: _dateRange != null ? AppColors.navy : AppColors.textLight),
+              tooltip: 'Filter by date range',
+              onPressed: _pickDateRange,
+            ),
+            if (_dateRange != null) IconButton(icon: const Icon(Icons.close_rounded, size: 18), onPressed: () => setState(() => _dateRange = null)),
+          ]),
+        ),
+        Expanded(child: _loading ? const AdminLoading()
+          : _error != null ? AdminErrorState(message: _error!, onRetry: _load)
+          : _filtered.isEmpty ? const AdminEmptyState(icon: Icons.receipt_rounded, title: 'No expenses', subtitle: 'Tap + to add one, or clear your filters.')
+          : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
             padding: const EdgeInsets.all(16),
-            itemCount: _expenses.length,
+            itemCount: _filtered.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (_, i) {
-              final e = _expenses[i];
+              final e = _filtered[i];
               return AdminCard(onTap: () => _delete(e), child: Row(children: [
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(e['title'] as String? ?? '', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
@@ -103,6 +135,8 @@ class _AdminExpensesPageState extends State<AdminExpensesPage> {
               ]));
             },
           )),
+        ),
+      ]),
     );
   }
 }

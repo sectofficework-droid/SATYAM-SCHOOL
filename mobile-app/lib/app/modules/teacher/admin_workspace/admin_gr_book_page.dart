@@ -20,7 +20,14 @@ class _AdminGrBookPageState extends State<AdminGrBookPage> {
   bool _loading = true;
   String? _error;
   final _searchCtrl = TextEditingController();
+  String? _statusFilter;
   String get _employeeId => AuthService.to.profile.value?['id'] as String? ?? '';
+
+  List<Map<String, dynamic>> get _filtered {
+    if (_statusFilter == null) return _rows;
+    final wantLeft = _statusFilter == 'Left';
+    return _rows.where((r) => (r['date_of_leaving'] != null) == wantLeft).toList();
+  }
 
   @override
   void initState() { super.initState(); _load(); }
@@ -40,20 +47,24 @@ class _AdminGrBookPageState extends State<AdminGrBookPage> {
     return Scaffold(
       appBar: const AdminAppBar(title: 'GR Book'),
       body: Column(children: [
-        Padding(padding: const EdgeInsets.all(16), child: TextField(
+        Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 8), child: TextField(
           controller: _searchCtrl,
           decoration: const InputDecoration(labelText: 'Search by name, GR no.', border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)),
           onSubmitted: (v) => _load(search: v),
         )),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: AdminFilterBar(options: const ['Active', 'Left'], selected: _statusFilter, onChanged: (v) => setState(() => _statusFilter = v)),
+        ),
         Expanded(child: _loading ? const AdminLoading()
           : _error != null ? AdminErrorState(message: _error!, onRetry: () => _load())
-          : _rows.isEmpty ? const AdminEmptyState(icon: Icons.book_rounded, title: 'No entries', subtitle: 'GR Book entries are imported via the admin panel.')
+          : _filtered.isEmpty ? const AdminEmptyState(icon: Icons.book_rounded, title: 'No entries', subtitle: 'GR Book entries are imported via the admin panel.')
           : RefreshIndicator(color: AppColors.navy, onRefresh: () => _load(search: _searchCtrl.text), child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _rows.length,
+              itemCount: _filtered.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (_, i) {
-                final r = _rows[i];
+                final r = _filtered[i];
                 return AdminCard(child: Row(children: [
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(r['student_name'] as String? ?? '', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),

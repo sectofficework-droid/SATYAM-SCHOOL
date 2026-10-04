@@ -15,8 +15,16 @@ class _AdminNoticesPageState extends State<AdminNoticesPage> {
   List<Map<String, dynamic>> _notices = [];
   bool _loading = true;
   String? _error;
+  String? _statusFilter = 'Active';
   String get _employeeId => AuthService.to.profile.value?['id'] as String? ?? '';
   String get _employeeName => AuthService.to.profile.value?['name'] as String? ?? '';
+
+  List<Map<String, dynamic>> get _filtered {
+    if (_statusFilter == null) return _notices;
+    if (_statusFilter == 'Pinned') return _notices.where((n) => n['pinned'] == true).toList();
+    if (_statusFilter == 'Archived') return _notices.where((n) => n['archived'] == true).toList();
+    return _notices.where((n) => n['archived'] != true).toList(); // Active
+  }
 
   @override
   void initState() { super.initState(); _load(); }
@@ -97,15 +105,20 @@ class _AdminNoticesPageState extends State<AdminNoticesPage> {
       appBar: const AdminAppBar(title: 'Notices'),
       floatingActionButton: FloatingActionButton(
         backgroundColor: AppColors.navy, onPressed: () => _compose(), child: const Icon(Icons.add)),
-      body: _loading ? const AdminLoading()
-        : _error != null ? AdminErrorState(message: _error!, onRetry: _load)
-        : _notices.isEmpty ? const AdminEmptyState(icon: Icons.campaign_rounded, title: 'No notices', subtitle: 'Tap + to post one.')
-        : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: AdminFilterBar(options: const ['Active', 'Pinned', 'Archived'], selected: _statusFilter, onChanged: (v) => setState(() => _statusFilter = v)),
+        ),
+        Expanded(child: _loading ? const AdminLoading()
+          : _error != null ? AdminErrorState(message: _error!, onRetry: _load)
+          : _filtered.isEmpty ? const AdminEmptyState(icon: Icons.campaign_rounded, title: 'No notices', subtitle: 'Tap + to post one, or clear your filters.')
+          : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
             padding: const EdgeInsets.all(16),
-            itemCount: _notices.length,
+            itemCount: _filtered.length,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (_, i) {
-              final n = _notices[i];
+              final n = _filtered[i];
               final pinned = n['pinned'] as bool? ?? false;
               final archived = n['archived'] as bool? ?? false;
               return AdminCard(onTap: () => _compose(existing: n), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -130,6 +143,8 @@ class _AdminNoticesPageState extends State<AdminNoticesPage> {
               ]));
             },
           )),
+        ),
+      ]),
     );
   }
 }

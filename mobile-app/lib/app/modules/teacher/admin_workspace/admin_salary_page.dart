@@ -17,7 +17,24 @@ class _AdminSalaryPageState extends State<AdminSalaryPage> {
   List<Map<String, dynamic>> _payments = [];
   bool _loading = true;
   String? _error;
+  final _searchCtrl = TextEditingController();
+  DateTime? _month;
   String get _employeeId => AuthService.to.profile.value?['id'] as String? ?? '';
+
+  List<Map<String, dynamic>> get _filtered {
+    final q = _searchCtrl.text.trim().toLowerCase();
+    if (q.isEmpty) return _payments;
+    return _payments.where((p) => (p['employee_name'] as String? ?? '').toLowerCase().contains(q)).toList();
+  }
+
+  Future<void> _pickMonth() async {
+    final picked = await showDatePicker(
+      context: context, initialDate: _month ?? DateTime.now(),
+      firstDate: DateTime(2020, 1, 1), lastDate: DateTime.now(),
+      initialDatePickerMode: DatePickerMode.year,
+    );
+    if (picked != null) { setState(() => _month = DateTime(picked.year, picked.month, 1)); _load(); }
+  }
 
   @override
   void initState() { super.initState(); _load(); }
@@ -25,7 +42,9 @@ class _AdminSalaryPageState extends State<AdminSalaryPage> {
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final list = await StaffAdminService.salaryPayments(_employeeId);
+      final from = _month == null ? null : DateFormat('yyyy-MM-dd').format(_month!);
+      final to = _month == null ? null : DateFormat('yyyy-MM-dd').format(DateTime(_month!.year, _month!.month + 1, 1));
+      final list = await StaffAdminService.salaryPayments(_employeeId, from: from, to: to);
       if (mounted) setState(() { _payments = list; _loading = false; });
     } catch (e) {
       if (mounted) setState(() { _error = 'Could not load salary data. Management tier only.'; _loading = false; });
@@ -88,15 +107,33 @@ class _AdminSalaryPageState extends State<AdminSalaryPage> {
     return Scaffold(
       appBar: const AdminAppBar(title: 'Salary'),
       floatingActionButton: FloatingActionButton(backgroundColor: AppColors.navy, onPressed: _record, child: const Icon(Icons.add)),
-      body: _loading ? const AdminLoading()
-        : _error != null ? AdminErrorState(message: _error!, onRetry: _load)
-        : _payments.isEmpty ? const AdminEmptyState(icon: Icons.payments_rounded, title: 'No payments recorded', subtitle: 'Tap + to record one.')
-        : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
+      body: Column(children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(children: [
+            Expanded(child: TextField(
+              controller: _searchCtrl,
+              decoration: const InputDecoration(labelText: 'Search employee', border: OutlineInputBorder(), prefixIcon: Icon(Icons.search), isDense: true),
+              onChanged: (_) => setState(() {}),
+            )),
+            const SizedBox(width: 10),
+            OutlinedButton.icon(
+              onPressed: _pickMonth,
+              icon: const Icon(Icons.calendar_month_rounded, size: 18),
+              label: Text(_month == null ? 'All time' : DateFormat('MMM yyyy').format(_month!)),
+            ),
+            if (_month != null) IconButton(icon: const Icon(Icons.close_rounded, size: 18), onPressed: () { setState(() => _month = null); _load(); }),
+          ]),
+        ),
+        Expanded(child: _loading ? const AdminLoading()
+          : _error != null ? AdminErrorState(message: _error!, onRetry: _load)
+          : _filtered.isEmpty ? const AdminEmptyState(icon: Icons.payments_rounded, title: 'No payments found', subtitle: 'Tap + to record one, or clear your filters.')
+          : RefreshIndicator(color: AppColors.navy, onRefresh: _load, child: ListView.separated(
             padding: const EdgeInsets.all(16),
-            itemCount: _payments.length,
+            itemCount: _filtered.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (_, i) {
-              final p = _payments[i];
+              final p = _filtered[i];
               return AdminCard(child: Row(children: [
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(p['employee_name'] as String? ?? '', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
@@ -106,6 +143,8 @@ class _AdminSalaryPageState extends State<AdminSalaryPage> {
               ]));
             },
           )),
+        ),
+      ]),
     );
   }
 }

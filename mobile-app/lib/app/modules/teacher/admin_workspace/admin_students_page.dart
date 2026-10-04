@@ -6,6 +6,7 @@ import '../../../../core/services/staff_admin_service.dart';
 import '../../../../common/widgets/admin_workspace_common.dart';
 import '../../../../common/widgets/s3_image.dart';
 import 'admin_student_detail_page.dart';
+import 'admin_add_student_page.dart';
 
 class AdminStudentsPage extends StatefulWidget {
   const AdminStudentsPage({super.key});
@@ -15,118 +16,43 @@ class AdminStudentsPage extends StatefulWidget {
 
 class _AdminStudentsPageState extends State<AdminStudentsPage> {
   List<Map<String, dynamic>> _students = [];
+  List<Map<String, dynamic>> _classes = [];
   bool _loading = true;
   String? _error;
   final _searchCtrl = TextEditingController();
+  String? _classId;
+  String? _statusFilter;
   String get _employeeId => AuthService.to.profile.value?['id'] as String? ?? '';
 
+  List<Map<String, dynamic>> get _filtered {
+    if (_statusFilter == null) return _students;
+    return _students.where((s) => (s['status'] as String? ?? 'Active') == _statusFilter).toList();
+  }
+
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() {
+    super.initState();
+    _load();
+    StaffAdminService.classListWithIds(_employeeId).then((c) { if (mounted) setState(() => _classes = c); }).catchError((_) {});
+  }
 
   Future<void> _load({String? search}) async {
     setState(() { _loading = true; _error = null; });
     try {
-      final list = await StaffAdminService.students(_employeeId, search: search);
+      final list = await StaffAdminService.students(_employeeId, search: search, classId: _classId);
       if (mounted) setState(() { _students = list; _loading = false; });
     } catch (e) {
       if (mounted) setState(() { _error = 'Could not load students.'; _loading = false; });
     }
   }
 
+  // 2026-10-04: expanded from a 9-field bottom sheet to a dedicated
+  // full-screen form (admin_add_student_page.dart) covering the full
+  // admin-panel-web field set - too many fields for a sheet to hold
+  // reasonably. Reloads the list on a successful add (page pops `true`).
   Future<void> _addStudent() async {
-    final firstCtrl = TextEditingController();
-    final lastCtrl = TextEditingController();
-    final fatherCtrl = TextEditingController();
-    final motherCtrl = TextEditingController();
-    final mobileCtrl = TextEditingController();
-    DateTime? dob;
-    String gender = 'Male';
-    List<Map<String, dynamic>> classes = [];
-    List<Map<String, dynamic>> sections = [];
-    String? classId;
-    String? sectionId;
-
-    try { classes = await StaffAdminService.classListWithIds(_employeeId); } catch (_) {}
-
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Add Student', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: firstCtrl, decoration: const InputDecoration(labelText: 'First Name', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: lastCtrl, decoration: const InputDecoration(labelText: 'Last Name', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          Row(children: [
-            Expanded(child: OutlinedButton(
-              onPressed: () async {
-                final d = await showDatePicker(context: ctx, initialDate: DateTime(2015,1,1), firstDate: DateTime(1990), lastDate: DateTime.now());
-                if (d != null) setSheet(() => dob = d);
-              },
-              child: Text(dob == null ? 'Date of Birth' : '${dob!.year}-${dob!.month.toString().padLeft(2,'0')}-${dob!.day.toString().padLeft(2,'0')}'),
-            )),
-            const SizedBox(width: 10),
-            Expanded(child: DropdownButtonFormField<String>(
-              initialValue: gender,
-              decoration: const InputDecoration(border: OutlineInputBorder()),
-              items: const ['Male', 'Female', 'Other'].map((g) => DropdownMenuItem(value: g, child: Text(g))).toList(),
-              onChanged: (v) => setSheet(() => gender = v ?? gender),
-            )),
-          ]),
-          const SizedBox(height: 10),
-          TextField(controller: fatherCtrl, decoration: const InputDecoration(labelText: "Father's Name", border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: motherCtrl, decoration: const InputDecoration(labelText: "Mother's Name", border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: mobileCtrl, keyboardType: TextInputType.phone, decoration: const InputDecoration(labelText: 'Mobile', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          DropdownButtonFormField<String>(
-            initialValue: classId,
-            decoration: const InputDecoration(labelText: 'Class', border: OutlineInputBorder()),
-            items: classes.map((c) => DropdownMenuItem(value: c['id'] as String, child: Text(c['name'] as String))).toList(),
-            onChanged: (v) async {
-              setSheet(() { classId = v; sectionId = null; sections = []; });
-              if (v != null) {
-                final s = await StaffAdminService.sectionList(_employeeId, v);
-                setSheet(() => sections = s);
-              }
-            },
-          ),
-          const SizedBox(height: 10),
-          DropdownButtonFormField<String>(
-            initialValue: sectionId,
-            decoration: const InputDecoration(labelText: 'Section', border: OutlineInputBorder()),
-            items: sections.map((s) => DropdownMenuItem(value: s['id'] as String, child: Text(s['name'] as String))).toList(),
-            onChanged: (v) => setSheet(() => sectionId = v),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy),
-            onPressed: () => Navigator.pop(ctx, true), child: const Text('Add Student')),
-        ])),
-      )),
-    );
-
-    if (saved != true) return;
-    if (firstCtrl.text.trim().isEmpty || dob == null || classId == null || sectionId == null) {
-      showAdminSnack(context, 'Fill in name, DOB, class and section.', isError: true);
-      return;
-    }
-    try {
-      final dobStr = '${dob!.year}-${dob!.month.toString().padLeft(2,'0')}-${dob!.day.toString().padLeft(2,'0')}';
-      await StaffAdminService.addStudent(_employeeId,
-        firstName: firstCtrl.text.trim(), lastName: lastCtrl.text.trim(), dob: dobStr, gender: gender,
-        fatherName: fatherCtrl.text.trim(), motherName: motherCtrl.text.trim(), mobile1: mobileCtrl.text.trim(),
-        classId: classId!, sectionId: sectionId!);
-      if (mounted) showAdminSnack(context, 'Student added');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to add student.', isError: true);
-    }
+    final added = await Get.to(() => const AdminAddStudentPage());
+    if (added == true) _load();
   }
 
   @override
@@ -136,22 +62,39 @@ class _AdminStudentsPageState extends State<AdminStudentsPage> {
       floatingActionButton: FloatingActionButton(backgroundColor: AppColors.navy, onPressed: _addStudent, child: const Icon(Icons.person_add_rounded)),
       body: Column(children: [
         Padding(
-          padding: const EdgeInsets.all(16),
-          child: TextField(
-            controller: _searchCtrl,
-            decoration: const InputDecoration(labelText: 'Search by name, GR no.', border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)),
-            onSubmitted: (v) => _load(search: v),
-          ),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Row(children: [
+            Expanded(child: TextField(
+              controller: _searchCtrl,
+              decoration: const InputDecoration(labelText: 'Search by name, GR no.', border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)),
+              onSubmitted: (v) => _load(search: v),
+            )),
+            const SizedBox(width: 10),
+            SizedBox(width: 140, child: DropdownButtonFormField<String?>(
+              initialValue: _classId,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Class', border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 12)),
+              items: [
+                const DropdownMenuItem<String?>(value: null, child: Text('All')),
+                ..._classes.map((c) => DropdownMenuItem<String?>(value: c['id'] as String, child: Text(c['name'] as String, overflow: TextOverflow.ellipsis))),
+              ],
+              onChanged: (v) { setState(() => _classId = v); _load(search: _searchCtrl.text); },
+            )),
+          ]),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: AdminFilterBar(options: const ['Active', 'Inactive'], selected: _statusFilter, onChanged: (v) => setState(() => _statusFilter = v)),
         ),
         Expanded(child: _loading ? const AdminLoading()
           : _error != null ? AdminErrorState(message: _error!, onRetry: () => _load())
-          : _students.isEmpty ? const AdminEmptyState(icon: Icons.groups_rounded, title: 'No students', subtitle: 'Try a different search.')
+          : _filtered.isEmpty ? const AdminEmptyState(icon: Icons.groups_rounded, title: 'No students', subtitle: 'Try a different search or filter.')
           : RefreshIndicator(color: AppColors.navy, onRefresh: () => _load(search: _searchCtrl.text), child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: _students.length,
+              itemCount: _filtered.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (_, i) {
-                final s = _students[i];
+                final s = _filtered[i];
                 final name = '${s['first_name'] ?? ''} ${s['last_name'] ?? ''}'.trim();
                 return AdminCard(
                   onTap: () => Get.to(() => AdminStudentDetailPage(studentId: s['student_id'] as String))?.then((_) => _load()),

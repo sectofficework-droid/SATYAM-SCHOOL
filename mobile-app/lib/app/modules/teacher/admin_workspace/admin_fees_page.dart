@@ -45,6 +45,18 @@ class _StudentsFeesTabState extends State<_StudentsFeesTab> {
   bool _loading = true;
   String? _error;
   final _searchCtrl = TextEditingController();
+  String? _classFilter;
+  bool _duesOnly = false;
+
+  List<Map<String, dynamic>> get _filtered => _rows.where((r) {
+    if (_classFilter != null && (r['class_name'] as String? ?? '') != _classFilter) return false;
+    if (_duesOnly) {
+      final total = (r['fee_total'] as num? ?? 0) - (r['fee_discount'] as num? ?? 0);
+      final due = total - (r['paid'] as num? ?? 0);
+      if (due <= 0) return false;
+    }
+    return true;
+  }).toList();
 
   @override
   void initState() { super.initState(); _load(); }
@@ -94,21 +106,40 @@ class _StudentsFeesTabState extends State<_StudentsFeesTab> {
 
   @override
   Widget build(BuildContext context) {
+    final classes = _rows.map((r) => r['class_name'] as String? ?? '').where((c) => c.isNotEmpty).toSet().toList()..sort();
     return Column(children: [
-      Padding(padding: const EdgeInsets.all(16), child: TextField(
-        controller: _searchCtrl,
-        decoration: const InputDecoration(labelText: 'Search student', border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)),
-        onSubmitted: (v) => _load(search: v),
-      )),
+      Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 8), child: Row(children: [
+        Expanded(child: TextField(
+          controller: _searchCtrl,
+          decoration: const InputDecoration(labelText: 'Search student', border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)),
+          onSubmitted: (v) => _load(search: v),
+        )),
+        const SizedBox(width: 10),
+        SizedBox(width: 140, child: DropdownButtonFormField<String?>(
+          initialValue: _classFilter,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Class', border: OutlineInputBorder(), isDense: true, contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 12)),
+          items: [
+            const DropdownMenuItem<String?>(value: null, child: Text('All')),
+            ...classes.map((c) => DropdownMenuItem<String?>(value: c, child: Text(c, overflow: TextOverflow.ellipsis))),
+          ],
+          onChanged: (v) => setState(() => _classFilter = v),
+        )),
+      ])),
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: AdminFilterBar(options: const ['Dues only'], selected: _duesOnly ? 'Dues only' : null,
+          onChanged: (v) => setState(() => _duesOnly = v != null)),
+      ),
       Expanded(child: _loading ? const AdminLoading()
         : _error != null ? AdminErrorState(message: _error!, onRetry: () => _load())
-        : _rows.isEmpty ? const AdminEmptyState(icon: Icons.payments_rounded, title: 'No students', subtitle: 'Try a different search.')
+        : _filtered.isEmpty ? const AdminEmptyState(icon: Icons.payments_rounded, title: 'No students', subtitle: 'Try a different search or filter.')
         : RefreshIndicator(color: AppColors.navy, onRefresh: () => _load(search: _searchCtrl.text), child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: _rows.length,
+            itemCount: _filtered.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
             itemBuilder: (_, i) {
-              final r = _rows[i];
+              final r = _filtered[i];
               final total = (r['fee_total'] as num? ?? 0) - (r['fee_discount'] as num? ?? 0);
               final paid = r['paid'] as num? ?? 0;
               final due = total - paid;

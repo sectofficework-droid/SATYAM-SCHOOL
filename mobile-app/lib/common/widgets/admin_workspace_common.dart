@@ -98,6 +98,43 @@ class AdminStatusPill extends StatelessWidget {
   );
 }
 
+// Single-select chip row for narrowing an already-fetched list client-side
+// (status/type/priority/category-style filters). `selected == null` means
+// "All". Kept generic and reused across admin list screens rather than
+// each screen rolling its own chip styling.
+class AdminFilterBar extends StatelessWidget {
+  final List<String> options;
+  final String? selected;
+  final ValueChanged<String?> onChanged;
+  final String allLabel;
+  const AdminFilterBar({super.key, required this.options, required this.selected, required this.onChanged, this.allLabel = 'All'});
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 36,
+    child: ListView.separated(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      itemCount: options.length + 1,
+      separatorBuilder: (_, __) => const SizedBox(width: 8),
+      itemBuilder: (_, i) {
+        final value = i == 0 ? null : options[i - 1];
+        final label = i == 0 ? allLabel : options[i - 1];
+        final isSelected = selected == value;
+        return ChoiceChip(
+          label: Text(label),
+          selected: isSelected,
+          onSelected: (_) => onChanged(value),
+          showCheckmark: false,
+          selectedColor: AppColors.navy,
+          backgroundColor: AppColors.card,
+          labelStyle: TextStyle(color: isSelected ? Colors.white : AppColors.text, fontWeight: FontWeight.w600, fontSize: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: isSelected ? AppColors.navy : AppColors.stoneLight)),
+        );
+      },
+    ),
+  );
+}
+
 Future<void> showAdminSnack(BuildContext context, String message, {bool isError = false}) async {
   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
     content: Text(message),
