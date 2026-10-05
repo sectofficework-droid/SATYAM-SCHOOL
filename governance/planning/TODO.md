@@ -2357,6 +2357,52 @@ approved.
       **Fix:** run `SUPABASE_PG_CRON_SCHEDULE.sql` if the job is absent. Note it
       self-gates to after 16:00 IST (`SUPABASE_AUTO_CLOSE_SHIFTS.sql:75`), so it
       will not visibly do anything before then — that is expected, not a fault.
+- [x] **REQ-FEAT-007 — Mobile Teacher Admin Workspace's "Add Student" only
+      collected 9 basic fields vs. the admin-panel web's ~30-field
+      `AddStudentForm.js`. SHIPPED 2026-10-04 (user: "i want all student
+      related field available in admin panel web also should be available
+      in application").** Confirmed via `information_schema.columns` that
+      every field the web form collects already has a real column on
+      `students` — no schema migration needed, just RPC + UI parity.
+      **DB**: `staff_admin_student_add` extended with 28 new optional
+      (`DEFAULT NULL`) params (mobile2, religion/caste/sub_caste/
+      mother_tongue, height/weight, full address fields, both parents'
+      Aadhar + the student's own, place/city/village/district/state of
+      birth, birth cert reg no/date, UDISE/PEN/APAAR) — applied as a new
+      overload via `CREATE OR REPLACE FUNCTION` with the original 11
+      params unchanged in position/type, so old cached app instances
+      calling the narrow 11-arg shape keep resolving to the original
+      function unaffected (PostgREST overload resolution by provided
+      param names). Migration: `expand_staff_admin_student_add_full_fields`,
+      tracked at `mobile-app/SUPABASE_EXPAND_STUDENT_ADD_FULL_FIELDS.sql`.
+      **Verified live** via a rolled-back transaction: called the new
+      39-arg overload with real values for all 27 new fields, confirmed
+      `SELECT ... FROM students WHERE first_name='TestFirst'` showed every
+      field correctly written (religion, caste, height_cm, aadhar,
+      birth_village, udise, etc.), then `ROLLBACK` — zero rows actually
+      persisted.
+      **Mobile**: `StaffAdminService.addStudent` (`staff_admin_service.dart`)
+      given matching optional named params. The old 9-field
+      `showModalBottomSheet` in `admin_students_page.dart` replaced with a
+      new dedicated full-screen page, `admin_add_student_page.dart`
+      (too many fields for a sheet to hold reasonably — matches the
+      weight already given to `AdminStudentDetailPage`/
+      `AdminEmployeeDetailPage` elsewhere in this module), organized into
+      Class & Section / Basic Info / Parents / Address / Birth Details /
+      Identity Documents / Other sections, required-field set mirrored
+      exactly from the web form (first name, DOB, gender, father/mother
+      name, mobile1, room/plot/society/area/pincode, birth city, class,
+      section). `flutter analyze`: 0 issues on the new file + its
+      dependents. Teacher-flavor debug APK builds successfully.
+      **Not yet visually verified on-device** — BlueStacks closed partway
+      through this session (emulator not found on recheck); the on-device
+      pass for this feature specifically is still outstanding, unlike
+      everything else fixed this session which was live-verified one way
+      or another.
+      **Deliberately out of scope**: the Edit Student flow
+      (`admin_student_detail_page.dart`) still only edits the original 6
+      basic fields — field-parity there was not asked for and not
+      touched, flagged here as a natural follow-up only.
 - [ ] **REQ-BUG-020 — 17 orphaned open `employee_shifts` (found 2026-09-29).**
       All 17 have `check_out_at IS NULL` and **no matching `employee_attendance`
       day row** (that table is currently empty — it was truncated during
@@ -2466,6 +2512,26 @@ pattern), it is noted as already-known and not re-filed as new.
       (GET/POST) now enforce admin session authentication via shared
       `requireAdminSession` helper (`src/lib/apiAuth.js`) and caller session tokens
       (`src/lib/authedFetch.js`).
+      **Found deeper while fixing: the `/api/kiosk-settings` route has a
+      direct-RPC fallback path, and those 5 RPCs
+      (`save_kiosk_settings`, `save_kiosk_special_day`,
+      `delete_kiosk_special_day`, `get_kiosk_admin_settings`,
+      `list_kiosk_special_days`) had ZERO auth check inside their own
+      function bodies — gating only the Next.js route would have left
+      these directly callable with the public anon key, bypassing the
+      route entirely (same bug class already fixed once on
+      `set_kiosk_admin_pin`/`generate_punch_code`, REQ-SEC-007 item 2).
+      Confirmed via grep that only `kioskSettingsService.js` (admin panel
+      web, no mobile caller) calls any of these 5.** Fixed by adding
+      `IF NOT is_admin_user() THEN RAISE EXCEPTION 'Not authorized'; END IF;`
+      to all 5, applied live via `mcp__supabase__apply_migration`
+      (`req_sec_012_kiosk_admin_rpcs_auth_gate`), tracked at
+      `mobile-app/SUPABASE_FIX_KIOSK_ADMIN_RPC_AUTH.sql`. **Verified live**
+      via role-simulated rolled-back transactions: `anon`/no-session calls
+      to `save_kiosk_settings` correctly raise `Not authorized`; a real
+      `senior_admin` session (`efcbf898-...`, role-simulated via
+      `request.jwt.claim.sub`) successfully reads
+      `get_kiosk_admin_settings` unchanged.
 - [ ] **REQ-SEC-013 — All four `admin-panel/src/app/api/s3/*` routes
       (`upload-url`, `upload`, `photo`, `view-url`) have no authentication at
       all — the only gate is a key-prefix string check
@@ -2497,27 +2563,41 @@ pattern), it is noted as already-known and not re-filed as new.
 
 ### Other new findings (live Supabase advisors, confirmed via `mcp__supabase__get_advisors` this session)
 
-- [ ] **REQ-SEC-017 — `kiosk_special_day_overrides` has RLS disabled
-      (ERROR-level live advisory), not previously tracked here.** Created by
+- [x] **REQ-SEC-017 — `kiosk_special_day_overrides` has RLS disabled
+      (ERROR-level live advisory). FIXED 2026-10-04.** Created by
       `mobile-app/SUPABASE_KIOSK_SPECIAL_DAY.sql`, which revokes `anon`/
-      `authenticated` grants but never runs
-      `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`. Practical exploitability
-      is low (direct REST access is already revoked) but it's an unfinished
-      instance of this project's own "enable RLS + revoke together" pattern
-      — a one-line fix (`ALTER TABLE kiosk_special_day_overrides ENABLE ROW
-      LEVEL SECURITY;`) once you confirm nothing relies on the current
-      state.
-- [ ] **REQ-SEC-018 — 17 functions currently have a mutable `search_path`
-      (WARN-level live advisory)**, mostly newer kiosk RPCs:
+      `authenticated` grants but never ran
+      `ALTER TABLE ... ENABLE ROW LEVEL SECURITY`. Pure hardening, zero
+      behavior change — the table already had no grants for anyone to
+      lose. Applied via `mcp__supabase__apply_migration`
+      (`req_sec_017_018_search_path_and_kiosk_special_day_rls`), tracked
+      at `mobile-app/SUPABASE_FIX_KIOSK_SEARCH_PATH_AND_RLS.sql`.
+      **Verified live**: `pg_class.relrowsecurity` now `true` (was
+      `false`); re-confirmed still `true` later in the same session after
+      other work, not reverted.
+- [x] **REQ-SEC-018 — 17 functions currently have a mutable `search_path`
+      (WARN-level live advisory). FIXED 2026-10-04.**, mostly newer kiosk RPCs:
       `get_kiosk_public_settings`, `save_kiosk_special_day`,
       `delete_kiosk_special_day`, `redeem_punch_code`, `redeem_qr_session`,
       `generate_qr_session`, `record_face_punch`,
       `admin_delete_staff_attendance`, `auto_close_open_shifts`, and others.
       This exact class of bug has been fixed twice before by name
       (`req_sec_007_fix_punch_code_search_path`, REQ-SEC-010 item 3) but this
-      current list hasn't been swept — looks like newer functions added
-      after those fixes. Same mechanical fix each time:
-      `SET search_path TO 'public','extensions'` on each.
+      list hadn't been swept — newer functions added after those fixes.
+      Same mechanical fix each time: `ALTER FUNCTION ... SET search_path TO
+      'public','extensions'` on all 17 (full list: `get_kiosk_public_settings`,
+      `recompute_late_arrivals_for_date`, `save_kiosk_special_day`,
+      `delete_kiosk_special_day`, `redeem_punch_code`, `redeem_qr_session`,
+      `lookup_punch_code`, `generate_qr_session`, `record_check_out`,
+      `check_qr_session`, `get_kiosk_admin_settings`,
+      `auto_close_open_shifts`, `save_kiosk_settings`,
+      `admin_delete_staff_attendance`, `get_effective_kiosk_settings`,
+      `list_kiosk_special_days`, `record_face_punch`). Same migration as
+      REQ-SEC-017 above (`req_sec_017_018_search_path_and_kiosk_special_day_rls`,
+      `mobile-app/SUPABASE_FIX_KIOSK_SEARCH_PATH_AND_RLS.sql`). **Verified
+      live**: `pg_proc.proconfig` shows `search_path=public, extensions`
+      on all 17; re-confirmed still set later in the same session, not
+      reverted.
 - [ ] **REQ-SEC-019 — Supabase Auth's leaked-password protection
       (HaveIBeenPwned check) is off project-wide** (WARN-level live
       advisory), never previously considered. Low blast radius today since

@@ -98,7 +98,39 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Current — Committed and pushed 2026-10-01** — admin panel: Staff Attendance
+**Current — mobile app v1.0.0+8 committed/pushed 2026-10-04, built + submitted to
+Play Console 2026-10-05** — Teacher app: Play Store icon crop fix (regenerated
+adaptive-icon foreground layers at correct 68% safe-zone scale, new
+`colors.xml` background), admin-workspace filters across 10 screens
+(Students/Employees/Fees/Expenses/Salary/Queries/Tasks/GR Book/Notices/
+Impersonation Log — new shared `AdminFilterBar` widget), a full security/
+bug sweep (session-restore hardening, kiosk crash fixes, silent-save-lie
+fixes, controller-disposal leaks, session-error handling added across
+teacher/student modules — commits `811d25f`/`8db198c`), and REQ-FEAT-007:
+Add Student in the Teacher admin workspace brought to full field parity
+with the web admin panel (~30 fields vs. the previous 6/9) via a new
+`AdminAddStudentPage` + an expanded 39-arg `staff_admin_student_add`
+overload (additive, old 11-arg overload untouched) — commit `2138dcc`.
+Admin-panel: `requireAdminSession`/`authedFetch` auth hardening on several
+API routes, `reportsServerAuth.js` now verifies `verify_mobile_session`
+first, XSS escaping added to `tcGenerator.js` interpolations — commit
+`aaa4660`. Version bumped `1.0.0+7`→`+8`, built, signature verified
+(`apksigner verify --print-certs`, real release key not debug), uploaded
+to Play Console Closed Testing - Alpha (AAB too large for browser
+automation, user selected via native file picker), submitted for Google
+review 2026-10-05 08:09 — release 8 confirmed **In review** on the
+Latest Releases page. **Governance docs lag the code**: `TODO.md`,
+`PENDING_REPORT.md`, 3 new tracked `.sql` files documenting live-only
+Supabase migrations (`SUPABASE_FIX_KIOSK_ADMIN_RPC_AUTH.sql`,
+`SUPABASE_FIX_KIOSK_SEARCH_PATH_AND_RLS.sql`,
+`SUPABASE_EXPAND_STUDENT_ADD_FULL_FIELDS.sql`), and the `pubspec.yaml`
+version bump are staged locally, not yet committed — user has not asked
+for a commit on this pass. **Not yet done**: on-device visual
+verification of Add Student in this build (BlueStacks was closed
+mid-session on 2026-10-04 before that check ran). See
+`work-log\LOG-2026-10-04.md`, `work-log\LOG-2026-10-05.md`.
+
+**Prior — Committed and pushed 2026-10-01** — admin panel: Staff Attendance
 (Kiosk) report UX (today-default date + prev/next-day arrows, a Staff
 Type filter — "School Staff" [Teaching + Care Taker] vs "Admin &
 Management" — defaulted on open), an app-wide sweep of a real IST
@@ -308,7 +340,55 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-10-03 — Standing QA test teacher account ("ZZ-TEST Satyam", EMP999), full class access without impersonating a real account.**
+**Current — Session 2026-10-04/05 — Teacher app icon fix, admin-workspace
+filters, full security/bug sweep, Add Student full-field parity
+(REQ-FEAT-007), v1.0.0+8 built and submitted to Play Console closed
+testing.**
+Chain of user requests across the two days: (1) update/fix the Teacher
+app's Play Store icon (cropped-looking vs. listing — root cause was a
+raster asset missing its safe-zone padding, fixed at the asset level, not
+by reverting the adaptive-icon XML); (2) an audit-then-implement pass
+("sure code it") adding filter UI across every admin-workspace list screen
+that lacked one; (3) a full backlog clear-out ("before releasing fix
+everything comes to your audit or documented" → "Everything including
+admin-panel security criticals") covering the mechanical/pattern-following
+items from the standing security audit — REQ-SEC-012's deeper kiosk-RPC-
+auth finding, REQ-SEC-017/018 (RLS + mutable search_path advisories),
+session-restore/error-handling hardening across teacher and student
+modules, admin-panel API auth hardening (`requireAdminSession`/
+`authedFetch`), `tcGenerator.js` XSS escaping; (4) a mid-session
+interjection asking for the mobile Add Student form (previously 6-9
+fields) to reach full field parity with the web admin panel's ~30-field
+form — built as a new `AdminAddStudentPage` + additive 39-arg
+`staff_admin_student_add` RPC overload, verified live via rolled-back
+transaction; (5) "push" — all code committed (`2138dcc`, `8db198c`,
+`ad0649b`, `aaa4660`, `60f4451`, `b926358`); (6) user flagged a
+separately-generated `PENDING_REPORT.md` as inaccurate ("LOG IT (ALREADY
+PUSHED THE CHANGES TO GIT)") — re-verified live DB/git state and corrected
+`TODO.md`/`PENDING_REPORT.md` (REQ-SEC-017/018 were already fixed live via
+MCP, invisible to a git-only report; REQ-BUG-061/068 were found already
+correct, not actually pending); (7) "BUILD NEW TEACHER SSIS APP THEN
+PUBLISH TO CONSOLE" — version bumped to `1.0.0+8`, AAB built and
+signature-verified, uploaded to Play Console Closed Testing - Alpha
+(109MB AAB exceeds the browser-automation upload tool's limit, so the user
+selected the file themselves via the native OS picker after it was copied
+to Downloads), user completed the final submission click themselves
+("SUBMITTED FOR REVIEW") — confirmed on the Latest Releases page as
+release **8 (1.0.0), Closed testing - Alpha, status In review**, full
+rollout, Oct 5 2026 8:09 AM.
+
+**Left open, flagged not actioned**: REQ-SEC-013 (S3 upload/view routes)
+needs a dual-web+mobile-auth architecture decision from the user before any
+fix is attempted. Several Group 2/3 backlog items (REQ-FEAT-002/003/004,
+REQ-BUG-020, REQ-BUG-065, REQ-BUG-060, REQ-SEC-019, REQ-FEAT-006) remain
+undecided or blocked on the user's own external-console access. Governance
+docs (`TODO.md`, `PENDING_REPORT.md`, 3 new `.sql` files, `pubspec.yaml`
+version bump) are staged, not committed. On-device visual check of Add
+Student never happened — BlueStacks closed mid-session before that pass
+could run. Full detail: `work-log\LOG-2026-10-04.md`,
+`work-log\LOG-2026-10-05.md`.
+
+**Prior — Session 2026-10-03 — Standing QA test teacher account ("ZZ-TEST Satyam", EMP999), full class access without impersonating a real account.**
 User wanted a dedicated test account with full teacher+admin access to
 everything (all subjects/classes), explicitly ruling out the existing Admin
 Access Code impersonation feature (2026-08-28) since that still means
