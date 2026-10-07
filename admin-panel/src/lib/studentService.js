@@ -714,6 +714,43 @@ export async function updateStudent(studentId, formData) {
       const cls = await getClassByName(formData.std);
       enrollUpdate.class_id = cls.id;
     }
+    // Sections are scoped per-class (e.g. "6-A" and "7-A" are different
+    // section_id rows), so a class change has to carry section_id along -
+    // otherwise every roster that filters by section_id instead of class_id
+    // (teacher app "My Students", attendance, marks, homework) keeps showing
+    // the student under their OLD class/section forever, since nothing here
+    // ever touched section_id before. Also covers an explicit section move
+    // with the class unchanged (the bulk-import tools already send
+    // `section`). When the caller doesn't say which section, preserve
+    // whichever letter the student is already in (mirrors addStudent()'s
+    // "A" default, auto-creating the section under the new class the same
+    // way addStudent()/promoteStudent() do) rather than guessing.
+    if (formData.std || formData.section) {
+      let targetClassId = enrollUpdate.class_id;
+      let sectionName   = formData.section;
+      if (!targetClassId || !sectionName) {
+        const { data: current } = await supabase
+          .from("student_enrollments")
+          .select("class_id, section:sections(name)")
+          .eq("id", formData.enrollmentId)
+          .single();
+        targetClassId = targetClassId || current?.class_id;
+        sectionName   = sectionName   || current?.section?.name || "A";
+      }
+      if (targetClassId) {
+        let section = await getSectionByName(targetClassId, sectionName);
+        if (!section) {
+          const { data: newSection, error: secErr } = await supabase
+            .from("sections")
+            .insert({ class_id: targetClassId, name: sectionName })
+            .select()
+            .single();
+          if (secErr) throw secErr;
+          section = newSection;
+        }
+        enrollUpdate.section_id = section.id;
+      }
+    }
     // Same gap as class_id above - the "Replace Full Details" bulk import
     // has always sent admissionClass, but nothing here ever wrote
     // admission_class_id, so re-importing to fix a wrong Admission Class
