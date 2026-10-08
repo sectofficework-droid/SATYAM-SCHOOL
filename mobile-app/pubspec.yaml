@@ -1,7 +1,7 @@
 name: satyam_school
 description: Satyam Stars International School — Teacher & Student App
 publish_to: 'none'
-version: 1.0.0+8
+version: 1.0.0+9
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -50,7 +50,7 @@ dependencies:
 
   # QR-code staff attendance (kiosk generates + renders, Teacher app scans)
   qr_flutter: ^4.1.0
-  mobile_scanner: ^5.2.3
+  mobile_scanner: ^7.4.2
 
 dev_dependencies:
   flutter_test:

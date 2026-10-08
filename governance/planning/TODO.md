@@ -2689,10 +2689,24 @@ pattern), it is noted as already-known and not re-filed as new.
       `libbarhopper_v3.so` is now 16 KB-aligned in both**, alongside every
       other native library — zero remaining non-compliant libraries in
       either app. `pubspec.yaml`/`pubspec.lock` changes staged, not
-      committed. **Not yet done**: re-uploading these new AABs to Play
-      Console's draft production releases (currently still holding the
-      old non-compliant v8/v3 bundles) and resubmitting — that's the
-      next step once the user confirms.
+      committed.
+      **2026-10-08, same session: uploaded and submitted for review.**
+      New v9 AABs (too large — 105-115MB — for Claude in Chrome's
+      automated upload, which caps at 10MB; copied to the user's
+      Downloads folder and manually selected by the user in the file
+      picker) replaced the old v8/v3 bundles in each app's Production
+      draft release. Re-verified error-free (16 KB error gone, only a
+      "no countries selected" error remained, fixed by adding India —
+      matching the closed-testing track's own scope — to both apps'
+      Production country/region list). Both releases ("9 (1.0.0)", full
+      rollout, India-only) submitted via Publishing overview → "Submit 2
+      changes for review" → confirmed "Send changes for review" for both
+      apps — confirmed with the user via AskUserQuestion before this
+      final, genuinely irreversible click. **Status as of this entry:
+      both apps' changes are "in review"** (Google's own pre-review quick
+      checks running, typically ~7 days total before live). This is the
+      first-ever production submission for both apps — previously only
+      closed-testing releases existed.
 - [x] **REQ-BUG-072 — MIL (Odia) subject wrongly lowers percentage for
       students who don't take it. CODE + MIGRATION SHIPPED 2026-10-08;
       end-to-end click-through still pending (see BOOTSTRAP.md "Next
