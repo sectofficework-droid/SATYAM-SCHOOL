@@ -390,6 +390,24 @@ size-discipline rule (10+ stacked "Prior —" sessions going back to
 2026-09-19 instead of collapsing to single-line pointers) — pre-existing
 bloat, not introduced this session; needs its own dedicated trim pass.
 
+**Same session, second request — REQ-BUG-073 — TC's Father's/Mother's Name
+now carries the family surname.** `students.father_name`/`mother_name` are
+stored as a bare first name only; the TC printed just "RAJESH"/"MEENA"
+with no surname, unlike "Name of the Pupil" (already first+last). User
+confirmed approach via a quick clarifying question (auto-append vs. a
+separate "Surname" line) → auto-append chosen. New `withSurname()` helper
+in `admin-panel/src/lib/tcGenerator.js`'s `studentToTcRow()`, skips
+appending if the name already ends with that surname (case-insensitive,
+word-boundary-safe — verified "Sitaram"+"Ram" does NOT falsely match).
+**J12B: PATCH** (content-correctness fix, no schema/architecture change).
+`npm run lint` clean. **Not verified:** no visual check of a printed TC
+yet. **Noticed mid-task:** `governance/planning/TODO.md` had been modified
+on disk by a concurrent/other session (REQ-BUG-071's 16KB-page-size fix —
+`mobile_scanner` bumped to `7.4.2`, both AABs rebuilt and re-verified
+16KB-aligned, `pubspec.yaml`/`pubspec.lock` changed) — not touched or
+interfered with; see `git status` at commit time for what was/wasn't
+staged by that other session before adding anything of this task's own.
+
 **Prior — Session 2026-10-04/05 — Teacher app icon fix, admin-workspace
 filters, full security/bug sweep, Add Student full-field parity
 (REQ-FEAT-007), v1.0.0+8 built and submitted to Play Console closed

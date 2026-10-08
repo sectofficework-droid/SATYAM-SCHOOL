@@ -2658,26 +2658,41 @@ pattern), it is noted as already-known and not re-filed as new.
       across student pages and teacher pages.
 - [x] **REQ-BUG-070 — `teacher_notices_page.dart` reimplemented its own notice card. FIXED 2026-10-04.**
       Replaced custom notice card with shared `NoticeCard`, restoring tap-to-expand behavior.
-- [ ] **REQ-BUG-071 — Neither app's current AAB supports 16 KB memory page
-      sizes (found 2026-10-08, attempting to promote both apps to
-      production).** Play Console's release-review step flags this as an
-      **Error** (not a warning) on both the Teacher app's version code 8
-      (1.0.0, Oct 5 build) and the Student app's version code 3 (1.0.0,
-      Sep 22 build) — same message on both, so it's a build/toolchain issue,
-      not app-specific: "Your app does not support 16 KB memory page
-      sizes." This is Google's native-library-alignment requirement for
-      newer Android devices (recent Android 15+ hardware using 16 KB memory
-      pages) — an unaligned `.so` can crash or misbehave on those devices.
-      Play Console offers a "Proceed anyway" override, but the user
-      explicitly chose **not** to use it — decision: fix the underlying
-      build first, don't publish past this warning. Likely needs an
-      NDK/Android Gradle Plugin/Flutter engine version bump so the AAB's
-      native libraries are produced 16 KB-aligned, then a rebuild of both
-      flavors. **Not investigated further yet** — root cause (which
-      native lib, which toolchain version) not yet identified this
-      session. Blocks: promoting either app from closed testing to
-      production (production *access* is already granted for both, see
-      Play Store status — this is a separate, build-level blocker). (recorded, not individually numbered — no concrete failure scenario, just worth knowing)
+- [x] **REQ-BUG-071 — Neither app's current AAB supports 16 KB memory page
+      sizes. FIXED 2026-10-08.** Found while attempting to promote both
+      apps to production: Play Console's release-review step flagged this
+      as an **Error** (not a warning) on both the Teacher app's version
+      code 8 (1.0.0, Oct 5 build) and the Student app's version code 3
+      (1.0.0, Sep 22 build) — "Your app does not support 16 KB memory page
+      sizes." **Root cause, confirmed by extracting both release APK/AAB
+      and checking every native `.so`'s ELF `LOAD` segment alignment with
+      the NDK's `llvm-readelf`**: of 10 bundled native libraries (Flutter
+      engine, Dart JNI, ML Kit face detector, TensorFlow Lite, CameraX/
+      datastore), exactly one was non-compliant —
+      `libbarhopper_v3.so` at 4 KB alignment instead of 16 KB. That library
+      belongs to `com.google.mlkit:barcode-scanning:17.2.0`, pulled in
+      transitively by `mobile_scanner: ^5.2.3` (used only for QR-code
+      staff-attendance scanning, `scan_attendance_qr_page.dart` — the only
+      call site, a narrow/stable API surface: `MobileScannerController`,
+      `MobileScanner` widget, `onDetect(BarcodeCapture)`). Google's ML Kit
+      release notes confirm barcode-scanning 17.3.0 is the first
+      16 KB-compliant version; `mobile_scanner` bundles that from v6.0.7
+      onward. **Fix applied**: bumped `mobile_scanner` to `^7.4.2` (user's
+      choice over the minimum-fix 6.0.11, to also pick up its later
+      CameraX 16 KB alignment work), `flutter pub get`, `flutter analyze`
+      clean (no breaking-API fallout from the 5.x→7.x jump given the
+      narrow usage). Bumped `pubspec.yaml` to `1.0.0+9` (next free version
+      code for both flavors — Teacher was already at 8, Student lagging at
+      3). Rebuilt both release AABs
+      (`build/app/outputs/bundle/{teacher,student}Release/app-{teacher,
+      student}-release.aab`) and **re-verified via `llvm-readelf` that
+      `libbarhopper_v3.so` is now 16 KB-aligned in both**, alongside every
+      other native library — zero remaining non-compliant libraries in
+      either app. `pubspec.yaml`/`pubspec.lock` changes staged, not
+      committed. **Not yet done**: re-uploading these new AABs to Play
+      Console's draft production releases (currently still holding the
+      old non-compliant v8/v3 bundles) and resubmitting — that's the
+      next step once the user confirms.
 - [x] **REQ-BUG-072 — MIL (Odia) subject wrongly lowers percentage for
       students who don't take it. CODE + MIGRATION SHIPPED 2026-10-08;
       end-to-end click-through still pending (see BOOTSTRAP.md "Next
@@ -2703,6 +2718,25 @@ pattern), it is noted as already-known and not re-filed as new.
       mark is entered. Plan recorded at
       `C:\Users\BK DEBIPRASAD DAS\.claude\plans\in-exam-marksheet-creation-atomic-rabbit.md`.
 
+### Code-quality / consistency notes (recorded, not individually numbered — no concrete failure scenario, just worth knowing)
+- [x] **REQ-BUG-073 — Transfer Certificate printed Father's/Mother's Name
+      without the family surname. FIXED 2026-10-08.** `father_name`/
+      `mother_name` are stored as a bare first name (e.g. "Rajesh", "Meena"
+      - see `AddStudentForm.js`'s placeholders), so the TC's "2. Father's
+      Name"/"3. Mother's Name" lines printed just "RAJESH"/"MEENA" with no
+      surname, unlike "1. Name of the Pupil" (already `first_name +
+      last_name`). **J12B classification: PATCH** (content-correctness fix
+      to an existing document generator, no schema/architecture/scope
+      change). User-confirmed approach: auto-append the student's own
+      surname to Father's/Mother's Name on the TC, skipping it if the
+      stored name already ends with that surname (case-insensitive) so
+      existing full-name entries aren't duplicated. New `withSurname()`
+      helper in `admin-panel/src/lib/tcGenerator.js`, applied in
+      `studentToTcRow()` (used by both the single-student TC page and the
+      Documents → TC bulk/batch flow). The TC bulk-IMPORT flow (admin
+      uploads a spreadsheet with its own Father's/Mother's Name columns)
+      is untouched - those values are admin-typed free text already, not
+      derived from student records.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

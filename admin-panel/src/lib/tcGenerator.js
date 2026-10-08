@@ -145,6 +145,22 @@ const CLASS_PROMOTION_MAP = {
   "12th - Commerce": "PASSED OUT",
 };
 
+// Father's/Mother's Name are stored as a bare first name (e.g. "Rajesh",
+// "Meena" - see AddStudentForm's placeholders), with no surname field of
+// their own. The TC is a formal document expected to show the family
+// surname, so append the student's own last name - unless the stored name
+// already ends with it (avoids "RAJESH RAULA RAULA" for anyone who already
+// typed the full name in).
+function withSurname(name, surname) {
+  const n = String(name || "").trim();
+  const s = String(surname || "").trim();
+  if (!s) return n;
+  if (!n) return s;
+  const escaped = s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const alreadyHasSurname = new RegExp(`\\b${escaped}$`, "i").test(n);
+  return alreadyHasSurname ? n : `${n} ${s}`;
+}
+
 export function studentToTcRow(student, overrides = {}) {
   const std = (student.std || "").trim();
   const stdUpper = std ? std.toUpperCase() : "1ST";
@@ -165,8 +181,8 @@ export function studentToTcRow(student, overrides = {}) {
     registerNo: overrides.registerNo || student.enrollment || student.grNo || "140",
     udiseNo: student.udise || "242241000672520057",
     name: (student.name || "").toUpperCase(),
-    fatherName: (student.fatherName || "").toUpperCase(),
-    motherName: (student.motherName || "").toUpperCase(),
+    fatherName: withSurname(student.fatherName, student.lastName).toUpperCase(),
+    motherName: withSurname(student.motherName, student.lastName).toUpperCase(),
     aadhar: student.aadhar ? student.aadhar.replace(/\s+/g, "") : "",
     religion: religion.toUpperCase(),
     caste: caste.toUpperCase(),
