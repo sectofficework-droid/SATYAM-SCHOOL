@@ -340,7 +340,57 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-10-04/05 — Teacher app icon fix, admin-workspace
+**Current — Session 2026-10-08 — MIL (Odia) marksheet percentage bug fixed
+(REQ-BUG-072), classified MINOR CHANGE per J12B.**
+User reported: non-Odia-medium students' marksheet percentage was being
+wrongly dragged down by MIL (Odia), a subject that isn't theirs at all, once
+it's added to a class's `class_subjects` list (which applies to every
+student in that class with no per-student concept). Explored the data model
+and marksheet-calculation code first (`admin-panel/src/lib/
+marksheetService.js`'s three builders, `settingsService.js`, the Flutter
+student "Official Results" screen) before proposing a fix; user explicitly
+rejected the more "proper" design (adding a `students.medium` field +
+medium-matching) in favor of a simpler, purely entry-driven rule: flag a
+subject `is_optional` and exclude it entirely from a student's marksheet
+(not shown, full marks not counted) whenever no mark was ever entered for
+it, including it normally the moment a mark is entered. No per-student
+medium field needed — teachers just leave MIL blank for non-Odia students.
+
+Implemented: new migration `mobile-app/SUPABASE_OPTIONAL_SUBJECTS.sql`
+(`class_subjects.is_optional BOOLEAN DEFAULT FALSE`, applied live via
+Supabase MCP — additive, zero behavior change until a subject is flagged);
+`getClassSubjects`/`getMarksheetsForClass`/`getExamReportForClass`/
+`getSingleExamMarksheet` in `marksheetService.js` updated to exclude an
+optional+unentered subject from `subjectRows`/`totalMax`/`totalObtained`;
+`settingsService.js` got `getOptionalSubjects()` + a 3rd `saveClassSubjects`
+param; Settings → Subjects tab (`settings/page.js` `SubjectsTab`) got a
+star-toggle chip UI to flag a subject optional; Flutter
+`supabase_service.dart` got `fetchClassSubjectsDetailed()`; Flutter
+`student_official_results_page.dart` now drops an optional+unentered
+subject from its own results list instead of showing "Pending" (this
+screen's total/percentage already excluded unmarked subjects by accident,
+so only the display list needed the fix). Teacher mark-entry
+(`teacher_official_exams_page.dart`) needed no change — leaving a mark
+blank was already allowed. `TODO.md` REQ-BUG-072 updated before
+implementing per J12B; this file's BOOTSTRAP checkpoint + a SESSION file +
+a work-log LOG file written after.
+
+**Verified:** `npm run lint` (admin-panel) clean; `flutter analyze` on both
+changed Dart files clean; migration applied and confirmed live
+(`is_optional` column present on `class_subjects` via Supabase MCP
+`list_tables`). **Not verified:** no end-to-end click-through in a running
+browser/app yet (no dev server was started this session) — admin needs to
+actually flag "MIL (Odia)" optional in Settings → Subjects and generate a
+test marksheet to see the fix in practice; recorded as the next step below.
+Nothing staged/committed to git this session (not asked).
+
+**Flagged, not actioned (J14 — out of scope for this task):** this file's
+checkpoint history below has drifted well past the "current + 1 prior"
+size-discipline rule (10+ stacked "Prior —" sessions going back to
+2026-09-19 instead of collapsing to single-line pointers) — pre-existing
+bloat, not introduced this session; needs its own dedicated trim pass.
+
+**Prior — Session 2026-10-04/05 — Teacher app icon fix, admin-workspace
 filters, full security/bug sweep, Add Student full-field parity
 (REQ-FEAT-007), v1.0.0+8 built and submitted to Play Console closed
 testing.**
@@ -888,6 +938,15 @@ Earlier checkpoints, one line each (full detail in the linked files):
 ## Next step
 Open items, most recent first (superseded/completed items removed — see
 the checkpoint list above for what already shipped):
+
+0. **REQ-BUG-072 (MIL (Odia) optional-subject fix) needs its end-to-end
+   click-through** — no browser/device session ran this session. Next
+   session: in Settings → Subjects, flag "MIL (Odia)"/"Odia - MIL" optional
+   for a test class (star toggle), enter a mark for one student and leave
+   it blank for another, then confirm the admin Marksheet PDF + Exams
+   report + Flutter student "Official Results" screen all agree (MIL shown
+   + counted for the first student, fully absent for the second). See
+   `work-log\LOG-2026-10-08.md`.
 
 -3. **No in-browser/visual verification happened at all in the 2026-10-01
     session** — the Chrome extension was never connected. Every fix that

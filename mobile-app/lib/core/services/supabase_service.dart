@@ -714,6 +714,21 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res).map((r) => r['subject_name'] as String).toList();
   }
 
+  // Same as fetchClassSubjects but also carries is_optional - a subject like
+  // MIL (Odia) that only some students in the class take. Used wherever a
+  // percentage/total must exclude such a subject entirely for a student with
+  // no mark entered for it, instead of counting it as a 0 (REQ-BUG-072).
+  static Future<List<Map<String, dynamic>>> fetchClassSubjectsDetailed(String className) async {
+    final res = await client
+        .from('class_subjects')
+        .select('subject_name, is_optional')
+        .eq('class_name', className)
+        .order('sort_order', ascending: true);
+    return List<Map<String, dynamic>>.from(res)
+        .map((r) => {'name': r['subject_name'] as String, 'isOptional': r['is_optional'] == true})
+        .toList();
+  }
+
   static Future<double> fetchExamSubjectMaxMarks(String examId, String className, String subjectName) async {
     final res = await client
         .from('official_exam_subject_config')

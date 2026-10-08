@@ -1,0 +1,21 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Optional subjects (REQ-BUG-072): a class-level subject (e.g. MIL (Odia))
+-- that only some students in the class actually take. `class_subjects` has
+-- always applied one flat subject list to every student in a class, with no
+-- way to say "this one doesn't apply to everyone" - so once MIL (Odia) was
+-- added to a class, every student in it was treated as if they took it,
+-- and a student for whom a teacher correctly never entered a MIL mark had
+-- that subject's full marks still counted against their percentage.
+--
+-- Fix: flag the subject optional instead of tracking each student's medium.
+-- admin-panel/src/lib/marksheetService.js (getMarksheetsForClass,
+-- getExamReportForClass, getSingleExamMarksheet) excludes an is_optional
+-- subject entirely from a student's marksheet - not shown, not counted in
+-- totalMax/totalObtained - whenever no mark was ever entered for it, and
+-- includes it normally the moment a mark is entered.
+--
+-- Default FALSE preserves current behavior for every existing subject.
+-- Run this in Supabase Dashboard → SQL Editor.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+ALTER TABLE class_subjects ADD COLUMN IF NOT EXISTS is_optional BOOLEAN NOT NULL DEFAULT FALSE;

@@ -411,8 +411,27 @@ export async function getAllClassSubjects() {
   return map;
 }
 
-export async function saveClassSubjects(className, subjectNames) {
+// Subjects flagged "optional" (e.g. MIL (Odia), which only applies to some
+// students in a class) - see getMarksheetsForClass in marksheetService.js
+// for how this excludes the subject entirely for a student with no mark
+// entered, instead of counting it as a 0.
+export async function getOptionalSubjects() {
+  const { data, error } = await supabase
+    .from("class_subjects")
+    .select("class_name, subject_name")
+    .eq("is_optional", true);
+  if (error) throw error;
+  const map = {};
+  (data || []).forEach(r => {
+    if (!map[r.class_name]) map[r.class_name] = [];
+    map[r.class_name].push(r.subject_name);
+  });
+  return map;
+}
+
+export async function saveClassSubjects(className, subjectNames, optionalSubjectNames = []) {
   const trimmed = subjectNames.map(s => s.trim()).filter(Boolean);
+  const optionalSet = new Set(optionalSubjectNames);
 
   const { data: existing, error: fetchErr } = await supabase
     .from("class_subjects")
@@ -432,7 +451,10 @@ export async function saveClassSubjects(className, subjectNames) {
     const { error } = await supabase
       .from("class_subjects")
       .upsert(
-        trimmed.map((subject_name, i) => ({ class_name: className, subject_name, sort_order: i })),
+        trimmed.map((subject_name, i) => ({
+          class_name: className, subject_name, sort_order: i,
+          is_optional: optionalSet.has(subject_name),
+        })),
         { onConflict: "class_name,subject_name" }
       );
     if (error) throw error;

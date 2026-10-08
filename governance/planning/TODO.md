@@ -2658,9 +2658,57 @@ pattern), it is noted as already-known and not re-filed as new.
       across student pages and teacher pages.
 - [x] **REQ-BUG-070 — `teacher_notices_page.dart` reimplemented its own notice card. FIXED 2026-10-04.**
       Replaced custom notice card with shared `NoticeCard`, restoring tap-to-expand behavior.
+- [ ] **REQ-BUG-071 — Neither app's current AAB supports 16 KB memory page
+      sizes (found 2026-10-08, attempting to promote both apps to
+      production).** Play Console's release-review step flags this as an
+      **Error** (not a warning) on both the Teacher app's version code 8
+      (1.0.0, Oct 5 build) and the Student app's version code 3 (1.0.0,
+      Sep 22 build) — same message on both, so it's a build/toolchain issue,
+      not app-specific: "Your app does not support 16 KB memory page
+      sizes." This is Google's native-library-alignment requirement for
+      newer Android devices (recent Android 15+ hardware using 16 KB memory
+      pages) — an unaligned `.so` can crash or misbehave on those devices.
+      Play Console offers a "Proceed anyway" override, but the user
+      explicitly chose **not** to use it — decision: fix the underlying
+      build first, don't publish past this warning. Likely needs an
+      NDK/Android Gradle Plugin/Flutter engine version bump so the AAB's
+      native libraries are produced 16 KB-aligned, then a rebuild of both
+      flavors. **Not investigated further yet** — root cause (which
+      native lib, which toolchain version) not yet identified this
+      session. Blocks: promoting either app from closed testing to
+      production (production *access* is already granted for both, see
+      Play Store status — this is a separate, build-level blocker). (recorded, not individually numbered — no concrete failure scenario, just worth knowing)
+- [x] **REQ-BUG-072 — MIL (Odia) subject wrongly lowers percentage for
+      students who don't take it. CODE + MIGRATION SHIPPED 2026-10-08;
+      end-to-end click-through still pending (see BOOTSTRAP.md "Next
+      step").** `class_subjects` is
+      configured per class only, with no concept of a subject being
+      optional — so once "MIL (Odia)" is added to a class, every student in
+      that class is treated as taking it. When a teacher correctly leaves
+      MIL blank for a non-Odia student, `marksheetService.js`'s three
+      marksheet builders (`getMarksheetsForClass`, `getExamReportForClass`,
+      `getSingleExamMarksheet`) still add MIL's full marks into that
+      student's `totalMax` while their obtained stays 0, silently lowering
+      their percentage for a subject that was never theirs. The Flutter
+      student "Official Results" screen (`student_official_results_page.dart`)
+      has a second, separately-coded calculation with the same underlying
+      gap. **J12B classification: MINOR CHANGE** — localized change to
+      approved marksheet percentage behavior plus an additive schema change
+      (new `class_subjects.is_optional` column, default `FALSE`, no
+      behavior change for any subject not explicitly flagged). **Approved
+      fix (2026-10-08, user-directed):** no per-student medium field;
+      instead, a subject flagged `is_optional` is fully excluded from a
+      student's marksheet (not shown, full marks not counted) whenever no
+      mark was ever entered for it, and included normally the moment a
+      mark is entered. Plan recorded at
+      `C:\Users\BK DEBIPRASAD DAS\.claude\plans\in-exam-marksheet-creation-atomic-rabbit.md`.
 
-### Code-quality / consistency notes (recorded, not individually numbered — no concrete failure scenario, just worth knowing)
-
+- `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
+  own "current + at most 1 prior, older collapses to a one-line pointer"
+  size-discipline rule — 10+ stacked "Prior —" sessions back to
+  2026-09-19 instead of being collapsed. Flagged 2026-10-08 while adding
+  that session's own checkpoint; not fixed then (out of scope for that
+  task) — needs its own dedicated trim pass.
 - Duplicated service-role-key fallback chain
   (`SUPABASE_SERVICE_ROLE_KEY || SUPABASE_SERVICE_KEY || SUPABASE_SECRET_KEY
   || SUPABASE_KEY`) copy-pasted identically across 4+ API routes instead of

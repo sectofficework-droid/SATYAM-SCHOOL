@@ -13,7 +13,7 @@ import {
   GraduationCap, Lock, ChevronDown, ChevronUp, Pencil,
   AlertCircle, LogOut, SlidersHorizontal, LayoutGrid,
   Download, FileSpreadsheet, MessageSquare, CalendarRange, Layers, ScrollText, Award, Smartphone,
-  Link2, KeyRound, Fingerprint,
+  Link2, KeyRound, Fingerprint, Star,
 } from "lucide-react";
 import YearPlanningTab from "./YearPlanningTab";
 import RulesRegulationsTab from "./RulesRegulationsTab";
@@ -34,7 +34,7 @@ import {
   getFeeStructuresForYear, saveFeeStructuresForYear,
   getClassesWithSections, setClassActiveInDB, insertSection, deleteSectionFromDB, updateSectionTeacher,
   addSupportingTeacher, removeSupportingTeacher,
-  getTeachingEmployees, getAllClassSubjects, saveClassSubjects,
+  getTeachingEmployees, getAllClassSubjects, saveClassSubjects, getOptionalSubjects,
   getPeriodDefs, savePeriodDefs, getDayGroupWeekdays, saveDayGroupWeekdays,
   getFeeReminderTemplates, saveFeeReminderTemplates,
 } from "@/lib/settingsService";
@@ -1338,7 +1338,7 @@ function ClassSectionsTab() {
 
 // ── Tab: Subjects per Class (feeds the Documents → Marksheet report) ──────────
 function SubjectsTab() {
-  const [rows,       setRows]       = useState([]); // [{cls, subjects:[string,...]}]
+  const [rows,       setRows]       = useState([]); // [{cls, subjects:[string,...], optional:Set<string>}]
   const [loading,    setLoading]    = useState(true);
   const [saved,      setSaved]      = useState(false);
   const [editMode,   setEditMode]   = useState(false);
@@ -1348,18 +1348,18 @@ function SubjectsTab() {
   const [customText, setCustomText] = useState({}); // {[cls]: draft text}
 
   useEffect(() => {
-    Promise.all([getClassesWithSections(), getAllClassSubjects()])
-      .then(([classes, subjMap]) => {
+    Promise.all([getClassesWithSections(), getAllClassSubjects(), getOptionalSubjects()])
+      .then(([classes, subjMap, optMap]) => {
         const mapped = classes
           .filter(c => c.is_active)
-          .map(c => ({ cls: c.name, subjects: subjMap[c.name] || [] }));
+          .map(c => ({ cls: c.name, subjects: subjMap[c.name] || [], optional: new Set(optMap[c.name] || []) }));
         setRows(mapped);
         setLoading(false);
       }).catch(() => setLoading(false));
   }, []);
 
   function startEdit() {
-    setBackup(rows.map(r => ({ ...r, subjects: [...r.subjects] })));
+    setBackup(rows.map(r => ({ ...r, subjects: [...r.subjects], optional: new Set(r.optional) })));
     setEditMode(true);
   }
   function cancel() {
@@ -1371,7 +1371,7 @@ function SubjectsTab() {
 
   async function save() {
     try {
-      await Promise.all(rows.map(r => saveClassSubjects(r.cls, r.subjects)));
+      await Promise.all(rows.map(r => saveClassSubjects(r.cls, r.subjects, Array.from(r.optional))));
       setSaved(true);
       setEditMode(false);
       setCustomOpen({});
@@ -1410,9 +1410,25 @@ function SubjectsTab() {
   }
 
   function removeSubject(cls, subject) {
-    setRows(prev => prev.map(r =>
-      r.cls === cls ? { ...r, subjects: r.subjects.filter(s => s !== subject) } : r
-    ));
+    setRows(prev => prev.map(r => {
+      if (r.cls !== cls) return r;
+      const optional = new Set(r.optional);
+      optional.delete(subject);
+      return { ...r, subjects: r.subjects.filter(s => s !== subject), optional };
+    }));
+  }
+
+  // Optional = excluded entirely from a student's marksheet (not shown, not
+  // counted) whenever no mark was ever entered for it - see REQ-BUG-072 and
+  // marksheetService.js. Used for subjects like MIL (Odia) that only some
+  // students in a class take.
+  function toggleOptional(cls, subject) {
+    setRows(prev => prev.map(r => {
+      if (r.cls !== cls) return r;
+      const optional = new Set(r.optional);
+      if (optional.has(subject)) optional.delete(subject); else optional.add(subject);
+      return { ...r, optional };
+    }));
   }
 
   if (loading) return (
@@ -1426,7 +1442,7 @@ function SubjectsTab() {
           <div>
             <h3 className="text-sm font-bold text-gray-700">Subjects per Class</h3>
             <p className="text-xs text-gray-400 mt-0.5">
-              {editMode ? "Add or remove subjects for each class" : "Used by the Documents → Marksheet report to know which subjects to list for each class"}
+              {editMode ? "Add or remove subjects for each class. Tap the star to mark a subject optional (e.g. MIL (Odia)) - it's excluded from a student's marksheet until a mark is entered." : "Used by the Documents → Marksheet report to know which subjects to list for each class"}
             </p>
           </div>
           <EditBar editMode={editMode} saved={saved} onEdit={startEdit} onSave={save} onCancel={cancel}/>
@@ -1456,16 +1472,30 @@ function SubjectsTab() {
                 {isOpen && (
                   <div className="px-5 pb-4 pt-3 bg-gray-50/60 border-t border-gray-100">
                     <div className="flex flex-wrap gap-2 mb-3">
-                      {row.subjects.map(subj => (
-                        <span key={subj} className="flex items-center gap-1.5 bg-school-navy text-white text-xs font-semibold px-3 py-1.5 rounded-lg">
-                          {subj}
-                          {editMode && (
-                            <button onClick={() => removeSubject(row.cls, subj)} className="hover:text-red-300 transition-colors">
-                              <X className="w-3 h-3"/>
-                            </button>
-                          )}
-                        </span>
-                      ))}
+                      {row.subjects.map(subj => {
+                        const isOpt = row.optional.has(subj);
+                        return (
+                          <span key={subj} className={
+                            "flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg " +
+                            (isOpt ? "bg-amber-500 text-white" : "bg-school-navy text-white")
+                          } title={isOpt ? "Optional - excluded from a student's marksheet until a mark is entered" : undefined}>
+                            {subj}
+                            {isOpt && <span className="opacity-80">(optional)</span>}
+                            {editMode && (
+                              <>
+                                <button onClick={() => toggleOptional(row.cls, subj)}
+                                  title="Toggle optional (e.g. MIL (Odia) - not every student takes it)"
+                                  className="hover:text-amber-200 transition-colors">
+                                  <Star className="w-3 h-3" fill={isOpt ? "currentColor" : "none"}/>
+                                </button>
+                                <button onClick={() => removeSubject(row.cls, subj)} className="hover:text-red-300 transition-colors">
+                                  <X className="w-3 h-3"/>
+                                </button>
+                              </>
+                            )}
+                          </span>
+                        );
+                      })}
                       {row.subjects.length === 0 && !editMode && (
                         <span className="text-xs text-gray-300">No subjects added yet</span>
                       )}

@@ -1,14 +1,19 @@
 import supabase from "./supabase";
 import { getOfficialExams } from "./examService";
 
+// Returns [{name, isOptional}] - an optional subject (e.g. MIL (Odia), which
+// only some students in a class take) is excluded entirely from a student's
+// marksheet whenever no mark was ever entered for it, instead of counting
+// as a 0 against them. See each marksheet builder below for where this is
+// applied.
 export async function getClassSubjects(className) {
   const { data, error } = await supabase
     .from("class_subjects")
-    .select("subject_name")
+    .select("subject_name, is_optional")
     .eq("class_name", className)
     .order("sort_order");
   if (error) throw error;
-  return (data || []).map(r => r.subject_name);
+  return (data || []).map(r => ({ name: r.subject_name, isOptional: !!r.is_optional }));
 }
 
 // Standard 8-point CBSE-style scale - our default choice, easy to change
@@ -90,6 +95,7 @@ export async function getMarksheetsForClass(students, className) {
 
   const configByExamSubject = {};
   const marksByExamStudentSubject = {};
+  const enteredByExamStudentSubject = {};
   if (examIds.length) {
     const { data: configRows, error: configErr } = await supabase
       .from("official_exam_subject_config")
@@ -108,7 +114,9 @@ export async function getMarksheetsForClass(students, className) {
       .eq("class_name", className);
     if (markErr) throw markErr;
     (markRows || []).forEach(m => {
-      marksByExamStudentSubject[`${m.exam_id}:${m.student_id}:${m.subject_name}`] = Number(m.marks_obtained) || 0;
+      const key = `${m.exam_id}:${m.student_id}:${m.subject_name}`;
+      marksByExamStudentSubject[key] = Number(m.marks_obtained) || 0;
+      enteredByExamStudentSubject[key] = true;
     });
   }
 
@@ -117,19 +125,29 @@ export async function getMarksheetsForClass(students, className) {
   const sheets = students.map(s => {
     let totalObtained = 0, totalMax = 0;
     const subjectRows = subjects.map(subject => {
-      let subjObtained = 0, subjMax = 0;
+      let subjObtained = 0, subjMax = 0, anyEntered = false;
       const marks = exams.map(exam => {
-        const max = configByExamSubject[`${exam.id}:${subject}`] ?? 100;
-        const obtained = marksByExamStudentSubject[`${exam.id}:${s._studentId}:${subject}`] || 0;
+        const key = `${exam.id}:${s._studentId}:${subject.name}`;
+        const entered = !!enteredByExamStudentSubject[key];
+        if (entered) anyEntered = true;
+        // Optional subject (e.g. MIL (Odia)) with no mark entered for this
+        // exam: exclude it from this student's totals entirely instead of
+        // counting it as a 0 - it isn't their subject.
+        const included = !subject.isOptional || entered;
+        const max = included ? (configByExamSubject[`${exam.id}:${subject.name}`] ?? 100) : 0;
+        const obtained = included ? (marksByExamStudentSubject[key] || 0) : 0;
         subjObtained += obtained;
         subjMax += max;
         return { obtained, max };
       });
+      // Optional subject never entered for this student at all: drop the
+      // row from the marksheet completely (not shown, not counted).
+      if (subject.isOptional && !anyEntered) return null;
       totalObtained += subjObtained;
       totalMax += subjMax;
       const pct = subjMax ? (subjObtained / subjMax) * 100 : 0;
-      return { subject, marks, obtained: subjObtained, total: subjMax, grade: gradeFor(pct) };
-    });
+      return { subject: subject.name, marks, obtained: subjObtained, total: subjMax, grade: gradeFor(pct) };
+    }).filter(Boolean);
 
     const percentage = totalMax ? (totalObtained / totalMax) * 100 : 0;
     const attendance = attendanceByStudent[s._studentId] || { present: 0, total: 0 };
@@ -185,18 +203,22 @@ export async function getExamReportForClass(students, className, examId) {
   });
 
   const sheets = students.map(s => {
-    let totalObtained = 0, totalMax = 0, marksEntered = 0;
+    let totalObtained = 0, totalMax = 0, marksEntered = 0, subjectsTotal = 0;
     const subjectRows = subjects.map(subject => {
-      const max = maxBySubject[subject] ?? 100;
-      const key = `${s._studentId}:${subject}`;
+      const key = `${s._studentId}:${subject.name}`;
       const entered = Object.prototype.hasOwnProperty.call(marksByStudentSubject, key);
+      // Optional subject never entered for this student: not their subject -
+      // exclude it entirely instead of showing it as "pending".
+      if (subject.isOptional && !entered) return null;
+      const max = maxBySubject[subject.name] ?? 100;
       const obtained = entered ? marksByStudentSubject[key] : null;
       if (entered) marksEntered += 1;
+      subjectsTotal += 1;
       totalObtained += obtained || 0;
       totalMax += max;
       const pct = max ? ((obtained || 0) / max) * 100 : 0;
-      return { subject, obtained, max, grade: entered ? gradeFor(pct) : null };
-    });
+      return { subject: subject.name, obtained, max, grade: entered ? gradeFor(pct) : null };
+    }).filter(Boolean);
 
     const percentage = totalMax ? (totalObtained / totalMax) * 100 : 0;
 
@@ -210,7 +232,7 @@ export async function getExamReportForClass(students, className, examId) {
       grade:         gradeFor(percentage),
       result:        percentage >= 33 ? "Pass" : "Fail",
       marksEntered,
-      subjectsTotal: subjects.length,
+      subjectsTotal,
     };
   });
 
@@ -250,13 +272,18 @@ export async function getSingleExamMarksheet(students, className, examId) {
   const sheets = students.map(s => {
     let totalObtained = 0, totalMax = 0;
     const subjectRows = subjects.map(subject => {
-      const max = maxBySubject[subject] ?? 100;
-      const obtained = marksByStudentSubject[`${s._studentId}:${subject}`] || 0;
+      const key = `${s._studentId}:${subject.name}`;
+      const entered = Object.prototype.hasOwnProperty.call(marksByStudentSubject, key);
+      // Optional subject never entered for this student: not their subject -
+      // exclude it entirely instead of counting it as a 0.
+      if (subject.isOptional && !entered) return null;
+      const max = maxBySubject[subject.name] ?? 100;
+      const obtained = entered ? marksByStudentSubject[key] : 0;
       totalObtained += obtained;
       totalMax += max;
       const pct = max ? (obtained / max) * 100 : 0;
-      return { subject, obtained, max, grade: gradeFor(pct) };
-    });
+      return { subject: subject.name, obtained, max, grade: gradeFor(pct) };
+    }).filter(Boolean);
 
     const percentage = totalMax ? (totalObtained / totalMax) * 100 : 0;
     const attendance = attendanceByStudent[s._studentId] || { present: 0, total: 0 };

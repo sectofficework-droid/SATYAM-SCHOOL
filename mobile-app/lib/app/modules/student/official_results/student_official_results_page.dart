@@ -40,7 +40,7 @@ class _StudentOfficialResultsPageState extends State<StudentOfficialResultsPage>
     final sessionToken = AuthService.to.sessionToken;
 
     final exams    = await SupabaseService.fetchOfficialExams();
-    final subjects = className.isNotEmpty ? await SupabaseService.fetchClassSubjects(className) : <String>[];
+    final subjects = className.isNotEmpty ? await SupabaseService.fetchClassSubjectsDetailed(className) : <Map<String, dynamic>>[];
 
     final results = <Map<String, dynamic>>[];
     for (final exam in exams) {
@@ -65,12 +65,18 @@ class _StudentOfficialResultsPageState extends State<StudentOfficialResultsPage>
       }
 
       double totalObtained = 0, totalMax = 0;
-      final subjectRows = subjects.map((subject) {
-        final max = maxBySubject[subject] ?? 100;
-        final obtained = myMarks[subject];
-        if (obtained != null) { totalObtained += obtained; totalMax += max; }
-        return {'subject': subject, 'obtained': obtained, 'max': max};
-      }).toList();
+      // Optional subject (e.g. MIL (Odia)) never marked for this student:
+      // not their subject - drop it from the list entirely instead of
+      // showing it as "Pending" (REQ-BUG-072).
+      final subjectRows = subjects
+          .where((s) => s['isOptional'] != true || myMarks.containsKey(s['name']))
+          .map((s) {
+            final subject = s['name'] as String;
+            final max = maxBySubject[subject] ?? 100;
+            final obtained = myMarks[subject];
+            if (obtained != null) { totalObtained += obtained; totalMax += max; }
+            return {'subject': subject, 'obtained': obtained, 'max': max};
+          }).toList();
 
       results.add({
         ...exam,
