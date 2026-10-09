@@ -208,8 +208,16 @@ export async function getExamReportForClass(students, className, examId) {
       const key = `${s._studentId}:${subject.name}`;
       const entered = Object.prototype.hasOwnProperty.call(marksByStudentSubject, key);
       // Optional subject never entered for this student: not their subject -
-      // exclude it entirely instead of showing it as "pending".
-      if (subject.isOptional && !entered) return null;
+      // excluded from totals/marksEntered/subjectsTotal, but still kept as a
+      // row (not filtered out) so every student's subjectRows is the same
+      // length/order - this table (unlike the single-student Marksheet PDF)
+      // shares one fixed column per subject across the whole class, and
+      // dropping the entry here previously shifted every later column left
+      // for that student (their Hindi mark would render under the MIL
+      // header, their Total under Hindi, etc. - REQ-BUG-074).
+      if (subject.isOptional && !entered) {
+        return { subject: subject.name, obtained: null, max: maxBySubject[subject.name] ?? 100, grade: null, excluded: true };
+      }
       const max = maxBySubject[subject.name] ?? 100;
       const obtained = entered ? marksByStudentSubject[key] : null;
       if (entered) marksEntered += 1;
@@ -218,7 +226,7 @@ export async function getExamReportForClass(students, className, examId) {
       totalMax += max;
       const pct = max ? ((obtained || 0) / max) * 100 : 0;
       return { subject: subject.name, obtained, max, grade: entered ? gradeFor(pct) : null };
-    }).filter(Boolean);
+    });
 
     const percentage = totalMax ? (totalObtained / totalMax) * 100 : 0;
 

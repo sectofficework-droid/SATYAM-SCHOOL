@@ -99,7 +99,7 @@ export default function ExamsReportSection() {
     const header = ["Student Name", ...subjectNames, "Total", "Percentage", "Grade", "Rank", "Result", "Marks Entered"];
     const body = rows.map(r => [
       r.name,
-      ...r.subjectRows.map(sr => sr.obtained === null ? "Pending" : `${sr.obtained}/${sr.max}`),
+      ...r.subjectRows.map(sr => sr.excluded ? "—" : sr.obtained === null ? "Pending" : `${sr.obtained}/${sr.max}`),
       r.totalObtained,
       `${r.percentage.toFixed(2)}%`,
       r.grade,
@@ -184,9 +184,11 @@ export default function ExamsReportSection() {
                     <td className="px-3 py-2 font-medium text-gray-700 sticky left-0 bg-white whitespace-nowrap">{r.name}</td>
                     {r.subjectRows.map(sr => (
                       <td key={sr.subject} className="px-3 py-2 text-center whitespace-nowrap">
-                        {sr.obtained === null
-                          ? <span className="text-amber-500 font-medium">Pending</span>
-                          : <span className="text-gray-700">{sr.obtained}/{sr.max}</span>}
+                        {sr.excluded
+                          ? <span className="text-gray-300">—</span>
+                          : sr.obtained === null
+                            ? <span className="text-amber-500 font-medium">Pending</span>
+                            : <span className="text-gray-700">{sr.obtained}/{sr.max}</span>}
                       </td>
                     ))}
                     <td className="px-3 py-2 text-center font-semibold text-gray-700">{r.totalObtained}/{r.totalMax}</td>
