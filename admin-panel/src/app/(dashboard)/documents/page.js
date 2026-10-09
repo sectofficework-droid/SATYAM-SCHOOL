@@ -1219,7 +1219,13 @@ function MarksheetPreview({ student, sheet, mode, examNames, examName, logoUrl, 
                     <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{row.max}</td>
                   </>
                 ) : (
-                  row.marks.map((m, mi) => <td key={mi} style={{ padding: "2.5px 2px", textAlign: "center" }}>{m.obtained}</td>)
+                  // row.marks can be briefly missing right after switching
+                  // mode: marksheetMode flips synchronously on click, but
+                  // sheet (whose shape depends on mode - single-exam rows
+                  // have no .marks array) only catches up once the async
+                  // refetch resolves, so this can render one frame with
+                  // mode "final" against a still-single-exam sheet (ERR-2up4ia).
+                  (row.marks || []).map((m, mi) => <td key={mi} style={{ padding: "2.5px 2px", textAlign: "center" }}>{m.obtained}</td>)
                 )}
                 <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{mode === "single" ? `${row.obtained}/${row.max}` : `${row.obtained}/${row.total}`}</td>
                 <td style={{ padding: "2.5px 2px", textAlign: "center", fontWeight: 700 }}>{row.grade}</td>
