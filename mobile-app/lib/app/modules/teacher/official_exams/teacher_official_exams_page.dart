@@ -48,7 +48,7 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
 
   List<Map<String, dynamic>> _students = [];
   final Map<String, TextEditingController> _markCtrl = {};
-  double _maxMarks = 100;
+  double _maxMarks = 50; // placeholder until _selectSubject's fetch resolves (REQ-BUG-075: school's real default)
   bool _loadingRoster = false;
   bool _saving = false;
 

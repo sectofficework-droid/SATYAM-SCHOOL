@@ -390,8 +390,63 @@ print dialog - only the HTML feeding it was inspected, identical to the
 already-confirmed live preview markup); very-high-subject-count classes
 aren't stress-tested for one-page overflow (12 subjects fit fine; no
 multi-page handling was added, same risk profile the template itself
-carries). Full detail: `planning/TODO.md` REQ-FEAT-008. Nothing staged to
-git this session (not asked).
+carries). Full detail: `planning/TODO.md` REQ-FEAT-008. Across many
+follow-up rounds in the same session the user iteratively refined the
+design (header sizing/balance, band decoration, B&W-print color safety,
+outline-style labels on the summary boxes/Remark, bigger overall fonts,
+corrected address/pincode, removed the School Stamp box in favor of a
+full-width Remark, an auto-generated personalized 1-2 line remark, and the
+"given name + father's name + surname" Student Name format) - each
+re-verified the same way (lint + live browser check against real data)
+before moving to the next. User then said "push": committed (`6f5d7d5`)
+and pushed to `origin/main`.
+
+**Same session, separate issue - REQ-BUG-075, data only, no code
+change.** While reviewing the finished marksheet live, user asked why ECA
+showed out of 100 when they'd set the exam default to 50. Traced via
+Supabase MCP before touching anything: `official_exam_subject_config` had
+no row at all for ECA for 8 of its 9 classes, across all three official
+exams - `marksheetService.js`'s per-subject lookup silently falls back to
+100 when a row is missing, which is what was printing. Asked the user
+(fix now vs. Settings → Exams themselves); user chose fix now. Backfilled
+the 24 missing rows (8 classes × 3 exams) directly via SQL, verified live
+- every class now shows ECA = 50 across all three exams, matching every
+other subject. See `planning/TODO.md` REQ-BUG-075.
+
+**Same session, third thread - REQ-FEAT-009: admin web can now mark a
+student Absent for an Official Exam subject and set a report-card remark;
+"new subject defaults to 50" fixed at the source.** User asked whether
+admin web or the Teacher app could mark a student absent or edit a remark
+- traced both first: neither could (Teacher app mark-entry only takes a
+number; admin panel had zero write access to `official_exam_marks` at
+all). User: "if no then take needful action." New migration (`is_absent`
+column + a new RLS-enabled, `authenticated`-only `student_remarks` table),
+new `examService.js` writes, `marksheetService.js`/`marksheetGenerator.js`
+now thread absence through to a real "AB" on the printed marksheet and
+prefer an admin remark over the auto-generated one. First UI pass was a
+one-student modal; user said "it is good but I want... all students all
+subject marks (like report section exams showing table)" - rebuilt as
+a full roster × subject table mirroring `ExamsReportSection.js`'s layout
+on a dedicated `/documents/marksheet-edit` page (`marksheet-edit/page.js`),
+linked via an "Edit Class Marks" button in the Marksheet tab's toolbar.
+**Caught and fixed a real data-integrity bug mid-session**: the first
+save handler wrote every visible cell unconditionally, which silently
+turned every still-pending mark in the grid into an affirmatively-entered
+0 the moment the table was saved for any reason - confirmed live (19 phantom
+zero-rows), fixed with per-cell dirty-tracking, cleaned up via direct SQL. Also generalized
+REQ-BUG-075's fix: `saveClassSubjects()` now backfills max-marks-50 rows
+for every current exam when a genuinely new subject is added, and ported
+the same 100→50 default fix to the mobile Teacher app (4 Dart files),
+which had the identical stale default. **Governance note**: this was
+drafted under "REQ-BUG-074" before discovering that ID was already used
+by an uncommitted-to-TODO prior fix (`50b0106`) - renamed to REQ-BUG-075
+everywhere I'd used it, left the original (`marksheetService.js:242`)
+alone. Verified: `npm run lint` + `flutter analyze` clean after every
+round; live-tested end to end on a different student than the earlier
+single-student test, confirmed via direct SQL that only the intended cell
+and remark changed. Not verified: the new backfill-on-subject-add path
+itself (traced by reading the code, not exercised through Settings →
+Subjects this session). Full detail: `planning/TODO.md` REQ-FEAT-009.
 
 **Prior — Session 2026-10-08 — MIL (Odia) marksheet percentage bug fixed
 (REQ-BUG-072), classified MINOR CHANGE per J12B.**

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
+import Link from "next/link";
 import { getStudents } from "@/lib/studentService";
 import { getS3ViewUrl } from "@/lib/s3Upload";
 import { fmtDMY, toIsoDateLocal } from "@/lib/utils";
@@ -12,7 +13,7 @@ import * as XLSX from "xlsx";
 import {
   CreditCard, Award, FileText, Search, Download, FileSpreadsheet,
   Users, GraduationCap, X, CheckSquare, ChevronLeft, ChevronRight,
-  Upload, AlertCircle, Printer, Trash2
+  Upload, AlertCircle, Printer, Trash2, Pencil
 } from "lucide-react";
 
 import {
@@ -2072,6 +2073,17 @@ export default function DocumentsPage() {
                 : "Shows one exam's marks alone. Locked exams (before their end date) can’t be picked yet."}
               {" "}Subjects come from Settings → Subjects.
             </p>
+
+            <Link
+              href={`/documents/marksheet-edit?${new URLSearchParams({
+                ...(classFilter !== "All" ? { class: classFilter } : {}),
+                ...(marksheetMode === "single" && selectedExamId ? { exam: selectedExamId } : {}),
+              }).toString()}`}
+              className="flex items-center gap-1.5 sm:ml-auto px-3.5 py-2 rounded-lg border border-school-navy text-school-navy text-xs font-semibold hover:bg-school-navy/5 transition-colors flex-shrink-0"
+            >
+              <Pencil className="w-3.5 h-3.5"/>
+              Edit Class Marks
+            </Link>
           </div>
 
           {/* Main content: list + preview */}

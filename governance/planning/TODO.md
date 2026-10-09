@@ -3078,8 +3078,146 @@ pattern), it is noted as already-known and not re-filed as new.
       callers found anywhere in the codebase** - looks like dead code,
       left untouched since removing it wasn't asked for; the school's
       street-address text also differs across TC/marksheet/template
-      (pre-existing inconsistency, not introduced here). Nothing staged
-      to git this session (not asked).
+      (pre-existing inconsistency, not introduced here). **Later same
+      session: user said "push"** - all of REQ-FEAT-008 (marksheetGenerator.js
+      + documents/page.js + this file + BOOTSTRAP.md) committed
+      (`6f5d7d5`) and pushed to `origin/main`.
+- [x] **REQ-BUG-075 — ECA showed /100 on the marksheet everywhere except
+      class 7th, even though every other subject (and 7th's own ECA) was
+      set to /50. FIXED 2026-10-10.** User asked why, while reviewing the
+      rebuilt marksheet (REQ-FEAT-008) live. Root cause, confirmed via
+      Supabase MCP query before touching anything: `official_exam_subject_config`
+      (the per-exam/per-class/per-subject max-marks table, edited in
+      Settings &rarr; Exams) had **no row at all for ECA** for 8 of the 9
+      classes it's a required subject in (`class_subjects`), across **all
+      three** official exams (First Unit Test, Half Yearly Exam, Annual
+      Exam) - only class 7th had ever had it explicitly set (to 50, same
+      as everything else). `marksheetService.js`'s per-subject max-marks
+      lookup silently falls back to a hardcoded 100 when a row is missing
+      (`configByExamSubject[...] ?? 100`), which is what was actually
+      showing on the marksheet - every other subject just happened to
+      already have an explicit row, so this went unnoticed. **Not a code
+      bug** - the fallback is reasonable default behavior for a
+      genuinely-never-configured subject; this was pure missing data.
+      Asked the user before changing production data (AskUserQuestion:
+      fix now vs. do it in Settings &rarr; Exams themselves) - user chose
+      "fix now." Backfilled the missing rows directly via Supabase MCP:
+      `INSERT ... ON CONFLICT (exam_id, class_name, subject_name) DO
+      UPDATE SET max_marks = 50` for ECA across the 8 missing classes
+      &times; 3 exams (24 rows). Verified live afterward: every class now
+      shows ECA = 50.00 for all three exams, matching every other
+      subject. No app code changed, no migration file needed - pure data
+      correction via direct SQL.
+- [x] **REQ-FEAT-009 — Admin web can now mark a student Absent for an
+      Official Exam subject and set/override a student's report-card
+      remark; "any subject added defaults to 50" fixed at the source too.
+      DONE 2026-10-10.** User asked whether admin web or the Teacher app
+      could mark a student absent or edit a remark - traced both before
+      answering: neither could. The Teacher app's mark-entry screen only
+      accepted a number (0..max); the admin panel had **zero write access**
+      to `official_exam_marks` at all (`examService.js` only ever
+      `.select()`ed it - entry was Teacher-app-only). User said "if no
+      then take needful action."
+
+      **Schema** (`req_feat_009_official_exam_absent_and_student_remarks`
+      migration, applied live via Supabase MCP): `official_exam_marks` got
+      `is_absent boolean not null default false`; new `student_remarks`
+      table (`student_id`, `academic_year_id`, `remark`, PK on the pair),
+      RLS enabled, `authenticated`-only policy (unlike `official_exam_marks`,
+      this new table was deliberately not opened to `anon` - the mobile
+      apps have no use for it). Confirmed `authenticated` already had full
+      INSERT/UPDATE grants on `official_exam_marks` (same pre-existing
+      broad-anon-grants posture noted elsewhere in this file) before
+      relying on it.
+
+      **Backend**: `examService.js` gained `saveOfficialExamMark()` (upserts
+      on the exam_id+student_id+subject_name unique constraint, zeroes
+      marks_obtained when absent) and `saveStudentRemark()`/
+      `getCurrentAcademicYearId()`. `marksheetService.js`'s three builders
+      now thread `is_absent` through (`getMarksheetsForClass`,
+      `getSingleExamMarksheet`) and a new `getExamMarksForEditing()` was
+      added specifically for the editor table below - unlike the report/
+      marksheet builders, it does NOT hide an optional-subject row just
+      because it was never entered, since the admin needs to be able to
+      enter a first mark for one. All three also now return `adminRemark`
+      via a shared `fetchRemarksByStudent()` helper.
+
+      **Marksheet rendering**: `marksheetGenerator.js`'s `buildMarksheetView`
+      now prints "AB" (reusing the AB styling already built for the
+      reference template) wherever `is_absent` is true - just the one
+      exam's cell in Final mode, the whole row's grade too in Single Exam
+      mode (since there the row *is* that one exam) - and prefers
+      `sheet.adminRemark` over the auto-generated grade-tiered comment
+      when an admin has set one.
+
+      **Admin UI** (`documents/page.js` & `documents/marksheet-edit/page.js`):
+      built as a full class × subject table - "it is good but I want... all
+      students all subject marks (like report section exams showing table)" -
+      mirroring `ExamsReportSection.js`'s Exam+Class selector and roster-table
+      layout but editable, not a one-student-at-a-time modal (which is what
+      the first pass shipped and was explicitly asked to be replaced). Placed
+      on a dedicated `/documents/marksheet-edit` page (`marksheet-edit/page.js`),
+      navigated via an "Edit Class Marks" button in the Marksheet tab's
+      toolbar (not tied to the single-student preview). Shows the full class
+      roster with click-to-edit per student, Absent checkbox per subject,
+      and custom report-card remark input. **A real data-integrity bug was
+      caught and fixed during this same session**: the first version of the
+      save handler wrote every visible cell unconditionally, which silently
+      converted every still-pending (never-actually-entered) mark in the grid
+      into an affirmatively-entered 0 the moment the table was saved for *any*
+      reason - confirmed live (19 phantom zero-rows appeared for exams that
+      had no real data yet) before being caught, fixed with per-cell/
+      per-remark dirty-tracking (compare against the last-fetched state, only
+      write what actually changed), and the spurious rows + two test remarks
+      were cleaned up via direct SQL afterward.
+
+      Separately, "any subject added should default to 50" (the same root
+      cause as REQ-BUG-075, generalized): `settingsService.js`'s
+      `saveClassSubjects()` now backfills an `official_exam_subject_config`
+      row (max_marks 50) for every one of the current academic year's
+      official exams whenever a genuinely new subject is added to a class -
+      mirroring `ExamsTab.js`'s existing "creating an exam pre-fills every
+      subject" logic in reverse. The `?? 100`/`|| 100` fallbacks in
+      `marksheetService.js` were also changed to `?? 50`/`|| 50` as a
+      safety net, matching the Settings → Exams UI's own `?? 50` input
+      default it had never actually matched.
+
+      **Mobile app parity** (same root cause, different surface, fixed
+      same session since the Teacher app's mark-entry screen would
+      otherwise still show a stale "Max Marks: 100" for a newly-added
+      subject): `supabase_service.dart`'s `fetchExamSubjectMaxMarks`/
+      `fetchExamSubjectConfigForClass` fallbacks, `teacher_official_exams_page.dart`'s
+      placeholder `_maxMarks`, `student_official_results_page.dart`'s
+      fallback, and `admin_exams_page.dart`'s "Add Exam"/per-subject editor
+      defaults (100 → 50 throughout, matching `ExamsTab.js`'s web default
+      the mobile port had drifted from).
+
+      **Governance note**: this work was first written up under
+      "REQ-BUG-074," which turned out to already be in use - a prior,
+      separately-committed fix (`50b0106`, "stop optional-subject column
+      shift in Exams Report table") had used that ID directly in a code
+      comment without ever being logged to this file, so the collision
+      wasn't visible until grepped for. Renamed every one of my own
+      references to REQ-BUG-075 and left the original comment
+      (`marksheetService.js:242`) untouched. **J12B: MINOR** (new
+      capability + a real data-correction bug caught and fixed in the same
+      pass, no architecture change to the surrounding features).
+
+      **Verified**: `npm run lint` clean (admin-panel), `flutter analyze`
+      clean (all 4 changed Dart files) - repeated after every round of
+      changes, not just once. Live, in-browser, real production data:
+      marked a real student's subject absent and set a remark through the
+      single-student flow (superseded later the same session), confirmed
+      the marksheet printed "AB" and the custom remark correctly; then,
+      after the table rewrite, used the new `ClassMarksEditor` to mark a
+      *different* student's subject absent and set a remark, verified via
+      direct SQL that only the intended cell and remark changed - no
+      collateral writes to any other student/subject/exam. **Not
+      verified**: the backfill-on-subject-add path in `saveClassSubjects()`
+      wasn't exercised end-to-end (would require adding a real subject to
+      a class via Settings → Subjects, not done this session - traced by
+      reading the code and the exam-creation precedent it mirrors, not
+      live-tested).
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

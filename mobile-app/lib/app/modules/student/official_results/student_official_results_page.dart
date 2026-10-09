@@ -72,7 +72,7 @@ class _StudentOfficialResultsPageState extends State<StudentOfficialResultsPage>
           .where((s) => s['isOptional'] != true || myMarks.containsKey(s['name']))
           .map((s) {
             final subject = s['name'] as String;
-            final max = maxBySubject[subject] ?? 100;
+            final max = maxBySubject[subject] ?? 50; // REQ-BUG-075: school's real default, matches fetchExamSubjectConfigForClass
             final obtained = myMarks[subject];
             if (obtained != null) { totalObtained += obtained; totalMax += max; }
             return {'subject': subject, 'obtained': obtained, 'max': max};

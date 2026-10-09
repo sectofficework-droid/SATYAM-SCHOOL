@@ -99,7 +99,7 @@ class _OfficialExamsTabState extends State<_OfficialExamsTab> {
 
   Future<void> _openAddForm() async {
     final nameCtrl = TextEditingController();
-    final marksCtrl = TextEditingController(text: '100');
+    final marksCtrl = TextEditingController(text: '50'); // REQ-BUG-075: matches ExamsTab.js's web "Add Exam" default
     DateTime? start;
     DateTime? end;
 
@@ -140,7 +140,7 @@ class _OfficialExamsTabState extends State<_OfficialExamsTab> {
     );
 
     if (saved != true) return;
-    final fullMarks = int.tryParse(marksCtrl.text) ?? 100;
+    final fullMarks = int.tryParse(marksCtrl.text) ?? 50;
     try {
       final exam = await StaffAdminService.createOfficialExam(widget.employeeId,
         name: nameCtrl.text.trim(), startDate: DateFormat('yyyy-MM-dd').format(start!), endDate: DateFormat('yyyy-MM-dd').format(end!),
@@ -322,7 +322,7 @@ class _ExamSubjectConfigState extends State<_ExamSubjectConfig> {
         else Wrap(spacing: 8, runSpacing: 8, children: subjects.map((s) => SizedBox(
           width: 110,
           child: TextFormField(
-            initialValue: '${_config[s] ?? 100}',
+            initialValue: '${_config[s] ?? 50}', // REQ-BUG-075: matches ExamsTab.js's web per-subject default
             decoration: InputDecoration(labelText: s, isDense: true, border: const OutlineInputBorder()),
             keyboardType: TextInputType.number,
             onFieldSubmitted: (v) => _saveSubject(s, v),

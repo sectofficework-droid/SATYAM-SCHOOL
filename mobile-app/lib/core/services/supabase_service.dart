@@ -737,7 +737,12 @@ class SupabaseService {
         .eq('class_name', className)
         .eq('subject_name', subjectName)
         .maybeSingle();
-    return (res?['max_marks'] as num?)?.toDouble() ?? 100;
+    // REQ-BUG-075: this school's real full-marks convention is 50, not 100 -
+    // matches the admin panel's own ExamsTab.js input default and the
+    // fallback marksheetService.js now uses. A missing row here should be
+    // rare going forward (saveClassSubjects backfills one for every new
+    // subject), but this stays consistent with the web side as a safety net.
+    return (res?['max_marks'] as num?)?.toDouble() ?? 50;
   }
 
   // Bulk variant of the above - every subject's max marks for one exam+class
@@ -751,7 +756,7 @@ class SupabaseService {
         .eq('class_name', className);
     final map = <String, double>{};
     for (final row in List<Map<String, dynamic>>.from(res)) {
-      map[row['subject_name'] as String] = (row['max_marks'] as num?)?.toDouble() ?? 100;
+      map[row['subject_name'] as String] = (row['max_marks'] as num?)?.toDouble() ?? 50;
     }
     return map;
   }

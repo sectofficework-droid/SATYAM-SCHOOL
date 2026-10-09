@@ -159,3 +159,47 @@ export async function getOfficialExamMarksEntered(examId, className) {
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.subject.localeCompare(b.subject));
 }
+
+// REQ-FEAT-009: admin write access to official exam marks - previously the
+// web was entirely read-only here (entry was Teacher-app-only, see the
+// function above). Upserts on the same (exam_id, student_id, subject_name)
+// unique constraint the table already enforces. isAbsent also zeroes
+// marks_obtained, so a subject an admin marks absent never carries a stray
+// leftover score if it's later unmarked.
+export async function saveOfficialExamMark(examId, studentId, className, subjectName, marksObtained, isAbsent) {
+  const { error } = await supabase
+    .from("official_exam_marks")
+    .upsert(
+      {
+        exam_id: examId, student_id: studentId, class_name: className, subject_name: subjectName,
+        marks_obtained: isAbsent ? 0 : (Number(marksObtained) || 0), is_absent: !!isAbsent,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "exam_id,student_id,subject_name" }
+    );
+  if (error) throw error;
+}
+
+// ── Student report-card remark (REQ-FEAT-009) ──────────────────────────────
+// One admin-editable remark per student per academic year, shown on the
+// marksheet in place of the auto-generated grade-tiered comment when set.
+
+export async function getCurrentAcademicYearId() {
+  const { data, error } = await supabase
+    .from("academic_years")
+    .select("id")
+    .eq("is_current", true)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.id || null;
+}
+
+export async function saveStudentRemark(studentId, academicYearId, remark) {
+  const { error } = await supabase
+    .from("student_remarks")
+    .upsert(
+      { student_id: studentId, academic_year_id: academicYearId, remark, updated_at: new Date().toISOString() },
+      { onConflict: "student_id,academic_year_id" }
+    );
+  if (error) throw error;
+}

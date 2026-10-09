@@ -72,7 +72,7 @@ const AUTO_REMARKS = {
   C2: n => `${n}'s performance is below average and needs focused attention in weaker subjects.`,
   D: n => `${n} has just managed to pass. Performance needs considerable improvement.`,
 };
-function generateAutoRemark(studentName, grade, result) {
+export function generateAutoRemark(studentName, grade, result) {
   const n = firstName(studentName);
   if (result === "Fail") return `${n}'s performance is below the passing standard and needs immediate attention and support.`;
   const tmpl = AUTO_REMARKS[grade];
@@ -90,13 +90,19 @@ export function buildMarksheetView(student, sheet, mode, examNames, examName, lo
     : "FINAL MARKSHEET";
 
   const examColumns = mode === "single" ? null : (examNames || []);
+  // REQ-FEAT-009: an admin-marked absence prints "AB" in place of the
+  // numeric cell(s) (matching the reference template's documented AB
+  // behavior, already handled by subjectsTableHTML below) - in Final mode
+  // that's just the one exam's cell, since the row's overall grade is an
+  // aggregate across all exams; in Single Exam mode the row *is* that one
+  // exam, so the grade itself also prints "AB".
   const subjectRows = (sheet?.subjectRows || []).map((row, i) => ({
     no: i + 1,
     name: row.subject,
     cells: mode === "single"
-      ? [fmtNum(row.max), fmtNum(row.obtained)]
-      : [...row.marks.map(m => `${fmtNum(m.obtained)}/${fmtNum(m.max)}`), fmtNum(row.total), fmtNum(row.obtained)],
-    grade: row.grade,
+      ? [fmtNum(row.max), row.isAbsent ? "AB" : fmtNum(row.obtained)]
+      : [...row.marks.map(m => m.isAbsent ? "AB" : `${fmtNum(m.obtained)}/${fmtNum(m.max)}`), fmtNum(row.total), fmtNum(row.obtained)],
+    grade: mode === "single" && row.isAbsent ? "AB" : row.grade,
   }));
 
   const hasData = !!(sheet && sheet.subjectRows && sheet.subjectRows.length);
@@ -121,7 +127,9 @@ export function buildMarksheetView(student, sheet, mode, examNames, examName, lo
     grade: sheet?.grade ?? "—",
     result: sheet?.result ?? "—",
     rank: sheet?.rank ?? "—",
-    remark: hasData ? generateAutoRemark(s.firstName || s.name, sheet.grade, sheet.result) : "",
+    // REQ-FEAT-009: an admin-set remark (Documents → Marksheet → Edit)
+    // takes priority over the auto-generated grade-tiered one.
+    remark: hasData ? (sheet.adminRemark || generateAutoRemark(s.firstName || s.name, sheet.grade, sheet.result)) : "",
     hasData,
     date: fmtTodayDmy(),
   };
@@ -202,6 +210,7 @@ export function generateMarksheetPageHTML(d) {
       <div class="ms-field ms-field-full"><label>Student Name :</label><div class="ms-fill">${esc(d.studentName)}</div></div>
       <div class="ms-field"><label>Class :</label><div class="ms-fill">${esc(d.className)}</div></div>
       <div class="ms-field"><label>Roll No. :</label><div class="ms-fill">${esc(d.rollNo)}</div></div>
+      <div class="ms-field"><label>Date :</label><div class="ms-fill">${esc(d.date)}</div></div>
     </section>
 
     ${subjectsTableHTML(d)}
@@ -225,7 +234,6 @@ export function generateMarksheetPageHTML(d) {
     <div class="ms-spacer"></div>
 
     <section class="ms-signs">
-      <div><div class="ms-sl">${esc(d.date)}</div>Date</div>
       <div><div class="ms-sl"></div>Class Teacher</div>
       <div><div class="ms-sl"></div>Parent / Guardian</div>
       <div><div class="ms-sl"></div>Principal</div>
@@ -305,9 +313,9 @@ export const MARKSHEET_STYLES = `
   .ms-band .ms-t { font-family: 'Libre Baskerville', serif; font-weight: 700; font-size: 18px; letter-spacing: .3px; white-space: nowrap; }
   .ms-band .ms-y { font-size: 16.5px; font-weight: 700; white-space: nowrap; }
 
-  .ms-details { display: grid; grid-template-columns: repeat(2, 1fr); column-gap: 20px; row-gap: 5px; font-size: 15px; }
+  .ms-details { display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 20px; row-gap: 5px; font-size: 15px; }
   .ms-field { display: flex; align-items: flex-end; gap: 6px; min-height: 22px; }
-  .ms-field-full { grid-column: span 2; }
+  .ms-field-full { grid-column: span 3; }
   .ms-field label { font-weight: 700; white-space: nowrap; }
   .ms-fill { flex-grow: 1; min-width: 0; overflow-wrap: anywhere; border-bottom: 1px dotted #555; min-height: 18px; padding: 0 4px; font-weight: 600; }
 
@@ -351,7 +359,7 @@ export const MARKSHEET_STYLES = `
 
   .ms-spacer { flex-grow: 1; }
 
-  .ms-signs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; text-align: center; font-size: 13.5px; font-weight: 700; }
+  .ms-signs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; text-align: center; font-size: 13.5px; font-weight: 700; }
   .ms-signs .ms-sl { height: 24px; border-bottom: 1px solid #333; margin-bottom: 5px; display: flex; align-items: flex-end; justify-content: center; font-weight: 600; padding-bottom: 2px; }
 
   @page { size: A4; margin: 0; }

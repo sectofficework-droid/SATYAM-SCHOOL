@@ -67,6 +67,23 @@ async function fetchAttendanceByStudent(students, year) {
   return attendanceByStudent;
 }
 
+// REQ-FEAT-009: admin-set report-card remark, one per student per academic
+// year - when present, the marksheet uses this instead of the
+// auto-generated grade-tiered comment.
+async function fetchRemarksByStudent(students, year) {
+  const remarksByStudent = {};
+  if (!year) return remarksByStudent;
+  const studentIds = students.map(s => s._studentId);
+  const { data, error } = await supabase
+    .from("student_remarks")
+    .select("student_id, remark")
+    .eq("academic_year_id", year.id)
+    .in("student_id", studentIds);
+  if (error) throw error;
+  (data || []).forEach(r => { if (r.remark) remarksByStudent[r.student_id] = r.remark; });
+  return remarksByStudent;
+}
+
 // Ranks a set of already-computed sheets (each needs studentId + totalObtained)
 // by totalObtained descending; ties share the same rank.
 function withRank(sheets) {
@@ -95,6 +112,7 @@ export async function getMarksheetsForClass(students, className) {
 
   const configByExamSubject = {};
   const marksByExamStudentSubject = {};
+  const absentByExamStudentSubject = {};
   const enteredByExamStudentSubject = {};
   if (examIds.length) {
     const { data: configRows, error: configErr } = await supabase
@@ -104,23 +122,25 @@ export async function getMarksheetsForClass(students, className) {
       .eq("class_name", className);
     if (configErr) throw configErr;
     (configRows || []).forEach(c => {
-      configByExamSubject[`${c.exam_id}:${c.subject_name}`] = Number(c.max_marks) || 100;
+      configByExamSubject[`${c.exam_id}:${c.subject_name}`] = Number(c.max_marks) || 50;
     });
 
     const { data: markRows, error: markErr } = await supabase
       .from("official_exam_marks")
-      .select("exam_id, student_id, subject_name, marks_obtained")
+      .select("exam_id, student_id, subject_name, marks_obtained, is_absent")
       .in("exam_id", examIds)
       .eq("class_name", className);
     if (markErr) throw markErr;
     (markRows || []).forEach(m => {
       const key = `${m.exam_id}:${m.student_id}:${m.subject_name}`;
       marksByExamStudentSubject[key] = Number(m.marks_obtained) || 0;
+      absentByExamStudentSubject[key] = !!m.is_absent;
       enteredByExamStudentSubject[key] = true;
     });
   }
 
   const attendanceByStudent = await fetchAttendanceByStudent(students, year);
+  const remarksByStudent = await fetchRemarksByStudent(students, year);
 
   const sheets = students.map(s => {
     let totalObtained = 0, totalMax = 0;
@@ -134,11 +154,15 @@ export async function getMarksheetsForClass(students, className) {
         // exam: exclude it from this student's totals entirely instead of
         // counting it as a 0 - it isn't their subject.
         const included = !subject.isOptional || entered;
-        const max = included ? (configByExamSubject[`${exam.id}:${subject.name}`] ?? 100) : 0;
-        const obtained = included ? (marksByExamStudentSubject[key] || 0) : 0;
+        const max = included ? (configByExamSubject[`${exam.id}:${subject.name}`] ?? 50) : 0;
+        // Absent still counts the full marks toward subjMax (like any other
+        // entered-but-zero result) - only the obtained side is forced to 0
+        // and flagged so the marksheet can print "AB" instead of a plain 0.
+        const isAbsent = included && !!absentByExamStudentSubject[key];
+        const obtained = included && !isAbsent ? (marksByExamStudentSubject[key] || 0) : 0;
         subjObtained += obtained;
         subjMax += max;
-        return { obtained, max };
+        return { obtained, max, isAbsent };
       });
       // Optional subject never entered for this student at all: drop the
       // row from the marksheet completely (not shown, not counted).
@@ -163,6 +187,7 @@ export async function getMarksheetsForClass(students, className) {
       result:       percentage >= 33 ? "Pass" : "Fail",
       present:      attendance.present,
       totalDays:    attendance.total,
+      adminRemark:  remarksByStudent[s._studentId] || "",
     };
   });
 
@@ -189,7 +214,7 @@ export async function getExamReportForClass(students, className, examId) {
     .eq("class_name", className);
   if (configErr) throw configErr;
   const maxBySubject = {};
-  (configRows || []).forEach(c => { maxBySubject[c.subject_name] = Number(c.max_marks) || 100; });
+  (configRows || []).forEach(c => { maxBySubject[c.subject_name] = Number(c.max_marks) || 50; });
 
   const { data: markRows, error: markErr } = await supabase
     .from("official_exam_marks")
@@ -216,9 +241,9 @@ export async function getExamReportForClass(students, className, examId) {
       // for that student (their Hindi mark would render under the MIL
       // header, their Total under Hindi, etc. - REQ-BUG-074).
       if (subject.isOptional && !entered) {
-        return { subject: subject.name, obtained: null, max: maxBySubject[subject.name] ?? 100, grade: null, excluded: true };
+        return { subject: subject.name, obtained: null, max: maxBySubject[subject.name] ?? 50, grade: null, excluded: true };
       }
-      const max = maxBySubject[subject.name] ?? 100;
+      const max = maxBySubject[subject.name] ?? 50;
       const obtained = entered ? marksByStudentSubject[key] : null;
       if (entered) marksEntered += 1;
       subjectsTotal += 1;
@@ -247,6 +272,57 @@ export async function getExamReportForClass(students, className, examId) {
   return withRank(sheets);
 }
 
+// REQ-FEAT-009: full roster × every subject for one exam+class, built for
+// the admin marks-editing table (Documents → Marksheet → Edit) rather than
+// a printed report - unlike getExamReportForClass, an optional subject
+// never entered for a student is NOT hidden here, since the admin needs to
+// be able to enter a first mark (or mark absent) for it, not just view
+// what's already there. Also carries is_absent and the student's remark,
+// neither of which the plain report needs.
+export async function getExamMarksForEditing(students, className, examId) {
+  if (!students.length) return [];
+
+  const subjects = await getClassSubjects(className);
+  const year = await getCurrentAcademicYear().catch(() => null);
+
+  const { data: configRows, error: configErr } = await supabase
+    .from("official_exam_subject_config")
+    .select("subject_name, max_marks")
+    .eq("exam_id", examId)
+    .eq("class_name", className);
+  if (configErr) throw configErr;
+  const maxBySubject = {};
+  (configRows || []).forEach(c => { maxBySubject[c.subject_name] = Number(c.max_marks) || 50; });
+
+  const { data: markRows, error: markErr } = await supabase
+    .from("official_exam_marks")
+    .select("student_id, subject_name, marks_obtained, is_absent")
+    .eq("exam_id", examId)
+    .eq("class_name", className);
+  if (markErr) throw markErr;
+  const markByStudentSubject = {};
+  (markRows || []).forEach(m => {
+    markByStudentSubject[`${m.student_id}:${m.subject_name}`] = { obtained: Number(m.marks_obtained) || 0, isAbsent: !!m.is_absent };
+  });
+
+  const remarksByStudent = await fetchRemarksByStudent(students, year);
+
+  return students.map(s => ({
+    studentId: s._studentId,
+    name: s.name,
+    adminRemark: remarksByStudent[s._studentId] || "",
+    subjectRows: subjects.map(subject => {
+      const found = markByStudentSubject[`${s._studentId}:${subject.name}`];
+      return {
+        subject: subject.name,
+        max: maxBySubject[subject.name] ?? 50,
+        obtained: found ? found.obtained : 0,
+        isAbsent: found ? found.isAbsent : false,
+      };
+    }),
+  }));
+}
+
 // Same as getMarksheetsForClass but for a single official exam - subjectRows
 // has one {obtained,max,grade} entry per subject instead of a per-exam array.
 export async function getSingleExamMarksheet(students, className, examId) {
@@ -262,20 +338,24 @@ export async function getSingleExamMarksheet(students, className, examId) {
     .eq("class_name", className);
   if (configErr) throw configErr;
   const maxBySubject = {};
-  (configRows || []).forEach(c => { maxBySubject[c.subject_name] = Number(c.max_marks) || 100; });
+  (configRows || []).forEach(c => { maxBySubject[c.subject_name] = Number(c.max_marks) || 50; });
 
   const { data: markRows, error: markErr } = await supabase
     .from("official_exam_marks")
-    .select("student_id, subject_name, marks_obtained")
+    .select("student_id, subject_name, marks_obtained, is_absent")
     .eq("exam_id", examId)
     .eq("class_name", className);
   if (markErr) throw markErr;
   const marksByStudentSubject = {};
+  const absentByStudentSubject = {};
   (markRows || []).forEach(m => {
-    marksByStudentSubject[`${m.student_id}:${m.subject_name}`] = Number(m.marks_obtained) || 0;
+    const key = `${m.student_id}:${m.subject_name}`;
+    marksByStudentSubject[key] = Number(m.marks_obtained) || 0;
+    absentByStudentSubject[key] = !!m.is_absent;
   });
 
   const attendanceByStudent = await fetchAttendanceByStudent(students, year);
+  const remarksByStudent = await fetchRemarksByStudent(students, year);
 
   const sheets = students.map(s => {
     let totalObtained = 0, totalMax = 0;
@@ -285,12 +365,16 @@ export async function getSingleExamMarksheet(students, className, examId) {
       // Optional subject never entered for this student: not their subject -
       // exclude it entirely instead of counting it as a 0.
       if (subject.isOptional && !entered) return null;
-      const max = maxBySubject[subject.name] ?? 100;
-      const obtained = entered ? marksByStudentSubject[key] : 0;
+      const max = maxBySubject[subject.name] ?? 50;
+      // Absent still counts the full marks toward totalMax - only the
+      // obtained side is forced to 0 and flagged so the marksheet prints
+      // "AB" instead of a plain 0.
+      const isAbsent = entered && !!absentByStudentSubject[key];
+      const obtained = entered && !isAbsent ? marksByStudentSubject[key] : 0;
       totalObtained += obtained;
       totalMax += max;
       const pct = max ? (obtained / max) * 100 : 0;
-      return { subject: subject.name, obtained, max, grade: gradeFor(pct) };
+      return { subject: subject.name, obtained, max, grade: gradeFor(pct), isAbsent };
     }).filter(Boolean);
 
     const percentage = totalMax ? (totalObtained / totalMax) * 100 : 0;
@@ -307,6 +391,7 @@ export async function getSingleExamMarksheet(students, className, examId) {
       result:       percentage >= 33 ? "Pass" : "Fail",
       present:      attendance.present,
       totalDays:    attendance.total,
+      adminRemark:  remarksByStudent[s._studentId] || "",
     };
   });
 

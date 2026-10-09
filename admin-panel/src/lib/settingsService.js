@@ -459,6 +459,50 @@ export async function saveClassSubjects(className, subjectNames, optionalSubject
       );
     if (error) throw error;
   }
+
+  // REQ-BUG-075: a subject added after an official exam already exists had
+  // no official_exam_subject_config row at all, and marksheetService.js's
+  // lookup silently fell back to a hardcoded 100 - wrong for a school whose
+  // real convention is 50. ExamsTab.js already avoids this the other way
+  // (creating an exam pre-fills every existing subject's max marks, "so
+  // nothing silently falls back to an invisible default"); this does the
+  // same in reverse for a newly-added subject, against every official exam
+  // already on the books for the current academic year. Admins can still
+  // edit any individual value afterward in Settings → Exams.
+  const existingNames = new Set((existing || []).map(r => r.subject_name));
+  const newSubjects = trimmed.filter(name => !existingNames.has(name));
+  if (newSubjects.length) {
+    await backfillExamMaxMarksForNewSubjects(className, newSubjects);
+  }
+}
+
+const NEW_SUBJECT_DEFAULT_MAX_MARKS = 50;
+
+async function backfillExamMaxMarksForNewSubjects(className, subjectNames) {
+  const { data: year } = await supabase
+    .from("academic_years")
+    .select("id")
+    .eq("is_current", true)
+    .maybeSingle();
+  if (!year) return;
+
+  const { data: exams, error: examErr } = await supabase
+    .from("official_exams")
+    .select("id")
+    .eq("academic_year_id", year.id);
+  if (examErr) throw examErr;
+  if (!exams || !exams.length) return;
+
+  const rows = [];
+  exams.forEach(exam => {
+    subjectNames.forEach(subject_name => {
+      rows.push({ exam_id: exam.id, class_name: className, subject_name, max_marks: NEW_SUBJECT_DEFAULT_MAX_MARKS });
+    });
+  });
+  const { error } = await supabase
+    .from("official_exam_subject_config")
+    .upsert(rows, { onConflict: "exam_id,class_name,subject_name" });
+  if (error) throw error;
 }
 
 // ── Rules & Regulations (one row per audience, shown read-only in the app) ──
