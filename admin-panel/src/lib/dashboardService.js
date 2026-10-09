@@ -107,7 +107,10 @@ export async function getInventoryAlerts(limit = 5) {
       const totalUsed = (item.inventory_usages  || []).reduce((s, u) => s + (u.qty || 0), 0);
       const avail     = totalIn - totalUsed;
       const threshold = item.low_stock_at || 0;
-      return { item: item.name, stock: avail, min: threshold };
+      // avail can go negative when usage was logged without a matching
+      // stock-in batch (a data-entry gap, not a count bug) - isOut lets the
+      // UI show "Out of Stock" instead of a confusing negative number.
+      return { item: item.name, stock: avail, min: threshold, isOut: avail <= 0 };
     })
     .filter(a => a.min > 0 && a.stock <= a.min)
     .sort((a, b) => (a.stock / a.min) - (b.stock / b.min))

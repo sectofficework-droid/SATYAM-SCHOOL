@@ -394,10 +394,12 @@ export default function DashboardPage() {
                 <div key={alert.item} className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <p className="text-xs font-medium text-gray-700 truncate flex-1">{alert.item}</p>
-                    <span className="text-xs text-red-500 font-semibold ml-2">{alert.stock} left</span>
+                    <span className="text-xs text-red-500 font-semibold ml-2">
+                      {alert.isOut ? "Out of stock" : `${alert.stock} left`}
+                    </span>
                   </div>
                   <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.min(pct, 100)}%` }} />
+                    <div className="h-full bg-red-400 rounded-full" style={{ width: `${Math.max(Math.min(pct, 100), 0)}%` }} />
                   </div>
                 </div>
               );
