@@ -725,7 +725,11 @@ class SupabaseService {
         .eq('class_name', className)
         .order('sort_order', ascending: true);
     return List<Map<String, dynamic>>.from(res)
-        .map((r) => {'name': r['subject_name'] as String, 'isOptional': r['is_optional'] == true})
+        .map((r) {
+          final name = r['subject_name'] as String;
+          final isOpt = r['is_optional'] == true || RegExp(r'odi(a|ya)|mil', caseSensitive: false).hasMatch(name);
+          return {'name': name, 'isOptional': isOpt};
+        })
         .toList();
   }
 

@@ -448,6 +448,21 @@ and remark changed. Not verified: the new backfill-on-subject-add path
 itself (traced by reading the code, not exercised through Settings →
 Subjects this session). Full detail: `planning/TODO.md` REQ-FEAT-009.
 
+**Same session, fourth thread — REQ-BUG-076: Odia and Odiya-Math optional exclusion fixed.**
+User reported: Odia and Odia Math are optional; if marks are not entered for a student,
+those subjects' total marks must not count toward total subject marks. Traced root cause:
+in `class_subjects`, `Odia - MIL` and `Odia` had `is_optional = true`, but `Odiya-Math`
+in `JR.KG`, `SR.KG`, and `Balvatika` had `is_optional = false`. Consequently, 26 non-Odia
+students across those classes had full marks (50 per exam) counted toward their `totalMax`
+with 0 obtained, dragging down their percentage and rank. Updated DB `class_subjects.is_optional = true`
+for `Odiya-Math` in JR.KG, SR.KG, and Balvatika (3 rows). Added defensive code safeguards in
+`marksheetService.js` (`getClassSubjects`), `settingsService.js` (`getOptionalSubjects`, `saveClassSubjects`),
+and mobile `supabase_service.dart` (`fetchClassSubjectsDetailed`) ensuring any subject matching
+`/odi(a|ya)|mil/i` is always treated as optional. Updated `marksheet-edit/page.js` to render
+`—` for unentered optional subjects and avoid writing spurious 0s. Verified: `npm run lint`
+clean, `flutter analyze` clean, confirmed via live queries that all 26 non-Odia students now
+have Odia and Odiya-Math excluded from their `totalMax`. Full detail: `planning/TODO.md` REQ-BUG-076.
+
 **Prior — Session 2026-10-08 — MIL (Odia) marksheet percentage bug fixed
 (REQ-BUG-072), classified MINOR CHANGE per J12B.**
 User reported: non-Odia-medium students' marksheet percentage was being

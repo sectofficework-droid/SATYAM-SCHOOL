@@ -1,11 +1,15 @@
 import supabase from "./supabase";
 import { getOfficialExams } from "./examService";
 
-// Returns [{name, isOptional}] - an optional subject (e.g. MIL (Odia), which
-// only some students in a class take) is excluded entirely from a student's
-// marksheet whenever no mark was ever entered for it, instead of counting
-// as a 0 against them. See each marksheet builder below for where this is
-// applied.
+// Returns [{name, isOptional}] - an optional subject (e.g. Odia, Odia - MIL,
+// Odiya-Math, which only some students in a class take) is excluded entirely from a
+// student's marksheet whenever no mark was ever entered for it, instead of counting
+// as a 0 against them. In addition to the DB class_subjects.is_optional column,
+// any subject matching /odi(a|ya)|mil/i is defensively treated as optional.
+export function isOptionalSubjectName(name) {
+  return /odi(a|ya)|mil/i.test(name || "");
+}
+
 export async function getClassSubjects(className) {
   const { data, error } = await supabase
     .from("class_subjects")
@@ -13,7 +17,10 @@ export async function getClassSubjects(className) {
     .eq("class_name", className)
     .order("sort_order");
   if (error) throw error;
-  return (data || []).map(r => ({ name: r.subject_name, isOptional: !!r.is_optional }));
+  return (data || []).map(r => ({
+    name: r.subject_name,
+    isOptional: !!r.is_optional || isOptionalSubjectName(r.subject_name),
+  }));
 }
 
 // Standard 8-point CBSE-style scale - our default choice, easy to change
@@ -315,6 +322,8 @@ export async function getExamMarksForEditing(students, className, examId) {
       const found = markByStudentSubject[`${s._studentId}:${subject.name}`];
       return {
         subject: subject.name,
+        isOptional: subject.isOptional,
+        isEntered: !!found,
         max: maxBySubject[subject.name] ?? 50,
         obtained: found ? found.obtained : 0,
         isAbsent: found ? found.isAbsent : false,

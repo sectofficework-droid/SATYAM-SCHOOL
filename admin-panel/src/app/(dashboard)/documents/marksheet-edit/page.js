@@ -66,7 +66,10 @@ function MarksheetEditPageInner() {
 
   const startEdit = (row) => {
     setEditingId(row.studentId);
-    setEditSubjects(row.subjectRows.map(sr => ({ ...sr, text: sr.isAbsent ? "" : String(sr.obtained) })));
+    setEditSubjects(row.subjectRows.map(sr => ({
+      ...sr,
+      text: (!sr.isEntered && sr.isOptional) ? "" : sr.isAbsent ? "" : String(sr.obtained),
+    })));
     setEditRemark(row.adminRemark || "");
     setSaveError("");
   };
@@ -80,6 +83,7 @@ function MarksheetEditPageInner() {
   // is just the field's display default, not a real score (REQ-FEAT-009
   // caught this the hard way: saving every cell unconditionally silently
   // turned every still-pending mark into an affirmatively-entered zero).
+  // Unentered optional subjects left empty are preserved as unentered.
   const handleSave = async (row) => {
     setSaving(true);
     setSaveError("");
@@ -87,8 +91,11 @@ function MarksheetEditPageInner() {
       const writes = [];
       editSubjects.forEach((s, i) => {
         const base = row.subjectRows[i];
-        const baseText = base.isAbsent ? "" : String(base.obtained);
+        const baseText = (!base.isEntered && base.isOptional) ? "" : base.isAbsent ? "" : String(base.obtained);
         if (s.isAbsent !== base.isAbsent || s.text !== baseText) {
+          if (s.text === "" && !s.isAbsent && !base.isEntered) {
+            return; // Unentered optional subject left blank: do not write phantom 0
+          }
           writes.push(saveOfficialExamMark(examId, row.studentId, className, s.subject, s.isAbsent ? 0 : (Number(s.text) || 0), s.isAbsent));
         }
       });
@@ -173,6 +180,7 @@ function MarksheetEditPageInner() {
                             <div className="flex flex-col items-center gap-0.5">
                               <input
                                 type="number" min="0" max={sr.max} disabled={editSubjects[i]?.isAbsent}
+                                placeholder={editSubjects[i]?.isOptional ? "—" : "0"}
                                 value={editSubjects[i]?.isAbsent ? "" : (editSubjects[i]?.text ?? "")}
                                 onChange={e => updateSubject(i, { text: e.target.value })}
                                 className="w-14 border border-gray-200 rounded px-1 py-1 text-xs text-center focus:outline-none focus:border-school-navy disabled:bg-gray-50 disabled:text-gray-300"
@@ -184,9 +192,13 @@ function MarksheetEditPageInner() {
                             </div>
                           ) : (
                             <button onClick={() => startEdit(row)} className="hover:underline decoration-dotted" title="Click to edit this student's marks">
-                              {sr.isAbsent
-                                ? <span className="text-red-600 font-semibold">AB</span>
-                                : <span className="text-gray-700">{sr.obtained}/{sr.max}</span>}
+                              {sr.isAbsent ? (
+                                <span className="text-red-600 font-semibold">AB</span>
+                              ) : !sr.isEntered && sr.isOptional ? (
+                                <span className="text-gray-400 italic" title="Optional — not entered">—</span>
+                              ) : (
+                                <span className="text-gray-700">{sr.obtained}/{sr.max}</span>
+                              )}
                             </button>
                           )}
                         </td>

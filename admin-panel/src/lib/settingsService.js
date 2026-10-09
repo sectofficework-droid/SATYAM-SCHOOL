@@ -418,13 +418,14 @@ export async function getAllClassSubjects() {
 export async function getOptionalSubjects() {
   const { data, error } = await supabase
     .from("class_subjects")
-    .select("class_name, subject_name")
-    .eq("is_optional", true);
+    .select("class_name, subject_name, is_optional");
   if (error) throw error;
   const map = {};
   (data || []).forEach(r => {
-    if (!map[r.class_name]) map[r.class_name] = [];
-    map[r.class_name].push(r.subject_name);
+    if (r.is_optional || /odi(a|ya)|mil/i.test(r.subject_name)) {
+      if (!map[r.class_name]) map[r.class_name] = [];
+      map[r.class_name].push(r.subject_name);
+    }
   });
   return map;
 }
@@ -453,7 +454,7 @@ export async function saveClassSubjects(className, subjectNames, optionalSubject
       .upsert(
         trimmed.map((subject_name, i) => ({
           class_name: className, subject_name, sort_order: i,
-          is_optional: optionalSet.has(subject_name),
+          is_optional: optionalSet.has(subject_name) || /odi(a|ya)|mil/i.test(subject_name),
         })),
         { onConflict: "class_name,subject_name" }
       );

@@ -3218,6 +3218,14 @@ pattern), it is noted as already-known and not re-filed as new.
       a class via Settings → Subjects, not done this session - traced by
       reading the code and the exam-creation precedent it mirrors, not
       live-tested).
+- [x] **REQ-BUG-076 — Odia and Odiya-Math optional exclusion fixed across marksheet generation, reports, marks editor, and mobile app. DONE 2026-10-10.**
+      User reported that Odia and Odia Math are optional; if marks are not entered for any student, those subjects' total marks must not count toward total subject marks.
+      Traced root cause: in `class_subjects`, `Odia - MIL` and `Odia` had `is_optional = true`, but `Odiya-Math` in `JR.KG`, `SR.KG`, and `Balvatika` was `is_optional = false`.
+      Consequently, 26 non-Odia students in those classes had 50 marks per exam added to their `totalMax` with 0 obtained, falsely penalizing their percentage and rank.
+      Fixed in database: updated `class_subjects.is_optional = true` for `Odiya-Math` across SR.KG, Balvatika, and JR.KG.
+      Fixed in code: `marksheetService.js` (`getClassSubjects`), `settingsService.js` (`getOptionalSubjects`, `saveClassSubjects`), and `supabase_service.dart` (`fetchClassSubjectsDetailed`) now defensively ensure any subject matching `/odi(a|ya)|mil/i` is always marked optional.
+      In `marksheet-edit/page.js`: unentered optional subjects now display `—` instead of `0/50`, and saving empty optional inputs avoids creating phantom 0 marks.
+      Verified: `npm run lint` clean (0 warnings), `flutter analyze` clean (0 new issues); confirmed in database that 100% of Odia/Odiya-Math subjects are `is_optional: true` and excluded from `totalMax` for non-Odia students.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to
