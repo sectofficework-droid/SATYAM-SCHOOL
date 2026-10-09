@@ -26,6 +26,12 @@ import {
   generateSchoolLeavingCertificateSingle,
   generateSchoolLeavingCertificateSheet,
 } from "@/lib/tcGenerator";
+import {
+  MARKSHEET_STYLES,
+  buildMarksheetView,
+  generateMarksheetPageHTML,
+  generateMarksheetHTML,
+} from "@/lib/marksheetGenerator";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ADDR1   = "Swaminarayan Nagar - Bhidbhanjan Society";
@@ -910,218 +916,16 @@ async function generateBonafidePDF(students, onProgress) {
 // subjects configured yet in Settings → Subjects. examNames is the list of
 // official exams (Settings → Exams), in display order, shown as columns.
 //
-// Shared letterhead/border/student-info block for both marksheet page types
-// (combined "Final Marksheet" and a single exam) - returns the page metrics
-// plus the y cursor to keep drawing from.
-function drawMarksheetHeader(doc, s, title, logoB64) {
-  const PW = 210, PH = 297; // A4 mm
-  const marginX = 15;
-
-  doc.setDrawColor(...rgb("#1a2b6b"));
-  doc.setLineWidth(1);
-  doc.rect(10, 10, PW - 20, PH - 20, "S");
-  doc.setLineWidth(0.3);
-  doc.rect(13, 13, PW - 26, PH - 26, "S");
-
-  // Letterhead
-  const logoY = 18, logoH = 24, logoW = logoH * (1080 / 1200);
-  if (logoB64) {
-    try { doc.addImage(logoB64, "JPEG", marginX, logoY, logoW, logoH); } catch {}
-  }
-  const textX = marginX + logoW + 8;
-  doc.setFont("times", "bold");
-  doc.setFontSize(18);
-  doc.setTextColor(...rgb("#1a2b6b"));
-  doc.text("SATYAM STARS INTERNATIONAL SCHOOL", textX, logoY + 9);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(9);
-  doc.setTextColor(90, 90, 90);
-  doc.text(`${ADDR1}, Pandesara, Surat - 394210  ·  Ph: ${PHONE}`, textX, logoY + 16);
-
-  const titleY = logoY + logoH + 8;
-  doc.setDrawColor(...rgb("#f59e0b"));
-  doc.setLineWidth(0.6);
-  doc.line(marginX, titleY - 5, PW - marginX, titleY - 5);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
-  doc.setTextColor(...rgb("#1a2b6b"));
-  doc.text(title, PW / 2, titleY + 2, { align: "center" });
-  doc.line(marginX, titleY + 5, PW - marginX, titleY + 5);
-
-  // Student info block
-  const infoY = titleY + 15;
-  doc.setFontSize(10.5);
-  doc.setTextColor(20, 20, 20);
-  const infoLeft = [
-    ["Name", s.name],
-    ["Class", `${s.std}${s.section ? " - " + s.section : ""}`],
-    ["Roll No.", s.rollNo || "—"],
-  ];
-  const infoRight = [
-    ["Session", s.session || "—"],
-  ];
-  infoLeft.forEach(([label, val], i) => {
-    doc.setFont("helvetica", "bold");
-    doc.text(`${label}:`, marginX, infoY + i * 7);
-    doc.setFont("helvetica", "normal");
-    doc.text(String(val || "—"), marginX + 28, infoY + i * 7);
-  });
-  infoRight.forEach(([label, val], i) => {
-    doc.setFont("helvetica", "bold");
-    doc.text(`${label}:`, PW / 2 + 5, infoY + i * 7);
-    doc.setFont("helvetica", "normal");
-    doc.text(String(val || "—"), PW / 2 + 30, infoY + i * 7);
-  });
-
-  const y = infoY + infoLeft.length * 7 + 8;
-  return { PW, PH, marginX, y };
-}
-
-function drawMarksheetPage(doc, s, sheet, examNames, logoB64, autoTable) {
-  const { PW, PH, marginX, y: startY } = drawMarksheetHeader(doc, s, "FINAL MARKSHEET", logoB64);
-  let y = startY;
-
-  if (!sheet || sheet.subjectRows.length === 0) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(150, 150, 150);
-    doc.text("No subjects configured for this class yet — add them in Settings → Subjects.", marginX, y);
-    return;
-  }
-
-  // Subjects grid
-  autoTable(doc, {
-    startY: y,
-    head: [["Subject", ...examNames, "Total", "Obtained", "Grade"]],
-    body: sheet.subjectRows.map(row => [
-      row.subject,
-      ...row.marks.map(m => `${m.obtained}/${m.max}`),
-      row.total,
-      row.obtained,
-      row.grade,
-    ]),
-    margin: { left: marginX, right: marginX },
-    headStyles: { fillColor: rgb("#1a2b6b"), textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8.5, halign: "center" },
-    bodyStyles: { fontSize: 8.5, halign: "center" },
-    columnStyles: { 0: { halign: "left", fontStyle: "bold" } },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
-  });
-  y = doc.lastAutoTable.finalY + 5;
-
-  autoTable(doc, {
-    startY: y,
-    body: [["Total Marks", String(sheet.totalMax), String(sheet.totalObtained)]],
-    theme: "grid",
-    margin: { left: marginX, right: marginX },
-    styles: { fontSize: 9, fontStyle: "bold", halign: "center" },
-    columnStyles: { 0: { halign: "left" } },
-  });
-  y = doc.lastAutoTable.finalY + 8;
-
-  autoTable(doc, {
-    startY: y,
-    head: [["Result", "Percentage", "Rank", "Grade", "Present Days"]],
-    body: [[
-      sheet.result,
-      `${sheet.percentage.toFixed(2)}%`,
-      String(sheet.rank),
-      sheet.grade,
-      `${sheet.present} / ${sheet.totalDays}`,
-    ]],
-    margin: { left: marginX, right: marginX },
-    headStyles: { fillColor: [100, 100, 100], textColor: [255, 255, 255], fontSize: 8.5, halign: "center" },
-    bodyStyles: { fontSize: 9.5, fontStyle: "bold", halign: "center" },
-  });
-  y = doc.lastAutoTable.finalY + 22;
-
-  // Signatures
-  const sigY = Math.min(y, PH - 28);
-  doc.setDrawColor(150, 150, 150);
-  doc.setLineWidth(0.3);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.line(marginX, sigY, marginX + 50, sigY);
-  doc.text("Class Teacher's Sign.", marginX, sigY + 5);
-  doc.line(PW - marginX - 50, sigY, PW - marginX, sigY);
-  doc.text("Principal's Sign.", PW - marginX - 50, sigY + 5);
-}
-
-// Same page shape as drawMarksheetPage, but for exactly one official exam -
-// sheet comes from marksheetService.getSingleExamMarksheet(), whose
-// subjectRows are {subject,obtained,max,grade} (no per-exam marks array).
-function drawSingleExamMarksheetPage(doc, s, sheet, examName, logoB64, autoTable) {
-  const { PW, PH, marginX, y: startY } = drawMarksheetHeader(doc, s, `${examName.toUpperCase()} MARKSHEET`, logoB64);
-  let y = startY;
-
-  if (!sheet || sheet.subjectRows.length === 0) {
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10);
-    doc.setTextColor(150, 150, 150);
-    doc.text("No subjects configured for this class yet — add them in Settings → Subjects.", marginX, y);
-    return;
-  }
-
-  autoTable(doc, {
-    startY: y,
-    head: [["Subject", "Obtained", "Max", "Grade"]],
-    body: sheet.subjectRows.map(row => [row.subject, row.obtained, row.max, row.grade]),
-    margin: { left: marginX, right: marginX },
-    headStyles: { fillColor: rgb("#1a2b6b"), textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8.5, halign: "center" },
-    bodyStyles: { fontSize: 8.5, halign: "center" },
-    columnStyles: { 0: { halign: "left", fontStyle: "bold" } },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
-  });
-  y = doc.lastAutoTable.finalY + 5;
-
-  autoTable(doc, {
-    startY: y,
-    body: [["Total Marks", String(sheet.totalMax), String(sheet.totalObtained)]],
-    theme: "grid",
-    margin: { left: marginX, right: marginX },
-    styles: { fontSize: 9, fontStyle: "bold", halign: "center" },
-    columnStyles: { 0: { halign: "left" } },
-  });
-  y = doc.lastAutoTable.finalY + 8;
-
-  autoTable(doc, {
-    startY: y,
-    head: [["Result", "Percentage", "Rank", "Grade", "Present Days"]],
-    body: [[
-      sheet.result,
-      `${sheet.percentage.toFixed(2)}%`,
-      String(sheet.rank),
-      sheet.grade,
-      `${sheet.present} / ${sheet.totalDays}`,
-    ]],
-    margin: { left: marginX, right: marginX },
-    headStyles: { fillColor: [100, 100, 100], textColor: [255, 255, 255], fontSize: 8.5, halign: "center" },
-    bodyStyles: { fontSize: 9.5, fontStyle: "bold", halign: "center" },
-  });
-  y = doc.lastAutoTable.finalY + 22;
-
-  // Signatures
-  const sigY = Math.min(y, PH - 28);
-  doc.setDrawColor(150, 150, 150);
-  doc.setLineWidth(0.3);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.setTextColor(0, 0, 0);
-  doc.line(marginX, sigY, marginX + 50, sigY);
-  doc.text("Class Teacher's Sign.", marginX, sigY + 5);
-  doc.line(PW - marginX - 50, sigY, PW - marginX, sigY);
-  doc.text("Principal's Sign.", PW - marginX - 50, sigY + 5);
-}
-
-async function generateMarksheetPDF(targetStudents, allStudents, mode, examId, officialExams, onProgress) {
-  const { jsPDF } = await import("jspdf");
-  const autoTable = (await import("jspdf-autotable")).default;
-  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+// REQ-FEAT-008 (2026-10-09): rebuilt around the navy/red reference template
+// the user supplied, as raw HTML/CSS (marksheetGenerator.js) rendered via
+// the browser's print-to-PDF - the same pattern tcGenerator.js already uses
+// for the Transfer Certificate - instead of drawing onto a jsPDF canvas.
+// Builds one buildMarksheetView() per target student (grouped by class so
+// each class's roster, needed for Rank, is only fetched once), then opens a
+// print window with every page concatenated, same as handlePrintTc.
+async function printMarksheets(targetStudents, allStudents, mode, examId, officialExams) {
   const logoUrl = window.location.origin + "/school-logo.jpg";
-  const logoB64 = await fetchBase64(logoUrl);
 
-  // Group by class so each class's full roster (needed for Rank) is only
-  // fetched/computed once, even when several selected students share a class.
   const classGroups = {};
   targetStudents.forEach(s => {
     if (!classGroups[s.std]) classGroups[s.std] = [];
@@ -1139,24 +943,25 @@ async function generateMarksheetPDF(targetStudents, allStudents, mode, examId, o
   const examNames = officialExams.map(e => e.name);
   const examName = officialExams.find(e => e.id === examId)?.name || "";
 
-  for (let i = 0; i < targetStudents.length; i++) {
-    const s = targetStudents[i];
-    onProgress && onProgress(i + 1, targetStudents.length);
-    if (i > 0) doc.addPage();
-    if (mode === "single") {
-      drawSingleExamMarksheetPage(doc, s, sheetByStudentId[s._studentId], examName, logoB64, autoTable);
-    } else {
-      drawMarksheetPage(doc, s, sheetByStudentId[s._studentId], examNames, logoB64, autoTable);
-    }
-  }
-  doc.save(mode === "single" ? `${examName.replace(/[\s/]+/g,"_")}_Marksheets_Satyam_Stars.pdf` : "Final_Marksheets_Satyam_Stars.pdf");
+  const views = targetStudents.map(s =>
+    buildMarksheetView(s, sheetByStudentId[s._studentId], mode, examNames, examName, logoUrl)
+  );
+
+  const html = generateMarksheetHTML(views);
+  const win = window.open("", "_blank");
+  if (!win) { alert("Please allow pop-ups to print the marksheets."); return; }
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 350);
 }
 
-// ── Marksheet: live preview (React, matches jsPDF output) ──────────────────────
+// ── Marksheet: live preview ─────────────────────────────────────────────────────
+// Renders the exact same HTML generateMarksheetPageHTML() produces for
+// print (scaled down with a CSS transform), so the preview can never drift
+// from the printed page - same technique as TcPreview above.
 function MarksheetPreview({ student, sheet, mode, examNames, examName, logoUrl, loading }) {
-  const s = student || {};
-  const title = mode === "single" ? `${(examName || "").toUpperCase()} MARKSHEET` : "FINAL MARKSHEET";
-  const colCount = mode === "single" ? 5 : (examNames?.length || 0) + 3;
+  const SCALE = 280 / (210 * (96 / 25.4)); // 280px-wide preview / 210mm at 96dpi
 
   if (loading) {
     return (
@@ -1166,89 +971,15 @@ function MarksheetPreview({ student, sheet, mode, examNames, examName, logoUrl, 
     );
   }
 
+  const view = buildMarksheetView(student || {}, sheet, mode, examNames, examName, logoUrl);
+
   return (
-    <div style={{ width: 280, aspectRatio: "210/297", fontFamily: "Arial,Helvetica,sans-serif", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0, position: "relative", overflow: "hidden" }}>
-      <div style={{ position: "absolute", inset: 7, border: "1.4px solid #1a2b6b" }} />
-      <div style={{ position: "absolute", inset: 9, border: "0.5px solid #1a2b6b" }} />
-
-      <div style={{ padding: "20px 18px 0" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 34, height: 34, flexShrink: 0 }}>
-            {logoUrl ? <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} onError={e => e.target.style.display = "none"} /> : null}
-          </div>
-          <div style={{ fontFamily: "Georgia,'Times New Roman',serif", fontWeight: 700, fontSize: 10.5, lineHeight: 1.15 }}>
-            SATYAM STARS INTERNATIONAL SCHOOL
-          </div>
-        </div>
-        <div style={{ borderTop: "1px solid #f59e0b", margin: "8px 0 6px" }} />
-        <div style={{ textAlign: "center", fontWeight: 900, fontSize: 13, color: "#1a2b6b", margin: "2px 0 6px" }}>{title}</div>
-        <div style={{ borderTop: "1px solid #f59e0b", margin: "0 0 8px" }} />
-
-        <div style={{ fontSize: 8, lineHeight: 1.7, marginBottom: 8 }}>
-          <div><b>Name:</b> {s.name}</div>
-          <div>
-            <b>Class:</b> {s.std}{s.section ? ` - ${s.section}` : ""} &nbsp;
-            <b>Roll:</b> {s.rollNo || "—"} &nbsp;
-            <b>Session:</b> {s.session || "—"}
-          </div>
-        </div>
-
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 6.5 }}>
-          <thead>
-            <tr style={{ background: "#1a2b6b", color: "white" }}>
-              <th style={{ padding: "3px 2px", textAlign: "left" }}>Subject</th>
-              {mode === "single" ? (
-                <>
-                  <th style={{ padding: "3px 2px" }}>Obtained</th>
-                  <th style={{ padding: "3px 2px" }}>Max</th>
-                </>
-              ) : (
-                (examNames || []).map(name => <th key={name} style={{ padding: "3px 2px" }}>{name}</th>)
-              )}
-              <th style={{ padding: "3px 2px" }}>Total</th>
-              <th style={{ padding: "3px 2px" }}>Grade</th>
-            </tr>
-          </thead>
-          <tbody>
-            {(sheet?.subjectRows || []).map((row, i) => (
-              <tr key={row.subject} style={{ background: i % 2 ? "#f8fafc" : "white" }}>
-                <td style={{ padding: "2.5px 2px", fontWeight: 700 }}>{row.subject}</td>
-                {mode === "single" ? (
-                  <>
-                    <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{row.obtained}</td>
-                    <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{row.max}</td>
-                  </>
-                ) : (
-                  // row.marks can be briefly missing right after switching
-                  // mode: marksheetMode flips synchronously on click, but
-                  // sheet (whose shape depends on mode - single-exam rows
-                  // have no .marks array) only catches up once the async
-                  // refetch resolves, so this can render one frame with
-                  // mode "final" against a still-single-exam sheet (ERR-2up4ia).
-                  (row.marks || []).map((m, mi) => <td key={mi} style={{ padding: "2.5px 2px", textAlign: "center" }}>{m.obtained}</td>)
-                )}
-                <td style={{ padding: "2.5px 2px", textAlign: "center" }}>{mode === "single" ? `${row.obtained}/${row.max}` : `${row.obtained}/${row.total}`}</td>
-                <td style={{ padding: "2.5px 2px", textAlign: "center", fontWeight: 700 }}>{row.grade}</td>
-              </tr>
-            ))}
-            {(!sheet || sheet.subjectRows.length === 0) && (
-              <tr><td colSpan={colCount} style={{ padding: 8, textAlign: "center", color: "#94a3b8", fontSize: 6.5 }}>
-                No subjects configured for this class yet — add them in Settings → Subjects.
-              </td></tr>
-            )}
-          </tbody>
-        </table>
-
-        {sheet && sheet.subjectRows.length > 0 && (
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 6.5, marginTop: 8, fontWeight: 700 }}>
-            <span>{sheet.result}</span>
-            <span>{sheet.percentage.toFixed(1)}%</span>
-            <span>Rank {sheet.rank}</span>
-            <span>{sheet.grade}</span>
-            <span>{sheet.present}/{sheet.totalDays} days</span>
-          </div>
-        )}
-      </div>
+    <div style={{ width: 280, aspectRatio: "210/297", overflow: "hidden", position: "relative", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0 }}>
+      <style>{MARKSHEET_STYLES}</style>
+      <div
+        style={{ width: "210mm", height: "297mm", transform: `scale(${SCALE})`, transformOrigin: "top left", pointerEvents: "none" }}
+        dangerouslySetInnerHTML={{ __html: generateMarksheetPageHTML(view) }}
+      />
     </div>
   );
 }
@@ -1658,14 +1389,13 @@ export default function DocumentsPage() {
     }
   }, [selectedStudents]);
 
-  const handleDownloadMarksheet = useCallback(async () => {
+  const handlePrintMarksheet = useCallback(async () => {
     const targets = selectedStudents;
     if (!targets.length) { alert("Please select at least one student."); return; }
     if (marksheetMode === "single" && !selectedExamId) { alert("Please select an exam first."); return; }
     setGenerating(true);
-    setProgress({ done:0, total:targets.length });
     try {
-      await generateMarksheetPDF(targets, students, marksheetMode, selectedExamId, officialExams, (done, total) => setProgress({ done, total }));
+      await printMarksheets(targets, students, marksheetMode, selectedExamId, officialExams);
     } catch(e) {
       alert("PDF generation failed: " + e.message);
     } finally {
@@ -2468,20 +2198,20 @@ export default function DocumentsPage() {
               <div className="flex items-center gap-3 bg-school-navy/5 px-5 py-2.5 rounded-lg">
                 <div className="w-4 h-4 border-2 border-school-navy/30 border-t-school-navy rounded-full animate-spin"/>
                 <span className="text-sm text-school-navy font-medium">
-                  Generating {progress.done}/{progress.total} marksheets...
+                  Preparing {selected.size} marksheet{selected.size!==1?"s":""}...
                 </span>
               </div>
             ) : (
-              <button onClick={handleDownloadMarksheet} disabled={selected.size===0 || (marksheetMode==="single" && !selectedExamId)}
+              <button onClick={handlePrintMarksheet} disabled={selected.size===0 || (marksheetMode==="single" && !selectedExamId)}
                 className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-school-navy text-white text-sm font-medium hover:bg-school-navy/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm">
-                <Download className="w-4 h-4"/>
-                Download PDF ({selected.size} marksheet{selected.size!==1?"s":""})
+                <Printer className="w-4 h-4"/>
+                Print Marksheet{selected.size!==1?"s":""} ({selected.size})
               </button>
             )}
           </div>
 
           <p className="text-xs text-gray-400 text-center -mt-2">
-            One full A4 page per student. Rank is computed against the student&apos;s whole class, not just the students selected here.
+            One full A4 page per student — opens a print dialog; choose &quot;Save as PDF&quot; to download. Rank is computed against the student&apos;s whole class, not just the students selected here.
           </p>
         </div>
       )}

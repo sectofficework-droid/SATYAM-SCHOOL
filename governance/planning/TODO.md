@@ -2751,6 +2751,335 @@ pattern), it is noted as already-known and not re-filed as new.
       uploads a spreadsheet with its own Father's/Mother's Name columns)
       is untouched - those values are admin-typed free text already, not
       derived from student records.
+- [x] **REQ-FEAT-008 — Rebuild Marksheet generation (Documents →
+      Marksheet) to match the new `marksheet_template.html` reference
+      design (navy/red letterhead, grading-scale legend, summary boxes,
+      remarks box, 4-way signature row). DONE 2026-10-09.** User
+      supplied a standalone reference template built to be rendered in a
+      browser and printed/saved as PDF, and asked to analyze it and
+      rebuild marksheet generation around it. **J12B classification:
+      MINOR CHANGE** (same marksheet feature/data, no schema/scope
+      change) **with an architecture change inside it**: the current
+      generator (`documents/page.js`'s `drawMarksheetHeader`/
+      `drawMarksheetPage`/`drawSingleExamMarksheetPage`/
+      `generateMarksheetPDF`) draws directly onto a `jsPDF` canvas via
+      `jspdf-autotable`, which can't reproduce the template's fonts/
+      gradients/icons/double-border faithfully. User confirmed (via
+      clarifying question) to instead follow this codebase's existing
+      precedent for pixel-perfect official documents — Transfer
+      Certificate's `tcGenerator.js` pattern: build the document as a raw
+      HTML/CSS string, reuse it for both the live preview
+      (`dangerouslySetInnerHTML`, scaled) and the print path
+      (`window.open` + `win.print()`), replacing the jsPDF drawing code
+      for marksheets only. User also confirmed "Final Marksheet" mode
+      (one column per official exam, which the single-exam-shaped
+      template has no equivalent for) should get the same visual
+      language extended to a multi-exam table, rather than being left on
+      the old jsPDF look. New fields the template doesn't carry that the
+      current generator shows (Result, Rank, Present/Total attendance
+      days) are folded into the template's extensible summary-box grid
+      (now 6 boxes: Percentage/Overall Grade/Result, Class Rank/
+      Attendance/Total Marks) rather than dropped. **Implemented**: new
+      `admin-panel/src/lib/marksheetGenerator.js` (`buildMarksheetView` -
+      normalizes either marksheetService sheet shape into one view-model;
+      `generateMarksheetPageHTML`/`generateMarksheetHTML` - the HTML/CSS
+      string builders; `MARKSHEET_STYLES`). `documents/page.js`: replaced
+      `drawMarksheetHeader`/`drawMarksheetPage`/`drawSingleExamMarksheetPage`/
+      `generateMarksheetPDF` with `printMarksheets()` (mirrors
+      `handlePrintTc`'s window.open+write+print), `MarksheetPreview` now
+      renders the same HTML via `dangerouslySetInnerHTML` at a CSS scale
+      instead of hand-mirrored JSX, button relabeled "Print Marksheet(s)"
+      (was "Download PDF") since the flow now opens the browser's print
+      dialog instead of saving a file directly - choosing "Save as PDF"
+      there gives the same end result. Grading-scale legend text was
+      corrected from the template's literal "90-100%"/"80-89%"/... to
+      "91-100%"/"81-90%"/... to match `marksheetService.gradeFor()`'s
+      actual thresholds (≥91/≥81/...), which the template's own comment
+      had off by one at every boundary - left as written, a boundary-score
+      student's legend and actual grade would have visibly disagreed.
+      **Verified (Level 4, browser, live production data)**: `npm run
+      lint` clean; logged into the real admin panel, Documents →
+      Marksheet, both Final Marksheet (3 real exams, a 12-subject JR.KG
+      student, all columns/grand-total/grading-scale/summary-boxes/
+      remarks/signatures render correctly, today's date auto-filled) and
+      Single Exam (exam-picker dropdown, title/table/summary update
+      correctly) previews confirmed visually correct; "Print Marksheet"
+      clicked, confirmed it opens a new window titled "Marksheet" and
+      invokes `window.print()` without error, main tab recovers cleanly
+      afterward. **Not verified**: the actual print-preview/PDF output
+      itself (the browser automation tool can't screenshot a native print
+      dialog) - only the HTML source feeding it was inspected, which is
+      the exact same markup already confirmed correct in the live
+      preview; a very high subject-count class (the template was designed
+      around ≤9 subjects single-column, no explicit multi-page handling
+      was added) could still overflow one page - not hit in the class
+      tested (12 subjects fit fine) but not stress-tested at the extreme.
+      User should do one real Save-as-PDF print to confirm paper output
+      before relying on this for an actual distribution run. **Same-day
+      follow-up**: user asked to add the school's email
+      (`satyamstarsinternational@gmail.com`, already used on the Settings
+      page and privacy-policy page) to the letterhead contact row, and to
+      remove the Attendance summary box. Both applied in
+      `marksheetGenerator.js` (new `EMAIL` constant + envelope icon in the
+      contact row; `present`/`totalDays` dropped from `buildMarksheetView`
+      and the ATTENDANCE box removed from the summary grid, now 5 boxes).
+      Re-verified: lint clean, live preview re-checked in the browser -
+      email renders correctly in the header, Attendance box is gone.
+      **Second follow-up**: user asked for the header contact block to be
+      split onto two lines - address on its own line right under the
+      school name, then a 3rd line with phone + email - instead of all
+      three run together. Split `.ms-contact` into `.ms-addr-row`
+      (address alone) and `.ms-contact` (phone + email) in
+      `marksheetGenerator.js`. Re-verified: lint clean, live preview
+      re-checked in the browser - matches exactly.
+      **Third follow-up**: user flagged the header as unprofessional -
+      "lot of empty spaces," logo/font sizing off. Root cause: the logo
+      sat only on the left while `ms-head-text` centered itself in the
+      *remaining* space (flex-grow:1), so the text block was visibly
+      off-center from the true page center, and the school-name fonts
+      (40px/28px) were oversized relative to the rest of the page. Fixed
+      by mirroring the logo in an equal-width empty `.ms-logo-slot` on the
+      right (so the text is centered on the full page width, not the
+      leftover space), shrinking the logo (110px&rarr;78px) and the
+      trust/school-name font sizes (16/40/28px &rarr; 13.5/32/20px) to
+      better match the rest of the document. Re-verified: lint clean,
+      live preview re-checked in the browser - header now reads balanced
+      and compact, page still fits one A4 sheet.
+      **Fourth follow-up**: user said the header should be big, not
+      small - the prior pass over-corrected. Enlarged the school-name
+      headline substantially (32/20px &rarr; 46/31px) and the logo
+      (78px &rarr; 92px) while keeping the mirrored-slot centering fix.
+      That changed `ms-head-text`'s available width, which caused the
+      long trust-name line and the long address line to each wrap/break
+      awkwardly at their earlier font sizes - fixed by sizing the trust
+      line (14px) and address line (11px) to fit on one line each at the
+      new narrower column width, with `white-space: nowrap` on both plus
+      the school-name lines as a safety net (same technique
+      `tcGenerator.js` already uses for its own school-name line).
+      Re-verified: lint clean, live preview re-checked in the browser -
+      big bold school name, every header line on a single line, no
+      overlap, page still fits one A4 sheet.
+      **Fifth follow-up**: user flagged the 5-box summary row as not
+      looking good - the 3-column grid left an empty trailing cell under
+      a 2-box second row. Changed `.ms-summary` to a single-row 5-column
+      grid (`repeat(5, 1fr)`) instead of 3, with `white-space: nowrap` on
+      each box's label/value so "495 / 1550"-style values don't wrap in
+      the narrower columns. Re-verified: lint clean, live preview
+      re-checked - all 5 boxes (Percentage/Overall Grade/Result/Class
+      Rank/Total Marks) sit in one clean row, no gap.
+      **Sixth follow-up**: user said the "PROGRESS REPORT · &lt;exam&gt; ·
+      Academic Year" navy band looked plain/undecorated. Redesigned it:
+      split into two label+value stacks ("PROGRESS REPORT" small gold
+      caps above the exam title in bold white serif, on the left;
+      "ACADEMIC YEAR" small gold caps above the year in bold white,
+      right-aligned) separated by a thin vertical divider, on a subtle
+      navy gradient background with a red bottom accent border and a
+      slight shadow, replacing the single flat navy line with plain
+      middle-dot-separated text. Re-verified: lint clean, live preview
+      re-checked for both Final Marksheet ("FINAL MARKSHEET") and Single
+      Exam ("FIRST UNIT TEST MARKSHEET") - both titles fit on one line,
+      page still fits one A4 sheet.
+      **Seventh follow-up**: user noted the marksheet is printed in black
+      & white, so every text color needed to survive grayscale
+      conversion, not just look fine in color. Audited every text color
+      in `marksheetGenerator.js`: the one real risk was `.ms-band-label`'s
+      gold (`#E8B84B`) on the navy band - a mid-tone color whose grayscale
+      luminance, while computed as acceptable, depends on the printer
+      driver's conversion method and isn't as safety-margined as pure
+      white; changed to `rgba(255,255,255,.88)`. Also darkened two
+      secondary texts that were lighter than ideal: the empty-seal
+      placeholder ("School Stamp" box) `#6B7385` &rarr; `#444`, and the
+      "no subjects configured" fallback message `#94a3b8` &rarr; `#555`.
+      Left the red (`#C62828`, used for "AB"/absent) and navy as-is - both
+      already convert to solidly dark grays with strong contrast against
+      the white/light-tint backgrounds they sit on. Verified by applying
+      `filter: grayscale(1)` to the live preview in the browser and
+      visually confirming every line of text (header, band, table,
+      summary boxes, remarks, seal, signatures) stays clearly legible;
+      lint clean.
+      **Eighth follow-up**: user asked to rename "Class Teacher's
+      Remarks" to just "Remark", remove the 3 ruled handwriting lines
+      under it (leave the box blank), and make the "School Stamp" box
+      slightly bigger. All three applied in `marksheetGenerator.js`
+      (heading text changed, the 3 `.ms-ln` divs + their CSS rule
+      removed, `.ms-seal` width 130px &rarr; 155px - height already
+      matches the remarks box via the shared flex row's default stretch,
+      so no separate height change was needed). Re-verified: lint clean,
+      live preview re-checked - "Remark" heading with a clean blank area,
+      visibly wider stamp box.
+      **Ninth follow-up**: user pointed out a real school stamp is round,
+      so the placeholder should be taller/circular, not a short wide
+      rectangle. Changed `.ms-seal` to a true circle - equal width/height
+      (118px) with `border-radius: 50%` instead of the dashed
+      rounded-rectangle, centered label - and gave `.ms-remarks` matching
+      extra height (`min-height` 78px&rarr;118px) via `.ms-lower`'s
+      `align-items: center` so the two boxes read as a balanced pair
+      instead of the circle looking squashed against a short box.
+      Re-verified: lint clean, live preview re-checked - stamp placeholder
+      is now a clean circle, remarks box taller too, page still fits one
+      A4 sheet.
+      **Tenth follow-up - correction**: user clarified "circle" was
+      explaining *why* the box needed more vertical room (a real stamp is
+      round, so a short flat box undersells it), not a literal instruction
+      to draw one - reverted the circular double-ring shape back to the
+      original dashed rounded-rectangle (`border-radius: 8px`), keeping
+      only the actual ask: a taller box, via `align-self: stretch` so it
+      matches the Remark box's height (118px) instead of sitting short.
+      Re-verified: lint clean, live preview re-checked - square-ish dashed
+      box, not a circle, visibly taller than the original.
+      **Eleventh follow-up**: user asked for "Remark"/"School Stamp" to
+      sit on the box outline rather than inside it. Restyled both labels
+      fieldset-legend style - absolutely positioned on top of the border
+      line with a white background behind the text so it visually breaks
+      the line (the classic `<fieldset><legend>` look, built with plain
+      CSS since a real `<fieldset>`'s cross-browser/print rendering is
+      inconsistent) - leaving the full box interior clear for handwriting
+      / an actual ink stamp instead of the label filling the middle.
+      Re-verified: lint clean, live preview re-checked - both labels sit
+      directly on their box's border line.
+      **Twelfth follow-up**: user asked for the same outline-label
+      treatment on the 5 summary boxes (Percentage/Overall Grade/Result/
+      Class Rank/Total Marks), with the value centered. Applied the same
+      fieldset-legend CSS pattern to `.ms-box`/`.ms-box .ms-k` (label on
+      the border) and centered `.ms-box .ms-v` (was right-aligned,
+      bottom-anchored via `justify-content: space-between`). Re-verified:
+      lint clean, live preview re-checked - all 5 box labels sit on their
+      borders, values centered, page still fits one A4 sheet.
+      **Thirteenth follow-up**: user asked for Percentage/Grade (and by
+      extension the other summary values) to be easily visible - bigger
+      and bolder. `.ms-box .ms-v` font-size 14px&rarr;17px, font-weight
+      700&rarr;800. Checked the longest value ("495 / 550"-style Total
+      Marks) specifically for overflow at the new size since the boxes
+      are narrow (5-across row) - fits with room to spare. Re-verified:
+      lint clean, live preview re-checked (Single Exam mode,
+      90.00%/A2/Pass/5/495 of 550) - all five values read clearly larger
+      and bolder, no overflow, page still fits one A4 sheet.
+      **Fourteenth follow-up - correction**: user clarified the "too
+      small" complaint was about the outline/label text (e.g.
+      "PERCENTAGE"), not the big centered value - the prior pass had
+      enlarged the wrong element. Reverted `.ms-box .ms-v` back down
+      (22px&rarr;17px) and instead enlarged `.ms-box .ms-k`
+      (8.5px&rarr;11px, weight 700&rarr;800), with `.ms-box` height
+      trimmed slightly (56px&rarr;52px) to match. Checked the longest
+      label ("OVERALL GRADE") at the new size for overflow against its
+      narrow (1-of-5) column width - fits cleanly. Re-verified: lint
+      clean, live preview re-checked - every outline label reads clearly
+      bigger/bolder with no overlap, values still legible, page still
+      fits one A4 sheet.
+      **Fifteenth follow-up**: user asked for the Grading Scale legend to
+      sit at the complete bottom of the page instead of between the
+      subjects table and the summary boxes. Moved the `.ms-gscale`
+      section in `generateMarksheetPageHTML()` to just before `.ms-signs`
+      (after `.ms-spacer`), so it's pulled to the very bottom of the page
+      along with the signature row, same as the signatures already were.
+      Re-verified: lint clean, live preview re-checked - Grading Scale now
+      sits directly above the signature row at the page's bottom edge,
+      page still fits one A4 sheet.
+      **Sixteenth follow-up - correction**: user said above-the-signature
+      still wasn't the right spot - swapped the order so `.ms-signs` comes
+      right after `.ms-spacer` and `.ms-gscale` comes after that, making
+      Grading Scale the true last element on the page (below the
+      signature row), not just above it. Re-verified: lint clean, live
+      preview re-checked - signatures now sit above, Grading Scale is the
+      very last thing at the bottom edge, page still fits one A4 sheet.
+      **Seventeenth follow-up**: user said the overall page font looked
+      small across the board - a general, not element-specific, pass.
+      Audited and bumped nearly every `font-size` in `MARKSHEET_STYLES`
+      proportionally (roughly +1 to +3px each): trust line, school name
+      (46/31px&rarr;49/33px), contact line, band labels/title/year,
+      student-details fields, the whole subjects table (body/head/total,
+      with matching row-height increases 26/30px&rarr;29/33px so the
+      bigger text has room), the AB note, Grading Scale (legend text and
+      the A1-E grade labels), summary boxes (both label and value, with a
+      matching height bump), Remark/School Stamp labels, and the
+      signature row. Stress-tested against the highest-subject class seen
+      this session (JR.KG-A, 10 subjects &times; 3 exams - the table's
+      biggest fit-risk) since row-height growth compounds per subject.
+      Re-verified: lint clean, live preview re-checked - every section
+      reads visibly larger, 10-subject table still fits with no clipping,
+      page still fits one A4 sheet.
+      **Eighteenth follow-up**: user asked for the whole page to be
+      capitalized. Added a single `text-transform: uppercase;` to the
+      top-level `.ms-sheet` rule rather than uppercasing each JS string
+      individually - purely visual, so every dynamic field (student name,
+      class, subjects, remarks if ever filled in, the email address)
+      is automatically covered regardless of how the underlying data was
+      actually typed/stored, and matches how this school's other printed
+      documents (ID card, Transfer Certificate) already render. Re-
+      verified: lint clean, live preview re-checked - every line on the
+      page (including the email address) now renders in capitals.
+      **Nineteenth follow-up**: user reported the address line
+      overspreading and the pincode being wrong (should be 394221, not
+      394210). Root cause of the overspread: the prior "overall font
+      bigger" pass bumped `.ms-addr` to 12px, but that line sits in a
+      `white-space: nowrap` span inside the narrower centered column left
+      by the mirrored logo slots, and the address is the longest single
+      line in the header - at 12px it ran wider than the column and spilled
+      toward/past the page edge. Reduced `.ms-addr` specifically back down
+      to 10.5px (trust/school-name/phone/email were unaffected, they still
+      fit) and corrected `ADDR_LINE`'s pincode to 394221, matching
+      `tcGenerator.js`'s address (this document had the wrong value, not
+      the TC). Re-verified: lint clean, live preview re-checked - address
+      fits cleanly on one line with the corrected pincode.
+      **Twentieth follow-up**: user asked to remove the School Stamp box,
+      let Remark spread across the full width at a 2-3 line height, and
+      leave enough open space below it for signing and stamping. Dropped
+      the `.ms-seal`/`.ms-seal-label` markup and CSS entirely; `.ms-remarks`
+      now fills the whole `.ms-lower` row on its own (it was already
+      `flex-grow: 1`, so no layout restructuring needed beyond removing its
+      sibling), with `min-height` trimmed from 118px to 88px - sized for
+      2-3 lines of handwriting rather than matching the old stamp circle's
+      height - so the reclaimed vertical space flows into `.ms-spacer`
+      instead, widening the clear gap before the signature row where a
+      physical stamp can actually be applied. Re-verified: lint clean,
+      live preview re-checked - Remark spans the full width, visible open
+      space between it and the signatures.
+      **Twenty-first follow-up - new behavior**: user asked for the Remark
+      to actually be auto-generated content (1-2 lines, personalized by
+      name and grade) rather than a blank box. There is no free-text
+      remark field anywhere in the data model (marksheetService.js's
+      sheets carry only grade/result/percentage/rank, never teacher prose),
+      so built a small rule-based generator instead of leaving it blank:
+      new `generateAutoRemark(studentName, grade, result)` in
+      `marksheetGenerator.js`, tiered to exactly match
+      `marksheetService.gradeFor()`'s boundaries (A1-D, plus a Fail case)
+      so the remark can never contradict the grade printed next to it,
+      addressing the student by first name (e.g. "Mayur's performance is
+      below the passing standard..."). Wired into `buildMarksheetView` as
+      `d.remark`, rendered as a paragraph inside the Remark box (skipped
+      entirely when the class has no subjects configured, so it never
+      prints a remark with no real data behind it). Same-request follow-up:
+      user asked the box be slightly shorter vertically - trimmed
+      `.ms-remarks`' `min-height` 88px&rarr;68px and padding to match, now
+      sized for the actual 1-2 line generated text instead of blank
+      handwriting room. **J12B: MINOR** (new generated-content behavior,
+      not just a visual change) - flagging here since it's a real
+      functional addition, not only styling. Re-verified: lint clean, live
+      preview re-checked across a failing student (personalized fail-tier
+      remark) and confirmed the box reads shorter/tighter.
+      **Twenty-second follow-up**: user asked for the "Student Name" field
+      to follow a given-name + father's-name + surname format (e.g. "Mayur
+      Harihar Beheruk"), not the bare first+last `student.name` the rest
+      of the admin panel shows. `studentService.js` already carries
+      `firstName`/`fatherName`/`lastName` as separate fields (confirmed via
+      `AddStudentForm.js` and the same split TC's `withSurname()` already
+      relies on) - `buildMarksheetView`'s `studentName` now joins those
+      three directly, falling back to `s.name` if they're ever unpopulated.
+      The auto-remark's personalization was deliberately left on
+      `s.firstName` alone ("Mayur's performance..."), not the full
+      3-part name, since reading the father's name and surname back into
+      that sentence would sound unnatural. Re-verified: lint clean, live
+      preview re-checked - "Student Name" now shows "MAYUR HARIHAR
+      BEHERUK", remark still reads naturally with just "Mayur".
+      Flagged, not
+      fixed (J14, address only if raised): `/api/reports/marksheet`
+      (`pdfReportsServer.js`'s `generateMarksheetPdf`) is a separate,
+      simpler jsPDF-based single-student marksheet route with **zero
+      callers found anywhere in the codebase** - looks like dead code,
+      left untouched since removing it wasn't asked for; the school's
+      street-address text also differs across TC/marksheet/template
+      (pre-existing inconsistency, not introduced here). Nothing staged
+      to git this session (not asked).
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

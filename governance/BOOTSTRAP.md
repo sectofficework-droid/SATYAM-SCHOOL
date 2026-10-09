@@ -340,7 +340,60 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-10-08 — MIL (Odia) marksheet percentage bug fixed
+**Current — Session 2026-10-09 — Marksheet generation rebuilt around a
+user-supplied reference template (REQ-FEAT-008), classified MINOR CHANGE
+(with an internal architecture change) per J12B.**
+User supplied `marksheet_template.html` (repo root, outside
+`SATYAM-SCHOOL/`) - a standalone navy/red "Unit Test" marksheet built to be
+rendered in a browser and printed/saved as PDF - and asked to analyze it
+and rebuild marksheet generation around it. Analyzed both the template and
+the existing generator (`documents/page.js`'s jsPDF/`jspdf-autotable`
+canvas drawing, two modes: Final Marksheet with one column per official
+exam, Single Exam with a flat column) before touching anything. Asked two
+clarifying questions before implementing (AskUserQuestion, both answered
+with the recommended option): (1) adopt this codebase's existing
+pixel-perfect-document pattern (`tcGenerator.js`'s HTML/CSS +
+`window.print()`, already used for the Transfer Certificate and literally
+how the template itself is built) instead of trying to approximate the
+template inside jsPDF's drawing primitives; (2) extend the same visual
+language to a multi-exam table for Final Marksheet mode (the template
+itself only covers a single exam) rather than leaving that mode on the old
+look. TODO.md REQ-FEAT-008 written before implementing per J12B.
+
+Built new `admin-panel/src/lib/marksheetGenerator.js`
+(`buildMarksheetView`/`generateMarksheetPageHTML`/`generateMarksheetHTML`/
+`MARKSHEET_STYLES`) as the single source of truth for both the live preview
+and the print path - mirrors `tcGenerator.js`'s own shape exactly.
+`documents/page.js`: replaced the four jsPDF marksheet-drawing functions
+with `printMarksheets()` (mirrors `handlePrintTc`), `MarksheetPreview` now
+renders the identical HTML via `dangerouslySetInnerHTML` at a CSS scale
+instead of a hand-mirrored JSX approximation, button relabeled "Print
+Marksheet(s)" (was "Download PDF") since the action now opens the
+browser's print dialog rather than saving a file directly - choosing "Save
+as PDF" there gives the same result. Folded the current generator's extra
+fields (Result, Rank, Present/Total attendance) into the template's
+summary-box grid (now 6 boxes) instead of dropping them - no feature
+regression. Corrected the template's grading-scale legend text (literal
+"90-100%"/"80-89%"/... in the file the user supplied) to "91-100%"/
+"81-90%"/... to match `marksheetService.gradeFor()`'s real thresholds
+(≥91/≥81/...), which the template had off by one at every boundary.
+
+**Verified (Level 4, browser, real production data):** `npm run lint`
+clean; logged into the live admin panel (user logged in themselves after I
+flagged I had no credentials to do so), Documents → Marksheet - both modes
+visually confirmed correct against a real 428-student roster (12-subject
+JR.KG student, 3 real official exams); "Print Marksheet" clicked, confirmed
+it opens a new window titled "Marksheet" and calls `window.print()` without
+error, main tab recovers cleanly. **Not verified**: actual print-preview/
+PDF paper output (the browser-automation tool can't screenshot a native
+print dialog - only the HTML feeding it was inspected, identical to the
+already-confirmed live preview markup); very-high-subject-count classes
+aren't stress-tested for one-page overflow (12 subjects fit fine; no
+multi-page handling was added, same risk profile the template itself
+carries). Full detail: `planning/TODO.md` REQ-FEAT-008. Nothing staged to
+git this session (not asked).
+
+**Prior — Session 2026-10-08 — MIL (Odia) marksheet percentage bug fixed
 (REQ-BUG-072), classified MINOR CHANGE per J12B.**
 User reported: non-Odia-medium students' marksheet percentage was being
 wrongly dragged down by MIL (Odia), a subject that isn't theirs at all, once
