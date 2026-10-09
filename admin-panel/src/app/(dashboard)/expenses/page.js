@@ -261,7 +261,12 @@ export default function ExpensesPage() {
   const thisMonth    = toIsoDateLocal(new Date()).slice(0, 7);
   const totalMonth   = expenses.filter(e => e.date.startsWith(thisMonth)).reduce((s, e) => s + e.amount, 0);
   const catTotals    = CATEGORIES.map(c => ({ cat: c, total: expenses.filter(e => e.category === c).reduce((s, e) => s + e.amount, 0) }));
-  const topCat       = [...catTotals].sort((a, b) => b.total - a.total)[0];
+  // catTotals always has one entry per CATEGORIES (zero-filled when there's
+  // no spending yet), so a plain sort's top pick is CATEGORIES[0] ("Salary")
+  // on every all-zero tie, not "no data" - require a real total before
+  // calling anything "top".
+  const topCatRaw    = [...catTotals].sort((a, b) => b.total - a.total)[0];
+  const topCat       = topCatRaw?.total > 0 ? topCatRaw : null;
 
   async function handleAdd(exp) {
     try {
