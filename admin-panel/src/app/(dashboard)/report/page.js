@@ -704,7 +704,11 @@ const REPORT_CONFIGS = {
       if (df) d = d.filter(x => x.purchaseDate >= df);
       if (dt) d = d.filter(x => x.purchaseDate <= dt);
       if (s)  d = d.filter(x => x.name.toLowerCase().includes(s.toLowerCase()));
-      return d;
+      // reportService's available can go negative (usage logged with no
+      // matching stock-in batch - a data-entry gap, not a count bug); clamp
+      // for display here so neither this column nor the Total Available
+      // summary below shows a nonsensical negative quantity.
+      return d.map(x => x._type === "stock" ? { ...x, value: Math.max(x.value, 0) } : x);
     },
     getSummary(d) { return [
       {label:"Total Assets", value:d.length,                                                  color:"amber" },
