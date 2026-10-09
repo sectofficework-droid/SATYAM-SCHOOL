@@ -1539,6 +1539,7 @@ export default function DocumentsPage() {
     attendanceTotal: "",
   });
   const [tcRows, setTcRows]           = useState([]);
+  const [tcSelectedRows, setTcSelectedRows] = useState(new Set()); // Set of row._row for bulk CSV mode
   const [tcFileName, setTcFileName]   = useState("");
   const [tcParsing, setTcParsing]     = useState(false);
   const [tcError, setTcError]         = useState("");
@@ -1676,9 +1677,11 @@ export default function DocumentsPage() {
     try {
       const rows = await parseTcFile(file);
       setTcRows(rows);
+      setTcSelectedRows(new Set(rows.filter(r => r._errors.length === 0).map(r => r._row)));
       setTcFileName(file.name);
     } catch (err) {
       setTcRows([]);
+      setTcSelectedRows(new Set());
       setTcFileName("");
       setTcError(err.message);
     } finally {
@@ -1687,6 +1690,20 @@ export default function DocumentsPage() {
   }, []);
 
   const tcValidRows = tcRows.filter(r => r._errors.length === 0);
+  const tcSelectedValidRows = tcValidRows.filter(r => tcSelectedRows.has(r._row));
+  const tcAllValidSelected = tcValidRows.length > 0 && tcSelectedValidRows.length === tcValidRows.length;
+
+  const toggleTcRow = useCallback((rowId) => {
+    setTcSelectedRows(prev => { const n = new Set(prev); n.has(rowId) ? n.delete(rowId) : n.add(rowId); return n; });
+  }, []);
+
+  const toggleAllTcRows = useCallback(() => {
+    setTcSelectedRows(prev => {
+      const allSelected = tcValidRows.length > 0 && tcValidRows.every(r => prev.has(r._row));
+      if (allSelected) return new Set();
+      return new Set(tcValidRows.map(r => r._row));
+    });
+  }, [tcValidRows]);
 
   const handlePrintTc = useCallback(() => {
     let targets = [];
@@ -1697,11 +1714,11 @@ export default function DocumentsPage() {
       }
       targets = selectedStudents.map(s => studentToTcRow(s, tcOptions));
     } else {
-      if (!tcValidRows.length) {
-        alert("Please upload a valid CSV/Excel file or fix errors to print.");
+      if (!tcSelectedValidRows.length) {
+        alert("Please select at least one row to print certificate.");
         return;
       }
-      targets = tcValidRows;
+      targets = tcSelectedValidRows;
     }
     const html = generateSchoolLeavingCertificateHTML(targets);
     const win = window.open("", "_blank");
@@ -1710,19 +1727,20 @@ export default function DocumentsPage() {
     win.document.close();
     win.focus();
     setTimeout(() => win.print(), 350);
-  }, [tcMode, selectedStudents, tcValidRows, tcOptions]);
+  }, [tcMode, selectedStudents, tcSelectedValidRows, tcOptions]);
 
   const clearTcRows = useCallback(() => {
     setTcRows([]);
+    setTcSelectedRows(new Set());
     setTcFileName("");
     setTcError("");
   }, []);
 
   const tcPreviewRow = tcMode === "students"
     ? (previewStudent ? studentToTcRow(previewStudent, tcOptions) : TC_SAMPLE_ROW)
-    : (tcValidRows[previewIdx] || tcRows[previewIdx] || TC_SAMPLE_ROW);
+    : (tcSelectedValidRows[previewIdx] || tcValidRows[previewIdx] || tcRows[previewIdx] || TC_SAMPLE_ROW);
 
-  const tcTotalCount = tcMode === "students" ? selectedStudents.length : tcValidRows.length;
+  const tcTotalCount = tcMode === "students" ? selectedStudents.length : tcSelectedValidRows.length;
 
   return (
     <div className="flex flex-col gap-5 max-w-7xl mx-auto">
@@ -1970,10 +1988,22 @@ export default function DocumentsPage() {
                           )}
                         </span>
                       </div>
+
+                      {tcValidRows.length > 0 && (
+                        <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-100">
+                          <label className="flex items-center gap-2 cursor-pointer text-sm font-medium text-gray-700">
+                            <input type="checkbox" checked={tcAllValidSelected} onChange={toggleAllTcRows} className="w-4 h-4 accent-school-navy"/>
+                            Select all {tcValidRows.length} ready row{tcValidRows.length!==1?"s":""}
+                          </label>
+                          {tcSelectedValidRows.length > 0 && <span className="text-xs text-school-navy font-semibold bg-school-navy/10 px-2.5 py-1 rounded-full">{tcSelectedValidRows.length} selected</span>}
+                        </div>
+                      )}
+
                       <div className="max-h-80 overflow-y-auto">
                         <table className="w-full text-sm">
                           <thead className="bg-gray-50 sticky top-0">
                             <tr>
+                              <th className="px-4 py-2 w-10"></th>
                               <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500">Row</th>
                               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500">Name</th>
                               <th className="px-3 py-2 text-left text-xs font-semibold text-gray-500 hidden sm:table-cell">Father's Name</th>
@@ -1982,9 +2012,17 @@ export default function DocumentsPage() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-50">
-                            {tcRows.map((r, idx) => (
+                            {tcRows.map((r, idx) => {
+                              const isValid = r._errors.length === 0;
+                              const isSel = tcSelectedRows.has(r._row);
+                              return (
                               <tr key={r._row} onClick={() => setPreviewIdx(idx)}
                                 className={`cursor-pointer transition-colors ${previewIdx === idx ? "bg-school-navy/5" : r._errors.length ? "bg-red-50/50" : "hover:bg-gray-50"}`}>
+                                <td className="px-4 py-2 w-10" onClick={e => e.stopPropagation()}>
+                                  {isValid && (
+                                    <input type="checkbox" checked={isSel} onChange={() => toggleTcRow(r._row)} className="w-4 h-4 accent-school-navy"/>
+                                  )}
+                                </td>
                                 <td className="px-4 py-2 text-gray-400 text-xs">{r._row}</td>
                                 <td className="px-3 py-2 font-medium text-gray-800">{r.name || "—"}</td>
                                 <td className="px-3 py-2 text-gray-500 hidden sm:table-cell">{r.fatherName || "—"}</td>
@@ -1997,7 +2035,8 @@ export default function DocumentsPage() {
                                     : <span className="text-green-600 text-xs font-semibold">Ready</span>}
                                 </td>
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -2049,10 +2088,15 @@ export default function DocumentsPage() {
                   </>
                 ) : (
                   <>
-                    <span className="font-bold text-school-navy">{tcValidRows.length}</span> certificate{tcValidRows.length!==1?"s":""} ready
+                    <span className="font-bold text-school-navy">{tcSelectedValidRows.length}</span> of {tcValidRows.length} certificate{tcValidRows.length!==1?"s":""} selected
                   </>
                 )}
               </span>
+              {tcMode === "bulk" && tcSelectedRows.size > 0 && (
+                <button onClick={()=>setTcSelectedRows(new Set())} className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
+                  <X className="w-3 h-3"/>Clear
+                </button>
+              )}
               {tcMode === "students" && selected.size > 0 && (
                 <button onClick={()=>setSelected(new Set())} className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1">
                   <X className="w-3 h-3"/>Clear
@@ -2062,12 +2106,12 @@ export default function DocumentsPage() {
 
             <button
               onClick={handlePrintTc}
-              disabled={tcMode === "students" ? selected.size === 0 : !tcValidRows.length}
+              disabled={tcMode === "students" ? selected.size === 0 : !tcSelectedValidRows.length}
               className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-school-navy text-white text-sm font-medium hover:bg-school-navy/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm"
             >
               <Printer className="w-4 h-4"/>
-              Print Certificate{((tcMode === "students" ? selected.size : tcValidRows.length) !== 1) ? "s" : ""} (
-                {tcMode === "students" ? selected.size : tcValidRows.length}
+              Print Certificate{((tcMode === "students" ? selected.size : tcSelectedValidRows.length) !== 1) ? "s" : ""} (
+                {tcMode === "students" ? selected.size : tcSelectedValidRows.length}
               )
             </button>
           </div>
