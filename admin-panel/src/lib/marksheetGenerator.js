@@ -111,12 +111,16 @@ export function buildMarksheetView(student, sheet, mode, examNames, examName, lo
     logoUrl: logoUrl || "",
     title,
     examColumns,
-    // Formal "Student Name" field: given name + father's name + surname
+    // Formal "Student Name" field: given name + father's FIRST name + surname
     // (e.g. "Mayur Harihar Beheruk"), the official naming convention this
     // school's families use - not just the bare first+last `s.name` the
-    // rest of the admin panel shows. Falls back to `s.name` if the
+    // rest of the admin panel shows. Only the first word of fatherName is
+    // used, even though the Add Student form already asks for first name
+    // only - some existing records were entered with the father's surname
+    // too, which duplicated it against the student's own `lastName`
+    // (e.g. "Mayur Harihar Beheruk Beheruk"). Falls back to `s.name` if the
     // separate firstName/fatherName/lastName fields aren't populated.
-    studentName: [s.firstName, s.fatherName, s.lastName].filter(Boolean).join(" ") || s.name || "",
+    studentName: [s.firstName, String(s.fatherName || "").trim().split(/\s+/)[0], s.lastName].filter(Boolean).join(" ") || s.name || "",
     className: `${s.std || ""}${s.section ? " - " + s.section : ""}`,
     rollNo: s.rollNo || "—",
     session: s.session || "—",
