@@ -787,8 +787,9 @@ class SupabaseService {
   }
 
   // records: [{exam_id, student_id, class_name, subject_name, marks_obtained,
-  // entered_by}], all sharing one exam_id/class_name/subject_name per call
-  // (entered_by ignored server-side, always forced to the verified caller).
+  // is_absent?, entered_by}], all sharing one exam_id/class_name/subject_name
+  // per call (entered_by ignored server-side, always forced to the verified
+  // caller; is_absent defaults false server-side if omitted).
   static Future<void> saveOfficialMarksBatch(String employeeId, String sessionToken, List<Map<String, dynamic>> records) async {
     if (records.isEmpty) return;
     await client.rpc('save_official_marks_batch', params: {
@@ -797,7 +798,11 @@ class SupabaseService {
       'p_exam_id': records.first['exam_id'],
       'p_class_name': records.first['class_name'],
       'p_subject': records.first['subject_name'],
-      'p_marks': records.map((r) => {'student_id': r['student_id'], 'marks_obtained': r['marks_obtained']}).toList(),
+      'p_marks': records.map((r) => {
+        'student_id': r['student_id'],
+        'marks_obtained': r['marks_obtained'],
+        'is_absent': r['is_absent'] ?? false,
+      }).toList(),
     });
   }
 

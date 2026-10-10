@@ -90,12 +90,15 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
   }
 
   List<String> _overviewSubjects = [];
+  List<Map<String, dynamic>> _overviewSubjectsDetailed = []; // [{name, isOptional}] - for rank only
+  Map<String, double> _overviewMaxMarks = {}; // subject_name -> max_marks, for rank only
   List<Map<String, dynamic>> _overviewStudents = [];
   List<Map<String, dynamic>> _overviewMarks = [];
   bool _loadingOverview = false;
 
   // 'subject' = grouped-by-subject list (optionally filtered to one
-  // subject), 'table' = spreadsheet-style grid of every subject at once.
+  // subject), 'table' = spreadsheet-style grid of every subject at once,
+  // 'rank' = class-ranked list by percentage for this exam.
   String _overviewMode = 'subject';
   String? _overviewSubjectFilter;
   bool _exportingOverviewPdf = false;
@@ -193,6 +196,25 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
           };
         }).toList();
 
+    // A student left blank while everyone else in the class got a real mark
+    // this save is saved as Absent by default, instead of being silently
+    // skipped and left with no record at all - a straggler at save time
+    // almost always means they didn't take the exam, not that the teacher
+    // forgot them specifically.
+    final autoAbsentStudents = records.isNotEmpty
+        ? _students.where((s) => _markCtrl[s['id']]?.text.isNotEmpty != true).toList()
+        : <Map<String, dynamic>>[];
+    for (final s in autoAbsentStudents) {
+      records.add({
+        'exam_id':        _selectedExam!['id'],
+        'student_id':     s['id'],
+        'class_name':     _selectedClass,
+        'subject_name':   _selectedSubject,
+        'marks_obtained': 0,
+        'is_absent':      true,
+      });
+    }
+
     // Reported bug: a mark above max_marks (set by admin) or negative saved
     // with no pushback. Block the save outright rather than silently
     // clamping - this is almost always a typo the teacher needs to notice,
@@ -229,11 +251,14 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
     try {
       await SupabaseService.saveOfficialMarksBatch(teacherId, sessionToken, records);
       if (mounted) {
+        final absentNote = autoAbsentStudents.isNotEmpty
+            ? ' (${autoAbsentStudents.length} left blank marked Absent)'
+            : '';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Row(children: [
-            Icon(Icons.check_circle, color: Colors.white, size: 18),
-            SizedBox(width: 8),
-            Text('Marks saved successfully!'),
+          content: Row(children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text('Marks saved successfully!$absentNote')),
           ]),
           backgroundColor: AppColors.green,
           behavior: SnackBarBehavior.floating,
@@ -273,12 +298,16 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
       (employeeId != null && sessionToken != null)
           ? SupabaseService.fetchOfficialExamMarksForClass(employeeId, sessionToken, examId, className)
           : Future.value(<Map<String, dynamic>>[]),
+      SupabaseService.fetchClassSubjectsDetailed(className),
+      SupabaseService.fetchExamSubjectConfigForClass(examId, className),
     ]);
     if (mounted) {
       setState(() {
       _overviewSubjects = results[0] as List<String>;
       _overviewStudents = results[1] as List<Map<String, dynamic>>;
       _overviewMarks    = results[2] as List<Map<String, dynamic>>;
+      _overviewSubjectsDetailed = results[3] as List<Map<String, dynamic>>;
+      _overviewMaxMarks = results[4] as Map<String, double>;
       _loadingOverview  = false;
     });
     }
@@ -626,6 +655,58 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
     return map;
   }
 
+  // Per-student total/percentage/rank for this one exam, across every
+  // subject - mirrors the admin panel's getSingleExamMarksheet +
+  // withRank (marksheetService.js): an optional subject (e.g. MIL (Odia))
+  // never entered for a student is excluded from their total entirely
+  // (not counted as a 0); an absent mark still counts toward the max but
+  // not the obtained side; rank is by percentage (not raw total, since
+  // totalMax can differ per student) with ties sharing a rank.
+  List<Map<String, dynamic>> get _overviewRankList {
+    final markByKey = <String, Map<String, dynamic>>{};
+    for (final m in _overviewMarks) {
+      markByKey['${m['subject_name']}|${m['student_id']}'] = m;
+    }
+
+    final rows = _overviewStudents.map((s) {
+      final studentId = s['id'];
+      double totalObtained = 0, totalMax = 0;
+      for (final subject in _overviewSubjectsDetailed) {
+        final name = subject['name'] as String;
+        final isOptional = subject['isOptional'] == true;
+        final mark = markByKey['$name|$studentId'];
+        final entered = mark != null;
+        if (isOptional && !entered) continue;
+        final max = _overviewMaxMarks[name] ?? 50;
+        final isAbsent = entered && mark['is_absent'] == true;
+        final obtained = entered && !isAbsent ? ((mark['marks_obtained'] as num?)?.toDouble() ?? 0) : 0;
+        totalObtained += obtained;
+        totalMax += max;
+      }
+      final percentage = totalMax > 0 ? (totalObtained / totalMax) * 100 : 0.0;
+      final fullName = '${s['first_name'] ?? ''} ${s['last_name'] ?? ''}'.trim();
+      return {
+        'studentId': studentId,
+        'name': fullName.isNotEmpty ? fullName : (s['full_name'] ?? '—'),
+        'totalObtained': totalObtained,
+        'totalMax': totalMax,
+        'percentage': percentage,
+      };
+    }).toList();
+
+    rows.sort((a, b) => (b['percentage'] as double).compareTo(a['percentage'] as double));
+    double round2(double p) => (p * 100).round() / 100;
+    int rank = 0;
+    double? prevPct;
+    for (var i = 0; i < rows.length; i++) {
+      final pct = round2(rows[i]['percentage'] as double);
+      if (prevPct == null || pct != prevPct) rank = i + 1;
+      rows[i]['rank'] = rank;
+      prevPct = pct;
+    }
+    return rows;
+  }
+
   Future<void> _downloadOverviewPdf() async {
     setState(() => _exportingOverviewPdf = true);
     try {
@@ -654,9 +735,10 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
   }
 
   // Read-only: every subject's marks for the class teacher's own class,
-  // regardless of which teacher entered them. Two modes: grouped-by-subject
-  // (optionally filtered to one subject) or a full spreadsheet-style table
-  // of every subject at once, which can be exported to PDF.
+  // regardless of which teacher entered them. Three modes: grouped-by-
+  // subject (optionally filtered to one subject), a full spreadsheet-style
+  // table of every subject at once (exportable to PDF), or the class rank
+  // for this exam.
   Widget _buildOverview() {
     if (_loadingOverview) return const Center(child: CircularProgressIndicator(color: AppColors.navy));
     if (_overviewSubjects.isEmpty) {
@@ -665,7 +747,11 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
     return Column(children: [
       _buildOverviewModeTabBar(),
       if (_overviewMode == 'subject') _buildOverviewSubjectChips(),
-      Expanded(child: _overviewMode == 'subject' ? _buildOverviewSubjectList() : _buildOverviewTable()),
+      Expanded(child: _overviewMode == 'subject'
+        ? _buildOverviewSubjectList()
+        : _overviewMode == 'table'
+          ? _buildOverviewTable()
+          : _buildOverviewRankList()),
     ]);
   }
 
@@ -677,6 +763,7 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
       child: Row(children: [
         Expanded(child: _overviewModeButton('By Subject', 'subject')),
         Expanded(child: _overviewModeButton('Full Table', 'table')),
+        Expanded(child: _overviewModeButton('Rank', 'rank')),
       ]),
     ),
   );
@@ -831,6 +918,52 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
         ),
       ),
     ]);
+  }
+
+  // Class rank for this exam, sorted best-first. See _overviewRankList for
+  // the percentage/rank computation.
+  Widget _buildOverviewRankList() {
+    final rows = _overviewRankList;
+    if (rows.isEmpty) {
+      return _emptyState(icon: Icons.leaderboard_outlined, title: 'No Students', subtitle: 'No students found for $_ownClassName.');
+    }
+    return ListView.separated(
+      padding: const EdgeInsets.all(16),
+      itemCount: rows.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (_, i) {
+        final r = rows[i];
+        final rank = r['rank'] as int;
+        final isFirst = rank == 1;
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: isFirst ? AppColors.amber : AppColors.border, width: isFirst ? 1.5 : 1),
+          ),
+          child: Row(children: [
+            Container(
+              width: 32, height: 32,
+              decoration: BoxDecoration(
+                color: isFirst ? AppColors.amberLight : AppColors.navy.withValues(alpha: .08),
+                shape: BoxShape.circle,
+              ),
+              child: Center(child: Text('$rank',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: isFirst ? AppColors.amber : AppColors.navy))),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Text(r['name'] as String,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5, color: AppColors.text))),
+            Text('${(r['totalObtained'] as double).toStringAsFixed(0)}/${(r['totalMax'] as double).toStringAsFixed(0)}',
+              style: const TextStyle(fontSize: 12.5, color: AppColors.textLight)),
+            const SizedBox(width: 10),
+            Text('${(r['percentage'] as double).toStringAsFixed(1)}%',
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: AppColors.navy)),
+          ]),
+        );
+      },
+    );
   }
 
   Widget _tag(String label, Color bg, Color fg) => Container(
