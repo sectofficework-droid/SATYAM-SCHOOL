@@ -72,6 +72,20 @@ function fatherFirstName(raw) {
   return (withoutInitial || trimmed).split(/\s+/)[0];
 }
 
+// lastName is supposed to be just the surname, but some records were
+// entered as "<2nd word of the student's own name> <surname>" (e.g.
+// "AYANSH PATRA" for a student whose own name is "D. Ayansh" and whose
+// family surname is "Patra") - the surname is always the LAST word, so
+// anything before it is really part of the student's own name and must be
+// placed before father's name below, not after it (verified against every
+// multi-word lastName currently on file: its last word always matches the
+// last word of that student's fatherName, confirming it's the surname).
+function splitLastName(raw) {
+  const words = String(raw || "").trim().split(/\s+/).filter(Boolean);
+  if (words.length <= 1) return { ownNameExtra: "", surname: words[0] || "" };
+  return { ownNameExtra: words.slice(0, -1).join(" "), surname: words[words.length - 1] };
+}
+
 // 1-2 line remark auto-generated from the student's name + already-computed
 // grade/result - no free-text data source exists for a teacher-written
 // remark, so rather than leave the box blank this gives a short,
@@ -129,15 +143,21 @@ export function buildMarksheetView(student, sheet, mode, examNames, examName, lo
     title,
     examColumns,
     // Formal "Student Name" field: given name + father's FIRST name + surname
-    // (e.g. "Mayur Harihar Beheruk"), the official naming convention this
-    // school's families use - not just the bare first+last `s.name` the
-    // rest of the admin panel shows. Only the first word of fatherName is
-    // used, even though the Add Student form already asks for first name
-    // only - some existing records were entered with the father's surname
-    // too, which duplicated it against the student's own `lastName`
-    // (e.g. "Mayur Harihar Beheruk Beheruk"). Falls back to `s.name` if the
-    // separate firstName/fatherName/lastName fields aren't populated.
-    studentName: [s.firstName, fatherFirstName(s.fatherName), s.lastName].filter(Boolean).join(" ") || s.name || "",
+    // ONCE (e.g. "Mayur Harihar Beheruk"), the official naming convention
+    // this school's families use - not just the bare first+last `s.name`
+    // the rest of the admin panel shows. fatherFirstName()/splitLastName()
+    // above strip out the two ways real records duplicate or misplace a
+    // word (father's surname repeated, or part of the student's own name
+    // stuck onto lastName); the final filter+dedupe below is a safety net
+    // so a leftover repeated word can never print twice regardless. Falls
+    // back to `s.name` if the separate firstName/fatherName/lastName fields
+    // aren't populated.
+    studentName: (() => {
+      const { ownNameExtra, surname } = splitLastName(s.lastName);
+      const parts = [s.firstName, ownNameExtra, fatherFirstName(s.fatherName), surname].filter(Boolean);
+      const deduped = parts.filter((w, i) => i === 0 || w.toLowerCase() !== parts[i - 1].toLowerCase());
+      return deduped.join(" ") || s.name || "";
+    })(),
     className: `${s.std || ""}${s.section ? " - " + s.section : ""}`,
     rollNo: s.rollNo || "—",
     session: s.session || "—",
