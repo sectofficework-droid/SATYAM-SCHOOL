@@ -224,7 +224,6 @@ export function generateMarksheetPageHTML(d) {
       <div class="ms-box"><span class="ms-k">PERCENTAGE</span><span class="ms-v">${d.percentage.toFixed(2)}%</span></div>
       <div class="ms-box"><span class="ms-k">OVERALL GRADE</span><span class="ms-v">${esc(d.grade)}</span></div>
       <div class="ms-box"><span class="ms-k">RESULT</span><span class="ms-v">${esc(d.result)}</span></div>
-      <div class="ms-box"><span class="ms-k">CLASS RANK</span><span class="ms-v">${esc(d.rank)}</span></div>
       <div class="ms-box"><span class="ms-k">TOTAL MARKS</span><span class="ms-v">${fmtNum(d.totalObtained)} / ${fmtNum(d.totalMax)}</span></div>
     </section>
 
@@ -361,7 +360,7 @@ export const MARKSHEET_STYLES = `
   .ms-g { white-space: nowrap; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px 2px; border-left: 1px solid #8A93A8; background: #F7F9FC; gap: 1px; }
   .ms-g b { font-size: 14px; color: #1B2A5E; }
 
-  .ms-summary { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .ms-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   /* Same fieldset-legend treatment as Remark/School Stamp above: the
      label sits on the box outline, and the value is centered in the
      cleared interior instead of bottom-right. */

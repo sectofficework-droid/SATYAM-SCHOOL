@@ -168,7 +168,7 @@ export async function generateMarksheetPdf(s, sheet, examNames) {
   });
 
   y -= 6 * MM;
-  page.drawText(`Result: ${sheet.result}   Percentage: ${sheet.percentage.toFixed(2)}%   Rank: ${sheet.rank}   Grade: ${sheet.grade}`, {
+  page.drawText(`Result: ${sheet.result}   Percentage: ${sheet.percentage.toFixed(2)}%   Grade: ${sheet.grade}`, {
     x: marginX, y, size: 9, font: fontBold,
   });
 
