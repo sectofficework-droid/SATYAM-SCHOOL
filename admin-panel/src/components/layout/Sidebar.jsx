@@ -34,6 +34,9 @@ import supabase from "@/lib/supabase";
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, orgs: ["school"] },
   { href: "/student", label: "Student", icon: GraduationCap, orgs: ["school"] },
+  { href: "/report", label: "Report", icon: BarChart3, orgs: ["school"] },
+  { href: "/documents", label: "Documents", icon: FolderOpen, orgs: ["school"] },
+  { href: "/tasks", label: "Task Management", icon: ClipboardList, orgs: ["school"] },
   { href: "/gr-book", label: "GR Book", icon: BookMarked, orgs: ["school"] },
   { href: "/attendance", label: "Attendance", icon: CalendarCheck, orgs: ["school"] },
   { href: "/syllabus", label: "Syllabus", icon: BookOpen, orgs: ["school"] },
@@ -43,10 +46,7 @@ const navItems = [
   { href: "/expenses",  label: "Expenses",             icon: TrendingDown, orgs: ["school"] },
   { href: "/notice",    label: "Notice Board",         icon: Bell, orgs: ["school"] },
   { href: "/queries",   label: "Queries & Suggestions",icon: MessageSquareText, orgs: ["school"] },
-  { href: "/report", label: "Report", icon: BarChart3, orgs: ["school"] },
-  { href: "/documents", label: "Documents", icon: FolderOpen, orgs: ["school"] },
   { href: "/question-papers", label: "Question Bank", icon: FileText, orgs: ["school"] },
-  { href: "/tasks", label: "Task Management", icon: ClipboardList, orgs: ["school"] },
   { href: "/super-admin", label: "Super Admin", icon: ShieldCheck, orgs: ["school"] },
   { href: "/diagnostics", label: "Diagnostics", icon: Bug, orgs: ["school"] },
 
