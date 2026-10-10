@@ -151,9 +151,18 @@ const CLASS_PROMOTION_MAP = {
 // surname, so append the student's own last name - unless the stored name
 // already ends with it (avoids "RAJESH RAULA RAULA" for anyone who already
 // typed the full name in).
-function withSurname(name, surname) {
+//
+// lastName itself isn't always just the surname though - some records hold
+// "<2nd word of the student's own name> <surname>" (e.g. lastName "AYANSH
+// PATRA" for a student whose own name is "D. Ayansh"), same mix-up fixed in
+// marksheetGenerator.js. Passing that whole string through as "the surname"
+// stuffed the student's own name word into the father's/mother's name field
+// (e.g. "ANANT PATRA" + "AYANSH PATRA" -> "ANANT PATRA AYANSH PATRA"), so
+// only the LAST word of lastName - the actual surname - is used here.
+function withSurname(name, lastName) {
   const n = String(name || "").trim();
-  const s = String(surname || "").trim();
+  const words = String(lastName || "").trim().split(/\s+/).filter(Boolean);
+  const s = words[words.length - 1] || "";
   if (!s) return n;
   if (!n) return s;
   const escaped = s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
