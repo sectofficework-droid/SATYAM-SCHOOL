@@ -91,13 +91,19 @@ async function fetchRemarksByStudent(students, year) {
   return remarksByStudent;
 }
 
-// Ranks a set of already-computed sheets (each needs studentId + totalObtained)
-// by totalObtained descending; ties share the same rank.
+// Ranks a set of already-computed sheets (each needs studentId + percentage)
+// by percentage descending; ties share the same rank. Percentage, not raw
+// totalObtained, because totalMax isn't the same for every student in the
+// class - an optional subject (e.g. MIL (Odia)) is excluded entirely for a
+// student who never took it, so two students can have different totals out
+// of different maxes. Comparing raw totals would rank the student with the
+// bigger max unfairly higher even at a lower percentage.
 function withRank(sheets) {
-  const sorted = [...sheets].sort((a, b) => b.totalObtained - a.totalObtained);
+  const round2 = (p) => Math.round((p + Number.EPSILON) * 100) / 100;
+  const sorted = [...sheets].sort((a, b) => b.percentage - a.percentage);
   const rankByStudent = {};
   sorted.forEach((sheet, i) => {
-    rankByStudent[sheet.studentId] = (i > 0 && sheet.totalObtained === sorted[i - 1].totalObtained)
+    rankByStudent[sheet.studentId] = (i > 0 && round2(sheet.percentage) === round2(sorted[i - 1].percentage))
       ? rankByStudent[sorted[i - 1].studentId]
       : i + 1;
   });
