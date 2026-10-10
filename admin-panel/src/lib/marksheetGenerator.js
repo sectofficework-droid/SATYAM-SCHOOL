@@ -139,7 +139,7 @@ function subjectsTableHTML(d) {
   const examCols = d.examColumns; // null for a single-exam marksheet
   const colHeaders = examCols
     ? ["No.", "Subject", ...examCols.map(esc), "Total", "Obtained", "Grade"]
-    : ["No.", "Subject", "Max. Marks", "Marks Obtained", "Grade"];
+    : ["No.", "Subject", "Full Marks", "Marks Obtained", "Grade"];
 
   const headRow = colHeaders.map((h, i) => {
     const style = i === 0 ? ' style="width:32px"' : i === 1 ? ' style="text-align:left;padding-left:10px"' : "";
@@ -235,7 +235,7 @@ export function generateMarksheetPageHTML(d) {
 
     <section class="ms-signs">
       <div><div class="ms-sl"></div>Class Teacher</div>
-      <div><div class="ms-sl"></div>Parent / Guardian</div>
+      <div><div class="ms-sl"></div>Exam Co-Ordinator</div>
       <div><div class="ms-sl"></div>Principal</div>
     </section>
 
@@ -288,8 +288,10 @@ export const MARKSHEET_STYLES = `
   .ms-contact { display: flex; justify-content: center; align-items: center; gap: 20px; margin-top: 4px; font-family: 'Open Sans', Arial, sans-serif; }
   .ms-addr-row span, .ms-contact span { display: inline-flex; align-items: center; gap: 6px; }
   .ms-phone { font-weight: 800; font-size: 14.5px; }
-  .ms-email { font-weight: 700; font-size: 13px; }
-  .ms-addr { font-weight: 700; font-size: 10.5px; white-space: nowrap; }
+  .ms-email { font-weight: 700; font-size: 14.5px; text-transform: lowercase; }
+  /* 11px (up from the original 10.5px) - sized close to, just under,
+     "INTERNATIONAL SCHOOL"'s width above it, with normal word-spacing. */
+  .ms-addr { font-weight: 700; font-size: 11px; white-space: nowrap; }
 
   .ms-rule { display: flex; flex-direction: column; gap: 2px; }
   .ms-rule .a { height: 3px; background: #1B2A5E; }
