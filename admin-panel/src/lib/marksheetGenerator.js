@@ -230,7 +230,6 @@ export function generateMarksheetPageHTML(d) {
     <section class="ms-details">
       <div class="ms-field ms-field-full"><label>Student Name :</label><div class="ms-fill">${esc(d.studentName)}</div></div>
       <div class="ms-field"><label>Class :</label><div class="ms-fill">${esc(d.className)}</div></div>
-      <div class="ms-field"><label>Roll No. :</label><div class="ms-fill">${esc(d.rollNo)}</div></div>
       <div class="ms-field"><label>Date :</label><div class="ms-fill">${esc(d.date)}</div></div>
     </section>
 
@@ -353,9 +352,9 @@ export const MARKSHEET_STYLES = `
   .ms-band .ms-t { font-family: 'Libre Baskerville', serif; font-weight: 700; font-size: 18px; letter-spacing: .3px; white-space: nowrap; }
   .ms-band .ms-y { font-size: 16.5px; font-weight: 700; white-space: nowrap; }
 
-  .ms-details { display: grid; grid-template-columns: repeat(3, 1fr); column-gap: 20px; row-gap: 5px; font-size: 15px; }
+  .ms-details { display: grid; grid-template-columns: repeat(2, 1fr); column-gap: 20px; row-gap: 5px; font-size: 15px; }
   .ms-field { display: flex; align-items: flex-end; gap: 6px; min-height: 22px; }
-  .ms-field-full { grid-column: span 3; }
+  .ms-field-full { grid-column: span 2; }
   .ms-field label { font-weight: 700; white-space: nowrap; }
   .ms-fill { flex-grow: 1; min-width: 0; overflow-wrap: anywhere; border-bottom: 1px dotted #555; min-height: 18px; padding: 0 4px; font-weight: 600; }
 

@@ -146,7 +146,7 @@ export async function generateMarksheetPdf(s, sheet, examNames) {
 
   page.drawText("SATYAM STARS INTERNATIONAL SCHOOL", { x: marginX, y: PH - 25 * MM, size: 15, font: fontBold, color: rgb(0.1, 0.17, 0.42) });
   page.drawText("FINAL MARKSHEET", { x: marginX, y: PH - 33 * MM, size: 12, font: fontBold });
-  page.drawText(`Name: ${s.name}    Class: ${s.std}${s.section ? " - " + s.section : ""}    Roll No: ${s.rollNo || "—"}`, {
+  page.drawText(`Name: ${s.name}    Class: ${s.std}${s.section ? " - " + s.section : ""}`, {
     x: marginX, y: PH - 45 * MM, size: 10, font,
   });
 
