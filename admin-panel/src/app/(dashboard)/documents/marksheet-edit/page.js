@@ -68,7 +68,12 @@ function MarksheetEditPageInner() {
     setEditingId(row.studentId);
     setEditSubjects(row.subjectRows.map(sr => ({
       ...sr,
-      text: (!sr.isEntered && sr.isOptional) ? "" : sr.isAbsent ? "" : String(sr.obtained),
+      // Blank until actually entered, for every subject - a required
+      // subject used to pre-fill "0" here, which looked identical to a
+      // real zero score and meant leaving it untouched saved nothing.
+      // Blank now reads as "not graded yet" and is auto-saved as Absent
+      // below (see handleSave).
+      text: sr.isAbsent ? "" : (!sr.isEntered ? "" : String(sr.obtained)),
     })));
     setEditRemark(row.adminRemark || "");
     setSaveError("");
@@ -83,7 +88,11 @@ function MarksheetEditPageInner() {
   // is just the field's display default, not a real score (REQ-FEAT-009
   // caught this the hard way: saving every cell unconditionally silently
   // turned every still-pending mark into an affirmatively-entered zero).
-  // Unentered optional subjects left empty are preserved as unentered.
+  // Unentered optional subjects left empty are preserved as unentered - the
+  // student just doesn't take that subject. A required subject left blank
+  // on Save, though, is treated as Absent automatically: a blank box on a
+  // row being saved means no mark was recorded for it, so it's written as
+  // such rather than silently staying unentered forever.
   const handleSave = async (row) => {
     setSaving(true);
     setSaveError("");
@@ -91,11 +100,15 @@ function MarksheetEditPageInner() {
       const writes = [];
       editSubjects.forEach((s, i) => {
         const base = row.subjectRows[i];
-        const baseText = (!base.isEntered && base.isOptional) ? "" : base.isAbsent ? "" : String(base.obtained);
+
+        if (s.text === "" && !s.isAbsent) {
+          if (s.isOptional) return; // Blank optional subject: not their subject, not absent
+          if (!base.isAbsent) writes.push(saveOfficialExamMark(examId, row.studentId, className, s.subject, 0, true));
+          return;
+        }
+
+        const baseText = base.isAbsent ? "" : (!base.isEntered ? "" : String(base.obtained));
         if (s.isAbsent !== base.isAbsent || s.text !== baseText) {
-          if (s.text === "" && !s.isAbsent && !base.isEntered) {
-            return; // Unentered optional subject left blank: do not write phantom 0
-          }
           writes.push(saveOfficialExamMark(examId, row.studentId, className, s.subject, s.isAbsent ? 0 : (Number(s.text) || 0), s.isAbsent));
         }
       });
@@ -156,16 +169,16 @@ function MarksheetEditPageInner() {
         ) : rows.length === 0 ? (
           <div className="flex items-center justify-center py-20 text-sm text-gray-400">No students found in {className}.</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
             <table className="w-full text-xs border-collapse">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-3 py-2 text-left font-semibold text-gray-500 sticky left-0 bg-gray-50 whitespace-nowrap">Student</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-500 sticky left-0 top-0 z-20 bg-gray-50 whitespace-nowrap">Student</th>
                   {subjectNames.map(sub => (
-                    <th key={sub} className="px-3 py-2 text-center font-semibold text-gray-500 whitespace-nowrap">{sub}</th>
+                    <th key={sub} className="px-3 py-2 text-center font-semibold text-gray-500 whitespace-nowrap sticky top-0 z-10 bg-gray-50">{sub}</th>
                   ))}
-                  <th className="px-3 py-2 text-left font-semibold text-gray-500 whitespace-nowrap">Remark</th>
-                  <th className="px-3 py-2 text-center font-semibold text-gray-500 w-10"></th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-500 whitespace-nowrap sticky top-0 z-10 bg-gray-50">Remark</th>
+                  <th className="px-3 py-2 text-center font-semibold text-gray-500 w-10 sticky top-0 z-10 bg-gray-50"></th>
                 </tr>
               </thead>
               <tbody>
@@ -173,14 +186,15 @@ function MarksheetEditPageInner() {
                   const isEditing = editingId === row.studentId;
                   return (
                     <tr key={row.studentId} className={`border-b border-gray-100 ${isEditing ? "bg-school-navy/5" : "hover:bg-gray-50"}`}>
-                      <td className="px-3 py-2 font-medium text-gray-700 sticky left-0 bg-white whitespace-nowrap align-top">{row.name}</td>
+                      <td className={`px-3 py-2 font-medium text-gray-700 sticky left-0 z-[5] whitespace-nowrap align-top ${isEditing ? "bg-school-navy/5" : "bg-white"}`}>{row.name}</td>
                       {row.subjectRows.map((sr, i) => (
                         <td key={sr.subject} className="px-2 py-2 text-center align-top">
                           {isEditing ? (
                             <div className="flex flex-col items-center gap-0.5">
                               <input
                                 type="number" min="0" max={sr.max} disabled={editSubjects[i]?.isAbsent}
-                                placeholder={editSubjects[i]?.isOptional ? "—" : "0"}
+                                placeholder={editSubjects[i]?.isOptional ? "—" : "AB"}
+                                title={editSubjects[i]?.isOptional ? undefined : "Left blank, this will be saved as Absent"}
                                 value={editSubjects[i]?.isAbsent ? "" : (editSubjects[i]?.text ?? "")}
                                 onChange={e => updateSubject(i, { text: e.target.value })}
                                 className="w-14 border border-gray-200 rounded px-1 py-1 text-xs text-center focus:outline-none focus:border-school-navy disabled:bg-gray-50 disabled:text-gray-300"

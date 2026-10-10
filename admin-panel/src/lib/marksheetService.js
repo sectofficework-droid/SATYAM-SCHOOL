@@ -156,13 +156,13 @@ export async function getMarksheetsForClass(students, className) {
   const remarksByStudent = await fetchRemarksByStudent(students, year);
 
   const sheets = students.map(s => {
-    let totalObtained = 0, totalMax = 0;
+    let totalObtained = 0, totalMax = 0, hasAnyMark = false;
     const subjectRows = subjects.map(subject => {
       let subjObtained = 0, subjMax = 0, anyEntered = false;
       const marks = exams.map(exam => {
         const key = `${exam.id}:${s._studentId}:${subject.name}`;
         const entered = !!enteredByExamStudentSubject[key];
-        if (entered) anyEntered = true;
+        if (entered) { anyEntered = true; hasAnyMark = true; }
         // Optional subject (e.g. MIL (Odia)) with no mark entered for this
         // exam: exclude it from this student's totals entirely instead of
         // counting it as a 0 - it isn't their subject.
@@ -198,6 +198,7 @@ export async function getMarksheetsForClass(students, className) {
       percentage,
       grade:        gradeFor(percentage),
       result:       percentage >= 33 ? "Pass" : "Fail",
+      hasAnyMark,
       present:      attendance.present,
       totalDays:    attendance.total,
       adminRemark:  remarksByStudent[s._studentId] || "",
@@ -373,10 +374,11 @@ export async function getSingleExamMarksheet(students, className, examId) {
   const remarksByStudent = await fetchRemarksByStudent(students, year);
 
   const sheets = students.map(s => {
-    let totalObtained = 0, totalMax = 0;
+    let totalObtained = 0, totalMax = 0, hasAnyMark = false;
     const subjectRows = subjects.map(subject => {
       const key = `${s._studentId}:${subject.name}`;
       const entered = Object.prototype.hasOwnProperty.call(marksByStudentSubject, key);
+      if (entered) hasAnyMark = true;
       // Optional subject never entered for this student: not their subject -
       // exclude it entirely instead of counting it as a 0.
       if (subject.isOptional && !entered) return null;
@@ -404,6 +406,7 @@ export async function getSingleExamMarksheet(students, className, examId) {
       percentage,
       grade:        gradeFor(percentage),
       result:       percentage >= 33 ? "Pass" : "Fail",
+      hasAnyMark,
       present:      attendance.present,
       totalDays:    attendance.total,
       adminRemark:  remarksByStudent[s._studentId] || "",

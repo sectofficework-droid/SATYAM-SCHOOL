@@ -162,26 +162,26 @@ export default function ExamsReportSection() {
             {summary.map(s => <SummaryTile key={s.label} {...s} />)}
           </div>
 
-          <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">
+          <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto max-h-[70vh] overflow-y-auto">
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-200">
-                  <th className="px-3 py-2 text-left font-semibold text-gray-500 sticky left-0 bg-gray-50">Student</th>
+                  <th className="px-3 py-2 text-left font-semibold text-gray-500 sticky left-0 top-0 z-20 bg-gray-50">Student</th>
                   {subjectNames.map(sub => (
-                    <th key={sub} className="px-3 py-2 text-center font-semibold text-gray-500 whitespace-nowrap">{sub}</th>
+                    <th key={sub} className="px-3 py-2 text-center font-semibold text-gray-500 whitespace-nowrap sticky top-0 z-10 bg-gray-50">{sub}</th>
                   ))}
-                  <th className="px-3 py-2 text-center font-semibold text-gray-500">Total</th>
-                  <th className="px-3 py-2 text-center font-semibold text-gray-500">%</th>
-                  <th className="px-3 py-2 text-center font-semibold text-gray-500">Grade</th>
-                  <th className="px-3 py-2 text-center font-semibold text-gray-500">Rank</th>
-                  <th className="px-3 py-2 text-center font-semibold text-gray-500">Result</th>
-                  <th className="px-3 py-2 text-center font-semibold text-gray-500 whitespace-nowrap">Marks Entered</th>
+                  <th className="px-3 py-2 text-center font-semibold text-gray-500 sticky top-0 z-10 bg-gray-50">Total</th>
+                  <th className="px-3 py-2 text-center font-semibold text-gray-500 sticky top-0 z-10 bg-gray-50">%</th>
+                  <th className="px-3 py-2 text-center font-semibold text-gray-500 sticky top-0 z-10 bg-gray-50">Grade</th>
+                  <th className="px-3 py-2 text-center font-semibold text-gray-500 sticky top-0 z-10 bg-gray-50">Rank</th>
+                  <th className="px-3 py-2 text-center font-semibold text-gray-500 sticky top-0 z-10 bg-gray-50">Result</th>
+                  <th className="px-3 py-2 text-center font-semibold text-gray-500 whitespace-nowrap sticky top-0 z-10 bg-gray-50">Marks Entered</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map(r => (
                   <tr key={r.studentId} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="px-3 py-2 font-medium text-gray-700 sticky left-0 bg-white whitespace-nowrap">{r.name}</td>
+                    <td className="px-3 py-2 font-medium text-gray-700 sticky left-0 z-[5] bg-white whitespace-nowrap">{r.name}</td>
                     {r.subjectRows.map(sr => (
                       <td key={sr.subject} className="px-3 py-2 text-center whitespace-nowrap">
                         {sr.excluded

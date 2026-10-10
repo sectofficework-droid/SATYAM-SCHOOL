@@ -944,7 +944,24 @@ async function printMarksheets(targetStudents, allStudents, mode, examId, offici
   const examNames = officialExams.map(e => e.name);
   const examName = officialExams.find(e => e.id === examId)?.name || "";
 
-  const views = targetStudents.map(s =>
+  // Rank above is still computed against the full class roster (classmates,
+  // not targetStudents) so excluding someone here doesn't skew anyone
+  // else's rank - this only trims who actually gets a printed page. A
+  // student with nothing entered for any subject would otherwise print a
+  // marksheet marking every subject Absent, which reads as "this student
+  // missed every exam" rather than the true "no one has graded this yet".
+  const printable = targetStudents.filter(s => sheetByStudentId[s._studentId]?.hasAnyMark !== false);
+  const skipped = targetStudents.filter(s => !printable.includes(s));
+  if (skipped.length) {
+    const names = skipped.map(s => s.name).join(", ");
+    const proceed = printable.length
+      ? confirm(`${skipped.length} student(s) have no marks entered yet and will be skipped:\n${names}\n\nPrint the remaining ${printable.length} marksheet(s)?`)
+      : (alert(`No marks entered yet for: ${names}\nNothing to print.`), false);
+    if (!proceed) return;
+  }
+  if (!printable.length) return;
+
+  const views = printable.map(s =>
     buildMarksheetView(s, sheetByStudentId[s._studentId], mode, examNames, examName, logoUrl)
   );
 
@@ -2223,7 +2240,7 @@ export default function DocumentsPage() {
           </div>
 
           <p className="text-xs text-gray-400 text-center -mt-2">
-            One full A4 page per student — opens a print dialog; choose &quot;Save as PDF&quot; to download. Rank is computed against the student&apos;s whole class, not just the students selected here.
+            One full A4 page per student — opens a print dialog; choose &quot;Save as PDF&quot; to download.
           </p>
         </div>
       )}
