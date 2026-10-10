@@ -924,7 +924,22 @@ async function generateBonafidePDF(students, onProgress) {
 // Builds one buildMarksheetView() per target student (grouped by class so
 // each class's roster, needed for Rank, is only fetched once), then opens a
 // print window with every page concatenated, same as handlePrintTc.
+// Printed page order: class (in the school's actual grade order, not
+// alphabetical - CLASSES_LIST), then section, then roll number - instead
+// of whatever order the student list/selection happened to be in (e.g.
+// "Select all" just follows table order, which isn't grouped by class).
+function sortForMarksheetPrint(targetStudents) {
+  return [...targetStudents].sort((a, b) => {
+    const classDiff = CLASSES_LIST.indexOf(a.std) - CLASSES_LIST.indexOf(b.std);
+    if (classDiff) return classDiff;
+    const sectionDiff = (a.section || "").localeCompare(b.section || "");
+    if (sectionDiff) return sectionDiff;
+    return (Number(a.rollNo) || 0) - (Number(b.rollNo) || 0);
+  });
+}
+
 async function printMarksheets(targetStudents, allStudents, mode, examId, officialExams) {
+  targetStudents = sortForMarksheetPrint(targetStudents);
   const logoUrl = window.location.origin + "/school-logo.jpg";
 
   const classGroups = {};
