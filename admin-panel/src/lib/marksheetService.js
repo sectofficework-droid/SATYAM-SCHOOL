@@ -324,6 +324,8 @@ export async function getExamMarksForEditing(students, className, examId) {
   return students.map(s => ({
     studentId: s._studentId,
     name: s.name,
+    rollNo: s.rollNo,
+    section: s.section,
     adminRemark: remarksByStudent[s._studentId] || "",
     subjectRows: subjects.map(subject => {
       const found = markByStudentSubject[`${s._studentId}:${subject.name}`];

@@ -55,7 +55,13 @@ function MarksheetEditPageInner() {
     if (!className || !examId) { setRows([]); return; }
     setLoadingRows(true);
     setLoadError("");
-    const classmates = allStudents.filter(s => s.std === className);
+    const classmates = [...allStudents.filter(s => s.std === className)].sort((a, b) => {
+      const sectionDiff = (a.section || "").localeCompare(b.section || "");
+      if (sectionDiff) return sectionDiff;
+      const rollDiff = (Number(a.rollNo) || 0) - (Number(b.rollNo) || 0);
+      if (rollDiff) return rollDiff;
+      return (a.name || "").localeCompare(b.name || "");
+    });
     return getExamMarksForEditing(classmates, className, examId)
       .then(r => setRows(r))
       .catch(e => { setLoadError(e.message || "Failed to load marks."); setRows([]); })
@@ -186,7 +192,14 @@ function MarksheetEditPageInner() {
                   const isEditing = editingId === row.studentId;
                   return (
                     <tr key={row.studentId} className={`border-b border-gray-100 ${isEditing ? "bg-school-navy/5" : "hover:bg-gray-50"}`}>
-                      <td className={`px-3 py-2 font-medium text-gray-700 sticky left-0 z-[5] whitespace-nowrap align-top ${isEditing ? "bg-school-navy/5" : "bg-white"}`}>{row.name}</td>
+                      <td className={`px-3 py-2 font-medium text-gray-700 sticky left-0 z-[5] whitespace-nowrap align-top ${isEditing ? "bg-school-navy/5" : "bg-white"}`}>
+                        <div>{row.name}</div>
+                        {(row.rollNo || row.section) && (
+                          <div className="text-[10px] text-gray-400 font-normal">
+                            {row.section ? `Sec: ${row.section} ` : ""}{row.rollNo ? `Roll: ${row.rollNo}` : ""}
+                          </div>
+                        )}
+                      </td>
                       {row.subjectRows.map((sr, i) => (
                         <td key={sr.subject} className="px-2 py-2 text-center align-top">
                           {isEditing ? (

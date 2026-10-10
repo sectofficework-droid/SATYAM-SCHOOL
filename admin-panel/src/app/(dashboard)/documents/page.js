@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
+import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo, Fragment } from "react";
 import Link from "next/link";
 import { getStudents } from "@/lib/studentService";
 import { getS3ViewUrl } from "@/lib/s3Upload";
@@ -927,16 +927,25 @@ async function generateBonafidePDF(students, onProgress) {
 // Printed page order: class (in the school's actual grade order, not
 // alphabetical - CLASSES_LIST), then section, then roll number - instead
 // of whatever order the student list/selection happened to be in (e.g.
-// "Select all" just follows table order, which isn't grouped by class).
-function sortForMarksheetPrint(targetStudents) {
+function getClassOrderIndex(className) {
+  const norm = String(className || "").trim();
+  const idx = CLASSES_LIST.indexOf(norm);
+  return idx === -1 ? 999 : idx;
+}
+
+function sortStudentsByClass(targetStudents) {
   return [...targetStudents].sort((a, b) => {
-    const classDiff = CLASSES_LIST.indexOf(a.std) - CLASSES_LIST.indexOf(b.std);
+    const classDiff = getClassOrderIndex(a.std) - getClassOrderIndex(b.std);
     if (classDiff) return classDiff;
     const sectionDiff = (a.section || "").localeCompare(b.section || "");
     if (sectionDiff) return sectionDiff;
-    return (Number(a.rollNo) || 0) - (Number(b.rollNo) || 0);
+    const rollDiff = (Number(a.rollNo) || 0) - (Number(b.rollNo) || 0);
+    if (rollDiff) return rollDiff;
+    return (a.name || "").localeCompare(b.name || "");
   });
 }
+
+const sortForMarksheetPrint = sortStudentsByClass;
 
 async function printMarksheets(targetStudents, allStudents, mode, examId, officialExams) {
   targetStudents = sortForMarksheetPrint(targetStudents);
@@ -1297,6 +1306,7 @@ export default function DocumentsPage() {
   const [marksheetSheet, setMarksheetSheet]     = useState(null);
   const [marksheetLoading, setMarksheetLoading] = useState(false);
   const [marksheetMode, setMarksheetMode]       = useState("final"); // "final" | "single"
+  const [marksheetSort, setMarksheetSort]       = useState("class"); // "class" | "roll" | "name"
   const [selectedExamId, setSelectedExamId]     = useState("");
   const [officialExams, setOfficialExams]       = useState([]);
   const [tcMode, setTcMode]           = useState("students"); // "students" | "bulk"
@@ -1326,18 +1336,53 @@ export default function DocumentsPage() {
     getCurrentOfficialExams().then(setOfficialExams).catch(() => setOfficialExams([]));
   }, [activeTab]);
 
-  const filtered = students.filter(s => {
-    if (classFilter !== "All" && s.std !== classFilter) return false;
-    if (search) {
-      const q = search.toLowerCase();
-      return (s.name||"").toLowerCase().includes(q) ||
-             (s.enrollment||"").toLowerCase().includes(q) ||
-             (s.fatherName||"").toLowerCase().includes(q);
-    }
-    return true;
-  });
+  const filtered = useMemo(() => {
+    const list = students.filter(s => {
+      if (classFilter !== "All" && s.std !== classFilter) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        return (s.name||"").toLowerCase().includes(q) ||
+               (s.enrollment||"").toLowerCase().includes(q) ||
+               (s.fatherName||"").toLowerCase().includes(q);
+      }
+      return true;
+    });
 
-  const selectedStudents = students.filter(s => selected.has(s.enrollment));
+    if (activeTab === "marksheet") {
+      if (marksheetSort === "roll") {
+        return [...list].sort((a, b) => {
+          const rollDiff = (Number(a.rollNo) || 0) - (Number(b.rollNo) || 0);
+          if (rollDiff) return rollDiff;
+          return (a.name || "").localeCompare(b.name || "");
+        });
+      }
+      if (marksheetSort === "name") {
+        return [...list].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      }
+      return sortStudentsByClass(list);
+    }
+
+    return list;
+  }, [students, classFilter, search, activeTab, marksheetSort]);
+
+  const selectedStudents = useMemo(() => {
+    const list = students.filter(s => selected.has(s.enrollment));
+    if (activeTab === "marksheet") {
+      if (marksheetSort === "roll") {
+        return [...list].sort((a, b) => {
+          const rollDiff = (Number(a.rollNo) || 0) - (Number(b.rollNo) || 0);
+          if (rollDiff) return rollDiff;
+          return (a.name || "").localeCompare(b.name || "");
+        });
+      }
+      if (marksheetSort === "name") {
+        return [...list].sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+      }
+      return sortStudentsByClass(list);
+    }
+    return list;
+  }, [students, selected, activeTab, marksheetSort]);
+
   const allSelected = filtered.length > 0 && filtered.every(s => selected.has(s.enrollment));
   const previewStudent = selectedStudents[previewIdx] || filtered[0] || null;
 
@@ -2136,6 +2181,12 @@ export default function DocumentsPage() {
                   <option value="All">All Classes</option>
                   {CLASSES_LIST.map(c=><option key={c} value={c}>{c}</option>)}
                 </select>
+                <select value={marksheetSort} onChange={e=>{setMarksheetSort(e.target.value);setPreviewIdx(0);}}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-school-navy min-w-36">
+                  <option value="class">Sort: By Class</option>
+                  <option value="roll">Sort: By Roll No</option>
+                  <option value="name">Sort: By Name</option>
+                </select>
                 <span className="flex items-center gap-1.5 text-sm text-gray-500 whitespace-nowrap">
                   <Users className="w-4 h-4"/>{filtered.length}
                 </span>
@@ -2147,7 +2198,14 @@ export default function DocumentsPage() {
                     <input type="checkbox" checked={allSelected} onChange={toggleAll} className="w-4 h-4 accent-school-navy"/>
                     Select all {filtered.length}
                   </label>
-                  {selected.size > 0 && <span className="text-xs text-school-navy font-semibold bg-school-navy/10 px-2.5 py-1 rounded-full">{selected.size} selected</span>}
+                  <div className="flex items-center gap-2">
+                    {marksheetSort === "class" && (
+                      <span className="text-[11px] text-gray-500 bg-gray-200/70 px-2 py-0.5 rounded font-medium">
+                        Order: Class (JR.KG → 12th)
+                      </span>
+                    )}
+                    {selected.size > 0 && <span className="text-xs text-school-navy font-semibold bg-school-navy/10 px-2.5 py-1 rounded-full">{selected.size} selected</span>}
+                  </div>
                 </div>
               )}
 
@@ -2165,27 +2223,40 @@ export default function DocumentsPage() {
                 ) : (
                   <table className="w-full text-sm">
                     <tbody className="divide-y divide-gray-50">
-                      {filtered.map(s => {
+                      {filtered.map((s, idx) => {
                         const isSel = selected.has(s.enrollment);
+                        const prevStudent = idx > 0 ? filtered[idx - 1] : null;
+                        const showClassHeader = classFilter === "All" && marksheetSort === "class" && (!prevStudent || prevStudent.std !== s.std);
                         return (
-                          <tr key={s.enrollment} onClick={()=>{ toggleOne(s.enrollment); setPreviewIdx(0); }}
-                            className={`cursor-pointer transition-colors ${isSel?"bg-school-navy/5":"hover:bg-gray-50"}`}>
-                            <td className="px-4 py-2.5 w-10">
-                              <input type="checkbox" checked={isSel} onChange={()=>{}} className="w-4 h-4 accent-school-navy"/>
-                            </td>
-                            <td className="px-3 py-2.5">
-                              <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
-                                  {s.photo ? <S3Image s3Key={s.photo} alt={s.name} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center"><GraduationCap className="w-4 h-4 text-gray-400"/></div>}
+                          <Fragment key={s.enrollment}>
+                            {showClassHeader && (
+                              <tr className="bg-gray-100/90 sticky top-0 z-[2]">
+                                <td colSpan={3} className="px-4 py-1.5 text-xs font-bold text-school-navy uppercase tracking-wider">
+                                  Class: {s.std || "Unassigned"}
+                                </td>
+                              </tr>
+                            )}
+                            <tr onClick={()=>{ toggleOne(s.enrollment); setPreviewIdx(0); }}
+                              className={`cursor-pointer transition-colors ${isSel?"bg-school-navy/5":"hover:bg-gray-50"}`}>
+                              <td className="px-4 py-2.5 w-10">
+                                <input type="checkbox" checked={isSel} onChange={()=>{}} className="w-4 h-4 accent-school-navy"/>
+                              </td>
+                              <td className="px-3 py-2.5">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 bg-gray-100">
+                                    {s.photo ? <S3Image s3Key={s.photo} alt={s.name} className="w-full h-full object-cover"/> : <div className="w-full h-full flex items-center justify-center"><GraduationCap className="w-4 h-4 text-gray-400"/></div>}
+                                  </div>
+                                  <div>
+                                    <div className="font-medium text-gray-800 text-sm">{s.name}</div>
+                                    <div className="text-xs text-gray-400">
+                                      {s.std}{s.section?" - "+s.section:""}{s.rollNo ? ` · Roll: ${s.rollNo}` : ""}
+                                    </div>
+                                  </div>
                                 </div>
-                                <div>
-                                  <div className="font-medium text-gray-800 text-sm">{s.name}</div>
-                                  <div className="text-xs text-gray-400">{s.std}{s.section?" - "+s.section:""}</div>
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-3 py-2.5 text-gray-500 text-xs hidden md:table-cell">{s.fatherName||"—"}</td>
-                          </tr>
+                              </td>
+                              <td className="px-3 py-2.5 text-gray-500 text-xs hidden md:table-cell">{s.fatherName||"—"}</td>
+                            </tr>
+                          </Fragment>
                         );
                       })}
                     </tbody>
