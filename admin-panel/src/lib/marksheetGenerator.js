@@ -55,6 +55,20 @@ function firstName(fullName) {
   return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 }
 
+// Father's given name for the formal "Student Name" field below - just the
+// first word of fatherName, EXCEPT some families' records have a stray
+// single-letter initial prefixed before the real name (e.g. "P.SANJAYA
+// PATRA" or "P. BANABASH"), with or without a space after the dot. A bare
+// split on whitespace either glues that initial onto the real name
+// ("P.SANJAYA") or, worse, returns just the initial itself when there's a
+// space ("P.", silently dropping "Banabash" entirely) - so a leading
+// initial is stripped first, then the first word of what's left is used.
+function fatherFirstName(raw) {
+  const trimmed = String(raw || "").trim();
+  const withoutInitial = trimmed.replace(/^[A-Za-z]\.\s*/, "");
+  return (withoutInitial || trimmed).split(/\s+/)[0];
+}
+
 // 1-2 line remark auto-generated from the student's name + already-computed
 // grade/result - no free-text data source exists for a teacher-written
 // remark, so rather than leave the box blank this gives a short,
@@ -120,7 +134,7 @@ export function buildMarksheetView(student, sheet, mode, examNames, examName, lo
     // too, which duplicated it against the student's own `lastName`
     // (e.g. "Mayur Harihar Beheruk Beheruk"). Falls back to `s.name` if the
     // separate firstName/fatherName/lastName fields aren't populated.
-    studentName: [s.firstName, String(s.fatherName || "").trim().split(/\s+/)[0], s.lastName].filter(Boolean).join(" ") || s.name || "",
+    studentName: [s.firstName, fatherFirstName(s.fatherName), s.lastName].filter(Boolean).join(" ") || s.name || "",
     className: `${s.std || ""}${s.section ? " - " + s.section : ""}`,
     rollNo: s.rollNo || "—",
     session: s.session || "—",
