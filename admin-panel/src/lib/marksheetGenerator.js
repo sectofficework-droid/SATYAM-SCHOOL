@@ -250,12 +250,17 @@ export function generateMarksheetPageHTML(d) {
       <div class="ms-g"><b>D</b><span>33&ndash;40%</span></div>
       <div class="ms-g"><b>E</b><span>Below 33%</span></div>
     </section>
+    ${d.logoUrl ? `<img class="ms-watermark" src="${esc(d.logoUrl)}" alt="" aria-hidden="true"/>` : ""}
   </div>`;
 }
 
 export const MARKSHEET_STYLES = `
   .ms-sheet, .ms-sheet * { box-sizing: border-box; }
   .ms-sheet {
+    /* isolation: isolate makes this a stacking context on its own, so the
+       watermark's z-index stays trapped to this sheet instead of escaping
+       to compete with *other* sheets/pages at the document root. */
+    position: relative; isolation: isolate;
     width: 210mm; height: 297mm; max-height: 297mm; margin: 0 auto; background: #fff;
     padding: 9mm 10mm 8mm; display: flex; flex-direction: column; gap: 9px;
     border: 6px double #1B2A5E; overflow: hidden; page-break-inside: avoid; page-break-after: always;
@@ -267,6 +272,19 @@ export const MARKSHEET_STYLES = `
     text-transform: uppercase;
   }
   .ms-sheet:last-child { page-break-after: auto; }
+
+  /* Logo watermark, centered on the page and layered in front of every
+     other element (z-index above the normal content, last in DOM order
+     within the sheet's own isolated stacking context) - opacity is low
+     enough that the text it overlaps stays readable through it, the way
+     a watermark overlays a printed letterhead. A real <img>, not a CSS
+     background-image, so it still prints even when the browser's
+     "background graphics" print option is off. */
+  .ms-watermark {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 50%; height: auto; object-fit: contain;
+    opacity: 0.07; z-index: 5; pointer-events: none;
+  }
 
   /* logo-slot is mirrored (one real, one empty aria-hidden) on either side
      of ms-head-text at the same fixed width, so the text block is centered
