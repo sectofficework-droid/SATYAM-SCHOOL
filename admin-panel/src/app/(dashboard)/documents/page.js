@@ -947,7 +947,7 @@ function sortStudentsByClass(targetStudents) {
 
 const sortForMarksheetPrint = sortStudentsByClass;
 
-async function printMarksheets(targetStudents, allStudents, mode, examId, officialExams) {
+async function printMarksheets(targetStudents, allStudents, mode, examId, officialExams, dateOverride) {
   targetStudents = sortForMarksheetPrint(targetStudents);
   const logoUrl = window.location.origin + "/school-logo.jpg";
 
@@ -986,7 +986,7 @@ async function printMarksheets(targetStudents, allStudents, mode, examId, offici
   if (!printable.length) return;
 
   const views = printable.map(s =>
-    buildMarksheetView(s, sheetByStudentId[s._studentId], mode, examNames, examName, logoUrl)
+    buildMarksheetView(s, sheetByStudentId[s._studentId], mode, examNames, examName, logoUrl, dateOverride)
   );
 
   const html = generateMarksheetHTML(views);
@@ -1002,7 +1002,7 @@ async function printMarksheets(targetStudents, allStudents, mode, examId, offici
 // Renders the exact same HTML generateMarksheetPageHTML() produces for
 // print (scaled down with a CSS transform), so the preview can never drift
 // from the printed page - same technique as TcPreview above.
-function MarksheetPreview({ student, sheet, mode, examNames, examName, logoUrl, loading }) {
+function MarksheetPreview({ student, sheet, mode, examNames, examName, logoUrl, loading, dateOverride }) {
   const SCALE = 280 / (210 * (96 / 25.4)); // 280px-wide preview / 210mm at 96dpi
 
   if (loading) {
@@ -1013,7 +1013,7 @@ function MarksheetPreview({ student, sheet, mode, examNames, examName, logoUrl, 
     );
   }
 
-  const view = buildMarksheetView(student || {}, sheet, mode, examNames, examName, logoUrl);
+  const view = buildMarksheetView(student || {}, sheet, mode, examNames, examName, logoUrl, dateOverride);
 
   return (
     <div style={{ width: 280, aspectRatio: "210/297", overflow: "hidden", position: "relative", background: "white", boxShadow: "0 4px 20px rgba(0,0,0,0.35)", flexShrink: 0 }}>
@@ -1307,6 +1307,7 @@ export default function DocumentsPage() {
   const [marksheetLoading, setMarksheetLoading] = useState(false);
   const [marksheetMode, setMarksheetMode]       = useState("final"); // "final" | "single"
   const [marksheetSort, setMarksheetSort]       = useState("class"); // "class" | "roll" | "name"
+  const [marksheetDate, setMarksheetDate]       = useState(""); // "" = today (auto); else "YYYY-MM-DD" picked by the admin
   const [selectedExamId, setSelectedExamId]     = useState("");
   const [officialExams, setOfficialExams]       = useState([]);
   const [tcMode, setTcMode]           = useState("students"); // "students" | "bulk"
@@ -1473,14 +1474,14 @@ export default function DocumentsPage() {
     if (marksheetMode === "single" && !selectedExamId) { alert("Please select an exam first."); return; }
     setGenerating(true);
     try {
-      await printMarksheets(targets, students, marksheetMode, selectedExamId, officialExams);
+      await printMarksheets(targets, students, marksheetMode, selectedExamId, officialExams, marksheetDate);
     } catch(e) {
       alert("PDF generation failed: " + e.message);
     } finally {
       setGenerating(false);
       setProgress({ done:0, total:0 });
     }
-  }, [selectedStudents, students, marksheetMode, selectedExamId, officialExams]);
+  }, [selectedStudents, students, marksheetMode, selectedExamId, officialExams, marksheetDate]);
 
   const handleTcFileChange = useCallback(async (e) => {
     const file = e.target.files?.[0];
@@ -2144,11 +2145,24 @@ export default function DocumentsPage() {
               </select>
             )}
 
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <label className="text-xs text-gray-500 font-medium whitespace-nowrap">Date on marksheet:</label>
+              <input type="date" value={marksheetDate} onChange={e => setMarksheetDate(e.target.value)}
+                className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:border-school-navy"/>
+              {marksheetDate && (
+                <button onClick={() => setMarksheetDate("")} title="Use today's date"
+                  className="text-gray-400 hover:text-gray-600">
+                  <X className="w-3.5 h-3.5"/>
+                </button>
+              )}
+            </div>
+
             <p className="text-xs text-gray-400">
               {marksheetMode === "final"
                 ? "Shows every official exam side by side per subject, with a grand total. Manage exams in Settings → Exams."
                 : "Shows one exam's marks alone. Locked exams (before their end date) can’t be picked yet."}
               {" "}Subjects come from Settings → Subjects.
+              {" "}Defaults to today's date — pick a date above (e.g. a future result-declaration date) to override it.
             </p>
 
             <Link
@@ -2277,6 +2291,7 @@ export default function DocumentsPage() {
                     examNames={officialExams.map(e => e.name)}
                     examName={officialExams.find(e => e.id === selectedExamId)?.name}
                     logoUrl={logoUrl} loading={marksheetLoading}
+                    dateOverride={marksheetDate}
                   />
                   {selectedStudents.length > 1 && (
                     <div className="flex items-center gap-3 text-sm text-gray-500">

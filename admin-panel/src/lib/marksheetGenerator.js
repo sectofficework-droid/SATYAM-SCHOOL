@@ -46,6 +46,15 @@ function fmtTodayDmy() {
   return `${dd}-${mm}-${d.getFullYear()}`;
 }
 
+// Formats an ISO "YYYY-MM-DD" (what an <input type="date"> gives the admin
+// to pick a future issue date instead of today's) as "DD-MM-YYYY", matching
+// fmtTodayDmy()'s format. Returns "" for anything that isn't a plain ISO
+// date, so callers can fall back to fmtTodayDmy().
+function fmtIsoToDmy(iso) {
+  const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : "";
+}
+
 // First given name only ("MAYUR BEHERUK" -> "Mayur") - reads as a natural
 // personalized remark rather than the full formal name; falls back to a
 // generic noun if the student record has no name at all.
@@ -114,7 +123,7 @@ export function generateAutoRemark(studentName, grade, result) {
 // subjectRows[].marks[] - one entry per official exam; the "single" shape
 // has a flat obtained/max/grade per subject) plus the student record into
 // the flat view-model the HTML builder below renders.
-export function buildMarksheetView(student, sheet, mode, examNames, examName, logoUrl) {
+export function buildMarksheetView(student, sheet, mode, examNames, examName, logoUrl, dateOverride) {
   const s = student || {};
   const title = mode === "single"
     ? `${(examName || "").toUpperCase()} MARKSHEET`
@@ -172,7 +181,9 @@ export function buildMarksheetView(student, sheet, mode, examNames, examName, lo
     // takes priority over the auto-generated grade-tiered one.
     remark: hasData ? (sheet.adminRemark || generateAutoRemark(s.firstName || s.name, sheet.grade, sheet.result)) : "",
     hasData,
-    date: fmtTodayDmy(),
+    // Defaults to today, but an admin can pick a future date (e.g. a formal
+    // result-declaration date) instead - see dateOverride above.
+    date: fmtIsoToDmy(dateOverride) || fmtTodayDmy(),
   };
 }
 
