@@ -57,15 +57,18 @@ function firstName(fullName) {
 
 // Father's given name for the formal "Student Name" field below - just the
 // first word of fatherName, EXCEPT some families' records have a stray
-// single-letter initial prefixed before the real name (e.g. "P.SANJAYA
-// PATRA" or "P. BANABASH"), with or without a space after the dot. A bare
-// split on whitespace either glues that initial onto the real name
-// ("P.SANJAYA") or, worse, returns just the initial itself when there's a
-// space ("P.", silently dropping "Banabash" entirely) - so a leading
-// initial is stripped first, then the first word of what's left is used.
+// single-letter initial prefixed before the real name, either punctuated
+// ("P.SANJAYA PATRA", "P. BANABASH") or bare ("D MAHESWAR"). A bare split
+// on whitespace would glue a punctuated initial onto the real name
+// ("P.SANJAYA") or, worse, return just the initial itself when it's
+// followed by a space ("P." / "D", silently dropping "Banabash" /
+// "Maheswar" entirely) - so a leading initial is stripped first (either
+// "X." with an optional space after, or a bare "X" with a required space,
+// so a real short name like "Dev" is never mistaken for an initial), then
+// the first word of what's left is used.
 function fatherFirstName(raw) {
   const trimmed = String(raw || "").trim();
-  const withoutInitial = trimmed.replace(/^[A-Za-z]\.\s*/, "");
+  const withoutInitial = trimmed.replace(/^[A-Za-z](?:\.\s*|\s+)/, "");
   return (withoutInitial || trimmed).split(/\s+/)[0];
 }
 
