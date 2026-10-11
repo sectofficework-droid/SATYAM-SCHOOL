@@ -3011,6 +3011,12 @@ function FullDetailsReplaceImportPanel({ onImportDone }) {
     setImporting(true);
     setImportLog([]);
     const log = [];
+
+    // Phase 1 — resolve each row's existing enrollment and build its update
+    // payload, without writing anything yet. A row whose Enrollment No
+    // doesn't match an existing student is logged as failed here and
+    // excluded from the phases below.
+    const resolved = [];
     for (const s of valid) {
       const label = `#${s.enrollmentNo} - ${s.firstName} ${s.lastName}`;
       try {
@@ -3068,11 +3074,57 @@ function FullDetailsReplaceImportPanel({ onImportDone }) {
           lastExamGiven:     s.lastExamGiven || "No",
           prevPercentage:    s.prevPercentage || "",
         };
-        await dbUpdateStudent(existing._studentId, payload);
-        log.push({ name: label, ok: true });
+        resolved.push({ s, label, existing, payload });
       } catch(err) {
         const notFound = err?.code === "PGRST116" || /no rows|not found/i.test(err?.message || "");
         log.push({ name: label, ok: false, err: notFound ? "Enrollment No not found" : (err?.message || "Error") });
+      }
+    }
+    setImportLog([...log]);
+
+    // Phase 2 — park every resolved row's roll_no onto a scratch negative
+    // value first, touching only roll_no (class/section stay as they are
+    // right now). This is what makes roll-number swaps between two students
+    // in the same sheet possible: the unique constraint on (academic_year,
+    // class, section, roll_no) is NOT deferrable, so Postgres checks it the
+    // instant each row is saved - without first freeing every row's current
+    // number, giving student A roll 17 while student B still holds 17
+    // (because B's own row hasn't run yet) is rejected even though the whole
+    // batch is internally consistent once every row has been written.
+    const PARK_BASE = -1000000;
+    await Promise.all(resolved.map((item, i) =>
+      supabase.from("student_enrollments").update({ roll_no: PARK_BASE - i }).eq("id", item.existing._enrollmentId)
+    ));
+
+    // Phase 3 — write the real target values. Every resolved row's old
+    // roll_no slot is free by now, so a swap lands cleanly. A row can still
+    // fail here if its sheet target genuinely collides with a student
+    // outside this import batch, or with another row's target in the same
+    // sheet - that's a real data problem in the sheet, surfaced via the
+    // friendly message below. Either way the student is restored to their
+    // original roll_no rather than left parked on the scratch value.
+    for (const { s, label, existing, payload } of resolved) {
+      try {
+        await dbUpdateStudent(existing._studentId, payload);
+        log.push({ name: label, ok: true });
+      } catch(err) {
+        // Postgres 23505 on this specific constraint means the sheet's
+        // Roll No/Class/Section for this row is already taken by another
+        // student in the same class & section - translate the raw
+        // constraint-name error into something an admin can act on instead
+        // of a Postgres internal message.
+        const rollClash   = err?.code === "23505" && /student_enrollments_academic_year_id_class_id_section_id_ro/.test(err?.message || "");
+        const friendlyErr = rollClash
+          ? `Roll No ${s.rollNo || "(blank)"} is already used by another student in Class ${s.cls} - Section ${s.section || "A"}. Fix the Roll No/Section for this row in your sheet and re-upload.`
+          : (err?.message || "Error");
+        log.push({ name: label, ok: false, err: friendlyErr });
+
+        const originalRollNo = parseInt(existing.rollNo, 10);
+        if (!Number.isNaN(originalRollNo)) {
+          try {
+            await supabase.from("student_enrollments").update({ roll_no: originalRollNo }).eq("id", existing._enrollmentId);
+          } catch {}
+        }
       }
       setImportLog([...log]);
     }
