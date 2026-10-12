@@ -2901,6 +2901,72 @@ const REPLACE_FIELDS       = [{ key:"enrollmentNo", label:"Enrollment No", requi
 const REPLACE_EXAMPLE_ROW  = ["0001", ...EXAMPLE_ROW];
 const REPLACE_LONG_ID_KEYS = new Set([...LONG_ID_KEYS, "enrollmentNo"]);
 
+// Builds one Replace Full Details row from a dbStudents record (as mapped
+// by mapStudentForSuperAdmin), in REPLACE_FIELDS column order - this is
+// what lets the downloaded template arrive pre-filled with every student's
+// real current Enrollment No instead of making the admin look it up and
+// type it by hand (the manual-copy step that used to cause mismatched
+// Enrollment Nos between the sheet and the student it was meant to update).
+function studentToReplaceRow(s) {
+  const dmy = v => v ? fmtDMY(v) : "";
+  const vals = {
+    enrollmentNo:       s.enrollment || "",
+    grNo:               s.grNo || "",
+    cls:                s.std || "",
+    admissionClass:     s.admissionClass || "",
+    section:            s.section || "",
+    rollNo:             s.rollNo || "",
+    joinDate:           dmy(s.dateOfJoin),
+    feeTotal:           s.fees?.total || "",
+    discountAmount:     s.fees?.discount || "",
+    discountReason:     s.fees?.discountReason || "",
+    firstName:          s.firstName || "",
+    lastName:           s.lastName || "",
+    fatherName:         s.fatherName || "",
+    motherName:         s.motherName || "",
+    dob:                dmy(s.dob),
+    birthCertRegNo:     s.birthCertRegNo || "",
+    birthCertRegDate:   dmy(s.birthCertRegDate),
+    gender:             s.gender || "",
+    birthVillage:       s.birthVillage || "",
+    birthCity:          s.birthCity || "",
+    birthDistrict:      s.birthDistrict || "",
+    birthState:         s.birthState || "",
+    motherTongue:       s.motherTongue || "",
+    religion:           s.religion || "",
+    caste:              s.caste || "",
+    subCaste:           s.subCaste || "",
+    height:             s.height || "",
+    weight:             s.weight || "",
+    mobile1:            s.mobile || "",
+    mobile2:            s.mobile2 || "",
+    roomPlotNo:         s.roomPlotNo || "",
+    society:            s.society || "",
+    landmark:           s.landmark || "",
+    area:               s.area || "",
+    pinCode:            s.pinCode || "",
+    address:            s.address || "",
+    aadharNo:           s.aadhar || "",
+    aadharName:         s.aadharName || "",
+    fatherAadhar:       s.fatherAadhar || "",
+    fatherAadharName:   s.fatherAadharName || "",
+    motherAadhar:       s.motherAadhar || "",
+    motherAadharName:   s.motherAadharName || "",
+    udise:              s.udise || "",
+    pen:                s.pen || "",
+    apaar:              s.apaar || "",
+    lastSchoolName:     s.lastSchoolName || "",
+    lastSchoolClass:    s.lastSchoolClass || "",
+    lastSchoolGrNo:     s.lastSchoolGrNo || "",
+    lastSchoolMedium:   s.lastSchoolMedium || "",
+    lastSchoolPlace:    s.lastSchoolPlace || "",
+    prevAttendanceDays: s.prevAttendanceDays || "",
+    lastExamGiven:      s.lastExamGiven || "",
+    prevPercentage:     s.prevPercentage || "",
+  };
+  return REPLACE_FIELDS.map(f => vals[f.key] ?? "");
+}
+
 // Same shape as ImportStudentsPanel above, but looks each row up by
 // Enrollment No and overwrites (updateStudent) the matched student instead
 // of inserting a new one - this is the "replace basic import data with
@@ -2909,7 +2975,7 @@ const REPLACE_LONG_ID_KEYS = new Set([...LONG_ID_KEYS, "enrollmentNo"]);
 // - only roll no / join date (via enrollmentId) and all personal/contact/ID
 // fields are touched; Class/Section columns are still validated (must
 // resolve to a real class) for consistency with the shared template shape.
-function FullDetailsReplaceImportPanel({ onImportDone }) {
+function FullDetailsReplaceImportPanel({ students, onImportDone }) {
   const fileRef = useRef(null);
   const [step,      setStep]      = useState("idle");
   const [parsed,    setParsed]    = useState([]);
@@ -2920,9 +2986,10 @@ function FullDetailsReplaceImportPanel({ onImportDone }) {
   function downloadTemplate() {
     const headerRow = REPLACE_FIELDS.map(f => f.label);
     const reqRow     = REPLACE_FIELDS.map(f => f.required ? "Required *" : "Optional");
-    const ws = XLSX.utils.aoa_to_sheet([headerRow, reqRow, REPLACE_EXAMPLE_ROW]);
+    const dataRows   = students?.length ? students.map(studentToReplaceRow) : [REPLACE_EXAMPLE_ROW];
+    const ws = XLSX.utils.aoa_to_sheet([headerRow, reqRow, ...dataRows]);
 
-    const TOTAL_ROWS = 1000;
+    const TOTAL_ROWS = Math.max(1000, dataRows.length + 2);
     REPLACE_FIELDS.forEach((f, colIdx) => {
       if (!REPLACE_LONG_ID_KEYS.has(f.key) && !DATE_IMPORT_KEYS.has(f.key)) return;
       for (let r = 2; r < TOTAL_ROWS; r++) {
@@ -3161,7 +3228,7 @@ function FullDetailsReplaceImportPanel({ onImportDone }) {
               </div>
             </div>
             <ul className="text-xs text-blue-700 space-y-1 pl-1">
-              {[`Contains all student fields (${REPLACE_FIELDS.length} columns)`,"Row 2 shows which fields are required","Row 3 shows example data — replace with real data","Enrollment No must match an existing student"].map(t => (
+              {[`Contains all student fields (${REPLACE_FIELDS.length} columns)`,"Row 2 shows which fields are required","Row 3 onward is pre-filled with every current student's real Enrollment No — find the row(s) you want and edit them","Enrollment No must match an existing student"].map(t => (
                 <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0"/>{t}</li>
               ))}
             </ul>
@@ -3381,7 +3448,7 @@ export default function SuperAdminPage() {
             {!dataLoading && activeTab==="bulk"    && <SpreadsheetEditor students={dbStudents} title="Bulk Edit Students" onSaved={() => loadData()}/>}
             {!dataLoading && activeTab==="pending" && <PendingDetailsPanel students={dbStudents}/>}
             {activeTab==="import"  && <ImportStudentsPanel onImportDone={loadData}/>}
-            {activeTab==="fullimport"  && <FullDetailsReplaceImportPanel onImportDone={loadData}/>}
+            {activeTab==="fullimport"  && <FullDetailsReplaceImportPanel students={dbStudents} onImportDone={loadData}/>}
           </div>
         </>
       )}
@@ -3444,7 +3511,7 @@ export default function SuperAdminPage() {
                 {!dataLoading && studentsSubTab==="single"      && <SingleStudentTool students={dbStudents} onStudentUpdated={() => loadData()}/>}
                 {!dataLoading && studentsSubTab==="pending"     && <PendingDetailsPanel students={dbStudents}/>}
                 {studentsSubTab==="import"      && <ImportStudentsPanel onImportDone={loadData}/>}
-                {studentsSubTab==="fullimport"  && <FullDetailsReplaceImportPanel onImportDone={loadData}/>}
+                {studentsSubTab==="fullimport"  && <FullDetailsReplaceImportPanel students={dbStudents} onImportDone={loadData}/>}
               </>
             )}
             {mgmtTab==="fees"      && <FeesPanel fees={dbFees}/>}
