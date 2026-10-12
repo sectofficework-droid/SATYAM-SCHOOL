@@ -18,6 +18,7 @@ import {
   resetStudentPassword as svcResetPassword,
 } from "@/lib/studentService";
 import { createImpersonationCode } from "@/lib/impersonationService";
+import { getFeatureFlag } from "@/lib/featureFlagsService";
 import { getActiveClasses, getCurrentYearPromotionConfig } from "@/lib/settingsService";
 import { getFeeStructure } from "@/lib/feesService";
 import {
@@ -764,8 +765,16 @@ export default function StudentPage() {
   const canImpersonate = authUser && authUser.role !== "normal_admin"; // senior_admin & management only
   const [showAddModal, setShowAddModal]       = useState(false);
   const [showBasicImportModal, setShowBasicImportModal] = useState(false);
+  // Hidden by default (feature_flags.import_basic_details) - this bulk
+  // import was only needed for the initial data load; a senior_admin/
+  // management user can switch it back on from Settings > Feature Toggles.
+  const [basicImportEnabled, setBasicImportEnabled] = useState(false);
   const [basicDetailsModal, setBasicDetailsModal]     = useState(null);
   const [detailsFilter, setDetailsFilter]     = useState("All");
+
+  useEffect(() => {
+    getFeatureFlag("import_basic_details").then(setBasicImportEnabled).catch(() => {});
+  }, []);
 
   // Load academic years + active classes on mount
   useEffect(() => {
@@ -1079,13 +1088,15 @@ export default function StudentPage() {
             </p>
           </div>
           <div className="flex items-center gap-2 self-start sm:self-auto">
-            <button
-              type="button"
-              onClick={() => setShowBasicImportModal(true)}
-              className="inline-flex items-center gap-2 bg-white border border-gray-200 hover:border-school-navy text-gray-600 hover:text-school-navy px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm"
-            >
-              <Upload className="w-4 h-4" /> Import Basic Details
-            </button>
+            {basicImportEnabled && (
+              <button
+                type="button"
+                onClick={() => setShowBasicImportModal(true)}
+                className="inline-flex items-center gap-2 bg-white border border-gray-200 hover:border-school-navy text-gray-600 hover:text-school-navy px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm"
+              >
+                <Upload className="w-4 h-4" /> Import Basic Details
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowAddModal(true)}

@@ -22,6 +22,7 @@ import ExamsTab from "./ExamsTab";
 import AppUpdateTab from "./AppUpdateTab";
 import ImpersonationLogTab from "./ImpersonationLogTab";
 import KioskSettingsTab from "./KioskSettingsTab";
+import FeatureTogglesTab from "./FeatureTogglesTab";
 import DateInputDMY from "@/components/DateInputDMY";
 import {
   isNonEmpty, isValidEmail, isValidPhone, isValidPincode, isValidName,
@@ -2511,6 +2512,7 @@ const TABS = [
   { key:"appupdate",  label:"App Update",         icon:Smartphone   },
   { key:"impersonation", label:"Access Codes",    icon:KeyRound     },
   { key:"kiosk",      label:"Kiosk",              icon:Fingerprint  },
+  { key:"flags",      label:"Feature Toggles",    icon:SlidersHorizontal },
 ];
 
 export default function SettingsPage() {
@@ -2564,6 +2566,7 @@ export default function SettingsPage() {
       {tab === "appupdate"  && <AppUpdateTab/>}
       {tab === "impersonation" && <ImpersonationLogTab/>}
       {tab === "kiosk"      && <KioskSettingsTab/>}
+      {tab === "flags"      && <FeatureTogglesTab/>}
     </div>
   );
 }
