@@ -2983,10 +2983,40 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
   const [importing, setImporting] = useState(false);
   const [importLog, setImportLog] = useState([]);
 
-  function downloadTemplate() {
+  // "all" downloads every current student (handy once, right before a final
+  // sweep); "pick" scopes the downloaded sheet to a hand-picked few, which
+  // is the safer everyday choice - fewer rows in play means less risk of
+  // overwriting a student that wasn't meant to change in this batch.
+  const [templateMode, setTemplateMode] = useState("all");
+  const [pickSearch,   setPickSearch]   = useState("");
+  const [pickedNos,    setPickedNos]    = useState(new Set());
+
+  const pickFiltered = useMemo(() => {
+    const q = pickSearch.trim().toLowerCase();
+    const list = students || [];
+    if (!q) return list;
+    return list.filter(s =>
+      (s.name||"").toLowerCase().includes(q) ||
+      (s.enrollment||"").toLowerCase().includes(q) ||
+      (s.fatherName||"").toLowerCase().includes(q)
+    );
+  }, [students, pickSearch]);
+
+  function togglePicked(enrollNo) {
+    setPickedNos(prev => {
+      const next = new Set(prev);
+      if (next.has(enrollNo)) next.delete(enrollNo); else next.add(enrollNo);
+      return next;
+    });
+  }
+
+  function downloadTemplate(onlySelected) {
+    if (onlySelected && pickedNos.size === 0) { alert("Select at least one student first."); return; }
+
     const headerRow = REPLACE_FIELDS.map(f => f.label);
     const reqRow     = REPLACE_FIELDS.map(f => f.required ? "Required *" : "Optional");
-    const dataRows   = students?.length ? students.map(studentToReplaceRow) : [REPLACE_EXAMPLE_ROW];
+    const source     = onlySelected ? (students || []).filter(s => pickedNos.has(s.enrollment)) : (students || []);
+    const dataRows   = source.length ? source.map(studentToReplaceRow) : [REPLACE_EXAMPLE_ROW];
     const ws = XLSX.utils.aoa_to_sheet([headerRow, reqRow, ...dataRows]);
 
     const TOTAL_ROWS = Math.max(1000, dataRows.length + 2);
@@ -3003,7 +3033,7 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Students");
-    XLSX.writeFile(wb, "Student_Full_Details_Replace_Template.xlsx");
+    XLSX.writeFile(wb, onlySelected ? "Student_Full_Details_Replace_Selected.xlsx" : "Student_Full_Details_Replace_Template.xlsx");
   }
 
   function handleFile(e) {
@@ -3200,7 +3230,10 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
     if (onImportDone) onImportDone();
   }
 
-  function reset() { setParsed([]); setRowErrors([]); setStep("idle"); setImportLog([]); }
+  function reset() {
+    setParsed([]); setRowErrors([]); setStep("idle"); setImportLog([]);
+    setTemplateMode("all"); setPickSearch(""); setPickedNos(new Set());
+  }
 
   const valid   = parsed.filter(s => s._errors.length === 0);
   const invalid = parsed.filter(s => s._errors.length  >  0);
@@ -3224,18 +3257,61 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
               </div>
               <div>
                 <p className="text-sm font-bold text-blue-900">Step 1 — Download Template</p>
-                <p className="text-xs text-blue-600 mt-0.5">Get the Excel sheet with all student columns + Enrollment No</p>
+                <p className="text-xs text-blue-600 mt-0.5">Get the Excel sheet with Enrollment No pre-filled</p>
               </div>
             </div>
-            <ul className="text-xs text-blue-700 space-y-1 pl-1">
-              {[`Contains all student fields (${REPLACE_FIELDS.length} columns)`,"Row 2 shows which fields are required","Row 3 onward is pre-filled with every current student's real Enrollment No — find the row(s) you want and edit them","Enrollment No must match an existing student"].map(t => (
-                <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0"/>{t}</li>
-              ))}
-            </ul>
-            <button onClick={downloadTemplate}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
-              <Download className="w-4 h-4"/> Download Template (.xlsx)
-            </button>
+
+            <div className="flex gap-1.5 bg-white/60 border border-blue-200 rounded-lg p-1">
+              <button onClick={() => setTemplateMode("all")}
+                className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition-colors ${templateMode==="all" ? "bg-blue-600 text-white" : "text-blue-700 hover:bg-blue-100"}`}>
+                All Students
+              </button>
+              <button onClick={() => setTemplateMode("pick")}
+                className={`flex-1 text-xs font-semibold py-1.5 rounded-md transition-colors ${templateMode==="pick" ? "bg-blue-600 text-white" : "text-blue-700 hover:bg-blue-100"}`}>
+                Select Students
+              </button>
+            </div>
+
+            {templateMode === "all" && (
+              <>
+                <ul className="text-xs text-blue-700 space-y-1 pl-1">
+                  {[`Contains all student fields (${REPLACE_FIELDS.length} columns)`,"Row 2 shows which fields are required","Row 3 onward is pre-filled with every current student's real Enrollment No — find the row(s) you want and edit them","Enrollment No must match an existing student","Riskier day-to-day since every student is in the sheet — save this for a final sweep once everything's confirmed"].map(t => (
+                    <li key={t} className="flex items-start gap-1.5"><Check className="w-3 h-3 mt-0.5 flex-shrink-0"/>{t}</li>
+                  ))}
+                </ul>
+                <button onClick={() => downloadTemplate(false)}
+                  className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
+                  <Download className="w-4 h-4"/> Download Template — All ({(students||[]).length})
+                </button>
+              </>
+            )}
+
+            {templateMode === "pick" && (
+              <div className="space-y-2">
+                <p className="text-xs text-blue-700">Safer for everyday use — only the students you pick below go into the sheet.</p>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-blue-400"/>
+                  <input type="text" placeholder="Search by name, enrollment, father…" value={pickSearch}
+                    onChange={e=>setPickSearch(e.target.value)}
+                    className="w-full pl-8 pr-2 py-1.5 border border-blue-200 rounded-lg text-xs focus:outline-none focus:border-blue-500 bg-white"/>
+                </div>
+                <div className="max-h-52 overflow-y-auto border border-blue-200 rounded-lg bg-white divide-y divide-blue-50">
+                  {pickFiltered.length === 0 && <p className="text-xs text-gray-400 p-3 text-center">No students match</p>}
+                  {pickFiltered.map(s => (
+                    <label key={s.enrollment} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-blue-50 cursor-pointer">
+                      <input type="checkbox" checked={pickedNos.has(s.enrollment)} onChange={()=>togglePicked(s.enrollment)} className="w-3.5 h-3.5 accent-blue-600 flex-shrink-0"/>
+                      <span className="font-mono text-blue-500 flex-shrink-0">#{s.enrollment}</span>
+                      <span className="text-gray-700 font-medium truncate">{s.name}</span>
+                      <span className="text-gray-400 flex-shrink-0">{s.std}{s.section?" - "+s.section:""}</span>
+                    </label>
+                  ))}
+                </div>
+                <button onClick={() => downloadTemplate(true)} disabled={pickedNos.size === 0}
+                  className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
+                  <Download className="w-4 h-4"/> Download Selected ({pickedNos.size})
+                </button>
+              </div>
+            )}
           </div>
           <div className="bg-green-50 border border-green-200 rounded-2xl p-5 space-y-3">
             <div className="flex items-center gap-3">
