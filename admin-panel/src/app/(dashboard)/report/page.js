@@ -15,7 +15,7 @@ import {
   getPaymentsForReport, getAcademicYearLabels, getTcIssuedForReport,
   getStaffAttendanceForReport, rollupStaffAttendance,
 } from "@/lib/reportService";
-import { saveEmployeeAttendanceForDate } from "@/lib/staffLeaveService";
+import { saveEmployeeAttendanceForDate, setManualCheckIn } from "@/lib/staffLeaveService";
 import { MM, computeColumnLayout, triggerPdfDownload, renderTablePdf } from "@/lib/pdfTableExport";
 import { toIsoDateLocal } from "@/lib/utils";
 import authedFetch from "@/lib/authedFetch";
@@ -939,6 +939,14 @@ function EligBadge({ eligible, done }) {
 // to unmarked" path here - that stays a confirm-dialog delete in the Daily/
 // Per-Employee views, so a fast run of keystrokes here can never delete a
 // record outright, only ever set it to P, A or L.
+//
+// Double-clicking a cell additionally opens a small modal to set an exact
+// check-in time (REQ-FEAT-011) via the admin_set_manual_checkin RPC - the
+// one path that writes a real time, not just P/A/L. Late/On-Time for that
+// time is judged by the DB against that date's *effective* kiosk settings,
+// which already accounts for a Special Day override if one is set for that
+// date - this view doesn't need its own special-day awareness, it just
+// passes the time through.
 const STAFF_GRID_STATUS_CYCLE = ["P", "A", "L"];
 const STAFF_GRID_STATUS_STYLE = {
   P: { label: "Present", bg: "bg-green-100", text: "text-green-700", border: "border-green-300" },
@@ -946,6 +954,25 @@ const STAFF_GRID_STATUS_STYLE = {
   L: { label: "Leave",   bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-300" },
 };
 const STAFF_GRID_LABEL_TO_CODE = { Present: "P", Absent: "A", Leave: "L" };
+
+// Formats a timestamptz for display/tooltip purposes in the school's own
+// timezone, regardless of the admin's browser timezone.
+function fmtTimeIst(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true }).format(d);
+}
+// "HH:MM" (24h, for an <input type="time">) in Asia/Kolkata, from a
+// timestamptz - always the school's own clock, not the browser's.
+function toTimeInputValue(iso) {
+  if (!iso) return "09:00";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "09:00";
+  const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  const h = parts.find(p => p.type === "hour")?.value || "09";
+  const m = parts.find(p => p.type === "minute")?.value || "00";
+  return `${h}:${m}`;
+}
 
 function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, departments }) {
   const todayStr = toIsoDateLocal(new Date());
@@ -957,11 +984,18 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
   // Local optimistic layer on top of dbStaffAttendance - lets a click/keypress
   // show instantly instead of waiting on the debounced refresh below. Cleared
   // once that refresh lands, since dbStaffAttendance is the truth from then on.
-  const [overrides, setOverrides] = useState({}); // `${employeeId}|${date}` -> "P"|"A"|"L"
+  // Each entry is a partial patch - {code} for a plain P/A/L edit, or
+  // {code, checkIn, isLate, lateMinutes} for a manual check-in time edit -
+  // merged onto whatever cellValue() derives from dbStaffAttendance.
+  const [overrides, setOverrides] = useState({}); // `${employeeId}|${date}` -> {code?, checkIn?, isLate?, lateMinutes?}
   const [savingKeys, setSavingKeys] = useState(new Set());
   const [errorKeys, setErrorKeys] = useState(new Set());
   const [focusCell, setFocusCell] = useState({ row: 0, col: 0 });
   const [selAnchor, setSelAnchor] = useState({ row: 0, col: 0 });
+  const [timeEditCell, setTimeEditCell] = useState(null); // {row, col} | null
+  const [timeEditValue, setTimeEditValue] = useState("09:00");
+  const [timeEditSaving, setTimeEditSaving] = useState(false);
+  const [timeEditError, setTimeEditError] = useState("");
   const clipboardRef = useRef(null);
   const refreshTimerRef = useRef(null);
   const cellRefs = useRef({});
@@ -991,7 +1025,12 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
       if (!map.has(r.employeeId)) {
         map.set(r.employeeId, { employeeId: r.employeeId, empCode: r.empCode, name: r.name, designation: r.designation, byDate: {} });
       }
-      map.get(r.employeeId).byDate[r.date] = STAFF_GRID_LABEL_TO_CODE[r.status] || null;
+      map.get(r.employeeId).byDate[r.date] = {
+        code: STAFF_GRID_LABEL_TO_CODE[r.status] || null,
+        checkIn: r.checkIn || null,
+        isLate: (r.punctuality || "").startsWith("Late"),
+        lateMinutes: r.lateMinutes || 0,
+      };
     }
     let list = [...map.values()];
     if (search.trim()) {
@@ -1002,9 +1041,11 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
     return list;
   }, [dbStaffAttendance, days, desigFilter, deptFilter, staffTypeFilter, search]);
 
+  const EMPTY_CELL = { code: null, checkIn: null, isLate: false, lateMinutes: 0 };
   function cellValue(emp, date) {
     const key = `${emp.employeeId}|${date}`;
-    return key in overrides ? overrides[key] : (emp.byDate[date] || null);
+    const base = emp.byDate[date] || EMPTY_CELL;
+    return key in overrides ? { ...base, ...overrides[key] } : base;
   }
 
   function scheduleRefresh() {
@@ -1020,7 +1061,7 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
     const keys = entries.map(e => `${e.employeeId}|${e.date}`);
     setOverrides(prev => {
       const next = { ...prev };
-      entries.forEach(e => { next[`${e.employeeId}|${e.date}`] = e.status; });
+      entries.forEach(e => { next[`${e.employeeId}|${e.date}`] = { code: e.status }; });
       return next;
     });
     setSavingKeys(prev => new Set([...prev, ...keys]));
@@ -1037,7 +1078,7 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
 
   function cycleCell(emp, date) {
     if (date > todayStr) return;
-    const cur = cellValue(emp, date);
+    const cur = cellValue(emp, date).code;
     const idx = cur ? STAFF_GRID_STATUS_CYCLE.indexOf(cur) : -1;
     const next = STAFF_GRID_STATUS_CYCLE[(idx + 1) % STAFF_GRID_STATUS_CYCLE.length];
     writeCells([{ employeeId: emp.employeeId, date, status: next }]);
@@ -1046,6 +1087,43 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
   function setCell(emp, date, status) {
     if (date > todayStr) return;
     writeCells([{ employeeId: emp.employeeId, date, status }]);
+  }
+
+  function openTimeEdit(row, col) {
+    const date = days[col];
+    if (date > todayStr) return;
+    const emp = employees[row];
+    if (!emp) return;
+    setTimeEditValue(toTimeInputValue(cellValue(emp, date).checkIn));
+    setTimeEditError("");
+    setTimeEditCell({ row, col });
+  }
+
+  async function saveTimeEdit() {
+    if (!timeEditCell) return;
+    const { row, col } = timeEditCell;
+    const emp = employees[row], date = days[col];
+    const m = /^(\d{1,2}):(\d{2})$/.exec(timeEditValue || "");
+    if (!m) { setTimeEditError("Enter a valid time"); return; }
+    const hh = Number(m[1]), mm = Number(m[2]);
+    if (hh > 23 || mm > 59) { setTimeEditError("Enter a valid time"); return; }
+    // Built with an explicit +05:30 offset so the server (which always
+    // reasons in Asia/Kolkata) sees the same wall-clock time the admin
+    // typed, regardless of the browser's own timezone.
+    const iso = `${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00+05:30`;
+    const key = `${emp.employeeId}|${date}`;
+    setTimeEditSaving(true);
+    setTimeEditError("");
+    try {
+      const { isLate, lateMinutes } = await setManualCheckIn(emp.employeeId, date, iso);
+      setOverrides(prev => ({ ...prev, [key]: { code: "P", checkIn: iso, isLate, lateMinutes } }));
+      setTimeEditCell(null);
+      scheduleRefresh();
+    } catch (err) {
+      setTimeEditError(err.message || "Failed to save");
+    } finally {
+      setTimeEditSaving(false);
+    }
   }
 
   function rangeOf(a, b) {
@@ -1097,7 +1175,7 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
     }
     if ((e.ctrlKey || e.metaKey) && k === "c") {
       e.preventDefault();
-      clipboardRef.current = cellValue(emp, date);
+      clipboardRef.current = cellValue(emp, date).code;
       return;
     }
     if ((e.ctrlKey || e.metaKey) && k === "v") {
@@ -1162,9 +1240,13 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
             <span className={`w-4 h-4 rounded ${s.bg} ${s.border} border inline-block`} />{s.label} ({code})
           </span>
         ))}
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-orange-500 border border-white inline-block" />Late (orange dot)
+        </span>
         <span className="text-gray-400">
           Click a cell to cycle P → A → L · type P/A/L directly · arrow keys/Tab/Enter to move ·
-          Ctrl+C then Ctrl+V to copy a status across a shift-click/shift-arrow range
+          Ctrl+C then Ctrl+V to copy a status across a shift-click/shift-arrow range ·
+          double-click a cell to set an exact check-in time
         </span>
       </div>
 
@@ -1196,25 +1278,37 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
                   const isFuture = date > todayStr;
                   const val = cellValue(emp, date);
                   const key = `${emp.employeeId}|${date}`;
-                  const style = val ? STAFF_GRID_STATUS_STYLE[val] : null;
+                  const style = val.code ? STAFF_GRID_STATUS_STYLE[val.code] : null;
                   const selected = isInSelection(row, col);
                   const saving = savingKeys.has(key);
                   const errored = errorKeys.has(key);
+                  const lateBadge = val.code === "P" && val.isLate;
+                  const titleBits = [
+                    `${emp.name} — ${date}`,
+                    style ? style.label : isFuture ? "future date" : null,
+                    val.checkIn ? `in ${fmtTimeIst(val.checkIn)}` : null,
+                    lateBadge ? `Late ${val.lateMinutes || 0} min` : null,
+                    !isFuture ? "double-click to set an exact check-in time" : null,
+                  ].filter(Boolean).join(" — ");
                   return (
                     <td key={date} className="p-0.5 text-center border-b border-gray-100">
                       <button
                         type="button"
                         ref={node => { if (node) cellRefs.current[`${row}|${col}`] = node; }}
                         onClick={e => handleCellClick(row, col, e)}
+                        onDoubleClick={() => openTimeEdit(row, col)}
                         onKeyDown={e => handleKeyDown(row, col, e)}
                         tabIndex={0}
-                        title={`${emp.name} — ${date}${style ? " — " + style.label : isFuture ? " — future date" : ""}`}
-                        className={`w-8 h-7 rounded-md text-[11px] font-bold border transition-colors focus:outline-none focus:ring-2 focus:ring-school-navy ${
+                        title={titleBits}
+                        className={`relative w-8 h-7 rounded-md text-[11px] font-bold border transition-colors focus:outline-none focus:ring-2 focus:ring-school-navy ${
                           isFuture ? "bg-gray-50 border-gray-100 text-gray-300" :
                           style    ? `${style.bg} ${style.text} ${style.border}` : "bg-white border-gray-200 text-gray-300 hover:border-school-navy/40"
                         } ${selected ? "ring-2 ring-school-navy" : ""} ${errored ? "ring-2 ring-red-500" : ""}`}
                       >
-                        {saving ? "…" : (val || "")}
+                        {saving ? "…" : (val.code || "")}
+                        {lateBadge && !saving && (
+                          <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-orange-500 border border-white" />
+                        )}
                       </button>
                     </td>
                   );
@@ -1227,6 +1321,37 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
           </tbody>
         </table>
       </div>
+
+      {timeEditCell && employees[timeEditCell.row] && (() => {
+        const emp = employees[timeEditCell.row];
+        const date = days[timeEditCell.col];
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setTimeEditCell(null)}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
+              <h3 className="font-semibold text-gray-800">Set Check-In Time</h3>
+              <p className="text-xs text-gray-500 -mt-1">{emp.name} — {fmtDate(date)}</p>
+              <input type="time" value={timeEditValue} onChange={e => setTimeEditValue(e.target.value)} autoFocus
+                className="border-2 border-school-navy rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"/>
+              <p className="text-[11px] text-gray-400">
+                Late/On-Time is judged against Settings → Kiosk's expected start time (or that
+                date's Special Day override, if one is set). Marks the day Present and sets this
+                as the check-in time — check-out is left alone, so Hours Worked for this day
+                stays 0 until a check-out is known too.
+              </p>
+              {timeEditError && <p className="text-xs text-red-600">{timeEditError}</p>}
+              <div className="flex justify-end gap-2 mt-1">
+                <button onClick={() => setTimeEditCell(null)} className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50">
+                  Cancel
+                </button>
+                <button onClick={saveTimeEdit} disabled={timeEditSaving}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-school-navy text-white hover:bg-school-navy/90 disabled:opacity-50">
+                  {timeEditSaving ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

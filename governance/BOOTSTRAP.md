@@ -380,6 +380,48 @@ login/click-through was attempted. User needs to exercise Reports → Staff
 Attendance (Kiosk) → "Grid (Editable)" themselves before relying on it.
 Full detail: `planning/TODO.md` REQ-FEAT-010.
 
+**Same session, immediate follow-up — REQ-FEAT-011 — Grid cells can now
+also set an exact check-in time, not just P/A/L.** User tried the Grid and
+asked for a way to mark an actual time ("late time") and referenced
+"special day" - traced and found the system already has a separate Special
+Day override concept (`kiosk_special_day_overrides`, one-off expected-start-
+time for a specific future date like an exam day). Asked 4 more bundled
+clarifying questions (where to enter it, what to capture, how lateness is
+judged, whether it should count toward Hours Worked) before coding; user
+picked the recommended option on all 4, then "code it."
+
+Added `admin_set_manual_checkin(employee_id, date, check_in_at)`
+(`mobile-app/SUPABASE_ADMIN_MANUAL_CHECKIN.sql`, SECURITY DEFINER, granted
+to `authenticated`) - **applied live via Supabase MCP**, after confirming
+`get_effective_kiosk_settings` and the `employee_attendance(employee_id,
+date)` unique constraint it relies on both actually exist. It judges
+Late/minutes through that same `get_effective_kiosk_settings(date)`
+function, so a Special Day override on that date is automatically honored
+- no special-day-aware code needed on the admin-panel side. Writes both
+`employee_attendance` (an admin correction always overwrites the check-in,
+unlike a kiosk re-punch) and the day's `employee_shifts` row (corrects the
+earliest existing one, or inserts a new open one) so Hours Worked can
+combine correctly if/when a check-out is also known - deliberately does
+NOT fabricate a check-out itself, and deliberately does not rely on
+`auto_close_open_shifts()` to backfill one later (REQ-FEAT-006 already
+flags that job as possibly never scheduled live, and its `now()`-stamped
+close would be wrong for a past date anyway).
+
+Grid UI: double-clicking a cell opens a small time-entry modal calling the
+new RPC; a late check-in now shows an orange dot + the time/late-minutes in
+the cell's tooltip. Cell data model changed from a bare P/A/L string to
+`{code, checkIn, isLate, lateMinutes}`, sourced from fields
+`getStaffAttendanceForReport()` already returned - no new fetch. Plain
+P/A/L cycling/typing/paste untouched.
+
+**Verified:** `npm run lint` clean; dev server recompiles `/report` with no
+errors; confirmed via Supabase MCP that the two DB objects the migration
+depends on exist, both before and after applying it. **Not verified:**
+live in-browser use - same no-credentials limit as REQ-FEAT-010, and this
+one also writes to `employee_shifts`, previously untouched by the admin
+panel, so it's worth the user's own first real click-through before
+trusting it. Full detail: `planning/TODO.md` REQ-FEAT-011.
+
 **Prior — Session 2026-10-09 — Marksheet generation rebuilt around a
 user-supplied reference template (REQ-FEAT-008), classified MINOR CHANGE
 (with an internal architecture change) per J12B.**

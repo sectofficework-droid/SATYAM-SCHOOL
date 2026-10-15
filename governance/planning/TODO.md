@@ -3278,6 +3278,70 @@ pattern), it is noted as already-known and not re-filed as new.
       log in or click through it. Flagged to the user to exercise the new
       Grid view themselves (Reports → Staff Attendance (Kiosk) → "Grid
       (Editable)") before relying on it.
+- [x] **REQ-FEAT-011 — Grid (Editable) can now set an exact check-in time
+      per employee/day, not just P/A/L. DONE 2026-10-15.** Immediate
+      follow-up: user tried the Grid from REQ-FEAT-010 and asked "this only
+      marks absent present no way to mark time speciall day late time how?"
+      — no way to record an actual arrival time (for Late/Punctuality), and
+      the system already has a separate "Special Day" concept
+      (`kiosk_special_day_overrides`, `SUPABASE_KIOSK_SPECIAL_DAY.sql`) the
+      user may have been referencing. Asked 4 bundled clarifying questions
+      before coding (AskUserQuestion): where to enter it (Grid cell,
+      Recommended), what to capture (check-in only), how lateness is judged
+      (auto-compute from Settings, Recommended), and whether it should count
+      toward Hours Worked/OT (yes, Recommended — flagged up front that this
+      needs a new write into `employee_shifts`, a table only the Kiosk app
+      had ever written to before). Presented the plan in chat; user said
+      "code it."
+
+      **New DB function** `admin_set_manual_checkin(p_employee_id, p_date,
+      p_check_in_at)` (`mobile-app/SUPABASE_ADMIN_MANUAL_CHECKIN.sql`,
+      SECURITY DEFINER, granted to `authenticated` only — applied live via
+      Supabase MCP `apply_migration`, confirmed `get_effective_kiosk_settings`
+      and the `employee_attendance(employee_id,date)` unique constraint it
+      depends on both exist first). Computes Late/minutes via the existing
+      `get_effective_kiosk_settings(p_date)` function (so a date with a
+      Special Day override is judged against *that* day's expected time,
+      not the default — ties the two features together automatically, no
+      special-day-aware code needed on the admin-panel side). Upserts
+      `employee_attendance` (status='P', check_in_at, punch_method='manual',
+      is_late, late_minutes — an admin correction always overwrites, unlike
+      a kiosk re-punch which only updates `status` on conflict) and
+      corrects the day's earliest `employee_shifts` row if one exists, else
+      inserts a new open one (check_out_at left NULL — this call only ever
+      sets a check-in, never fabricates a check-out).
+
+      **Client**: `staffLeaveService.js` gained `setManualCheckIn()`
+      (thin RPC wrapper). `report/page.js`'s `StaffAttendanceGridView`:
+      cell data is now `{code, checkIn, isLate, lateMinutes}` per
+      employee/day (was a bare P/A/L string) built from the existing
+      `dbStaffAttendance` rows' `checkIn`/`punctuality`/`lateMinutes`
+      fields — no new fetch. Double-clicking a cell opens a small modal
+      (`<input type="time">`) that calls the new RPC; a late check-in shows
+      an orange dot on the cell plus the time/late-minutes in its tooltip.
+      Plain P/A/L cycling/typing/paste is untouched — those still only ever
+      patch `{code}`, leaving whatever check-in time is on record alone.
+
+      **Honest limit, stated in the modal itself, not silently implied
+      away**: check-in only (no check-out param) — Hours Worked/OT still
+      needs both ends, so a day corrected this way shows 0 Hours Worked
+      until a check-out is also known (a real kiosk punch, or a future
+      "set check-out" feature). Deliberately did **not** lean on
+      `auto_close_open_shifts()` to retroactively supply one — REQ-FEAT-006
+      above already flags that job as possibly never actually scheduled
+      live, and even if it were, it stamps `check_out_at = now()` using
+      today's wall-clock regardless of the shift's own date, which would
+      produce a nonsensical multi-day duration for a past-dated manual
+      entry (the same failure mode `STAFF_SHIFT_BACKLOG_REVIEW.sql`
+      documents for stale real shifts).
+
+      **Verified**: `npm run lint` clean; dev server recompiles `/report`
+      with no errors; confirmed via Supabase MCP that both
+      `get_effective_kiosk_settings` and the `employee_attendance`
+      unique constraint the migration relies on exist before applying it.
+      **Not verified**: interactive in-browser use with real data — same
+      no-credentials constraint as REQ-FEAT-010; not attempted against the
+      live `employee_attendance`/`employee_shifts` tables.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to
