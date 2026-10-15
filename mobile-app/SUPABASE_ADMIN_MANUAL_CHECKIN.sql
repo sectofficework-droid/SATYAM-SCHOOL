@@ -1,4 +1,11 @@
 -- ─────────────────────────────────────────────────────────────────────────────
+-- SUPERSEDED by SUPABASE_ADMIN_ATTENDANCE_CELL.sql (REQ-FEAT-012) - that file
+-- DROPs admin_set_manual_checkin() and replaces it with
+-- admin_save_attendance_cell(), which also covers Informed/reason and
+-- subsumes everything this function did. Kept here only as historical
+-- record of what REQ-FEAT-011 originally shipped - do not re-apply this
+-- file, the function it creates no longer exists in production.
+--
 -- Admin-entered check-in time correction (REQ-FEAT-011).
 --
 -- The admin panel's Staff Attendance "Grid (Editable)" view could only cycle
@@ -16,10 +23,18 @@
 --
 -- Deliberately check-in only (no check-out param): Hours Worked/OT still
 -- needs a check-out before it can compute anything for that day - this does
--- not fabricate one. It writes the matching employee_shifts row (not just
--- employee_attendance) so that if a check-out is added later the normal way,
--- hours combine correctly instead of being stuck unrecoverable in the wrong
--- table.
+-- not fabricate one. If a day already has an employee_shifts row (a real
+-- kiosk punch, or an earlier manual entry), its check-in is corrected too,
+-- so an eventual check-out combines with it the normal way. It does NOT
+-- insert a brand-new employee_shifts row when none exists yet -
+-- idx_employee_shifts_one_open allows at most one row per employee with
+-- check_out_at IS NULL *globally* (not per date), so inserting a fresh open
+-- shift for a backdated correction would both risk colliding with a
+-- genuinely-still-open shift elsewhere, and be semantically wrong regardless
+-- (an open shift means "still clocked in right now"). A day with no shift
+-- row yet stays attendance-only: the Check-In/Punctuality columns still
+-- display correctly via employee_attendance's own fallback, but Hours
+-- Worked for it needs a real shift before it can be computed.
 --
 -- Run this in Supabase Dashboard -> SQL Editor (or via the Supabase MCP).
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -51,18 +66,34 @@ BEGIN
   -- Authoritative correction: unlike a kiosk re-punch (which only updates
   -- `status` on conflict, see record_face_punch), an explicit admin-entered
   -- time always overwrites whatever check-in was on record for that day.
+  -- punch_method is left NULL, not a synthetic 'manual' tag - both
+  -- employee_attendance_punch_method_check and employee_shifts_
+  -- punch_method_check only allow 'face'/'code'/'qr' (kiosk punch methods),
+  -- and this file's own header comment already documents NULL as the
+  -- existing signal for "admin-set, not a kiosk punch" - matches that
+  -- convention instead of inventing a new one.
   INSERT INTO employee_attendance (employee_id, date, status, check_in_at, punch_method, is_late, late_minutes)
-  VALUES (p_employee_id, p_date, 'P', p_check_in_at, 'manual', v_is_late, v_late_minutes)
+  VALUES (p_employee_id, p_date, 'P', p_check_in_at, NULL, v_is_late, v_late_minutes)
   ON CONFLICT (employee_id, date) DO UPDATE SET
     status       = 'P',
     check_in_at  = EXCLUDED.check_in_at,
-    punch_method = 'manual',
+    punch_method = NULL,
     is_late      = EXCLUDED.is_late,
     late_minutes = EXCLUDED.late_minutes;
 
-  -- Correct the day's earliest shift row if one already exists (a real kiosk
-  -- punch, or an earlier manual entry), else insert a new open one (no
-  -- check_out_at - this call only ever sets a check-in).
+  -- Correct the day's earliest shift row if one already exists (a real
+  -- kiosk punch, or an earlier manual entry) - UPDATE only, deliberately
+  -- never INSERT a new one here. idx_employee_shifts_one_open enforces at
+  -- most one row per employee with check_out_at IS NULL *globally*, not per
+  -- date - inserting a fresh open shift for a backdated correction would
+  -- both risk colliding with a genuinely-still-open shift elsewhere, and be
+  -- semantically wrong regardless (an open shift means "still clocked in
+  -- right now", which isn't true for a past date being corrected). A day
+  -- with no shift row yet stays attendance-only: check_in_at/Punctuality
+  -- still display correctly via employee_attendance's own fallback in
+  -- getStaffAttendanceForReport(), but Hours Worked for it still needs a
+  -- real shift (kiosk punch) before it can be computed - this function
+  -- cannot and does not fabricate one.
   SELECT id INTO v_shift_id FROM employee_shifts
     WHERE employee_id = p_employee_id AND date = p_date
     ORDER BY check_in_at ASC LIMIT 1;
@@ -70,13 +101,10 @@ BEGIN
   IF v_shift_id IS NOT NULL THEN
     UPDATE employee_shifts SET
       check_in_at  = p_check_in_at,
-      punch_method = 'manual',
+      punch_method = NULL,
       is_late      = v_is_late,
       late_minutes = v_late_minutes
     WHERE id = v_shift_id;
-  ELSE
-    INSERT INTO employee_shifts (employee_id, date, check_in_at, punch_method, is_late, late_minutes)
-    VALUES (p_employee_id, p_date, p_check_in_at, 'manual', v_is_late, v_late_minutes);
   END IF;
 
   RETURN QUERY SELECT v_is_late, v_late_minutes;

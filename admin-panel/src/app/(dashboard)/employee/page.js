@@ -18,6 +18,7 @@ import { compressFile, formatFileSize } from "@/lib/fileCompression";
 import { toIsoDateLocal } from "@/lib/utils";
 import S3Image from "@/components/S3Image";
 import DateInputDMY from "@/components/DateInputDMY";
+import useConfirm from "@/components/ConfirmDialog";
 import {
   Users, Plus, Search, X, Phone, Mail, MapPin,
   Calendar, GraduationCap, Briefcase, Pencil,
@@ -1960,6 +1961,7 @@ function MarkStaffAttendanceTab({ employees }) {
   const [saved, setSaved] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [selectedEmpIds, setSelectedEmpIds] = useState(new Set());
+  const { confirm, ConfirmDialog } = useConfirm();
   const loadReqId = useRef(0);
 
   const activeEmployees = employees.filter(e => e.status !== "Inactive");
@@ -2005,7 +2007,7 @@ function MarkStaffAttendanceTab({ employees }) {
   }
 
   async function handleDelete(employeeId, employeeName) {
-    if (!window.confirm(`Delete attendance and all shift records for ${employeeName} on ${date}?\nThis will permanently remove data from both the shift table (employee_shifts) and attendance table (employee_attendance).`)) {
+    if (!(await confirm(`Delete attendance and all shift records for ${employeeName} on ${date}?\nThis will permanently remove data from both the shift table (employee_shifts) and attendance table (employee_attendance).`))) {
       return;
     }
     setDeletingId(employeeId);
@@ -2051,7 +2053,7 @@ function MarkStaffAttendanceTab({ employees }) {
   async function handleBulkDelete() {
     const count = selectedEmpIds.size;
     if (!count) return;
-    if (!window.confirm(`Delete attendance and all shift records for the ${count} selected employee(s) on ${date}?\nThis will permanently remove data from both the shift table (employee_shifts) and attendance table (employee_attendance).`)) {
+    if (!(await confirm(`Delete attendance and all shift records for the ${count} selected employee(s) on ${date}?\nThis will permanently remove data from both the shift table (employee_shifts) and attendance table (employee_attendance).`))) {
       return;
     }
     setDeletingId("bulk");
@@ -2198,6 +2200,7 @@ function MarkStaffAttendanceTab({ employees }) {
           })}
         </div>
       )}
+      {ConfirmDialog}
     </div>
   );
 }

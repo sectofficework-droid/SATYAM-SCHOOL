@@ -119,18 +119,24 @@ export async function saveEmployeeAttendanceForDate(records) {
   if (error) throw error;
 }
 
-// Admin-entered correction: sets a specific check-in time for one employee/
-// day via the admin_set_manual_checkin RPC (SUPABASE_ADMIN_MANUAL_CHECKIN.sql)
-// - marks the day Present, computes Late/minutes against that date's
-// effective kiosk settings (so a Special Day override is honored), and
-// writes both employee_attendance and the matching employee_shifts row so
-// Hours Worked can later combine with a check-out the normal way. Check-in
-// only - never touches check_out_at.
-export async function setManualCheckIn(employeeId, date, checkInIso) {
-  const { data, error } = await supabase.rpc("admin_set_manual_checkin", {
+// Admin attendance Grid's one write path: saves a whole cell (status +
+// check-in time if Present + informed/reason if Absent/Leave) in a single
+// call via admin_save_attendance_cell (SUPABASE_ADMIN_ATTENDANCE_CELL.sql).
+// Computes Late/minutes against that date's effective kiosk settings (so a
+// Special Day override is honored) when a check-in time is given. Always an
+// authoritative admin correction - overwrites whatever was on record,
+// including clearing check-in/lateness when status isn't Present and
+// clearing informed/reason when it is. checkInIso/isInformed/reason are all
+// optional; pass null/undefined for whichever doesn't apply to the status
+// being saved.
+export async function saveAttendanceCell(employeeId, date, status, { checkInIso, isInformed, reason } = {}) {
+  const { data, error } = await supabase.rpc("admin_save_attendance_cell", {
     p_employee_id: employeeId,
     p_date: date,
-    p_check_in_at: checkInIso,
+    p_status: status,
+    p_check_in_at: checkInIso || null,
+    p_is_informed: isInformed ?? null,
+    p_reason: reason || null,
   });
   if (error) throw error;
   const row = Array.isArray(data) ? data[0] : data;

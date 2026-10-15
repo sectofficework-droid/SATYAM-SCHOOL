@@ -450,7 +450,7 @@ export async function getStaffAttendanceForReport() {
   const [attRes, shiftRes, empRes] = await Promise.all([
     supabase
       .from("employee_attendance")
-      .select("employee_id, date, status, check_in_at, check_out_at, punch_method, is_late, late_minutes")
+      .select("employee_id, date, status, check_in_at, check_out_at, punch_method, is_late, late_minutes, is_informed, reason")
       .order("date", { ascending: false }),
     supabase
       .from("employee_shifts")
@@ -529,6 +529,11 @@ export async function getStaffAttendanceForReport() {
       punchMethod: row.punch_method || shifts[0]?.punch_method || "",
       punctuality: row.is_late === true ? `Late by ${row.late_minutes} min` : row.is_late === false ? "On Time" : "",
       lateMinutes,
+      // Only meaningful for an Absent/Leave day - an admin-entered note on
+      // whether the employee informed the school beforehand, and why.
+      // Tri-state: true/false/null (not specified), matching the DB column.
+      isInformed: row.is_informed,
+      reason:     row.reason || "",
     };
   });
 }

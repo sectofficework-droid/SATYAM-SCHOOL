@@ -414,13 +414,96 @@ the cell's tooltip. Cell data model changed from a bare P/A/L string to
 `getStaffAttendanceForReport()` already returned - no new fetch. Plain
 P/A/L cycling/typing/paste untouched.
 
+**Then actually live-tested against production** (user logged into their
+own browser themselves after being asked to, since this session still has
+no credentials; this session then drove that authenticated tab directly) -
+found and fixed 3 real constraint bugs the first deploy's lint/dev-server
+checks couldn't have caught:
+1. `punch_method = 'manual'` violated a CHECK constraint that only ever
+   allowed `'face'/'code'/'qr'` - switched to `NULL`, matching
+   `staffLeaveService.js`'s own pre-existing documented convention for
+   "admin-set, not kiosk."
+2. `employee_shifts.punch_method` was additionally `NOT NULL` - dropped
+   that constraint (`employee_shifts_punch_method_nullable` migration);
+   the existing CHECK already tolerates NULL on its own.
+3. `idx_employee_shifts_one_open` (one open shift per employee *globally*,
+   not per date) rejected inserting a new open shift for a backdated
+   correction - and doing so would have been semantically wrong anyway
+   (claims "still clocked in" on a day that's already over). Removed that
+   INSERT branch entirely: the function now only ever corrects an
+   *existing* `employee_shifts` row, never creates one.
+
+Re-verified live after each fix on a real employee: full P→A→L→P click
+round-trip, direct P/A/L typing, arrow/Tab/Enter nav (confirmed it doesn't
+mutate cells passed over), Ctrl+C/Ctrl+V range paste, and the check-in-time
+modal (09:45 entry correctly computed "Late by 135 min," and the Daily view
+picked up the same time/punctuality after the debounced refresh). All test
+writes deleted afterward via the existing delete action; confirmed the grid
+returned to its exact original values.
+
 **Verified:** `npm run lint` clean; dev server recompiles `/report` with no
-errors; confirmed via Supabase MCP that the two DB objects the migration
-depends on exist, both before and after applying it. **Not verified:**
-live in-browser use - same no-credentials limit as REQ-FEAT-010, and this
-one also writes to `employee_shifts`, previously untouched by the admin
-panel, so it's worth the user's own first real click-through before
-trusting it. Full detail: `planning/TODO.md` REQ-FEAT-011.
+errors; all interaction modes (click-cycle, type, arrow-nav, copy/paste,
+manual check-in time) confirmed working live against real production data,
+with 3 real bugs found and fixed via that testing - not just "lint passed."
+Full detail: `planning/TODO.md` REQ-FEAT-011.
+
+**Same session, user correction — REQ-FEAT-012 — Grid rebuilt around one
+rich per-cell editor (status + Informed/reason + check-in time + expected-
+time/Special-Day context), replacing REQ-FEAT-010/011's P/A/L-plus-time-
+modal design.** User: "it is not as expected ; i told you to create a
+spreadsheet like where we can manage all manually present leave absent
+whether informed or not or what time they come what is the correct timing
+for that is that any special day or not ... but you have given just present
+abset toggle!" - a direct correction. Acknowledged the miss, asked 4 more
+bundled clarifying questions (all answered with the recommended option: a
+new Informed yes/no + reason field, one rich editor per cell replacing
+click-cycle entirely, expected-time shown in the column header, Special
+Days stay managed in Settings → Kiosk - this view just displays them), then
+"code it."
+
+`employee_attendance` gained `is_informed BOOLEAN`/`reason TEXT`. New RPC
+`admin_save_attendance_cell(...)` **supersedes and DROPs
+admin_set_manual_checkin()** from REQ-FEAT-011 - one call now saves the
+whole cell (status, check-in time, informed/reason) instead of two partial
+write paths. New read-only `list_kiosk_special_days_in_range()` (the
+existing one only returns *upcoming* overrides). Both applied live via
+Supabase MCP. Click a cell → one modal with Present/Absent/Leave, a
+check-in time field, an Informed/Not-Informed/Not-Specified toggle + reason
+text, and a read-only expected-time/Special-Day banner. Column headers now
+show expected start time + a ⚡ Special Day marker. Ctrl+C/Ctrl+V now copies
+the whole cell, not just status.
+
+**Live-tested again (same real-employee pattern) - found and fixed 2 more
+real bugs**: (1) copy/paste carried the *source* cell's embedded date into
+the pasted ISO timestamp instead of the target date's - fixed by copying a
+bare time-of-day and reconstructing the ISO per target date, verified via
+direct SQL; (2) closing the editor (Cancel/backdrop/Save) never restored
+DOM focus to the grid cell, so arrow-keys/Ctrl+C/Ctrl+V silently did nothing
+right after - fixed with a shared `closeEditor()` that refocuses the cell.
+
+**Same session, immediate follow-up — REQ-FEAT-013 — Replaced
+`window.confirm()` with an in-page confirm modal, 5 call sites across 2
+files.** Cleaning up REQ-FEAT-012's test data kept hitting the Daily view's
+pre-existing native-`confirm()` delete button, which froze this session's
+browser automation solid three times (blocks the page outside the DOM
+entirely - screenshot/click calls timed out, needing the user to manually
+dismiss it each time). User: "instead of prompt dialoge can you embed like
+normal prompt dialoge box pop up centre of the screen which you can also
+mark" - fixing exactly the friction just hit. Grepped the whole admin panel
+(not a guess): exactly 5 sites, 2 files (`report/page.js`,
+`employee/page.js`'s `MarkStaffAttendanceTab`), all already `async`. Built
+`admin-panel/src/components/ConfirmDialog.js` - a `useConfirm()` hook
+(`confirm(msg)` returns a Promise<boolean>; `ConfirmDialog` is the modal
+JSX) - matching the Grid's own modal visual style, not a new one-off.
+Live-verified: the new modal rendered correctly from the exact button that
+had been freezing things, and deleting through it caught something real -
+a 2026-10-04 test row from the *first* native-dialog freeze earlier this
+session had silently never actually been deleted (looked successful at the
+time; it wasn't) - confirmed removed this time via direct SQL, not just the
+UI. `npm run lint` clean; zero `window.confirm` calls remain in
+`admin-panel/src` (one grep hit left: the comment in `ConfirmDialog.js`
+documenting what it replaces). Full detail: `planning/TODO.md`
+REQ-FEAT-012, REQ-FEAT-013.
 
 **Prior — Session 2026-10-09 — Marksheet generation rebuilt around a
 user-supplied reference template (REQ-FEAT-008), classified MINOR CHANGE

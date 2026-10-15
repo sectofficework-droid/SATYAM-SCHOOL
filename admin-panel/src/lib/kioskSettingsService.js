@@ -96,3 +96,17 @@ export async function deleteKioskSpecialDay(date) {
   const { error } = await supabase.rpc("delete_kiosk_special_day", { p_date: date });
   if (error) throw error;
 }
+
+// Unlike listKioskSpecialDays() above (upcoming only, built for the Settings
+// page's own "what's coming up" list), this returns overrides anywhere in
+// [from, to] inclusive, past included - what the Staff Attendance Grid needs
+// to show "was this day a Special Day" for a month already gone by.
+export async function getKioskSpecialDaysInRange(from, to) {
+  const { data, error } = await supabase.rpc("list_kiosk_special_days_in_range", { p_from: from, p_to: to });
+  if (error) throw error;
+  return (data || []).map(row => ({
+    date:              row.o_date,
+    expectedStartTime: row.o_expected_start_time?.slice(0, 5) || "",
+    reason:            row.o_reason || "",
+  }));
+}

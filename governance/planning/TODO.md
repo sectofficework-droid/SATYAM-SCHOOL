@@ -3304,12 +3304,11 @@ pattern), it is noted as already-known and not re-filed as new.
       Special Day override is judged against *that* day's expected time,
       not the default — ties the two features together automatically, no
       special-day-aware code needed on the admin-panel side). Upserts
-      `employee_attendance` (status='P', check_in_at, punch_method='manual',
-      is_late, late_minutes — an admin correction always overwrites, unlike
-      a kiosk re-punch which only updates `status` on conflict) and
-      corrects the day's earliest `employee_shifts` row if one exists, else
-      inserts a new open one (check_out_at left NULL — this call only ever
-      sets a check-in, never fabricates a check-out).
+      `employee_attendance` (status='P', check_in_at, is_late, late_minutes
+      — an admin correction always overwrites, unlike a kiosk re-punch
+      which only updates `status` on conflict) and corrects the day's
+      earliest `employee_shifts` row's check-in **only if one already
+      exists** — never inserts a new one (see live-testing finding below).
 
       **Client**: `staffLeaveService.js` gained `setManualCheckIn()`
       (thin RPC wrapper). `report/page.js`'s `StaffAttendanceGridView`:
@@ -3335,13 +3334,212 @@ pattern), it is noted as already-known and not re-filed as new.
       entry (the same failure mode `STAFF_SHIFT_BACKLOG_REVIEW.sql`
       documents for stale real shifts).
 
+      **Live-tested against production (user logged in, flagged no
+      credentials beforehand; this session drove the browser) — found and
+      fixed 3 real bugs the first deploy didn't surface via lint/dev-server
+      checks alone:**
+      1. `punch_method = 'manual'` violated
+         `employee_attendance_punch_method_check`
+         (`CHECK (punch_method = ANY ('face','code','qr'))` — no synthetic
+         value was ever allowed). Fixed by using `NULL` instead, matching
+         this project's own pre-existing convention (documented in
+         `staffLeaveService.js`'s own header comment) that NULL already
+         means "admin-set, not a kiosk punch."
+      2. `employee_shifts.punch_method` turned out to be `NOT NULL`
+         (`DEFAULT 'face'`) - the same NULL fix then failed there too.
+         Fixed with `ALTER TABLE employee_shifts ALTER COLUMN
+         punch_method DROP NOT NULL` (migration
+         `employee_shifts_punch_method_nullable`) - nothing else needed
+         to change, since a CHECK constraint already passes on NULL by
+         standard SQL semantics.
+      3. `idx_employee_shifts_one_open` (`UNIQUE (employee_id) WHERE
+         check_out_at IS NULL`) rejected the "insert a new open shift"
+         fallback branch, because it allows at most one open shift per
+         employee **globally**, not per date - the test employee already
+         had an unrelated stale open shift elsewhere. Beyond just being a
+         constraint violation, inserting a new open-ended shift for a
+         *backdated* correction is semantically wrong regardless (it
+         claims the employee is "still clocked in" from a day that's
+         already over). Fixed by deleting that INSERT branch entirely -
+         the function now only ever corrects an existing `employee_shifts`
+         row, never creates one. A day with no shift row yet stays
+         attendance-only (Check-In/Punctuality still display correctly via
+         `employee_attendance`'s own fallback; Hours Worked for it still
+         needs a real kiosk punch).
+
+      Re-verified end-to-end after each fix, live, on a real employee
+      (Barsha Pradhan): click-cycle P→A→L→P (full round trip back to
+      original value), direct P/A/L typing, arrow/Tab/Enter navigation
+      (confirmed it doesn't mutate cells it passes over), Ctrl+C/Ctrl+V
+      range paste, and the new check-in-time modal (09:45 entry correctly
+      computed "Late by 135 min", orange dot rendered, and the Daily view
+      picked up the same check-in time/punctuality after the debounced
+      refresh - cross-view consistency confirmed). All test writes
+      (3 records on 2/4/5 Oct for one employee) deleted afterward via the
+      existing Daily-view delete action, confirmed the grid returned to
+      its original real values.
+
       **Verified**: `npm run lint` clean; dev server recompiles `/report`
-      with no errors; confirmed via Supabase MCP that both
-      `get_effective_kiosk_settings` and the `employee_attendance`
-      unique constraint the migration relies on exist before applying it.
-      **Not verified**: interactive in-browser use with real data — same
-      no-credentials constraint as REQ-FEAT-010; not attempted against the
-      live `employee_attendance`/`employee_shifts` tables.
+      with no errors; all 4 interaction modes plus the new time-editor
+      confirmed working live against production, as above, with 3 real
+      bugs found and fixed in the process (not merely "lint passed, trust
+      it").
+- [x] **REQ-FEAT-012 — Grid rebuilt around one rich per-cell editor: status
+      + Informed/reason (new) + check-in time + expected-time/Special-Day
+      context, replacing the P/A/L-only cell from REQ-FEAT-010/011. DONE
+      2026-10-15.** User, after trying REQ-FEAT-011: "it is not as expected
+      ; i told you to create a spreadsheet like where we can manage all
+      manually present leave absent whether informed or not or what time
+      they come what is the correct timing for that is that any special day
+      or not if special day what time is sset for that everything else ;
+      but you have given just present abset toggle!" - a direct correction,
+      not a new feature request; REQ-FEAT-010/011's P/A/L-plus-bolted-on-
+      time-modal fell short of the original ask. Acknowledged the miss
+      before touching anything. Asked 4 more bundled clarifying questions
+      (AskUserQuestion) given genuinely new ground - "informed or not"
+      didn't exist anywhere in the schema: what it should capture (yes/no +
+      reason note, Recommended), how editing should work now that there's
+      more than P/A/L (one rich editor per cell, Recommended, replacing
+      click-cycle entirely), whether expected-time/Special-Day shows in the
+      column header or only inside the editor (header, Recommended), and
+      whether the Grid should also manage Special Days itself or just
+      display what Settings → Kiosk already manages (display only,
+      Recommended - avoids duplicating that existing UI). All 4 answered
+      with the recommended option; user said "code it."
+
+      **Schema**: `employee_attendance` gained `is_informed BOOLEAN`
+      (tri-state: true/false/NULL-unspecified) and `reason TEXT`, both
+      nullable, both only meaningful for Absent/Leave.
+
+      **New DB function** `admin_save_attendance_cell(employee_id, date,
+      status, check_in_at, is_informed, reason)` -
+      `mobile-app/SUPABASE_ADMIN_ATTENDANCE_CELL.sql`, SECURITY DEFINER,
+      `authenticated`-only - **supersedes and DROPs
+      admin_set_manual_checkin()** from REQ-FEAT-011 (one correct write
+      path instead of two partial ones: the old function only ever set a
+      check-in time, this one saves the whole cell - status, check-in time
+      when Present, informed+reason when Absent/Leave - in a single call,
+      clearing whichever half doesn't apply to the status being saved).
+      Reuses `get_effective_kiosk_settings(date)` exactly as REQ-FEAT-011
+      did, so Special Day overrides keep applying automatically with zero
+      special-day-aware code in the function body. New read-only
+      `list_kiosk_special_days_in_range(from, to)` -
+      `list_kiosk_special_days()` (`SUPABASE_KIOSK_SPECIAL_DAY.sql`) only
+      ever returns *upcoming* overrides (built for the Settings page's own
+      need); the Grid also needs to know about *past* Special Days for a
+      month already gone by, so this adds the range version without
+      touching the original. Both applied live via Supabase MCP
+      `apply_migration`, after confirming the columns/functions existed as
+      expected both before and after.
+
+      **Live-tested again (same real-employee pattern as REQ-FEAT-011,
+      this session driving the user's already-authenticated browser tab) -
+      found and fixed 2 more real bugs**, beyond the redesign itself:
+      1. **Copy/paste carried the wrong date.** `Ctrl+C` stored the copied
+         cell's full ISO check-in timestamp (embedding the *source* date);
+         `Ctrl+V` onto a different date passed that same stale ISO straight
+         through, so a pasted Present+time cell would silently write the
+         *source* day's date into the *target* day's `check_in_at`. Caught
+         by testing the real paste path end-to-end rather than trusting
+         the code read-through. Fixed: clipboard now stores a bare
+         time-of-day string (`toTimeInputValue()`); paste reconstructs a
+         fresh ISO timestamp per target date, exactly like the editor's
+         own Save path does. Verified via direct Supabase query after a
+         real paste: `2026-10-05` correctly got its own `08:15` check-in,
+         independent of the `2026-10-04` cell it was copied from.
+      2. **Focus wasn't restored after closing the editor.** Cancel (or
+         the backdrop click, or a successful Save) left DOM focus on
+         whatever button was clicked, not back on the grid cell - so
+         arrow-key navigation and Ctrl+C/Ctrl+V silently did nothing
+         immediately afterward (no cell was actually focused to receive
+         the key events). First surfaced as a real symptom: a paste that
+         appeared to do nothing and left zero trace in the database.
+         Fixed with a shared `closeEditor()` that captures the cell being
+         closed, clears editor state, and calls `focusCellAt()` on it -
+         used by Cancel, the backdrop click, and Save's success path alike.
+
+      **New UI**: clicking (or Enter/Space-activating - deliberately left
+      unhandled in the cell's own keydown so the native `<button>`
+      activation fires the same `onClick` logic for free) a cell opens one
+      modal: Present/Absent/Leave buttons, a check-in time field (Present),
+      an Informed/Not-Informed/Not-Specified toggle + free-text reason
+      field (Absent/Leave), and a read-only "Expected start HH:MM" banner
+      that becomes a purple "⚡ Special Day" banner with its own time/reason
+      when the open date has an override. Column headers now show each
+      day's expected start time beneath the date number, with the same ⚡
+      marker and a purple header background on Special Days. Cells show a
+      blue dot (Informed) or grey dot (Not Informed) alongside the existing
+      orange Late dot. Ctrl+C/Ctrl+V now copies/pastes the *whole* cell
+      (status + time + informed + reason) across a range, not just status -
+      the old click-cycle and type-P/A/L shortcuts were removed entirely
+      (they're exactly what produced an incomplete feature the first time).
+
+      **Verified**: `npm run lint` clean both times (initial build and
+      after the 2 bug fixes); live against production via the user's own
+      authenticated session for every field - Present+time→Late
+      computation (09:45 → "Late by 45 min" against a 07:30 expected
+      start, confirmed via direct SQL), Absent+Informed+reason (`is_informed:
+      true, reason: "called in sick"`, confirmed via direct SQL), status
+      switch correctly clearing the other half's fields (switching
+      Absent→Present nulled `is_informed`/`reason`; switching back would
+      null `check_in_at`/`is_late`/`late_minutes` the same way), Leave +
+      Not Informed, editor reopen correctly prefilling every field from
+      what was last saved, and the two bugs above caught, fixed, and
+      re-verified live rather than assumed fixed from the code alone. All
+      test writes on a real employee (Barsha Pradhan, 4 dates across two
+      redesign rounds) deleted afterward; confirmed via direct SQL (not
+      just the UI) that her full-month row exactly matches its original
+      pre-test values with zero leftover rows.
+- [x] **REQ-FEAT-013 — Replaced `window.confirm()` with an in-page confirm
+      modal across the admin panel (5 call sites, 2 files). DONE
+      2026-10-15.** Immediate follow-up, same session: cleaning up
+      REQ-FEAT-012's test data repeatedly hit the Daily view's delete
+      button, which still used a native `window.confirm()` (pre-existing
+      code, not part of either Grid redesign) - a native dialog blocks the
+      page outside React/the DOM entirely, so this session's browser
+      automation froze solid on it three separate times
+      (`Input.dispatchMouseEvent`/screenshot calls timing out), each time
+      needing the user to manually dismiss it before anything could
+      continue. User: "instead of prompt dialoge can you embed like normal
+      prompt dialoge box pop up centre of the screen which you can also
+      mark" - a direct, concrete fix for exactly the friction just hit
+      repeatedly, not a hypothetical ask.
+
+      Grepped the whole admin panel first rather than guessing scope:
+      exactly 5 `window.confirm()` call sites, confined to 2 files
+      (`report/page.js` - the bulk/single Staff Attendance delete actions
+      used throughout REQ-FEAT-010 through -012's own testing cleanup;
+      `employee/page.js`'s `MarkStaffAttendanceTab` - the same delete
+      actions' Employee-module twin). All 5 were already inside `async`
+      functions, so each just needed `if (!window.confirm(msg))` swapped
+      for `if (!(await confirm(msg)))`.
+
+      Built `admin-panel/src/components/ConfirmDialog.js` - a
+      `useConfirm()` hook returning `{ confirm, ConfirmDialog }`:
+      `confirm(message)` returns a Promise that resolves `true`/`false`
+      from the modal's Confirm/Cancel buttons (or a backdrop click, as
+      `false`); `ConfirmDialog` is the modal JSX to render once in the
+      component's own return. Same visual pattern as the Grid's own
+      time-entry/cell-editor modals elsewhere in this file (centered,
+      `bg-black/40` backdrop, `rounded-2xl` card) - not a new one-off
+      style. Wired into both files: `report/page.js`'s main (non-Grid,
+      non-Exams) return, and `employee/page.js`'s `MarkStaffAttendanceTab`
+      return.
+
+      **Verified**: `npm run lint` clean; confirmed zero remaining
+      `window.confirm` calls anywhere in `admin-panel/src` (one grep hit
+      left, the explanatory comment inside `ConfirmDialog.js` itself
+      documenting what it replaces). Live, in-browser, real production
+      data: triggered the new modal from the exact delete button that had
+      been freezing automation, confirmed it renders centered with the
+      same message text the native dialog used to show, clicked Delete,
+      and confirmed via direct SQL that the real stale test record this
+      session had failed to clean up on an earlier attempt (a 2026-10-04
+      row the very first native-dialog freeze had silently left behind,
+      never actually deleted despite looking like it succeeded at the
+      time) was this time verifiably removed - catching, in the same
+      motion, that the original native-dialog interaction had failed
+      silently once already earlier in this session.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

@@ -15,12 +15,14 @@ import {
   getPaymentsForReport, getAcademicYearLabels, getTcIssuedForReport,
   getStaffAttendanceForReport, rollupStaffAttendance,
 } from "@/lib/reportService";
-import { saveEmployeeAttendanceForDate, setManualCheckIn } from "@/lib/staffLeaveService";
+import { saveAttendanceCell } from "@/lib/staffLeaveService";
+import { getKioskSettings, getKioskSpecialDaysInRange } from "@/lib/kioskSettingsService";
 import { MM, computeColumnLayout, triggerPdfDownload, renderTablePdf } from "@/lib/pdfTableExport";
 import { toIsoDateLocal } from "@/lib/utils";
 import authedFetch from "@/lib/authedFetch";
 import useStore from "@/lib/store";
 import DateInputDMY from "@/components/DateInputDMY";
+import useConfirm from "@/components/ConfirmDialog";
 import ExamsReportSection from "./ExamsReportSection";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -927,33 +929,33 @@ function EligBadge({ eligible, done }) {
   return             <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700">Eligible</span>;
 }
 
-// ── Staff Attendance — editable month grid ─────────────────────────────────
+// ── Staff Attendance — editable month grid (REQ-FEAT-012) ──────────────────
 // A spreadsheet-style view: rows = employees, columns = every day of a chosen
-// month, each cell = that day's P/A/L status. Click cycles P→A→L→P, typing
-// P/A/L sets it directly, arrow keys/Tab/Enter move the focused cell, and
-// Ctrl+C/Ctrl+V copies one cell's status across a shift-click/shift-arrow
-// range - lets admin fix a whole week in one paste. Every edit auto-saves via
-// the same upsert the Employee module's single-day Mark Attendance tab already
-// uses (writes only `status`, never touches check_in_at/check_out_at, so
-// kiosk punch data for that day survives). Deliberately no "clear a cell back
-// to unmarked" path here - that stays a confirm-dialog delete in the Daily/
-// Per-Employee views, so a fast run of keystrokes here can never delete a
-// record outright, only ever set it to P, A or L.
-//
-// Double-clicking a cell additionally opens a small modal to set an exact
-// check-in time (REQ-FEAT-011) via the admin_set_manual_checkin RPC - the
-// one path that writes a real time, not just P/A/L. Late/On-Time for that
-// time is judged by the DB against that date's *effective* kiosk settings,
-// which already accounts for a Special Day override if one is set for that
-// date - this view doesn't need its own special-day awareness, it just
-// passes the time through.
-const STAFF_GRID_STATUS_CYCLE = ["P", "A", "L"];
-const STAFF_GRID_STATUS_STYLE = {
+// month. Each cell holds everything about that employee's day - status
+// (Present/Absent/Leave), check-in time (Present), and Informed+reason
+// (Absent/Leave) - edited through one rich editor opened by clicking (or
+// Enter/Space-activating, native <button> keyboard behavior) a cell, via the
+// single admin_save_attendance_cell RPC (SUPABASE_ADMIN_ATTENDANCE_CELL.sql).
+// Column headers show each day's expected start time and flag Special Days
+// (fetched once per visible month via getKioskSettings/
+// getKioskSpecialDaysInRange), so admin has that context without opening
+// anything. Arrow keys/Tab move the focused cell without editing; Ctrl+C/
+// Ctrl+V copies a cell's FULL state (status, time, informed, reason) across
+// a shift-click/shift-arrow range, for fixing several days at once without
+// re-opening the editor each time. No "clear a cell back to unmarked" path -
+// that stays a confirm-dialog delete in the Daily/Per-Employee views.
+const STAFF_STATUS_STYLE = {
   P: { label: "Present", bg: "bg-green-100", text: "text-green-700", border: "border-green-300" },
   A: { label: "Absent",  bg: "bg-red-100",   text: "text-red-700",   border: "border-red-300" },
   L: { label: "Leave",   bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-300" },
 };
-const STAFF_GRID_LABEL_TO_CODE = { Present: "P", Absent: "A", Leave: "L" };
+const STAFF_STATUS_LABEL_TO_CODE = { Present: "P", Absent: "A", Leave: "L" };
+const EMPTY_CELL = { code: null, checkIn: null, isLate: false, lateMinutes: 0, isInformed: null, reason: "" };
+const INFORMED_OPTIONS = [
+  { v: true,  l: "Informed" },
+  { v: false, l: "Not Informed" },
+  { v: null,  l: "Not Specified" },
+];
 
 // Formats a timestamptz for display/tooltip purposes in the school's own
 // timezone, regardless of the admin's browser timezone.
@@ -965,9 +967,9 @@ function fmtTimeIst(iso) {
 // "HH:MM" (24h, for an <input type="time">) in Asia/Kolkata, from a
 // timestamptz - always the school's own clock, not the browser's.
 function toTimeInputValue(iso) {
-  if (!iso) return "09:00";
+  if (!iso) return "";
   const d = new Date(iso);
-  if (isNaN(d.getTime())) return "09:00";
+  if (isNaN(d.getTime())) return "";
   const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
   const h = parts.find(p => p.type === "hour")?.value || "09";
   const m = parts.find(p => p.type === "minute")?.value || "00";
@@ -981,21 +983,22 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
   const [desigFilter, setDesigFilter] = useState("All");
   const [deptFilter, setDeptFilter] = useState("All");
   const [search, setSearch] = useState("");
-  // Local optimistic layer on top of dbStaffAttendance - lets a click/keypress
-  // show instantly instead of waiting on the debounced refresh below. Cleared
-  // once that refresh lands, since dbStaffAttendance is the truth from then on.
-  // Each entry is a partial patch - {code} for a plain P/A/L edit, or
-  // {code, checkIn, isLate, lateMinutes} for a manual check-in time edit -
-  // merged onto whatever cellValue() derives from dbStaffAttendance.
-  const [overrides, setOverrides] = useState({}); // `${employeeId}|${date}` -> {code?, checkIn?, isLate?, lateMinutes?}
+  // Local optimistic layer on top of dbStaffAttendance - lets an edit show
+  // instantly instead of waiting on the debounced refresh below. Cleared
+  // once that refresh lands, since dbStaffAttendance is the truth from then
+  // on. Each entry is a partial patch merged onto whatever cellValue()
+  // derives from dbStaffAttendance.
+  const [overrides, setOverrides] = useState({}); // `${employeeId}|${date}` -> partial cell
   const [savingKeys, setSavingKeys] = useState(new Set());
   const [errorKeys, setErrorKeys] = useState(new Set());
   const [focusCell, setFocusCell] = useState({ row: 0, col: 0 });
   const [selAnchor, setSelAnchor] = useState({ row: 0, col: 0 });
-  const [timeEditCell, setTimeEditCell] = useState(null); // {row, col} | null
-  const [timeEditValue, setTimeEditValue] = useState("09:00");
-  const [timeEditSaving, setTimeEditSaving] = useState(false);
-  const [timeEditError, setTimeEditError] = useState("");
+  const [editCell, setEditCell] = useState(null);   // {row, col} | null
+  const [editForm, setEditForm] = useState(null);   // working copy while the editor is open
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState("");
+  const [baseExpectedStart, setBaseExpectedStart] = useState("09:00");
+  const [specialDays, setSpecialDays] = useState({}); // date -> {expectedStartTime, reason}
   const clipboardRef = useRef(null);
   const refreshTimerRef = useRef(null);
   const cellRefs = useRef({});
@@ -1012,6 +1015,28 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
     return Array.from({ length: n }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`);
   }, [month]);
 
+  // Expected-time/Special-Day context - fetched once (base settings) and
+  // once per visible month (special days), independent of employee filters.
+  useEffect(() => {
+    getKioskSettings().then(s => setBaseExpectedStart(s.expectedStartTime)).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!days.length) return;
+    getKioskSpecialDaysInRange(days[0], days[days.length - 1])
+      .then(rows => {
+        const map = {};
+        rows.forEach(r => { map[r.date] = r; });
+        setSpecialDays(map);
+      })
+      .catch(() => setSpecialDays({}));
+  }, [days]);
+
+  function expectedTimeFor(date) {
+    const sd = specialDays[date];
+    if (sd && sd.expectedStartTime) return { time: sd.expectedStartTime, isSpecial: true, reason: sd.reason };
+    return { time: baseExpectedStart, isSpecial: false, reason: "" };
+  }
+
   const employees = useMemo(() => {
     const from = days[0], to = days[days.length - 1];
     let rows = dbStaffAttendance.filter(x => x.date >= from && x.date <= to);
@@ -1026,10 +1051,12 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
         map.set(r.employeeId, { employeeId: r.employeeId, empCode: r.empCode, name: r.name, designation: r.designation, byDate: {} });
       }
       map.get(r.employeeId).byDate[r.date] = {
-        code: STAFF_GRID_LABEL_TO_CODE[r.status] || null,
-        checkIn: r.checkIn || null,
-        isLate: (r.punctuality || "").startsWith("Late"),
+        code:        STAFF_STATUS_LABEL_TO_CODE[r.status] || null,
+        checkIn:     r.checkIn || null,
+        isLate:      (r.punctuality || "").startsWith("Late"),
         lateMinutes: r.lateMinutes || 0,
+        isInformed:  r.isInformed ?? null,
+        reason:      r.reason || "",
       };
     }
     let list = [...map.values()];
@@ -1041,7 +1068,6 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
     return list;
   }, [dbStaffAttendance, days, desigFilter, deptFilter, staffTypeFilter, search]);
 
-  const EMPTY_CELL = { code: null, checkIn: null, isLate: false, lateMinutes: 0 };
   function cellValue(emp, date) {
     const key = `${emp.employeeId}|${date}`;
     const base = emp.byDate[date] || EMPTY_CELL;
@@ -1057,17 +1083,24 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
     }, 800);
   }
 
+  // entries: [{ employeeId, date, cell: {code, checkIn, isInformed, reason} }]
+  // One admin_save_attendance_cell call per entry (fired together) - used by
+  // both the editor's Save and a Ctrl+V paste across a range.
   async function writeCells(entries) {
     const keys = entries.map(e => `${e.employeeId}|${e.date}`);
     setOverrides(prev => {
       const next = { ...prev };
-      entries.forEach(e => { next[`${e.employeeId}|${e.date}`] = { code: e.status }; });
+      entries.forEach(e => { next[`${e.employeeId}|${e.date}`] = e.cell; });
       return next;
     });
     setSavingKeys(prev => new Set([...prev, ...keys]));
     setErrorKeys(prev => { const n = new Set(prev); keys.forEach(k => n.delete(k)); return n; });
     try {
-      await saveEmployeeAttendanceForDate(entries.map(e => ({ employee_id: e.employeeId, date: e.date, status: e.status })));
+      await Promise.all(entries.map(e => saveAttendanceCell(e.employeeId, e.date, e.cell.code, {
+        checkInIso: e.cell.code === "P" ? e.cell.checkIn : null,
+        isInformed: e.cell.code !== "P" ? e.cell.isInformed : null,
+        reason:     e.cell.code !== "P" ? e.cell.reason : null,
+      })));
     } catch (err) {
       setErrorKeys(prev => new Set([...prev, ...keys]));
     } finally {
@@ -1076,53 +1109,62 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
     scheduleRefresh();
   }
 
-  function cycleCell(emp, date) {
-    if (date > todayStr) return;
-    const cur = cellValue(emp, date).code;
-    const idx = cur ? STAFF_GRID_STATUS_CYCLE.indexOf(cur) : -1;
-    const next = STAFF_GRID_STATUS_CYCLE[(idx + 1) % STAFF_GRID_STATUS_CYCLE.length];
-    writeCells([{ employeeId: emp.employeeId, date, status: next }]);
-  }
-
-  function setCell(emp, date, status) {
-    if (date > todayStr) return;
-    writeCells([{ employeeId: emp.employeeId, date, status }]);
-  }
-
-  function openTimeEdit(row, col) {
+  function openEditor(row, col) {
     const date = days[col];
     if (date > todayStr) return;
     const emp = employees[row];
     if (!emp) return;
-    setTimeEditValue(toTimeInputValue(cellValue(emp, date).checkIn));
-    setTimeEditError("");
-    setTimeEditCell({ row, col });
+    const cur = cellValue(emp, date);
+    setEditForm({
+      status:      cur.code || "P",
+      checkInTime: toTimeInputValue(cur.checkIn),
+      isInformed:  cur.isInformed,
+      reason:      cur.reason || "",
+    });
+    setEditError("");
+    setEditCell({ row, col });
   }
 
-  async function saveTimeEdit() {
-    if (!timeEditCell) return;
-    const { row, col } = timeEditCell;
-    const emp = employees[row], date = days[col];
-    const m = /^(\d{1,2}):(\d{2})$/.exec(timeEditValue || "");
-    if (!m) { setTimeEditError("Enter a valid time"); return; }
-    const hh = Number(m[1]), mm = Number(m[2]);
-    if (hh > 23 || mm > 59) { setTimeEditError("Enter a valid time"); return; }
-    // Built with an explicit +05:30 offset so the server (which always
-    // reasons in Asia/Kolkata) sees the same wall-clock time the admin
-    // typed, regardless of the browser's own timezone.
-    const iso = `${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00+05:30`;
+  // Closing the editor (Cancel, backdrop click, or a successful Save) must
+  // restore DOM focus to the cell button it opened from - otherwise focus
+  // is left on the Cancel/Save button (or nowhere, once the modal unmounts),
+  // and arrow-key navigation/Ctrl+C/Ctrl+V silently do nothing afterward
+  // since no cell is actually focused to receive those key events.
+  function closeEditor() {
+    const cell = editCell;
+    setEditCell(null);
+    setEditForm(null);
+    if (cell) focusCellAt(cell.row, cell.col);
+  }
+
+  async function saveEditor() {
+    if (!editCell || !editForm) return;
+    const emp = employees[editCell.row], date = days[editCell.col];
+    let checkInIso = null;
+    if (editForm.status === "P" && editForm.checkInTime) {
+      const m = /^(\d{1,2}):(\d{2})$/.exec(editForm.checkInTime);
+      if (!m) { setEditError("Enter a valid check-in time"); return; }
+      const hh = Number(m[1]), mm = Number(m[2]);
+      if (hh > 23 || mm > 59) { setEditError("Enter a valid check-in time"); return; }
+      // Explicit +05:30 offset so the server (which always reasons in
+      // Asia/Kolkata) sees the same wall-clock time the admin typed,
+      // regardless of the browser's own timezone.
+      checkInIso = `${date}T${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00+05:30`;
+    }
+    const isInformed = editForm.status !== "P" ? editForm.isInformed : null;
+    const reason     = editForm.status !== "P" ? editForm.reason : "";
     const key = `${emp.employeeId}|${date}`;
-    setTimeEditSaving(true);
-    setTimeEditError("");
+    setEditSaving(true);
+    setEditError("");
     try {
-      const { isLate, lateMinutes } = await setManualCheckIn(emp.employeeId, date, iso);
-      setOverrides(prev => ({ ...prev, [key]: { code: "P", checkIn: iso, isLate, lateMinutes } }));
-      setTimeEditCell(null);
+      const { isLate, lateMinutes } = await saveAttendanceCell(emp.employeeId, date, editForm.status, { checkInIso, isInformed, reason });
+      setOverrides(prev => ({ ...prev, [key]: { code: editForm.status, checkIn: checkInIso, isLate, lateMinutes, isInformed, reason } }));
+      closeEditor();
       scheduleRefresh();
     } catch (err) {
-      setTimeEditError(err.message || "Failed to save");
+      setEditError(err.message || "Failed to save");
     } finally {
-      setTimeEditSaving(false);
+      setEditSaving(false);
     }
   }
 
@@ -1144,11 +1186,13 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
     } else {
       setSelAnchor({ row, col });
       setFocusCell({ row, col });
-      cycleCell(employees[row], days[col]);
+      openEditor(row, col);
     }
     focusCellAt(row, col);
   }
 
+  // Enter/Space aren't handled here on purpose - a native <button> already
+  // activates (fires onClick) on either, which reuses handleCellClick as-is.
   function handleKeyDown(row, col, e) {
     const maxRow = employees.length - 1, maxCol = days.length - 1;
     const move = (dr, dc) => {
@@ -1164,18 +1208,17 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
     if (e.key === "ArrowLeft")  return move(0, -1);
     if (e.key === "ArrowRight") return move(0, 1);
     if (e.key === "Tab")        return move(0, e.shiftKey ? -1 : 1);
-    if (e.key === "Enter")      return move(1, 0);
 
     const emp = employees[row], date = days[col];
     const k = e.key.toLowerCase();
-    if (k === "p" || k === "a" || k === "l") {
-      e.preventDefault();
-      setCell(emp, date, k.toUpperCase());
-      return;
-    }
     if ((e.ctrlKey || e.metaKey) && k === "c") {
       e.preventDefault();
-      clipboardRef.current = cellValue(emp, date).code;
+      const val = cellValue(emp, date);
+      // checkIn is a full ISO timestamp embedding the SOURCE date - stored
+      // as a bare time-of-day instead, so paste can rebuild the right ISO
+      // against each TARGET date below rather than silently carrying the
+      // wrong date's check-in time onto every pasted cell.
+      clipboardRef.current = val.code ? { code: val.code, checkInTime: toTimeInputValue(val.checkIn), isInformed: val.isInformed, reason: val.reason } : null;
       return;
     }
     if ((e.ctrlKey || e.metaKey) && k === "v") {
@@ -1187,7 +1230,14 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
         for (let c = c0; c <= c1; c++) {
           const d = days[c];
           if (d > todayStr) continue;
-          entries.push({ employeeId: employees[r].employeeId, date: d, status: clipboardRef.current });
+          const checkIn = clipboardRef.current.code === "P" && clipboardRef.current.checkInTime
+            ? `${d}T${clipboardRef.current.checkInTime}:00+05:30`
+            : null;
+          entries.push({
+            employeeId: employees[r].employeeId,
+            date: d,
+            cell: { code: clipboardRef.current.code, checkIn, isInformed: clipboardRef.current.isInformed, reason: clipboardRef.current.reason },
+          });
         }
       }
       if (entries.length) writeCells(entries);
@@ -1235,18 +1285,27 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
       </div>
 
       <div className="flex flex-wrap items-center gap-4 text-[11px] text-gray-500">
-        {Object.entries(STAFF_GRID_STATUS_STYLE).map(([code, s]) => (
+        {Object.entries(STAFF_STATUS_STYLE).map(([code, s]) => (
           <span key={code} className="flex items-center gap-1.5">
             <span className={`w-4 h-4 rounded ${s.bg} ${s.border} border inline-block`} />{s.label} ({code})
           </span>
         ))}
         <span className="flex items-center gap-1.5">
-          <span className="w-2 h-2 rounded-full bg-orange-500 border border-white inline-block" />Late (orange dot)
+          <span className="w-2 h-2 rounded-full bg-orange-500 border border-white inline-block" />Late
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-blue-500 border border-white inline-block" />Informed
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-gray-400 border border-white inline-block" />Not Informed
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="text-purple-700 font-bold">⚡</span>Special Day
         </span>
         <span className="text-gray-400">
-          Click a cell to cycle P → A → L · type P/A/L directly · arrow keys/Tab/Enter to move ·
-          Ctrl+C then Ctrl+V to copy a status across a shift-click/shift-arrow range ·
-          double-click a cell to set an exact check-in time
+          Click a cell to open its editor (status, check-in time, informed/reason) ·
+          arrow keys/Tab to move · Ctrl+C then Ctrl+V to copy a whole cell across a
+          shift-click/shift-arrow range
         </span>
       </div>
 
@@ -1259,9 +1318,16 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
               </th>
               {days.map(d => {
                 const isFuture = d > todayStr;
+                const exp = expectedTimeFor(d);
                 return (
-                  <th key={d} className={`sticky top-0 z-10 px-2 py-2.5 text-center font-semibold whitespace-nowrap ${isFuture ? "bg-gray-300 text-gray-400" : "bg-school-navy text-white"}`}>
-                    {Number(d.slice(-2))}
+                  <th key={d}
+                    className={`sticky top-0 z-10 px-2 py-1.5 text-center font-semibold whitespace-nowrap ${
+                      isFuture ? "bg-gray-300 text-gray-400" : exp.isSpecial ? "bg-purple-700 text-white" : "bg-school-navy text-white"
+                    }`}
+                    title={isFuture ? "Future date" : exp.isSpecial ? `Special Day — expected ${exp.time}${exp.reason ? ": " + exp.reason : ""}` : `Expected start ${exp.time}`}
+                  >
+                    <div>{Number(d.slice(-2))}</div>
+                    {!isFuture && <div className="text-[9px] font-normal opacity-80">{exp.time}{exp.isSpecial ? " ⚡" : ""}</div>}
                   </th>
                 );
               })}
@@ -1278,17 +1344,20 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
                   const isFuture = date > todayStr;
                   const val = cellValue(emp, date);
                   const key = `${emp.employeeId}|${date}`;
-                  const style = val.code ? STAFF_GRID_STATUS_STYLE[val.code] : null;
+                  const style = val.code ? STAFF_STATUS_STYLE[val.code] : null;
                   const selected = isInSelection(row, col);
                   const saving = savingKeys.has(key);
                   const errored = errorKeys.has(key);
-                  const lateBadge = val.code === "P" && val.isLate;
+                  const lateBadge     = val.code === "P" && val.isLate;
+                  const informedBadge = (val.code === "A" || val.code === "L") && val.isInformed != null;
                   const titleBits = [
                     `${emp.name} — ${date}`,
                     style ? style.label : isFuture ? "future date" : null,
                     val.checkIn ? `in ${fmtTimeIst(val.checkIn)}` : null,
                     lateBadge ? `Late ${val.lateMinutes || 0} min` : null,
-                    !isFuture ? "double-click to set an exact check-in time" : null,
+                    informedBadge ? (val.isInformed ? "Informed" : "Not informed") : null,
+                    val.reason ? `"${val.reason}"` : null,
+                    !isFuture ? "click to edit" : null,
                   ].filter(Boolean).join(" — ");
                   return (
                     <td key={date} className="p-0.5 text-center border-b border-gray-100">
@@ -1296,11 +1365,10 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
                         type="button"
                         ref={node => { if (node) cellRefs.current[`${row}|${col}`] = node; }}
                         onClick={e => handleCellClick(row, col, e)}
-                        onDoubleClick={() => openTimeEdit(row, col)}
                         onKeyDown={e => handleKeyDown(row, col, e)}
                         tabIndex={0}
                         title={titleBits}
-                        className={`relative w-8 h-7 rounded-md text-[11px] font-bold border transition-colors focus:outline-none focus:ring-2 focus:ring-school-navy ${
+                        className={`relative w-9 h-8 rounded-md text-[11px] font-bold border transition-colors focus:outline-none focus:ring-2 focus:ring-school-navy ${
                           isFuture ? "bg-gray-50 border-gray-100 text-gray-300" :
                           style    ? `${style.bg} ${style.text} ${style.border}` : "bg-white border-gray-200 text-gray-300 hover:border-school-navy/40"
                         } ${selected ? "ring-2 ring-school-navy" : ""} ${errored ? "ring-2 ring-red-500" : ""}`}
@@ -1308,6 +1376,9 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
                         {saving ? "…" : (val.code || "")}
                         {lateBadge && !saving && (
                           <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-orange-500 border border-white" />
+                        )}
+                        {informedBadge && !saving && (
+                          <span className={`absolute -bottom-1 -right-1 w-2 h-2 rounded-full border border-white ${val.isInformed ? "bg-blue-500" : "bg-gray-400"}`} />
                         )}
                       </button>
                     </td>
@@ -1322,30 +1393,82 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
         </table>
       </div>
 
-      {timeEditCell && employees[timeEditCell.row] && (() => {
-        const emp = employees[timeEditCell.row];
-        const date = days[timeEditCell.col];
+      {editCell && editForm && employees[editCell.row] && (() => {
+        const emp = employees[editCell.row];
+        const date = days[editCell.col];
+        const exp = expectedTimeFor(date);
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setTimeEditCell(null)}>
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 flex flex-col gap-3" onClick={e => e.stopPropagation()}>
-              <h3 className="font-semibold text-gray-800">Set Check-In Time</h3>
-              <p className="text-xs text-gray-500 -mt-1">{emp.name} — {fmtDate(date)}</p>
-              <input type="time" value={timeEditValue} onChange={e => setTimeEditValue(e.target.value)} autoFocus
-                className="border-2 border-school-navy rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"/>
-              <p className="text-[11px] text-gray-400">
-                Late/On-Time is judged against Settings → Kiosk's expected start time (or that
-                date's Special Day override, if one is set). Marks the day Present and sets this
-                as the check-in time — check-out is left alone, so Hours Worked for this day
-                stays 0 until a check-out is known too.
-              </p>
-              {timeEditError && <p className="text-xs text-red-600">{timeEditError}</p>}
-              <div className="flex justify-end gap-2 mt-1">
-                <button onClick={() => setTimeEditCell(null)} className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeEditor}>
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-5 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+              <div>
+                <h3 className="font-semibold text-gray-800">{emp.name}</h3>
+                <p className="text-xs text-gray-500">{emp.designation} — {fmtDate(date)}</p>
+              </div>
+
+              <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg border ${exp.isSpecial ? "bg-purple-50 border-purple-200 text-purple-700" : "bg-gray-50 border-gray-200 text-gray-500"}`}>
+                <span className="font-semibold">{exp.isSpecial ? "⚡ Special Day" : "Expected start"}</span>
+                <span>{exp.time}{exp.isSpecial && exp.reason ? ` — ${exp.reason}` : ""}</span>
+              </div>
+
+              <div className="flex gap-1.5">
+                {["P", "A", "L"].map(code => (
+                  <button key={code} type="button" onClick={() => setEditForm(f => ({ ...f, status: code }))}
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${
+                      editForm.status === code
+                        ? `${STAFF_STATUS_STYLE[code].bg} ${STAFF_STATUS_STYLE[code].border} ${STAFF_STATUS_STYLE[code].text}`
+                        : "border-gray-200 text-gray-400 hover:border-gray-300"
+                    }`}>
+                    {STAFF_STATUS_STYLE[code].label}
+                  </button>
+                ))}
+              </div>
+
+              {editForm.status === "P" && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Check-In Time (optional)</label>
+                  <input type="time" value={editForm.checkInTime} onChange={e => setEditForm(f => ({ ...f, checkInTime: e.target.value }))}
+                    className="border-2 border-school-navy rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"/>
+                  <p className="text-[11px] text-gray-400">
+                    Leave blank to mark Present with no specific time. Late/On-Time is judged
+                    against the expected start time shown above. Check-out is never set here, so
+                    Hours Worked for this day stays 0 until a check-out is known too.
+                  </p>
+                </div>
+              )}
+
+              {(editForm.status === "A" || editForm.status === "L") && (
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Informed?</label>
+                    <div className="flex gap-1.5">
+                      {INFORMED_OPTIONS.map(opt => (
+                        <button key={String(opt.v)} type="button" onClick={() => setEditForm(f => ({ ...f, isInformed: opt.v }))}
+                          className={`flex-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border-2 transition-colors ${
+                            editForm.isInformed === opt.v ? "bg-school-navy border-school-navy text-white" : "border-gray-200 text-gray-400 hover:border-gray-300"
+                          }`}>
+                          {opt.l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Reason (optional)</label>
+                    <input type="text" value={editForm.reason} onChange={e => setEditForm(f => ({ ...f, reason: e.target.value }))}
+                      placeholder="e.g. called in sick, family emergency"
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"/>
+                  </div>
+                </div>
+              )}
+
+              {editError && <p className="text-xs text-red-600">{editError}</p>}
+
+              <div className="flex justify-end gap-2">
+                <button onClick={closeEditor} className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50">
                   Cancel
                 </button>
-                <button onClick={saveTimeEdit} disabled={timeEditSaving}
+                <button onClick={saveEditor} disabled={editSaving}
                   className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-school-navy text-white hover:bg-school-navy/90 disabled:opacity-50">
-                  {timeEditSaving ? "Saving..." : "Save"}
+                  {editSaving ? "Saving..." : "Save"}
                 </button>
               </div>
             </div>
@@ -1464,6 +1587,7 @@ export default function ReportPage() {
 
   const [deletingStaffKey, setDeletingStaffKey] = useState(null);
   const [selectedStaffRows, setSelectedStaffRows] = useState(new Set());
+  const { confirm, ConfirmDialog } = useConfirm();
 
   const cfg  = REPORT_CONFIGS[rType];
   const isStaffRollup = Boolean(cfg.isDualView && staffView === "employee");
@@ -1638,7 +1762,7 @@ export default function ReportPage() {
       ? `Delete ALL attendance and shift records for the ${count} selected employee(s)?\nThis will permanently remove data from both employee_shifts and employee_attendance.`
       : `Delete ${count} selected attendance and shift record(s)?\nThis will permanently remove data from both employee_shifts and employee_attendance.`;
 
-    if (!window.confirm(confirmMsg)) return;
+    if (!(await confirm(confirmMsg))) return;
 
     setDeletingStaffKey("bulk");
     try {
@@ -1673,7 +1797,7 @@ export default function ReportPage() {
 
   async function handleDeleteStaffAttendance(row) {
     if (isStaffRollup) {
-      if (!window.confirm(`Delete ALL ${row.daysRecorded} attendance and shift record(s) for ${row.name} (${row.period})?\nThis will permanently remove data from both the shift table (employee_shifts) and attendance table (employee_attendance).`)) {
+      if (!(await confirm(`Delete ALL ${row.daysRecorded} attendance and shift record(s) for ${row.name} (${row.period})?\nThis will permanently remove data from both the shift table (employee_shifts) and attendance table (employee_attendance).`))) {
         return;
       }
       setDeletingStaffKey(row.employeeId);
@@ -1696,7 +1820,7 @@ export default function ReportPage() {
         setDeletingStaffKey(null);
       }
     } else {
-      if (!window.confirm(`Delete attendance and all shift records for ${row.name} on ${row.date}?\nThis will permanently remove data from both the shift table (employee_shifts) and attendance table (employee_attendance).`)) {
+      if (!(await confirm(`Delete attendance and all shift records for ${row.name} on ${row.date}?\nThis will permanently remove data from both the shift table (employee_shifts) and attendance table (employee_attendance).`))) {
         return;
       }
       const key = `${row.employeeId}|${row.date}`;
@@ -2747,6 +2871,7 @@ export default function ReportPage() {
         </div>
       )}
 
+      {ConfirmDialog}
     </div>
   );
 }
