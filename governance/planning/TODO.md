@@ -3226,6 +3226,58 @@ pattern), it is noted as already-known and not re-filed as new.
       Fixed in code: `marksheetService.js` (`getClassSubjects`), `settingsService.js` (`getOptionalSubjects`, `saveClassSubjects`), and `supabase_service.dart` (`fetchClassSubjectsDetailed`) now defensively ensure any subject matching `/odi(a|ya)|mil/i` is always marked optional.
       In `marksheet-edit/page.js`: unentered optional subjects now display `—` instead of `0/50`, and saving empty optional inputs avoids creating phantom 0 marks.
       Verified: `npm run lint` clean (0 warnings), `flutter analyze` clean (0 new issues); confirmed in database that 100% of Odia/Odiya-Math subjects are `is_optional: true` and excluded from `totalMax` for non-Odia students.
+- [x] **REQ-FEAT-010 — Staff Attendance (Kiosk) report gained a third,
+      spreadsheet-style editable "Grid" view. DONE 2026-10-15.** User asked
+      for the attendance report to be "easily editable by admin like a
+      spreadsheet." Scoped via AskUserQuestion before coding (bundled
+      questions, user picked the recommended option on 3 of 4, overrode the
+      4th): staff attendance (not student), a full month grid with
+      keyboard nav + copy/paste (not just bulk single-date editing),
+      auto-save per cell (no separate Save button), admin edits bypass any
+      approval gate (same as the existing single-day Mark Attendance tab
+      already does). **J12B: MINOR** — new UI view + reuse of an existing
+      write path, no schema change, no new API route.
+
+      Added a third `staffView` ("grid", alongside the existing "daily"/
+      "employee") to `admin-panel/src/app/(dashboard)/report/page.js`:
+      rows = employees, columns = every day of a chosen month, each cell is
+      that day's P/A/L status. Click cycles P→A→L→P; typing P/A/L while a
+      cell is focused sets it directly; arrow keys/Tab/Enter move the
+      focused cell; Ctrl+C then Ctrl+V copies one cell's status across a
+      shift-click/shift-arrow range (fix a whole week in one paste). Every
+      edit auto-saves by reusing `staffLeaveService.js`'s
+      `saveEmployeeAttendanceForDate()` (the same upsert the Employee
+      module's single-day Mark Attendance tab already uses) — it writes
+      only the `status` column, so kiosk-recorded `check_in_at`/
+      `check_out_at`/`punch_method` for that day are never touched. No
+      "clear a cell back to unmarked" was added — that stays a deliberate
+      confirm-dialog delete in the Daily/Per-Employee views, specifically
+      so a fast run of keystrokes in the grid can never delete a record
+      outright. Future dates render disabled; rows are whichever employees
+      already have at least one attendance record in the selected month
+      (same roster limitation the existing Daily/Per-Employee views already
+      have — not a regression). A short debounce re-fetches
+      `getStaffAttendanceForReport()` after edits settle, so the Daily/
+      Per-Employee views and summary cards resync with the DB truth without
+      a full page reload on every keystroke.
+
+      **Process note**: while verifying the change compiled, ran `npx next
+      build` as a quick sanity check — this project's own `CLAUDE.md`
+      explicitly forbids that during normal development (corrupts the dev
+      `.next` cache). Caught it immediately after, killed the dev server,
+      deleted `.next`, and restarted `npm run dev` clean — confirmed
+      compiling normally afterward. Logged as model-behavior feedback
+      separately.
+
+      **Verified**: `npm run lint` clean (0 warnings); dev server
+      (`npm run dev`) starts and compiles the report page with no errors
+      after the cache recovery above. **Not verified**: interactive
+      in-browser use with real data — no admin-panel login credentials
+      available to this session, and this report reads/writes the live
+      production `employee_attendance` table, so no attempt was made to
+      log in or click through it. Flagged to the user to exercise the new
+      Grid view themselves (Reports → Staff Attendance (Kiosk) → "Grid
+      (Editable)") before relying on it.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

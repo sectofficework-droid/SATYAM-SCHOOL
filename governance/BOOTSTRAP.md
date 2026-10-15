@@ -340,7 +340,47 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-10-09 — Marksheet generation rebuilt around a
+**Current — Session 2026-10-15 — Staff Attendance (Kiosk) report gained a
+spreadsheet-style editable "Grid" view (REQ-FEAT-010), classified MINOR
+CHANGE per J12B.**
+User asked for the attendance report to be "easily editable by admin like a
+spreadsheet." Scoped via AskUserQuestion before coding (bundled, one round):
+staff attendance (not student) · full month grid with keyboard navigation
+and copy/paste (not just single-date bulk edit) · auto-save per cell · admin
+edits bypass any approval gate, matching the existing single-day Mark
+Attendance tab. User then said "code it."
+
+Added a third `staffView` ("grid") to `admin-panel/src/app/(dashboard)/
+report/page.js`'s existing Daily/Per-Employee toggle, as a new
+`StaffAttendanceGridView` component + an early-return render branch (same
+pattern the file already uses for `showExamsReport`). Rows = employees,
+columns = every day of a chosen month, each cell = P/A/L. Click cycles
+P→A→L→P; typing P/A/L sets it directly; arrow keys/Tab/Enter move the
+focused cell; Ctrl+C/Ctrl+V copies one cell's status across a shift-click/
+shift-arrow range. Every edit auto-saves through `staffLeaveService.js`'s
+existing `saveEmployeeAttendanceForDate()` upsert (writes only `status`,
+never touches kiosk-recorded check-in/out) — the same write path the
+Employee module's single-day Mark Attendance tab already relies on, so no
+new API route or schema change was needed. Deliberately no "clear a cell"
+path — removing a record stays a confirm-dialog delete in the Daily/
+Per-Employee views, so the grid's fast keyboard editing can never delete
+data outright. A short debounce re-fetches the staff attendance data after
+edits settle so the other two views and summary cards stay in sync.
+
+**Process note:** mid-verification, ran `npx next build` to sanity-check
+compilation — this repo's own `CLAUDE.md` explicitly forbids that (corrupts
+the dev `.next` cache). Caught immediately, killed the dev server, deleted
+`.next`, restarted `npm run dev` clean, confirmed normal recompilation.
+
+**Verified:** `npm run lint` clean; dev server compiles the report page
+with no errors post-recovery. **Not verified:** live, in-browser use with
+real data — this session has no admin-panel login credentials, and the
+report reads/writes the live production `employee_attendance` table, so no
+login/click-through was attempted. User needs to exercise Reports → Staff
+Attendance (Kiosk) → "Grid (Editable)" themselves before relying on it.
+Full detail: `planning/TODO.md` REQ-FEAT-010.
+
+**Prior — Session 2026-10-09 — Marksheet generation rebuilt around a
 user-supplied reference template (REQ-FEAT-008), classified MINOR CHANGE
 (with an internal architecture change) per J12B.**
 User supplied `marksheet_template.html` (repo root, outside

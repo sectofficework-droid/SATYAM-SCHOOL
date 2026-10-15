@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   GraduationCap, IndianRupee, Users, Package, Search,
   RefreshCw, Download, FileText, ShieldCheck, BookOpen, Landmark, IdCard,
@@ -15,6 +15,7 @@ import {
   getPaymentsForReport, getAcademicYearLabels, getTcIssuedForReport,
   getStaffAttendanceForReport, rollupStaffAttendance,
 } from "@/lib/reportService";
+import { saveEmployeeAttendanceForDate } from "@/lib/staffLeaveService";
 import { MM, computeColumnLayout, triggerPdfDownload, renderTablePdf } from "@/lib/pdfTableExport";
 import { toIsoDateLocal } from "@/lib/utils";
 import authedFetch from "@/lib/authedFetch";
@@ -926,6 +927,310 @@ function EligBadge({ eligible, done }) {
   return             <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-100 text-amber-700">Eligible</span>;
 }
 
+// ── Staff Attendance — editable month grid ─────────────────────────────────
+// A spreadsheet-style view: rows = employees, columns = every day of a chosen
+// month, each cell = that day's P/A/L status. Click cycles P→A→L→P, typing
+// P/A/L sets it directly, arrow keys/Tab/Enter move the focused cell, and
+// Ctrl+C/Ctrl+V copies one cell's status across a shift-click/shift-arrow
+// range - lets admin fix a whole week in one paste. Every edit auto-saves via
+// the same upsert the Employee module's single-day Mark Attendance tab already
+// uses (writes only `status`, never touches check_in_at/check_out_at, so
+// kiosk punch data for that day survives). Deliberately no "clear a cell back
+// to unmarked" path here - that stays a confirm-dialog delete in the Daily/
+// Per-Employee views, so a fast run of keystrokes here can never delete a
+// record outright, only ever set it to P, A or L.
+const STAFF_GRID_STATUS_CYCLE = ["P", "A", "L"];
+const STAFF_GRID_STATUS_STYLE = {
+  P: { label: "Present", bg: "bg-green-100", text: "text-green-700", border: "border-green-300" },
+  A: { label: "Absent",  bg: "bg-red-100",   text: "text-red-700",   border: "border-red-300" },
+  L: { label: "Leave",   bg: "bg-amber-100", text: "text-amber-700", border: "border-amber-300" },
+};
+const STAFF_GRID_LABEL_TO_CODE = { Present: "P", Absent: "A", Leave: "L" };
+
+function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, departments }) {
+  const todayStr = toIsoDateLocal(new Date());
+  const [month, setMonth] = useState(todayStr.slice(0, 7)); // "YYYY-MM"
+  const [staffTypeFilter, setStaffTypeFilter] = useState("School Staff");
+  const [desigFilter, setDesigFilter] = useState("All");
+  const [deptFilter, setDeptFilter] = useState("All");
+  const [search, setSearch] = useState("");
+  // Local optimistic layer on top of dbStaffAttendance - lets a click/keypress
+  // show instantly instead of waiting on the debounced refresh below. Cleared
+  // once that refresh lands, since dbStaffAttendance is the truth from then on.
+  const [overrides, setOverrides] = useState({}); // `${employeeId}|${date}` -> "P"|"A"|"L"
+  const [savingKeys, setSavingKeys] = useState(new Set());
+  const [errorKeys, setErrorKeys] = useState(new Set());
+  const [focusCell, setFocusCell] = useState({ row: 0, col: 0 });
+  const [selAnchor, setSelAnchor] = useState({ row: 0, col: 0 });
+  const clipboardRef = useRef(null);
+  const refreshTimerRef = useRef(null);
+  const cellRefs = useRef({});
+
+  useEffect(() => () => { if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current); }, []);
+  useEffect(() => {
+    setFocusCell({ row: 0, col: 0 });
+    setSelAnchor({ row: 0, col: 0 });
+  }, [month, staffTypeFilter, desigFilter, deptFilter, search]);
+
+  const days = useMemo(() => {
+    const [y, m] = month.split("-").map(Number);
+    const n = new Date(y, m, 0).getDate();
+    return Array.from({ length: n }, (_, i) => `${month}-${String(i + 1).padStart(2, "0")}`);
+  }, [month]);
+
+  const employees = useMemo(() => {
+    const from = days[0], to = days[days.length - 1];
+    let rows = dbStaffAttendance.filter(x => x.date >= from && x.date <= to);
+    if (desigFilter !== "All") rows = rows.filter(x => x.designation === desigFilter);
+    if (deptFilter !== "All") rows = rows.filter(x => x.department === deptFilter);
+    if (staffTypeFilter === "School Staff")       rows = rows.filter(x => x.type === "Teaching" || x.designation === "Care Taker");
+    if (staffTypeFilter === "Admin / Management") rows = rows.filter(x => x.type && x.type !== "Teaching" && x.designation !== "Care Taker");
+
+    const map = new Map();
+    for (const r of rows) {
+      if (!map.has(r.employeeId)) {
+        map.set(r.employeeId, { employeeId: r.employeeId, empCode: r.empCode, name: r.name, designation: r.designation, byDate: {} });
+      }
+      map.get(r.employeeId).byDate[r.date] = STAFF_GRID_LABEL_TO_CODE[r.status] || null;
+    }
+    let list = [...map.values()];
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(e => e.name.toLowerCase().includes(q) || (e.empCode || "").toLowerCase().includes(q));
+    }
+    list.sort((a, b) => a.name.localeCompare(b.name));
+    return list;
+  }, [dbStaffAttendance, days, desigFilter, deptFilter, staffTypeFilter, search]);
+
+  function cellValue(emp, date) {
+    const key = `${emp.employeeId}|${date}`;
+    return key in overrides ? overrides[key] : (emp.byDate[date] || null);
+  }
+
+  function scheduleRefresh() {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    refreshTimerRef.current = setTimeout(() => {
+      getStaffAttendanceForReport()
+        .then(rows => { onRefresh(rows); setOverrides({}); })
+        .catch(() => {});
+    }, 800);
+  }
+
+  async function writeCells(entries) {
+    const keys = entries.map(e => `${e.employeeId}|${e.date}`);
+    setOverrides(prev => {
+      const next = { ...prev };
+      entries.forEach(e => { next[`${e.employeeId}|${e.date}`] = e.status; });
+      return next;
+    });
+    setSavingKeys(prev => new Set([...prev, ...keys]));
+    setErrorKeys(prev => { const n = new Set(prev); keys.forEach(k => n.delete(k)); return n; });
+    try {
+      await saveEmployeeAttendanceForDate(entries.map(e => ({ employee_id: e.employeeId, date: e.date, status: e.status })));
+    } catch (err) {
+      setErrorKeys(prev => new Set([...prev, ...keys]));
+    } finally {
+      setSavingKeys(prev => { const n = new Set(prev); keys.forEach(k => n.delete(k)); return n; });
+    }
+    scheduleRefresh();
+  }
+
+  function cycleCell(emp, date) {
+    if (date > todayStr) return;
+    const cur = cellValue(emp, date);
+    const idx = cur ? STAFF_GRID_STATUS_CYCLE.indexOf(cur) : -1;
+    const next = STAFF_GRID_STATUS_CYCLE[(idx + 1) % STAFF_GRID_STATUS_CYCLE.length];
+    writeCells([{ employeeId: emp.employeeId, date, status: next }]);
+  }
+
+  function setCell(emp, date, status) {
+    if (date > todayStr) return;
+    writeCells([{ employeeId: emp.employeeId, date, status }]);
+  }
+
+  function rangeOf(a, b) {
+    return { r0: Math.min(a.row, b.row), r1: Math.max(a.row, b.row), c0: Math.min(a.col, b.col), c1: Math.max(a.col, b.col) };
+  }
+  function isInSelection(row, col) {
+    const { r0, r1, c0, c1 } = rangeOf(selAnchor, focusCell);
+    return row >= r0 && row <= r1 && col >= c0 && col <= c1;
+  }
+  function focusCellAt(row, col) {
+    const node = cellRefs.current[`${row}|${col}`];
+    if (node) node.focus();
+  }
+
+  function handleCellClick(row, col, e) {
+    if (e.shiftKey) {
+      setFocusCell({ row, col });
+    } else {
+      setSelAnchor({ row, col });
+      setFocusCell({ row, col });
+      cycleCell(employees[row], days[col]);
+    }
+    focusCellAt(row, col);
+  }
+
+  function handleKeyDown(row, col, e) {
+    const maxRow = employees.length - 1, maxCol = days.length - 1;
+    const move = (dr, dc) => {
+      const nr = Math.max(0, Math.min(maxRow, row + dr));
+      const nc = Math.max(0, Math.min(maxCol, col + dc));
+      setFocusCell({ row: nr, col: nc });
+      if (!e.shiftKey) setSelAnchor({ row: nr, col: nc });
+      focusCellAt(nr, nc);
+      e.preventDefault();
+    };
+    if (e.key === "ArrowUp")    return move(-1, 0);
+    if (e.key === "ArrowDown")  return move(1, 0);
+    if (e.key === "ArrowLeft")  return move(0, -1);
+    if (e.key === "ArrowRight") return move(0, 1);
+    if (e.key === "Tab")        return move(0, e.shiftKey ? -1 : 1);
+    if (e.key === "Enter")      return move(1, 0);
+
+    const emp = employees[row], date = days[col];
+    const k = e.key.toLowerCase();
+    if (k === "p" || k === "a" || k === "l") {
+      e.preventDefault();
+      setCell(emp, date, k.toUpperCase());
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && k === "c") {
+      e.preventDefault();
+      clipboardRef.current = cellValue(emp, date);
+      return;
+    }
+    if ((e.ctrlKey || e.metaKey) && k === "v") {
+      e.preventDefault();
+      if (!clipboardRef.current) return;
+      const { r0, r1, c0, c1 } = rangeOf(selAnchor, focusCell);
+      const entries = [];
+      for (let r = r0; r <= r1; r++) {
+        for (let c = c0; c <= c1; c++) {
+          const d = days[c];
+          if (d > todayStr) continue;
+          entries.push({ employeeId: employees[r].employeeId, date: d, status: clipboardRef.current });
+        }
+      }
+      if (entries.length) writeCells(entries);
+      return;
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex flex-wrap gap-3 items-end">
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Month</label>
+          <input type="month" value={month} max={todayStr.slice(0, 7)} onChange={e => setMonth(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy"/>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Staff Type</label>
+          <select value={staffTypeFilter} onChange={e => setStaffTypeFilter(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28">
+            {["All", "School Staff", "Admin / Management"].map(o => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Designation</label>
+          <select value={desigFilter} onChange={e => setDesigFilter(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28">
+            {["All", ...designations].map(o => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Department</label>
+          <select value={deptFilter} onChange={e => setDeptFilter(e.target.value)}
+            className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28">
+            {["All", ...departments].map(o => <option key={o}>{o}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1 flex-1 min-w-40">
+          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Search</label>
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"/>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search by name or emp code"
+              className="w-full border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy"/>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4 text-[11px] text-gray-500">
+        {Object.entries(STAFF_GRID_STATUS_STYLE).map(([code, s]) => (
+          <span key={code} className="flex items-center gap-1.5">
+            <span className={`w-4 h-4 rounded ${s.bg} ${s.border} border inline-block`} />{s.label} ({code})
+          </span>
+        ))}
+        <span className="text-gray-400">
+          Click a cell to cycle P → A → L · type P/A/L directly · arrow keys/Tab/Enter to move ·
+          Ctrl+C then Ctrl+V to copy a status across a shift-click/shift-arrow range
+        </span>
+      </div>
+
+      <div className="rounded-xl border border-gray-200 shadow-sm overflow-auto max-h-[70vh]">
+        <table className="text-xs border-separate border-spacing-0">
+          <thead>
+            <tr>
+              <th className="sticky top-0 left-0 z-20 bg-school-navy text-white px-3 py-2.5 text-left font-semibold whitespace-nowrap">
+                Employee
+              </th>
+              {days.map(d => {
+                const isFuture = d > todayStr;
+                return (
+                  <th key={d} className={`sticky top-0 z-10 px-2 py-2.5 text-center font-semibold whitespace-nowrap ${isFuture ? "bg-gray-300 text-gray-400" : "bg-school-navy text-white"}`}>
+                    {Number(d.slice(-2))}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {employees.map((emp, row) => (
+              <tr key={emp.employeeId}>
+                <td className={`sticky left-0 z-10 px-3 py-1.5 font-medium text-gray-700 whitespace-nowrap border-r border-b border-gray-200 ${row % 2 === 0 ? "bg-white" : "bg-gray-50"}`}>
+                  {emp.name}
+                  {emp.designation && <span className="text-gray-400 font-normal"> · {emp.designation}</span>}
+                </td>
+                {days.map((date, col) => {
+                  const isFuture = date > todayStr;
+                  const val = cellValue(emp, date);
+                  const key = `${emp.employeeId}|${date}`;
+                  const style = val ? STAFF_GRID_STATUS_STYLE[val] : null;
+                  const selected = isInSelection(row, col);
+                  const saving = savingKeys.has(key);
+                  const errored = errorKeys.has(key);
+                  return (
+                    <td key={date} className="p-0.5 text-center border-b border-gray-100">
+                      <button
+                        type="button"
+                        ref={node => { if (node) cellRefs.current[`${row}|${col}`] = node; }}
+                        onClick={e => handleCellClick(row, col, e)}
+                        onKeyDown={e => handleKeyDown(row, col, e)}
+                        tabIndex={0}
+                        title={`${emp.name} — ${date}${style ? " — " + style.label : isFuture ? " — future date" : ""}`}
+                        className={`w-8 h-7 rounded-md text-[11px] font-bold border transition-colors focus:outline-none focus:ring-2 focus:ring-school-navy ${
+                          isFuture ? "bg-gray-50 border-gray-100 text-gray-300" :
+                          style    ? `${style.bg} ${style.text} ${style.border}` : "bg-white border-gray-200 text-gray-300 hover:border-school-navy/40"
+                        } ${selected ? "ring-2 ring-school-navy" : ""} ${errored ? "ring-2 ring-red-500" : ""}`}
+                      >
+                        {saving ? "…" : (val || "")}
+                      </button>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+            {employees.length === 0 && (
+              <tr><td colSpan={days.length + 1} className="px-4 py-10 text-center text-gray-400 text-sm">No attendance records found for this month with the selected filters</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function ReportPage() {
   const [rType,    setRType]    = useState("student");
@@ -1588,6 +1893,68 @@ export default function ReportPage() {
     </div>
   );
 
+  // Staff Attendance's third view: a full-month editable grid, rendered as
+  // its own early return (same pattern as showExamsReport below) since none
+  // of the generic column-selector/summary/export/table machinery further
+  // down applies to it.
+  if (rType === "staffAttendance" && staffView === "grid") return (
+    <div className="space-y-5">
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Reports & Export</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Generate, filter and export reports for any module</p>
+        </div>
+        <button onClick={loadAll} disabled={refreshing}
+          className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors disabled:opacity-60">
+          <RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin text-school-navy" : ""}`}/>
+          {refreshing ? "Refreshing..." : "Refresh"}
+        </button>
+      </div>
+
+      {/* Report type selector */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+        {Object.entries(REPORT_CONFIGS).map(([key, c]) => {
+          const Icon = c.icon; const isA = rType === key;
+          return (
+            <button key={key} onClick={() => setRType(key)}
+              className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${isA ? "border-school-navy bg-school-navy text-white shadow-lg" : "border-gray-200 bg-white text-gray-600 hover:border-school-navy/40"}`}>
+              <Icon className="w-6 h-6"/>
+              <span className="text-xs font-semibold leading-tight text-center">{c.label}</span>
+            </button>
+          );
+        })}
+        <button onClick={() => setShowExamsReport(true)}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Award className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Exams</span>
+        </button>
+      </div>
+
+      {/* View toggle */}
+      <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+        <button onClick={() => setStaffView("daily")}
+          className="px-4 py-1.5 rounded-lg text-xs font-semibold text-gray-500 hover:text-gray-700 transition-colors">
+          Daily
+        </button>
+        <button onClick={() => setStaffView("employee")}
+          className="px-4 py-1.5 rounded-lg text-xs font-semibold text-gray-500 hover:text-gray-700 transition-colors">
+          Per Employee
+        </button>
+        <button className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-school-navy text-white shadow transition-colors">
+          Grid (Editable)
+        </button>
+      </div>
+
+      <StaffAttendanceGridView
+        dbStaffAttendance={dbStaffAttendance}
+        onRefresh={setDbStaffAttendance}
+        designations={dbStaffDesignations}
+        departments={dbStaffDepartments}
+      />
+    </div>
+  );
+
   if (showExamsReport) return (
     <div className="space-y-5">
       {/* Page header */}
@@ -1675,6 +2042,10 @@ export default function ReportPage() {
                 <button onClick={() => setStaffView("employee")}
                   className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${staffView === "employee" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
                   Per Employee
+                </button>
+                <button onClick={() => setStaffView("grid")}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${staffView === "grid" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                  Grid (Editable)
                 </button>
               </div>
             ) : <div />}
