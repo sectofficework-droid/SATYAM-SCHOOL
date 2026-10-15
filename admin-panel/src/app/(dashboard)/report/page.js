@@ -16,7 +16,7 @@ import {
   getStaffAttendanceForReport, rollupStaffAttendance,
 } from "@/lib/reportService";
 import { saveAttendanceCell } from "@/lib/staffLeaveService";
-import { getKioskSettings, getKioskSpecialDaysInRange } from "@/lib/kioskSettingsService";
+import { getKioskSettings, getKioskSpecialDaysInRange, saveKioskSpecialDay, deleteKioskSpecialDay } from "@/lib/kioskSettingsService";
 import { MM, computeColumnLayout, triggerPdfDownload, renderTablePdf } from "@/lib/pdfTableExport";
 import { toIsoDateLocal } from "@/lib/utils";
 import authedFetch from "@/lib/authedFetch";
@@ -998,7 +998,11 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState("");
   const [baseExpectedStart, setBaseExpectedStart] = useState("09:00");
-  const [specialDays, setSpecialDays] = useState({}); // date -> {expectedStartTime, reason}
+  const [specialDays, setSpecialDays] = useState({}); // date -> {expectedStartTime, lateGraceMinutes, absentCutoffTime, shiftEndTime, reason}
+  const [dayTypeDate, setDayTypeDate] = useState(null); // date string | null - header click opens this
+  const [dayTypeForm, setDayTypeForm] = useState(null); // {isSpecial, expectedStartTime, reason}
+  const [dayTypeSaving, setDayTypeSaving] = useState(false);
+  const [dayTypeError, setDayTypeError] = useState("");
   const clipboardRef = useRef(null);
   const refreshTimerRef = useRef(null);
   const cellRefs = useRef({});
@@ -1017,10 +1021,13 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
 
   // Expected-time/Special-Day context - fetched once (base settings) and
   // once per visible month (special days), independent of employee filters.
+  // refreshSpecialDays is also called after the day-type editor saves/
+  // deletes an override, so the headers/editor reflect it immediately
+  // rather than waiting for the next month change.
   useEffect(() => {
     getKioskSettings().then(s => setBaseExpectedStart(s.expectedStartTime)).catch(() => {});
   }, []);
-  useEffect(() => {
+  const refreshSpecialDays = useCallback(() => {
     if (!days.length) return;
     getKioskSpecialDaysInRange(days[0], days[days.length - 1])
       .then(rows => {
@@ -1030,11 +1037,72 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
       })
       .catch(() => setSpecialDays({}));
   }, [days]);
+  useEffect(() => { refreshSpecialDays(); }, [refreshSpecialDays]);
 
   function expectedTimeFor(date) {
     const sd = specialDays[date];
     if (sd && sd.expectedStartTime) return { time: sd.expectedStartTime, isSpecial: true, reason: sd.reason };
     return { time: baseExpectedStart, isSpecial: false, reason: "" };
+  }
+
+  // Grid header's Regular/Special toggle (REQ-FEAT-014). Opens pre-filled
+  // from whatever's already in `specialDays` for that date, if anything.
+  function openDayTypeEditor(date) {
+    const sd = specialDays[date];
+    setDayTypeForm({
+      isSpecial:         Boolean(sd),
+      expectedStartTime: sd?.expectedStartTime || "",
+      reason:            sd?.reason || "",
+    });
+    setDayTypeError("");
+    setDayTypeDate(date);
+  }
+
+  function closeDayTypeEditor() {
+    setDayTypeDate(null);
+    setDayTypeForm(null);
+  }
+
+  async function saveDayType() {
+    if (!dayTypeDate || !dayTypeForm) return;
+    setDayTypeSaving(true);
+    setDayTypeError("");
+    try {
+      if (dayTypeForm.isSpecial) {
+        if (!dayTypeForm.expectedStartTime) {
+          setDayTypeError("Set an expected start time for the Special Day");
+          setDayTypeSaving(false);
+          return;
+        }
+        // Preserve grace/cutoff/shift-end from whatever was already on
+        // record for this date (if anything) - saveKioskSpecialDay
+        // overwrites all fields wholesale, so passing nothing through
+        // here would silently wipe values set via Settings -> Kiosk.
+        const existing = specialDays[dayTypeDate];
+        await saveKioskSpecialDay({
+          date:              dayTypeDate,
+          expectedStartTime: dayTypeForm.expectedStartTime,
+          lateGraceMinutes:  existing?.lateGraceMinutes ?? "",
+          absentCutoffTime:  existing?.absentCutoffTime ?? "",
+          shiftEndTime:      existing?.shiftEndTime ?? "",
+          reason:            dayTypeForm.reason,
+        });
+      } else if (specialDays[dayTypeDate]) {
+        await deleteKioskSpecialDay(dayTypeDate);
+      }
+      closeDayTypeEditor();
+      refreshSpecialDays();
+      // The underlying save/delete RPC recomputes is_late/late_minutes for
+      // every existing record on that date against the new effective
+      // settings - refresh the attendance data too so the grid's Late
+      // dots/tooltips reflect that immediately instead of on the next
+      // debounced refresh.
+      getStaffAttendanceForReport().then(onRefresh).catch(() => {});
+    } catch (err) {
+      setDayTypeError(err.message || "Failed to save");
+    } finally {
+      setDayTypeSaving(false);
+    }
   }
 
   const employees = useMemo(() => {
@@ -1304,8 +1372,8 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
         </span>
         <span className="text-gray-400">
           Click a cell to open its editor (status, check-in time, informed/reason) ·
-          arrow keys/Tab to move · Ctrl+C then Ctrl+V to copy a whole cell across a
-          shift-click/shift-arrow range
+          click a date header to set Regular/Special Day · arrow keys/Tab to move ·
+          Ctrl+C then Ctrl+V to copy a whole cell across a shift-click/shift-arrow range
         </span>
       </div>
 
@@ -1320,14 +1388,18 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
                 const isFuture = d > todayStr;
                 const exp = expectedTimeFor(d);
                 return (
-                  <th key={d}
-                    className={`sticky top-0 z-10 px-2 py-1.5 text-center font-semibold whitespace-nowrap ${
-                      isFuture ? "bg-gray-300 text-gray-400" : exp.isSpecial ? "bg-purple-700 text-white" : "bg-school-navy text-white"
-                    }`}
-                    title={isFuture ? "Future date" : exp.isSpecial ? `Special Day — expected ${exp.time}${exp.reason ? ": " + exp.reason : ""}` : `Expected start ${exp.time}`}
-                  >
-                    <div>{Number(d.slice(-2))}</div>
-                    {!isFuture && <div className="text-[9px] font-normal opacity-80">{exp.time}{exp.isSpecial ? " ⚡" : ""}</div>}
+                  <th key={d} className="sticky top-0 z-10 p-0">
+                    <button
+                      type="button"
+                      onClick={() => openDayTypeEditor(d)}
+                      title={`${exp.isSpecial ? `Special Day — expected ${exp.time}${exp.reason ? ": " + exp.reason : ""}` : `Expected start ${exp.time}`} · click to set Regular/Special`}
+                      className={`w-full px-2 py-1.5 text-center font-semibold whitespace-nowrap transition-colors ${
+                        exp.isSpecial ? "bg-purple-700 text-white hover:bg-purple-600" : "bg-school-navy text-white hover:bg-school-navy/90"
+                      } ${isFuture ? "opacity-60" : ""}`}
+                    >
+                      <div>{Number(d.slice(-2))}</div>
+                      <div className="text-[9px] font-normal opacity-80">{exp.time}{exp.isSpecial ? " ⚡" : ""}</div>
+                    </button>
                   </th>
                 );
               })}
@@ -1475,6 +1547,75 @@ function StaffAttendanceGridView({ dbStaffAttendance, onRefresh, designations, d
           </div>
         );
       })()}
+
+      {dayTypeDate && dayTypeForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={closeDayTypeEditor}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+            <div>
+              <h3 className="font-semibold text-gray-800">Day Type</h3>
+              <p className="text-xs text-gray-500">{fmtDate(dayTypeDate)}</p>
+            </div>
+
+            <div className="flex gap-1.5">
+              <button type="button" onClick={() => setDayTypeForm(f => ({ ...f, isSpecial: false }))}
+                className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${
+                  !dayTypeForm.isSpecial ? "bg-school-navy border-school-navy text-white" : "border-gray-200 text-gray-400 hover:border-gray-300"
+                }`}>
+                Regular Day
+              </button>
+              <button type="button" onClick={() => setDayTypeForm(f => ({ ...f, isSpecial: true }))}
+                className={`flex-1 px-3 py-2 rounded-lg text-sm font-semibold border-2 transition-colors ${
+                  dayTypeForm.isSpecial ? "bg-purple-700 border-purple-700 text-white" : "border-gray-200 text-gray-400 hover:border-gray-300"
+                }`}>
+                ⚡ Special Day
+              </button>
+            </div>
+
+            {!dayTypeForm.isSpecial && (
+              <p className="text-[11px] text-gray-400">
+                Uses the normal expected start time from Settings → Kiosk ({baseExpectedStart}).
+                {specialDays[dayTypeDate] ? " Saving will remove this date's existing Special Day override." : ""}
+              </p>
+            )}
+
+            {dayTypeForm.isSpecial && (
+              <>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Expected Start Time</label>
+                  <input type="time" value={dayTypeForm.expectedStartTime}
+                    onChange={e => setDayTypeForm(f => ({ ...f, expectedStartTime: e.target.value }))}
+                    className="border-2 border-purple-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-700"/>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Reason (optional)</label>
+                  <input type="text" value={dayTypeForm.reason}
+                    onChange={e => setDayTypeForm(f => ({ ...f, reason: e.target.value }))}
+                    placeholder="e.g. Annual Day rehearsal"
+                    className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"/>
+                </div>
+                <p className="text-[11px] text-gray-400">
+                  Late/On-Time for everyone on this date is judged against this time instead of the
+                  normal default — existing records for this date are recalculated immediately.
+                  Grace period/absent cutoff/shift end for this date, if already set in Settings →
+                  Kiosk, are kept as they are.
+                </p>
+              </>
+            )}
+
+            {dayTypeError && <p className="text-xs text-red-600">{dayTypeError}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button onClick={closeDayTypeEditor} className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50">
+                Cancel
+              </button>
+              <button onClick={saveDayType} disabled={dayTypeSaving}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-school-navy text-white hover:bg-school-navy/90 disabled:opacity-50">
+                {dayTypeSaving ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

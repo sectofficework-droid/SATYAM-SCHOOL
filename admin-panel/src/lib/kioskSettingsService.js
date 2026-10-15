@@ -101,12 +101,19 @@ export async function deleteKioskSpecialDay(date) {
 // page's own "what's coming up" list), this returns overrides anywhere in
 // [from, to] inclusive, past included - what the Staff Attendance Grid needs
 // to show "was this day a Special Day" for a month already gone by.
+// Carries every override field, not just expectedStartTime/reason - so a
+// caller editing just one field (the Grid's day-type toggle, say) can pass
+// the rest straight back to saveKioskSpecialDay() unchanged, since that RPC
+// overwrites all fields wholesale on conflict rather than merging.
 export async function getKioskSpecialDaysInRange(from, to) {
   const { data, error } = await supabase.rpc("list_kiosk_special_days_in_range", { p_from: from, p_to: to });
   if (error) throw error;
   return (data || []).map(row => ({
     date:              row.o_date,
     expectedStartTime: row.o_expected_start_time?.slice(0, 5) || "",
+    lateGraceMinutes:  row.o_late_grace_minutes ?? "",
+    absentCutoffTime:  row.o_absent_cutoff_time?.slice(0, 5) || "",
+    shiftEndTime:      row.o_shift_end_time?.slice(0, 5) || "",
     reason:            row.o_reason || "",
   }));
 }

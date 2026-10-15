@@ -3540,6 +3540,97 @@ pattern), it is noted as already-known and not re-filed as new.
       time) was this time verifiably removed - catching, in the same
       motion, that the original native-dialog interaction had failed
       silently once already earlier in this session.
+- [x] **REQ-FEAT-014 — Grid column headers can now toggle a date between
+      Regular and Special Day and set its timing, instead of only
+      displaying what Settings → Kiosk already had configured. DONE
+      2026-10-15.** User: "there is no way to change regular day and
+      special day?" This session checked first rather than assuming: the
+      pre-existing Special Day manager (Settings → Kiosk) couldn't mark a
+      *past* date Special at all (client-side date-picker `min=today` +
+      a server-side `RAISE EXCEPTION 'special_day_in_past'` guard), had no
+      edit action (delete-and-recreate only), and dropped a Special Day
+      from its own list entirely once the date passed (`list_kiosk_special_days()`
+      filters `date >= today`). Reported these findings and asked a
+      clarifying question about scope/placement - user interrupted the
+      question tool directly with the answer instead: "in grid view we
+      should be able to toggle the day whether regular or special if
+      special then change the timing." Proceeded on that direct
+      instruction rather than re-asking.
+
+      **Found and fixed a drift gap before writing any new code**: the
+      live `save_kiosk_special_day()` already differed from
+      `SUPABASE_KIOSK_SPECIAL_DAY.sql`'s original body - it had separately
+      gained an `is_admin_user()` check and a
+      `PERFORM recompute_late_arrivals_for_date(...)` call, with no file
+      ever updated to match (this project's schema isn't centralized - see
+      CLAUDE.md). Preserved both exactly as found; the only actual change
+      was deleting the past-date guard
+      (`mobile-app/SUPABASE_SPECIAL_DAY_PAST_DATES.sql`, applied live via
+      Supabase MCP). Confirmed this is safe to backdate specifically
+      because `recompute_late_arrivals_for_date` already existed and was
+      already called at the end of both save and delete - it recalculates
+      `is_late`/`late_minutes` for every existing record on that date
+      against the new effective settings rather than leaving them stale.
+
+      **New client function**: `kioskSettingsService.getKioskSpecialDaysInRange()`
+      extended to return every override field (`lateGraceMinutes`,
+      `absentCutoffTime`, `shiftEndTime`), not just `expectedStartTime`/
+      `reason` - `saveKioskSpecialDay()` overwrites all fields wholesale on
+      conflict, so a Grid-side edit touching only the expected-start-time
+      field would otherwise silently wipe any grace/cutoff/shift-end
+      values already set via Settings → Kiosk. The Grid's save path now
+      always passes the existing values for those three fields straight
+      through unchanged.
+
+      **Grid UI**: each date's `<th>` is now a button - click opens a "Day
+      Type" modal (Regular Day / ⚡ Special Day, expected start time +
+      optional reason when Special, a warning when switching Special→Regular
+      that it will delete the existing override). Reuses
+      `saveKioskSpecialDay`/`deleteKioskSpecialDay` (the same functions
+      Settings → Kiosk's own form already calls) rather than a new write
+      path - this view manages the same underlying data the Settings page
+      does, just from a different entry point, per the user's explicit
+      instruction. After save/delete: `specialDays` state refreshed for
+      the visible month, and `getStaffAttendanceForReport()` re-fetched
+      immediately (not the usual 800ms debounce) so Late dots across the
+      whole column reflect the server-side recompute right away. Future
+      dates' headers changed from flat grey to a dimmed navy/purple (so a
+      Special Day set on an upcoming date is still visible, not hidden by
+      the "future" styling that used to apply unconditionally).
+
+      **Live-tested end-to-end, found and fixed one more real bug in the
+      process** - `recompute_late_arrivals_for_date()` only ever looped
+      over `employee_shifts` rows, but `admin_save_attendance_cell`
+      (REQ-FEAT-012) deliberately never inserts a new `employee_shifts`
+      row (the one-open-shift-index reasoning from REQ-FEAT-011/012) - so
+      a Grid-entered check-in for an employee with no real kiosk punch
+      that day was invisible to the recompute. Caught live: marked
+      2026-10-04 Special Day (09:00), set a Grid check-in of 08:15 for an
+      employee with no kiosk shift that day → correctly computed On Time
+      (`is_late=false`) against the Special Day time, confirmed via SQL.
+      Reverted the date to Regular Day → confirmed via SQL the record was
+      *still* `is_late=false` instead of flipping back to Late - the bug.
+      Fixed `recompute_late_arrivals_for_date()`
+      (`mobile-app/SUPABASE_SPECIAL_DAY_PAST_DATES.sql`, same migration) to
+      also loop over `employee_attendance` rows with a real check-in time
+      (the report's actual primary lateness source per
+      `getStaffAttendanceForReport`'s own fallback logic), in addition to
+      the original `employee_shifts` loop which was kept unchanged. Only 3
+      callers of this function exist total (all in this same subsystem,
+      return value discarded via `PERFORM` everywhere), so safe to change
+      directly rather than add a parallel function. Re-ran the recompute,
+      confirmed via SQL the record correctly flipped back to
+      `is_late=true, late_minutes=45`, then confirmed the same live in the
+      Grid UI (header back to navy/07:30, cell's orange Late dot restored)
+      and in the Daily view ("Late by 45 min").
+
+      **Verified**: `npm run lint` clean; full Special Day create → edit
+      (re-open prefilled correctly) → check-in-against-special-time →
+      revert-to-Regular → recompute cycle confirmed via direct SQL at every
+      step, not just the UI, on real employee Barsha Pradhan. All test
+      writes (one Special Day override, one check-in) removed afterward;
+      confirmed via SQL the full month and the overrides table both
+      returned to their exact pre-test state.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

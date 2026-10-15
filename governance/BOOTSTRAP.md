@@ -505,6 +505,51 @@ UI. `npm run lint` clean; zero `window.confirm` calls remain in
 documenting what it replaces). Full detail: `planning/TODO.md`
 REQ-FEAT-012, REQ-FEAT-013.
 
+**Same session, user correction — REQ-FEAT-014 — Grid date headers can now
+toggle Regular/Special Day and set its timing.** User: "there is no way to
+change regular day and special day?" Checked first: the pre-existing
+Special Day manager (Settings → Kiosk) couldn't mark a *past* date Special
+at all (date-picker `min=today` + a server-side `special_day_in_past`
+guard), had no edit (delete-and-recreate only), and dropped a Special Day
+from its own list once the date passed. Started to ask a clarifying
+question about scope; user interrupted the tool directly: "in grid view we
+should be able to toggle the day whether regular or special if special
+then change the timing" - proceeded on that direct instruction.
+
+Found a real schema-drift gap before writing anything: the live
+`save_kiosk_special_day()` already differed from its own source file
+(gained an `is_admin_user()` check and a
+`recompute_late_arrivals_for_date()` call at some point, file never
+updated to match). Preserved both; only removed the past-date guard
+(`SUPABASE_SPECIAL_DAY_PAST_DATES.sql`, applied live via Supabase MCP) -
+safe specifically because `recompute_late_arrivals_for_date` already
+existed and already ran on every save/delete, recalculating lateness for
+every existing record on that date rather than leaving it stale. Grid
+column headers are now buttons opening a "Day Type" modal (Regular/⚡
+Special, expected time + reason) that calls the *same*
+`saveKioskSpecialDay`/`deleteKioskSpecialDay` Settings → Kiosk already
+uses - one shared write path, not a duplicate - now preserving
+grace/cutoff/shift-end fields on a Grid-side edit (the RPC overwrites all
+fields wholesale, so the client fetches and passes those three through
+unchanged).
+
+**Live-tested, found and fixed one more real bug**:
+`recompute_late_arrivals_for_date()` only ever walked `employee_shifts`
+rows - but REQ-FEAT-012's `admin_save_attendance_cell` deliberately never
+creates a new `employee_shifts` row, so a Grid-entered check-in with no
+real kiosk punch that day was invisible to the recompute. Caught live:
+marked a date Special, set a Grid check-in that correctly computed On
+Time against it, reverted to Regular - and the record stayed On Time
+instead of flipping back to Late. Fixed by also looping over
+`employee_attendance` rows with a real check-in time (the report's actual
+primary lateness source); only 3 callers of this function exist, all in
+this same subsystem, so changed directly. Re-verified the full
+cycle via SQL at every step - create Special Day, check-in computed
+against it, revert, recompute correctly restored the original Late
+status - then confirmed the same visually in the Grid (header, Late dot)
+and Daily view. Test data removed afterward; confirmed via SQL. Full
+detail: `planning/TODO.md` REQ-FEAT-014.
+
 **Prior — Session 2026-10-09 — Marksheet generation rebuilt around a
 user-supplied reference template (REQ-FEAT-008), classified MINOR CHANGE
 (with an internal architecture change) per J12B.**
