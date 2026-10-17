@@ -1057,15 +1057,15 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
             </div>
 
             <div className="sm:col-span-2 lg:col-span-3">
-              <FieldLabel required>Full Address</FieldLabel>
+              <FieldLabel>Full Address</FieldLabel>
               <textarea
-                placeholder="Society / Area / Landmark / City / PIN Code"
+                placeholder="Fill in Room/Plot No, Society, Landmark, Area and Pin Code above"
                 value={form.address}
-                onChange={set("address")}
+                readOnly
                 rows={2}
-                required
-                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy transition-all bg-white placeholder:text-gray-300 resize-none"
+                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-600 placeholder:text-gray-300 resize-none cursor-not-allowed"
               />
+              <p className="text-[11px] text-gray-400 mt-1">Auto-generated from Room/Plot No, Society, Landmark, Area and Pin Code — not editable</p>
             </div>
 
             <div>

@@ -96,6 +96,46 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  // REQ-FEAT-017 (2026-10-17): Homework/Classwork/Attentiveness/Diary daily
+  // tracker. Gated by session identity only (any teacher may log any
+  // class-subject they teach, same "any class" philosophy as homework/exams/
+  // syllabus above) - not is_teacher_of_class, since a subject teacher with
+  // no class_teacher_of_section_id must still be able to log here.
+  // records: [{student_id, homework_done, classwork_done, attentive, diary_done}].
+  static Future<void> saveStudentDailyLogBatch({
+    required String employeeId,
+    required String sessionToken,
+    required String className,
+    required String subject,
+    required String date,
+    required List<Map<String, dynamic>> records,
+  }) async {
+    await client.rpc('save_student_daily_log_batch', params: {
+      'p_employee_id': employeeId,
+      'p_session_token': sessionToken,
+      'p_class_name': className,
+      'p_subject': subject,
+      'p_date': date,
+      'p_records': records.map((r) => {
+        'student_id': r['student_id'],
+        'homework_done': r['homework_done'],
+        'classwork_done': r['classwork_done'],
+        'attentive': r['attentive'],
+        'diary_done': r['diary_done'],
+      }).toList(),
+    });
+  }
+
+  // Already-saved entries for a class-subject-date - used to prefill the
+  // roster with real prior marks (not a blank all-checked form) when a
+  // teacher reopens a day they already logged.
+  static Future<List<Map<String, dynamic>>> fetchStudentDailyLog(String employeeId, String sessionToken, String className, String subject, String date) async {
+    final res = await client.rpc('fetch_student_daily_log', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_class_name': className, 'p_subject': subject, 'p_date': date,
+    }) as List;
+    return List<Map<String, dynamic>>.from(res);
+  }
+
   // Attendance edit-request workflow ─────────────────────────────────────────
 
   // REQ-SEC-002 Category 3 Group A (2026-09-19): these 9 tables moved from

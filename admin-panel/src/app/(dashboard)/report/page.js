@@ -5,7 +5,7 @@ import {
   GraduationCap, IndianRupee, Users, Package, Search,
   RefreshCw, Download, FileText, ShieldCheck, BookOpen, Landmark, IdCard,
   CheckSquare, X, LogOut, Fingerprint, ArrowUp, ArrowDown, ChevronsUpDown,
-  Trash2, ChevronLeft, ChevronRight, Award,
+  Trash2, ChevronLeft, ChevronRight, Award, ListChecks,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -24,6 +24,7 @@ import useStore from "@/lib/store";
 import DateInputDMY from "@/components/DateInputDMY";
 import useConfirm from "@/components/ConfirmDialog";
 import ExamsReportSection from "./ExamsReportSection";
+import StudentDailyLogReportSection from "./StudentDailyLogReportSection";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CLASSES   = ["JR.KG","SR.KG","Balvatika","1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th","11th - Commerce","12th - Commerce"];
@@ -1630,6 +1631,11 @@ export default function ReportPage() {
   // toggled by this flag instead of a REPORT_CONFIGS["exams"] entry, exactly
   // mirroring the dbLoading early-return pattern already used below.
   const [showExamsReport, setShowExamsReport] = useState(false);
+  // REQ-FEAT-017 (2026-10-17): Homework/Classwork/Attentiveness/Diary daily
+  // tracker report - same self-contained-section pattern as showExamsReport
+  // above (reads mobile-app's new student_daily_log table directly, filtered
+  // by class/section/subject/date range).
+  const [showDailyLogReport, setShowDailyLogReport] = useState(false);
   const [filters,  setFilters]  = useState({});
   const [selCols,  setSelCols]  = useState([]); // ordered array of selected column keys
   const [dateFrom, setDateFrom] = useState("");
@@ -2360,7 +2366,7 @@ export default function ReportPage() {
         {Object.entries(REPORT_CONFIGS).map(([key, c]) => {
           const Icon = c.icon;
           return (
-            <button key={key} onClick={() => { setShowExamsReport(false); setRType(key); }}
+            <button key={key} onClick={() => { setShowExamsReport(false); setShowDailyLogReport(false); setRType(key); }}
               className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
               <Icon className="w-6 h-6"/>
               <span className="text-xs font-semibold leading-tight text-center">{c.label}</span>
@@ -2372,9 +2378,52 @@ export default function ReportPage() {
           <Award className="w-6 h-6"/>
           <span className="text-xs font-semibold leading-tight text-center">Exams</span>
         </button>
+        <button onClick={() => { setShowExamsReport(false); setShowDailyLogReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <ListChecks className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Daily Progress</span>
+        </button>
       </div>
 
       <ExamsReportSection />
+    </div>
+  );
+
+  if (showDailyLogReport) return (
+    <div className="space-y-5">
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Reports & Export</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Generate, filter and export reports for any module</p>
+        </div>
+      </div>
+
+      {/* Report type selector - same tiles as the normal view, Daily Progress active */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+        {Object.entries(REPORT_CONFIGS).map(([key, c]) => {
+          const Icon = c.icon;
+          return (
+            <button key={key} onClick={() => { setShowDailyLogReport(false); setRType(key); }}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+              <Icon className="w-6 h-6"/>
+              <span className="text-xs font-semibold leading-tight text-center">{c.label}</span>
+            </button>
+          );
+        })}
+        <button onClick={() => { setShowDailyLogReport(false); setShowExamsReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Award className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Exams</span>
+        </button>
+        <button onClick={() => setShowDailyLogReport(true)}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-school-navy bg-school-navy text-white shadow-lg transition-all">
+          <ListChecks className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Daily Progress</span>
+        </button>
+      </div>
+
+      <StudentDailyLogReportSection />
     </div>
   );
 
@@ -2410,6 +2459,11 @@ export default function ReportPage() {
           className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
           <Award className="w-6 h-6"/>
           <span className="text-xs font-semibold leading-tight text-center">Exams</span>
+        </button>
+        <button onClick={() => setShowDailyLogReport(true)}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <ListChecks className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Daily Progress</span>
         </button>
       </div>
 

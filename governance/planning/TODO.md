@@ -3631,6 +3631,159 @@ pattern), it is noted as already-known and not re-filed as new.
       writes (one Special Day override, one check-in) removed afterward;
       confirmed via SQL the full month and the overrides table both
       returned to their exact pre-test state.
+- [x] **REQ-FEAT-015 — Admin panel's "Full Address" (Add Student + Edit
+      Student) is now fully derived/read-only from Room/Plot No, Society,
+      Landmark, Area and Pin Code. DONE 2026-10-17.** User: "web admin panel
+      address should be auto generated given room,society,landmark,area."
+      Found Add Student (`AddStudentForm.js`) already had a live `useEffect`
+      building `Full Address` from those 4 fields + "SURAT" + Pin Code, but
+      left it as a freely-editable textarea that the effect silently
+      overwrote on every keystroke; Edit Student (`student/[id]/edit/
+      page.js`) had the 4 fields but no auto-sync at all - its address could
+      drift from reality once Society/Area were edited later. Asked the
+      user to confirm scope/behavior before coding; chose "always derived,
+      read-only" (not "stop overwriting after a manual edit"). Ported the
+      same `useEffect` into Edit Student; both forms' `Full Address`
+      textarea is now `readOnly` with a "not editable" helper note.
+      Deliberately NOT touched: Employee (single flat `address` field, no
+      4-field breakdown to derive from) and the super-admin bulk "Replace
+      Full Details" import/inline editor (there, Full Address is a real
+      importable column for migrated data, not always reconstructable from
+      the 4 fields). **Verified**: `npm run lint` clean; dev server compiled
+      `/student` and `/student/[id]/edit` with no errors (`GET .../edit
+      200`). **Live-verified same session** (user logged into their own
+      browser after being asked, per the "test own app" credential rule):
+      Add Student - typed Room/Society/Area/Pin Code, confirmed Full
+      Address live-built to "12, BLOCK B, SHANTI NAGAR SOCIETY, VESU,
+      SURAT, 395007" and rejected a direct keystroke into the field
+      (readOnly held). Edit Student - opened real student #0001 (Mayur
+      Beheruk), confirmed it pre-filled correctly from existing data
+      ("81, SIDHARTH NAGAR, BHESTHAN, BHESTHAN, SURAT, 395023") and
+      re-derived live when Society was changed to a test value. Edit was
+      never saved (navigated away) - no real data touched.
+- [x] **REQ-FEAT-016 — Mobile Teacher app's Add Student reordered to match
+      the admin panel's Replace Full Details import template, and extended
+      to full field parity (Admission Info + Previous School, previously
+      missing entirely). DONE 2026-10-17.** User: "app student add details
+      should sequenced according to admin panel new import." Compared
+      mobile's `admin_add_student_page.dart` (7 sections: Class & Section /
+      Basic Info / Parents / Address / Birth Details / Identity Documents /
+      Other) against the web's `IMPORT_FIELDS` grouping (super-admin/
+      page.js): Admission Info → Personal Info → Contact → IDs & Documents →
+      Previous School. Asked which scope the user wanted; chose full parity
+      including Admission Info. Confirmed via `information_schema.columns`
+      (not assumed) that `student_enrollments.fee_total/fee_discount/
+      discount_reason/admission_class_id` and the whole `student_previous_
+      school` table were real, already-existing columns the mobile RPC
+      never touched - `students.grno` likewise real but unexposed.
+      New additive overload of `staff_admin_student_add` (54 args, 15 more
+      than the existing 39-arg one - both older overloads untouched) adds
+      `p_gr_no/p_roll_no/p_date_of_join/p_admission_class_id/p_fee_total/
+      p_discount_amount/p_discount_reason` plus 8 Previous School params,
+      inserting into `student_enrollments`'s existing columns and a new
+      conditional `student_previous_school` insert
+      (`mobile-app/SUPABASE_EXPAND_STUDENT_ADD_ADMISSION_PREVSCHOOL.sql`,
+      applied live via Supabase MCP). `staff_admin_service.dart`'s
+      `addStudent()` extended with the matching optional params.
+      `admin_add_student_page.dart` rebuilt: new "Admission Details"
+      section (Join Date, GR No, Roll No - blank auto-assigns same as
+      before, Admission Class, Fee Total auto-suggested from the existing
+      `staff_admin_fee_structures` RPC on class change, Discount Amount/
+      Reason) and new "Previous School" section, both previously absent;
+      Personal Info/Contact sections reordered/merged to match the import's
+      grouping (names+DOB+birth fields+religion/caste/height/weight
+      together; mobile numbers alongside the address fields, not under
+      "Parents"). **Verified**: applied migration live, confirmed both
+      older overloads (11-arg, 39-arg) still resolve unchanged
+      (`pg_get_function_identity_arguments`), exercised the new 54-arg
+      overload in a rolled-back transaction with every new field populated
+      and read every value back correct (grno, roll_no, date_of_join,
+      fee_total, fee_discount, discount_reason, previous-school row) before
+      `ROLLBACK` - zero rows actually persisted. `flutter analyze` clean on
+      every changed Dart file. **Live-verified same session** on a real
+      BlueStacks device (`127.0.0.1:5555`, `flutter run --flavor teacher`
+      built and installed v1.0.0+9 directly): with user permission, reset
+      the standing QA fixture `ZZ-TEST Satyam` (EMP999, designation
+      literally "Test Account (QA - Full Access)") to a temporary password
+      and logged in as it - confirmed section order on screen exactly
+      matches the plan (Class & Section → new Admission Details incl.
+      Fee Total auto-suggesting ₹14,500 the instant JR.KG was picked,
+      matching the real fee_structures row → merged Personal Info → Contact
+      → Identity Documents → new Previous School section at the end).
+      Form was not submitted - backed out before Save, confirmed via SQL
+      zero new students were created in the prior 20 minutes.
+- [x] **REQ-FEAT-017 — New Homework/Classwork/Attentiveness/Diary daily
+      tracker: Teacher app entry + admin panel report. DONE 2026-10-17.**
+      User: "student weekly improvent - homework,classwork,attentiveness,
+      diary (teacher will see their teaching subjects from any class they
+      teaching then they click that class subject that class student list
+      will load then they will click the dropdown of everystudent will load
+      like:homework,classwork,attentiveness,diary which by defalt checked if
+      any student din't have done that it will be crossed by teacher)."
+      Confirmed via clarifying questions before coding: entry is per
+      class-subject-period, per day (a "weekly" view is just a date-range
+      rollup over this same daily data, not a separate weekly-grained row);
+      visible to the entering teacher plus a new admin-panel report: no
+      Student/Parent app view yet.
+      New `student_daily_log` table (`student_id, class, subject, date`
+      unique, 4 booleans default `true`, `marked_by`) - RLS enabled, no
+      direct `anon` grants (explicitly revoked after noticing this
+      project's schema auto-grants `anon`/`authenticated` on new tables by
+      default), admin panel kept full access via the same `authenticated` +
+      `is_admin_user()` policy pattern already used for the REQ-SEC-002
+      Category 3 tables (`mobile-app/SUPABASE_STUDENT_DAILY_LOG.sql`,
+      applied live via Supabase MCP). Two new SECURITY DEFINER RPCs,
+      `save_student_daily_log_batch`/`fetch_student_daily_log`, gated by
+      session identity only (`verify_mobile_session`) - deliberately NOT
+      `is_teacher_of_class`, matching the same "any class a teacher
+      teaches" philosophy this project already established for homework/
+      exams/syllabus (`SUPABASE_CAT3_GROUP_B_RPCS.sql`'s own header
+      comment), since `teacherClassSubjectPairs()` already lets a subject
+      teacher with no homeroom pick any class they're mapped to.
+      Teacher app: new `TeacherDailyLogPage` (`lib/app/modules/teacher/
+      daily_log/`) reuses the existing class-subject picker
+      (`teacherClassSubjectPairs`, falling back to the plain class/subject
+      dropdowns when a teacher has no subject_mappings, same convention as
+      Marks) and the existing `get_class_students_by_name` roster RPC (no
+      new roster-loading code needed) - each student is a collapsible row,
+      4 switches default **on** (green/"Done"), tap to cross one out
+      (red/"Not done"), one Save batches the whole class. Wired via a new
+      `Routes.teacherDailyLog` + a "Daily Progress" dashboard tile.
+      Admin panel: new self-contained `StudentDailyLogReportSection.js`
+      (mirrors `ExamsReportSection.js`'s own pattern exactly - a 3rd
+      `show*Report` toggle alongside the existing Exams one in
+      `report/page.js`), filtered by Class/Subject (subject options loaded
+      from whatever's actually been logged for that class, not a guessed
+      static list)/date range, showing a done-vs-crossed rollup per student
+      with Excel export. **Verified**: applied migration live; confirmed
+      RLS policy scoped to `authenticated` only and `anon`'s accidental
+      default table grant explicitly revoked; exercised the upsert/
+      ON CONFLICT path directly via a rolled-back transaction (flipped one
+      student's `homework_done` to `false`, confirmed only that row/column
+      changed); Supabase security advisor shows no new RLS-disabled-with-
+      policy issue for this table (the two new functions only appear under
+      the generic SECURITY DEFINER search-path advisory every existing
+      teacher RPC already carries). `flutter analyze` clean; `npm run lint`
+      clean; dev server compiled `/report` with no errors. **Live-verified
+      same session, full round trip, real data**: on BlueStacks as
+      `ZZ-TEST Satyam` (see REQ-FEAT-016's note - same login), opened Daily
+      Progress, picker defaulted to "JR.KG - Computer" from this teacher's
+      real `subject_mappings`, roster loaded the real 19-student JR.KG
+      class. Crossed Homework + Diary off for Mayur Beheruk (real student
+      #0001), left the other 3 toggles + all 18 other students on their
+      default, tapped Save - got "Saved!". Confirmed via direct SQL the
+      real `student_daily_log` table now holds exactly 19 rows for
+      `JR.KG/Computer/2026-10-17`, Mayur Beheruk's row correctly
+      `homework_done=false, diary_done=false`, everyone else all-`true`,
+      `marked_by` correctly the test teacher's id. Then, in the user's own
+      already-logged-in admin-panel browser tab, opened Report → Daily
+      Progress, selected the same class+subject: summary tiles read
+      exactly "Homework 95% (18 done · 1 crossed)" / "Diary 95% (18 done ·
+      1 crossed)" / Classwork & Attentiveness 100%, and the table's MAYUR
+      BEHERUK row showed "0 / 1" (red) for Homework and Diary, "1 / 0"
+      (green) for the other two - teacher-app entry and admin-panel report
+      agree exactly, over a real session-token RPC and real RLS-gated
+      table read, not a mock.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

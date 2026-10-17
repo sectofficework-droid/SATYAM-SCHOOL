@@ -277,6 +277,12 @@ class StaffAdminService {
   // collected 9 basic fields. All new params optional, matching the
   // staff_admin_student_add RPC's new overload (same name/order as the
   // web form's own field keys for easy cross-reference).
+  //
+  // Admission Info + Previous School params added 2026-10-17 (REQ-FEAT-016)
+  // to reach full parity with the admin panel's Replace Full Details import
+  // template - grNo/rollNo/dateOfJoin/feeTotal/discountAmount/
+  // discountReason/admissionClassId and the 8 lastSchool*/prev* fields were
+  // never collected on mobile before this.
   static Future<Map<String, dynamic>> addStudent(String employeeId, {
     required String firstName, required String lastName, required String dob, required String gender,
     required String fatherName, required String motherName, required String mobile1,
@@ -292,6 +298,11 @@ class StaffAdminService {
     String? birthCity, String? birthVillage, String? birthDistrict, String? birthState,
     String? birthCertRegNo, String? birthCertRegDate,
     String? udise, String? pen, String? apaar,
+    String? grNo, int? rollNo, String? dateOfJoin, String? admissionClassId,
+    num? feeTotal, num? discountAmount, String? discountReason,
+    String? lastSchoolName, String? lastSchoolGrNo, String? lastSchoolClass,
+    String? lastSchoolMedium, String? lastSchoolPlace,
+    int? prevAttendanceDays, bool? lastExamGiven, num? prevPercentage,
   }) async {
     final res = await client.rpc('staff_admin_student_add', params: {
       'p_employee_id': employeeId, 'p_first_name': firstName, 'p_last_name': lastName, 'p_dob': dob,
@@ -308,6 +319,11 @@ class StaffAdminService {
       'p_birth_city': birthCity, 'p_birth_village': birthVillage, 'p_birth_district': birthDistrict, 'p_birth_state': birthState,
       'p_birth_cert_reg_no': birthCertRegNo, 'p_birth_cert_reg_date': birthCertRegDate,
       'p_udise': udise, 'p_pen': pen, 'p_apaar': apaar,
+      'p_gr_no': grNo, 'p_roll_no': rollNo, 'p_date_of_join': dateOfJoin, 'p_admission_class_id': admissionClassId,
+      'p_fee_total': feeTotal, 'p_discount_amount': discountAmount, 'p_discount_reason': discountReason,
+      'p_last_school_name': lastSchoolName, 'p_last_school_grno': lastSchoolGrNo, 'p_last_school_class': lastSchoolClass,
+      'p_last_school_medium': lastSchoolMedium, 'p_last_school_place': lastSchoolPlace,
+      'p_prev_attendance_days': prevAttendanceDays, 'p_last_exam_given': lastExamGiven, 'p_prev_percentage': prevPercentage,
     });
     return Map<String, dynamic>.from(res as Map);
   }

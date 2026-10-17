@@ -340,6 +340,13 @@ function EditForm({ existing, id, router }) {
 
   const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value.toUpperCase() }));
 
+  useEffect(() => {
+    const parts = [form.roomPlotNo, form.society, form.landmark, form.area, "SURAT", form.pinCode]
+      .filter(Boolean);
+    setForm(p => ({ ...p, address: parts.join(", ") }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.roomPlotNo, form.society, form.landmark, form.area, form.pinCode]);
+
   const handleAadharInput = (e) => {
     const digits    = e.target.value.replace(/\D/g, "").slice(0, 12);
     const formatted = digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim();
@@ -963,12 +970,13 @@ function EditForm({ existing, id, router }) {
             <FieldError>{errors.pinCode}</FieldError>
           </div>
           <div className="sm:col-span-2">
-            <FieldLabel required>Full Address</FieldLabel>
+            <FieldLabel>Full Address</FieldLabel>
             <textarea
-              placeholder="Society / Area / Landmark / City / PIN Code"
-              value={form.address} onChange={set("address")} rows={2} required
-              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy transition-all bg-white placeholder:text-gray-300 resize-none"
+              placeholder="Fill in Room/Plot No, Society, Landmark, Area and Pin Code above"
+              value={form.address} readOnly rows={2}
+              className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm bg-gray-50 text-gray-600 placeholder:text-gray-300 resize-none cursor-not-allowed"
             />
+            <p className="text-[11px] text-gray-400 mt-1">Auto-generated from Room/Plot No, Society, Landmark, Area and Pin Code — not editable</p>
           </div>
           <div>
             <FieldLabel required>Mobile Number 1</FieldLabel>

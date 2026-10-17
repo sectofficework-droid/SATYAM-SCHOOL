@@ -98,36 +98,61 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Current — mobile app v1.0.0+8 committed/pushed 2026-10-04, built + submitted to
-Play Console 2026-10-05** — Teacher app: Play Store icon crop fix (regenerated
-adaptive-icon foreground layers at correct 68% safe-zone scale, new
-`colors.xml` background), admin-workspace filters across 10 screens
-(Students/Employees/Fees/Expenses/Salary/Queries/Tasks/GR Book/Notices/
-Impersonation Log — new shared `AdminFilterBar` widget), a full security/
-bug sweep (session-restore hardening, kiosk crash fixes, silent-save-lie
-fixes, controller-disposal leaks, session-error handling added across
-teacher/student modules — commits `811d25f`/`8db198c`), and REQ-FEAT-007:
-Add Student in the Teacher admin workspace brought to full field parity
-with the web admin panel (~30 fields vs. the previous 6/9) via a new
-`AdminAddStudentPage` + an expanded 39-arg `staff_admin_student_add`
-overload (additive, old 11-arg overload untouched) — commit `2138dcc`.
-Admin-panel: `requireAdminSession`/`authedFetch` auth hardening on several
-API routes, `reportsServerAuth.js` now verifies `verify_mobile_session`
-first, XSS escaping added to `tcGenerator.js` interpolations — commit
-`aaa4660`. Version bumped `1.0.0+7`→`+8`, built, signature verified
-(`apksigner verify --print-certs`, real release key not debug), uploaded
-to Play Console Closed Testing - Alpha (AAB too large for browser
-automation, user selected via native file picker), submitted for Google
-review 2026-10-05 08:09 — release 8 confirmed **In review** on the
-Latest Releases page. **Governance docs lag the code**: `TODO.md`,
-`PENDING_REPORT.md`, 3 new tracked `.sql` files documenting live-only
-Supabase migrations (`SUPABASE_FIX_KIOSK_ADMIN_RPC_AUTH.sql`,
-`SUPABASE_FIX_KIOSK_SEARCH_PATH_AND_RLS.sql`,
-`SUPABASE_EXPAND_STUDENT_ADD_FULL_FIELDS.sql`), and the `pubspec.yaml`
-version bump are staged locally, not yet committed — user has not asked
-for a commit on this pass. **Not yet done**: on-device visual
-verification of Add Student in this build (BlueStacks was closed
-mid-session on 2026-10-04 before that check ran). See
+**Current — Session 2026-10-17 — three features coded (REQ-FEAT-015/016/017),
+none committed (not asked).** (1) Admin panel's `Full Address` (Add + Edit
+Student) made fully derived/read-only from Room/Society/Landmark/Area/Pin
+Code - Add already auto-built it, Edit never had the sync. (2) Mobile Teacher
+app's Add Student reordered to match the admin panel's Replace Full Details
+import grouping, extended to full parity via a new additive 54-arg
+`staff_admin_student_add` overload (Admission Info: GR No/Roll No/Date of
+Join/Admission Class/Fee/Discount; Previous School: new section writing to
+the pre-existing `student_previous_school` table) -
+`mobile-app/SUPABASE_EXPAND_STUDENT_ADD_ADMISSION_PREVSCHOOL.sql`, applied
+live, both older overloads (11-arg/39-arg) confirmed unaffected. (3) New
+Homework/Classwork/Attentiveness/Diary daily tracker - `student_daily_log`
+table (RLS + `is_admin_user()` policy, `anon`'s accidental default grant
+explicitly revoked), two session-gated RPCs
+(`mobile-app/SUPABASE_STUDENT_DAILY_LOG.sql`, applied live), a new Teacher
+app page (`TeacherDailyLogPage`) reusing the existing class-subject picker
+and roster RPC, and a new admin-panel report section
+(`StudentDailyLogReportSection.js`, mirrors `ExamsReportSection.js`'s
+toggle pattern). **Verified**: `npm run lint` + `flutter analyze` both
+clean; all 3 new/changed SQL functions exercised live via rolled-back
+transactions before trusting them; dev server compiled `/report`,
+`/student`, `/student/[id]/edit` with zero errors.
+
+**Then live-verified end to end, same session, on real production data**
+(user asked "VERIFY"): user logged into their own admin-panel browser
+tab (BK Debiprasad Das); confirmed Address auto-generate/read-only on both
+Add Student and real student #0001's Edit page, no data saved. For mobile,
+no emulator was running yet - user pointed out BlueStacks already had the
+Teacher app installed and logged in as BK Debiprasad Das; with the user's
+explicit permission, reset the standing QA fixture `ZZ-TEST Satyam`
+(EMP999)'s password to a temporary value, signed BK out, built+installed
+the latest code onto BlueStacks (`flutter run --flavor teacher`, now
+v1.0.0+9) and signed in as the test account. Confirmed Add Student's new
+section order/fields on screen (Fee Total correctly auto-suggested
+₹14,500 the instant JR.KG was picked) without submitting. Then ran the
+full Daily Progress round trip for real: logged a real 19-student JR.KG
+class from the app (crossed Homework+Diary for real student Mayur
+Beheruk, #0001), confirmed via SQL the row landed exactly right, then
+confirmed the admin-panel report showed the identical numbers back
+("95% · 18 done · 1 crossed", Mayur's row "0/1" in red). **Known state
+change from this verification pass**: BlueStacks' Teacher app is now
+signed in as `ZZ-TEST Satyam`, not BK Debiprasad Das - sign back in as
+yourself if you want that restored (the account's temp password isn't
+recorded here). The admin-panel browser tab was left open, still signed
+in as BK Debiprasad Das. No real student/data rows were created or
+changed; the one real row touched (Mayur Beheruk's daily log for today)
+is real new data from this verification, not a mutation of anything
+pre-existing - delete it from `student_daily_log` if you don't want it
+kept. Full detail: `planning/TODO.md` REQ-FEAT-015, REQ-FEAT-016,
+REQ-FEAT-017.
+
+**Prior — mobile app v1.0.0+8 submitted to Play Console 2026-10-05
+(REQ-FEAT-007 Add Student parity, icon fix, admin-workspace filters,
+security sweep); admin-panel auth hardening, commit `aaa4660`. Governance
+docs + 3 SQL files + `pubspec.yaml` bump were staged, not committed.** See
 `work-log\LOG-2026-10-04.md`, `work-log\LOG-2026-10-05.md`.
 
 **Prior — Committed and pushed 2026-10-01** — admin panel: Staff Attendance
@@ -340,7 +365,30 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-10-15 — Staff Attendance (Kiosk) report gained a
+**Current — Session 2026-10-17 — three features coded and clarified via
+AskUserQuestion before implementing: REQ-FEAT-015 (admin-panel address
+auto-generation made fully derived/read-only), REQ-FEAT-016 (mobile Add
+Student reordered + extended to full field parity with the admin panel's
+import template), REQ-FEAT-017 (new Homework/Classwork/Attentiveness/Diary
+daily tracker - Teacher app entry + admin-panel report). Classified as 3
+separate MINOR/feature changes per J12B - see `planning/TODO.md`
+REQ-FEAT-015/016/017 for full detail (schema confirmed live via
+`information_schema.columns` before writing any migration, all 3 new/
+changed SQL functions exercised in rolled-back transactions, `npm run
+lint` + `flutter analyze` clean, dev server compiled the touched admin-
+panel routes with zero errors). Not committed - user has not asked for a
+commit this session. **Then fully live-verified on user's "VERIFY"
+request** - real admin-panel session (user logged in), real BlueStacks
+device (user pointed out it was already running; rebuilt+installed latest
+code as v1.0.0+9, logged in as the standing `ZZ-TEST Satyam` QA account
+after resetting its password with the user's permission) - every one of
+the 3 features clicked through with real production data, including a
+full Teacher-app-entry → database → admin-panel-report round trip for
+REQ-FEAT-017. See `planning/TODO.md`'s REQ-FEAT-015/016/017 entries for
+exact results. State left behind: BlueStacks signed in as `ZZ-TEST Satyam`
+(not BK Debiprasad Das), admin-panel browser tab left open and signed in.
+
+**Prior — Session 2026-10-15 — Staff Attendance (Kiosk) report gained a
 spreadsheet-style editable "Grid" view (REQ-FEAT-010), classified MINOR
 CHANGE per J12B.**
 User asked for the attendance report to be "easily editable by admin like a

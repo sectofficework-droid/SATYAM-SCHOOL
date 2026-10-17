@@ -93,6 +93,12 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                     centered: true,
                     onTap: () => Get.toNamed(Routes.teacherHomework),
                   )),
+                  _AnimEntry(delay: 220, child: StatCard(
+                    label: 'Daily Progress', icon: Icons.fact_check_rounded,
+                    color: AppColors.teal, bgColor: AppColors.tealLight,
+                    centered: true,
+                    onTap: () => Get.toNamed(Routes.teacherDailyLog),
+                  )),
                   _AnimEntry(delay: 260, child: StatCard(
                     label: 'Student Attendance', icon: Icons.how_to_reg_rounded,
                     color: AppColors.green, bgColor: AppColors.greenLight,

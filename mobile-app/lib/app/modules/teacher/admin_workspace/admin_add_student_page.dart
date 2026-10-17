@@ -14,6 +14,14 @@ import '../../../../common/widgets/admin_workspace_common.dart';
 // doesn't fit this many fields, so this replaces it with a dedicated page,
 // matching the weight already given to AdminStudentDetailPage/
 // AdminEmployeeDetailPage elsewhere in this module.
+//
+// Section order + Admission Details/Previous School sections added
+// 2026-10-17 (REQ-FEAT-016) - user: "app student add details should
+// sequenced according to admin panel new import", then confirmed full
+// parity (not just reordering) when asked. Sections now follow the same
+// grouping/order as the admin panel's Replace Full Details import template
+// (super-admin/page.js's IMPORT_FIELDS): Admission Info -> Personal Info ->
+// Contact -> Identity Documents -> Previous School.
 class AdminAddStudentPage extends StatefulWidget {
   const AdminAddStudentPage({super.key});
   @override
@@ -30,34 +38,46 @@ class _AdminAddStudentPageState extends State<AdminAddStudentPage> {
   String? _classId;
   String? _sectionId;
 
-  // Basic info
+  // Admission Info
+  DateTime? _joinDate;
+  final _grNoCtrl = TextEditingController();
+  final _rollNoCtrl = TextEditingController();
+  String? _admissionClassId;
+  List<Map<String, dynamic>> _feeStructures = [];
+  final _feeTotalCtrl = TextEditingController();
+  final _discountAmountCtrl = TextEditingController();
+  final _discountReasonCtrl = TextEditingController();
+
+  // Personal info
   final _firstCtrl = TextEditingController();
   final _lastCtrl = TextEditingController();
-  DateTime? _dob;
-  String _gender = 'Male';
-  final _placeOfBirthCtrl = TextEditingController();
-
-  // Parents
   final _fatherCtrl = TextEditingController();
   final _motherCtrl = TextEditingController();
+  DateTime? _dob;
+  final _birthCertRegNoCtrl = TextEditingController();
+  DateTime? _birthCertRegDate;
+  String _gender = 'Male';
+  final _placeOfBirthCtrl = TextEditingController();
+  final _birthVillageCtrl = TextEditingController();
+  final _birthCityCtrl = TextEditingController();
+  final _birthDistrictCtrl = TextEditingController();
+  final _birthStateCtrl = TextEditingController();
+  final _motherTongueCtrl = TextEditingController();
+  final _religionCtrl = TextEditingController();
+  final _casteCtrl = TextEditingController();
+  final _subCasteCtrl = TextEditingController();
+  final _heightCtrl = TextEditingController();
+  final _weightCtrl = TextEditingController();
+
+  // Contact
   final _mobile1Ctrl = TextEditingController();
   final _mobile2Ctrl = TextEditingController();
-
-  // Address
   final _roomPlotCtrl = TextEditingController();
   final _societyCtrl = TextEditingController();
   final _landmarkCtrl = TextEditingController();
   final _areaCtrl = TextEditingController();
   final _pincodeCtrl = TextEditingController();
   final _addressCtrl = TextEditingController();
-
-  // Birth details
-  final _birthCityCtrl = TextEditingController();
-  final _birthVillageCtrl = TextEditingController();
-  final _birthDistrictCtrl = TextEditingController();
-  final _birthStateCtrl = TextEditingController();
-  final _birthCertRegNoCtrl = TextEditingController();
-  DateTime? _birthCertRegDate;
 
   // Identity documents
   final _aadharCtrl = TextEditingController();
@@ -70,28 +90,36 @@ class _AdminAddStudentPageState extends State<AdminAddStudentPage> {
   final _penCtrl = TextEditingController();
   final _apaarCtrl = TextEditingController();
 
-  // Other
-  final _religionCtrl = TextEditingController();
-  final _casteCtrl = TextEditingController();
-  final _subCasteCtrl = TextEditingController();
-  final _motherTongueCtrl = TextEditingController();
-  final _heightCtrl = TextEditingController();
-  final _weightCtrl = TextEditingController();
+  // Previous School
+  final _lastSchoolNameCtrl = TextEditingController();
+  final _lastSchoolClassCtrl = TextEditingController();
+  final _lastSchoolGrNoCtrl = TextEditingController();
+  final _lastSchoolMediumCtrl = TextEditingController();
+  final _lastSchoolPlaceCtrl = TextEditingController();
+  final _prevAttendanceDaysCtrl = TextEditingController();
+  bool _lastExamGiven = false;
+  final _prevPercentageCtrl = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    _joinDate = DateTime.now();
     StaffAdminService.classListWithIds(_employeeId).then((c) { if (mounted) setState(() => _classes = c); }).catchError((_) {});
+    StaffAdminService.feeStructures(_employeeId).then((f) { if (mounted) setState(() => _feeStructures = f); }).catchError((_) {});
   }
 
   @override
   void dispose() {
     for (final c in [
-      _firstCtrl, _lastCtrl, _placeOfBirthCtrl, _fatherCtrl, _motherCtrl, _mobile1Ctrl, _mobile2Ctrl,
-      _roomPlotCtrl, _societyCtrl, _landmarkCtrl, _areaCtrl, _pincodeCtrl, _addressCtrl,
-      _birthCityCtrl, _birthVillageCtrl, _birthDistrictCtrl, _birthStateCtrl, _birthCertRegNoCtrl,
+      _grNoCtrl, _rollNoCtrl, _feeTotalCtrl, _discountAmountCtrl, _discountReasonCtrl,
+      _firstCtrl, _lastCtrl, _fatherCtrl, _motherCtrl, _birthCertRegNoCtrl,
+      _placeOfBirthCtrl, _birthVillageCtrl, _birthCityCtrl, _birthDistrictCtrl, _birthStateCtrl,
+      _motherTongueCtrl, _religionCtrl, _casteCtrl, _subCasteCtrl, _heightCtrl, _weightCtrl,
+      _mobile1Ctrl, _mobile2Ctrl, _roomPlotCtrl, _societyCtrl, _landmarkCtrl, _areaCtrl, _pincodeCtrl, _addressCtrl,
       _aadharCtrl, _aadharNameCtrl, _fatherAadharCtrl, _fatherAadharNameCtrl, _motherAadharCtrl, _motherAadharNameCtrl,
-      _udiseCtrl, _penCtrl, _apaarCtrl, _religionCtrl, _casteCtrl, _subCasteCtrl, _motherTongueCtrl, _heightCtrl, _weightCtrl,
+      _udiseCtrl, _penCtrl, _apaarCtrl,
+      _lastSchoolNameCtrl, _lastSchoolClassCtrl, _lastSchoolGrNoCtrl, _lastSchoolMediumCtrl, _lastSchoolPlaceCtrl,
+      _prevAttendanceDaysCtrl, _prevPercentageCtrl,
     ]) {
       c.dispose();
     }
@@ -110,9 +138,23 @@ class _AdminAddStudentPageState extends State<AdminAddStudentPage> {
     if (d != null) setState(() => _birthCertRegDate = d);
   }
 
+  Future<void> _pickJoinDate() async {
+    final d = await showDatePicker(context: context, initialDate: _joinDate ?? DateTime.now(), firstDate: DateTime(1990), lastDate: DateTime.now());
+    if (d != null) setState(() => _joinDate = d);
+  }
+
   Future<void> _onClassChanged(String? v) async {
-    setState(() { _classId = v; _sectionId = null; _sections = []; });
+    setState(() {
+      _classId = v;
+      _admissionClassId = v;
+      _sectionId = null;
+      _sections = [];
+    });
     if (v != null) {
+      final fs = _feeStructures.firstWhere((f) => f['class_id'] == v, orElse: () => const {});
+      final tuition = (fs['tuition_amount'] as num?) ?? 0;
+      final uniform = (fs['uniform_amount'] as num?) ?? 0;
+      _feeTotalCtrl.text = fs.isEmpty ? '' : (tuition + uniform).toString();
       try {
         final s = await StaffAdminService.sectionList(_employeeId, v);
         if (mounted) setState(() => _sections = s);
@@ -178,6 +220,21 @@ class _AdminAddStudentPageState extends State<AdminAddStudentPage> {
         udise: _udiseCtrl.text.trim().isEmpty ? null : _udiseCtrl.text.trim(),
         pen: _penCtrl.text.trim().isEmpty ? null : _penCtrl.text.trim(),
         apaar: _apaarCtrl.text.trim().isEmpty ? null : _apaarCtrl.text.trim(),
+        grNo: _grNoCtrl.text.trim().isEmpty ? null : _grNoCtrl.text.trim(),
+        rollNo: int.tryParse(_rollNoCtrl.text.trim()),
+        dateOfJoin: _joinDate == null ? null : _fmtDate(_joinDate!),
+        admissionClassId: _admissionClassId ?? _classId,
+        feeTotal: num.tryParse(_feeTotalCtrl.text.trim()),
+        discountAmount: num.tryParse(_discountAmountCtrl.text.trim()),
+        discountReason: _discountReasonCtrl.text.trim().isEmpty ? null : _discountReasonCtrl.text.trim(),
+        lastSchoolName: _lastSchoolNameCtrl.text.trim().isEmpty ? null : _lastSchoolNameCtrl.text.trim(),
+        lastSchoolGrNo: _lastSchoolGrNoCtrl.text.trim().isEmpty ? null : _lastSchoolGrNoCtrl.text.trim(),
+        lastSchoolClass: _lastSchoolClassCtrl.text.trim().isEmpty ? null : _lastSchoolClassCtrl.text.trim(),
+        lastSchoolMedium: _lastSchoolMediumCtrl.text.trim().isEmpty ? null : _lastSchoolMediumCtrl.text.trim(),
+        lastSchoolPlace: _lastSchoolPlaceCtrl.text.trim().isEmpty ? null : _lastSchoolPlaceCtrl.text.trim(),
+        prevAttendanceDays: int.tryParse(_prevAttendanceDaysCtrl.text.trim()),
+        lastExamGiven: _lastSchoolNameCtrl.text.trim().isEmpty ? null : _lastExamGiven,
+        prevPercentage: num.tryParse(_prevPercentageCtrl.text.trim()),
       );
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
@@ -238,9 +295,35 @@ class _AdminAddStudentPageState extends State<AdminAddStudentPage> {
             )),
           ]),
 
-          _section('Basic Info'),
+          _section('Admission Details'),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: OutlinedButton(
+              onPressed: _pickJoinDate,
+              child: Text(_joinDate == null ? 'Date of Join' : 'Date of Join: ${_fmtDate(_joinDate!)}'),
+            ),
+          ),
+          _field(_grNoCtrl, 'GR Number (optional at admission)'),
+          _field(_rollNoCtrl, 'Roll No (leave blank to auto-assign)', type: TextInputType.number, formatters: [FilteringTextInputFormatter.digitsOnly]),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: DropdownButtonFormField<String>(
+              initialValue: _admissionClassId,
+              isExpanded: true,
+              decoration: const InputDecoration(labelText: 'Admission Class', border: OutlineInputBorder(), isDense: true),
+              items: _classes.map((c) => DropdownMenuItem(value: c['id'] as String, child: Text(c['name'] as String, overflow: TextOverflow.ellipsis))).toList(),
+              onChanged: (v) => setState(() => _admissionClassId = v),
+            ),
+          ),
+          _field(_feeTotalCtrl, 'Fee Total (Rs) — auto-suggested from class', type: const TextInputType.numberWithOptions(decimal: true)),
+          _field(_discountAmountCtrl, 'Discount Amount (Rs)', type: const TextInputType.numberWithOptions(decimal: true)),
+          _field(_discountReasonCtrl, 'Discount Reason'),
+
+          _section('Personal Info'),
           _field(_firstCtrl, 'First Name', required: true),
           _field(_lastCtrl, 'Last Name'),
+          _field(_fatherCtrl, "Father's Name", required: true),
+          _field(_motherCtrl, "Mother's Name", required: true),
           Row(children: [
             Expanded(child: Padding(
               padding: const EdgeInsets.only(bottom: 10),
@@ -260,27 +343,6 @@ class _AdminAddStudentPageState extends State<AdminAddStudentPage> {
               ),
             )),
           ]),
-          _field(_placeOfBirthCtrl, 'Place of Birth'),
-
-          _section('Parents'),
-          _field(_fatherCtrl, "Father's Name", required: true),
-          _field(_motherCtrl, "Mother's Name", required: true),
-          _field(_mobile1Ctrl, 'Primary Mobile', required: true, type: TextInputType.phone, formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)]),
-          _field(_mobile2Ctrl, 'Alternate Mobile', type: TextInputType.phone, formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)]),
-
-          _section('Address'),
-          _field(_roomPlotCtrl, 'Room / Plot No', required: true),
-          _field(_societyCtrl, 'Society', required: true),
-          _field(_landmarkCtrl, 'Landmark'),
-          _field(_areaCtrl, 'Area', required: true),
-          _field(_pincodeCtrl, 'PIN Code', required: true, type: TextInputType.number, formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)]),
-          _field(_addressCtrl, 'Full Address (optional summary)', maxLines: 2),
-
-          _section('Birth Details'),
-          _field(_birthCityCtrl, 'Birth City', required: true),
-          _field(_birthVillageCtrl, 'Birth Village'),
-          _field(_birthDistrictCtrl, 'Birth District'),
-          _field(_birthStateCtrl, 'Birth State'),
           _field(_birthCertRegNoCtrl, 'Birth Certificate Reg. No'),
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
@@ -289,6 +351,30 @@ class _AdminAddStudentPageState extends State<AdminAddStudentPage> {
               child: Text(_birthCertRegDate == null ? 'Birth Certificate Reg. Date' : _fmtDate(_birthCertRegDate!)),
             ),
           ),
+          _field(_placeOfBirthCtrl, 'Place of Birth'),
+          _field(_birthVillageCtrl, 'Birth Village'),
+          _field(_birthCityCtrl, 'Birth City', required: true),
+          _field(_birthDistrictCtrl, 'Birth District'),
+          _field(_birthStateCtrl, 'Birth State'),
+          _field(_motherTongueCtrl, 'Mother Tongue'),
+          _field(_religionCtrl, 'Religion'),
+          _field(_casteCtrl, 'Caste / Category'),
+          _field(_subCasteCtrl, 'Sub-Caste'),
+          Row(children: [
+            Expanded(child: _field(_heightCtrl, 'Height (cm)', type: const TextInputType.numberWithOptions(decimal: true))),
+            const SizedBox(width: 10),
+            Expanded(child: _field(_weightCtrl, 'Weight (kg)', type: const TextInputType.numberWithOptions(decimal: true))),
+          ]),
+
+          _section('Contact'),
+          _field(_mobile1Ctrl, 'Primary Mobile', required: true, type: TextInputType.phone, formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)]),
+          _field(_mobile2Ctrl, 'Alternate Mobile', type: TextInputType.phone, formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)]),
+          _field(_roomPlotCtrl, 'Room / Plot No', required: true),
+          _field(_societyCtrl, 'Society', required: true),
+          _field(_landmarkCtrl, 'Landmark'),
+          _field(_areaCtrl, 'Area', required: true),
+          _field(_pincodeCtrl, 'PIN Code', required: true, type: TextInputType.number, formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)]),
+          _field(_addressCtrl, 'Full Address (optional summary)', maxLines: 2),
 
           _section('Identity Documents'),
           _field(_aadharCtrl, "Student's Aadhar No", type: TextInputType.number, formatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(12)]),
@@ -301,16 +387,24 @@ class _AdminAddStudentPageState extends State<AdminAddStudentPage> {
           _field(_penCtrl, 'PEN'),
           _field(_apaarCtrl, 'APAAR ID'),
 
-          _section('Other'),
-          _field(_religionCtrl, 'Religion'),
-          _field(_casteCtrl, 'Caste / Category'),
-          _field(_subCasteCtrl, 'Sub-Caste'),
-          _field(_motherTongueCtrl, 'Mother Tongue'),
-          Row(children: [
-            Expanded(child: _field(_heightCtrl, 'Height (cm)', type: const TextInputType.numberWithOptions(decimal: true))),
-            const SizedBox(width: 10),
-            Expanded(child: _field(_weightCtrl, 'Weight (kg)', type: const TextInputType.numberWithOptions(decimal: true))),
-          ]),
+          _section('Previous School'),
+          _field(_lastSchoolNameCtrl, 'Last School Name'),
+          _field(_lastSchoolClassCtrl, 'Last School Class'),
+          _field(_lastSchoolGrNoCtrl, 'Last School GR No'),
+          _field(_lastSchoolMediumCtrl, 'Last School Medium'),
+          _field(_lastSchoolPlaceCtrl, 'Last School Place'),
+          _field(_prevAttendanceDaysCtrl, 'Previous Attendance Days', type: TextInputType.number, formatters: [FilteringTextInputFormatter.digitsOnly]),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: const Text('Last Exam Given'),
+              value: _lastExamGiven,
+              onChanged: (v) => setState(() => _lastExamGiven = v),
+            ),
+          ),
+          _field(_prevPercentageCtrl, 'Previous Percentage', type: const TextInputType.numberWithOptions(decimal: true)),
 
           const SizedBox(height: 20),
           ElevatedButton(
@@ -320,7 +414,6 @@ class _AdminAddStudentPageState extends State<AdminAddStudentPage> {
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                 : const Text('Add Student'),
           ),
-          const SizedBox(height: 20),
         ]),
       ),
     );
