@@ -7,6 +7,8 @@ import {
 } from "lucide-react";
 import { addStudent, getClasses } from "@/lib/studentService";
 import { normalizeDate } from "@/lib/importUtils";
+import { recordPhase, buildPhaseSnapshot } from "@/lib/studentPhaseService";
+import useStore from "@/lib/store";
 
 // Basic Details Import - Student module. Only the fields a school can
 // realistically collect for its whole roster in one pass: Class, Name,
@@ -41,6 +43,7 @@ function splitName(full) {
 }
 
 export default function BasicDetailsImportModal({ onClose, onImported }) {
+  const { authUser } = useStore();
   const fileRef = useRef(null);
   const [classNames, setClassNames] = useState([]);
   const [step,      setStep]      = useState("idle");
@@ -145,6 +148,7 @@ export default function BasicDetailsImportModal({ onClose, onImported }) {
     setImporting(true);
     setImportLog([]);
     const log = [];
+    const phaseEntries = [];
     // Sequential, not Promise.all - getNextEnrollmentNo() (inside addStudent)
     // re-queries the live MAX every call and is only safe one row at a time.
     for (const s of valid) {
@@ -171,6 +175,11 @@ export default function BasicDetailsImportModal({ onClose, onImported }) {
           ok: true,
           warning: mismatches.length ? `Didn't save: ${mismatches.join(", ")}` : null,
         });
+        phaseEntries.push({
+          studentId:    result?.student?.id,
+          enrollmentNo: result?.enrollment?.enrollment_no,
+          snapshot:     buildPhaseSnapshot(payload, result?.enrollment?.enrollment_no),
+        });
       } catch (err) {
         log.push({ name: label, ok: false, err: err?.message || "Error" });
       }
@@ -179,6 +188,11 @@ export default function BasicDetailsImportModal({ onClose, onImported }) {
     setImporting(false);
     setStep("done");
     if (onImported) onImported();
+    // REQ-FEAT-019: one locked "Added" phase covering every row that
+    // actually saved in this run.
+    try {
+      await recordPhase({ type: "Added", source: "basic_details_import", createdBy: authUser?.id, entries: phaseEntries });
+    } catch {}
   }
 
   function reset() { setParsed([]); setRowErrors([]); setStep("idle"); setImportLog([]); }

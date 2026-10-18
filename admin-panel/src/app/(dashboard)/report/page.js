@@ -5,7 +5,7 @@ import {
   GraduationCap, IndianRupee, Users, Package, Search,
   RefreshCw, Download, FileText, ShieldCheck, BookOpen, Landmark, IdCard,
   CheckSquare, X, LogOut, Fingerprint, ArrowUp, ArrowDown, ChevronsUpDown,
-  Trash2, ChevronLeft, ChevronRight, Award, ListChecks, Flag,
+  Trash2, ChevronLeft, ChevronRight, Award, ListChecks, Flag, Layers,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -26,6 +26,7 @@ import useConfirm from "@/components/ConfirmDialog";
 import ExamsReportSection from "./ExamsReportSection";
 import StudentDailyLogReportSection from "./StudentDailyLogReportSection";
 import AtRiskStudentsReportSection from "./AtRiskStudentsReportSection";
+import StudentImportPhasesReportSection from "./StudentImportPhasesReportSection";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CLASSES   = ["JR.KG","SR.KG","Balvatika","1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th","11th - Commerce","12th - Commerce"];
@@ -1640,6 +1641,9 @@ export default function ReportPage() {
   // REQ-FEAT-018 (2026-10-18): At-Risk Students dashboard - same self-
   // contained-section pattern as the two flags above.
   const [showAtRiskReport, setShowAtRiskReport] = useState(false);
+  // REQ-FEAT-019 (2026-10-18): Student Import Phases - same self-contained-
+  // section pattern as the flags above.
+  const [showPhasesReport, setShowPhasesReport] = useState(false);
   const [filters,  setFilters]  = useState({});
   const [selCols,  setSelCols]  = useState([]); // ordered array of selected column keys
   const [dateFrom, setDateFrom] = useState("");
@@ -2334,6 +2338,11 @@ export default function ReportPage() {
           <Flag className="w-6 h-6"/>
           <span className="text-xs font-semibold leading-tight text-center">At Risk</span>
         </button>
+        <button onClick={() => setShowPhasesReport(true)}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Layers className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Phases</span>
+        </button>
       </div>
 
       {/* View toggle */}
@@ -2397,6 +2406,11 @@ export default function ReportPage() {
           <Flag className="w-6 h-6"/>
           <span className="text-xs font-semibold leading-tight text-center">At Risk</span>
         </button>
+        <button onClick={() => { setShowExamsReport(false); setShowPhasesReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Layers className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Phases</span>
+        </button>
       </div>
 
       <ExamsReportSection />
@@ -2439,6 +2453,11 @@ export default function ReportPage() {
           className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
           <Flag className="w-6 h-6"/>
           <span className="text-xs font-semibold leading-tight text-center">At Risk</span>
+        </button>
+        <button onClick={() => { setShowDailyLogReport(false); setShowPhasesReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Layers className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Phases</span>
         </button>
       </div>
 
@@ -2483,9 +2502,62 @@ export default function ReportPage() {
           <Flag className="w-6 h-6"/>
           <span className="text-xs font-semibold leading-tight text-center">At Risk</span>
         </button>
+        <button onClick={() => { setShowAtRiskReport(false); setShowPhasesReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Layers className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Phases</span>
+        </button>
       </div>
 
       <AtRiskStudentsReportSection />
+    </div>
+  );
+
+  if (showPhasesReport) return (
+    <div className="space-y-5">
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Reports & Export</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Generate, filter and export reports for any module</p>
+        </div>
+      </div>
+
+      {/* Report type selector - same tiles as the normal view, Phases active */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+        {Object.entries(REPORT_CONFIGS).map(([key, c]) => {
+          const Icon = c.icon;
+          return (
+            <button key={key} onClick={() => { setShowPhasesReport(false); setRType(key); }}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+              <Icon className="w-6 h-6"/>
+              <span className="text-xs font-semibold leading-tight text-center">{c.label}</span>
+            </button>
+          );
+        })}
+        <button onClick={() => { setShowPhasesReport(false); setShowExamsReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Award className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Exams</span>
+        </button>
+        <button onClick={() => { setShowPhasesReport(false); setShowDailyLogReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <ListChecks className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Daily Progress</span>
+        </button>
+        <button onClick={() => { setShowPhasesReport(false); setShowAtRiskReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Flag className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">At Risk</span>
+        </button>
+        <button onClick={() => setShowPhasesReport(true)}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-school-navy bg-school-navy text-white shadow-lg transition-all">
+          <Layers className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Phases</span>
+        </button>
+      </div>
+
+      <StudentImportPhasesReportSection />
     </div>
   );
 

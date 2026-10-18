@@ -11,6 +11,8 @@ import {
   isValidPercentage, isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
 import { getStudentByEnrollment, updateStudent as svcUpdate, searchStudentsForSibling } from "@/lib/studentService";
+import { recordPhase, buildPhaseSnapshot } from "@/lib/studentPhaseService";
+import useStore from "@/lib/store";
 import { fmtDMY } from "@/lib/utils";
 import { getActiveClasses } from "@/lib/settingsService";
 import { uploadFileToS3, getS3ViewUrl, slugify, fileExt } from "@/lib/s3Upload";
@@ -210,6 +212,7 @@ function ReadOnlyField({ label, value }) {
 
 // ── Edit Form — receives pre-loaded student ────────────────────
 function EditForm({ existing, id, router }) {
+  const { authUser } = useStore();
   const [standards, setStandards] = useState([]);
 
   useEffect(() => {
@@ -483,7 +486,7 @@ function EditForm({ existing, id, router }) {
 
     setSubmitting(true);
     try {
-      await svcUpdate(existing._studentId, {
+      const updatePayload = {
         enrollmentId: existing._enrollmentId,
         joinDate:     form.joinDate || undefined,
         grNo:         existing.grNo || "",
@@ -542,7 +545,15 @@ function EditForm({ existing, id, router }) {
         // silently never saved anything: updateStudent() only touches
         // student_siblings when this key is present at all.
         siblings: hasSibling ? siblings.filter(s => s.name) : [],
-      });
+      };
+      await svcUpdate(existing._studentId, updatePayload);
+      // REQ-FEAT-019: one locked "Replaced" phase for this single save.
+      try {
+        await recordPhase({
+          type: "Replaced", source: "edit_student_form", createdBy: authUser?.id,
+          entries: [{ studentId: existing._studentId, enrollmentNo: existing.enrollment, snapshot: buildPhaseSnapshot(updatePayload, existing.enrollment) }],
+        });
+      } catch {}
 
       // Save document statuses to DB
       const { data: docTypes } = await supabase.from("document_types").select("id, name");

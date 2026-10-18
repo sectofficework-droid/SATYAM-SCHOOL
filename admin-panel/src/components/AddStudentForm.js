@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import supabase from "@/lib/supabase";
 import { addStudent as svcAddStudent, getNextEnrollmentNo, searchStudentsForSibling } from "@/lib/studentService";
+import { recordPhase, buildPhaseSnapshot } from "@/lib/studentPhaseService";
+import useStore from "@/lib/store";
 import { getActiveClasses } from "@/lib/settingsService";
 import {
   ChevronDown, Upload, X, Plus, FileText, AlertTriangle,
@@ -144,6 +146,7 @@ function YesNoToggle({ value, onChange }) {
 // ── Main Component ─────────────────────────────────────────────
 // variant: "page" (standalone /student/add page) | "modal" (popup from Student Management)
 export default function AddStudentForm({ variant = "page", onCancel, onSaved }) {
+  const { authUser } = useStore();
   const [sessionId] = useState(() => crypto.randomUUID());
 
   const [standards, setStandards]           = useState([]);
@@ -557,8 +560,15 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
 
     setSubmitting(true);
     try {
-      const { rollNo, enrollmentNo } = await svcAddStudent(payload);
+      const { student, rollNo, enrollmentNo } = await svcAddStudent(payload);
       alert(`Student added! Enrollment: #${enrollmentNo} · Roll No: ${rollNo} for ${form.std}.`);
+      // REQ-FEAT-019: one locked "Added" phase for this single save.
+      try {
+        await recordPhase({
+          type: "Added", source: "add_student_form", createdBy: authUser?.id,
+          entries: [{ studentId: student?.id, enrollmentNo, snapshot: buildPhaseSnapshot(payload, enrollmentNo) }],
+        });
+      } catch {}
       onSaved?.();
     } catch (err) {
       alert("Failed to add student: " + err.message);

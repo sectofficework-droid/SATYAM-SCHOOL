@@ -18,6 +18,7 @@ import {
   isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
 import { getStudents, getClasses, getStudentByEnrollment, addStudent as dbAddStudent, updateStudent as dbUpdateStudent, deleteStudentPermanently, bagItemAllowedForClass } from "@/lib/studentService";
+import { recordPhase, buildPhaseSnapshot } from "@/lib/studentPhaseService";
 import { normalizeDate, normalizeAgainstList } from "@/lib/importUtils";
 import { getCurrentYearClassFees } from "@/lib/settingsService";
 import { DEFAULT_DOCS } from "@/lib/constants";
@@ -545,11 +546,19 @@ function SingleStudentTool({ students, onStudentUpdated }) {
 
     setSaving(true);
     try {
-      await dbUpdateStudent(selected._studentId, {
+      const updatePayload = {
         ...mapFormForUpdate(form),
         photo:        photoKey || selected.photo || null,
         enrollmentId: selected._enrollmentId,
-      });
+      };
+      await dbUpdateStudent(selected._studentId, updatePayload);
+      // REQ-FEAT-019: one locked "Replaced" phase for this single save.
+      try {
+        await recordPhase({
+          type: "Replaced", source: "single_student_update", createdBy: authUser?.id,
+          entries: [{ studentId: selected._studentId, enrollmentNo: selected.enrollment, snapshot: buildPhaseSnapshot(updatePayload, selected.enrollment) }],
+        });
+      } catch {}
 
       const { data: docTypes } = await supabase.from("document_types").select("id, name");
       if (docTypes?.length) {
@@ -2502,6 +2511,7 @@ function PendingDetailsPanel({ students }) {
 // ── Super Admin Page ──────────────────────────────────────────────────────────
 
 function ImportStudentsPanel({ onImportDone }) {
+  const { authUser } = useStore();
   const fileRef = useRef(null);
   const [step,      setStep]      = useState("idle");
   const [parsed,    setParsed]    = useState([]);
@@ -2641,6 +2651,7 @@ function ImportStudentsPanel({ onImportDone }) {
     setImporting(true);
     setImportLog([]);
     const log = [];
+    const phaseEntries = [];
     // Fields to verify after insert — [payload key, students-table column]. This is
     // what actually saved wrong in the 15 Jul import incident; checking the insert's
     // own returned row catches a repeat of that instead of trusting a non-throwing
@@ -2719,6 +2730,11 @@ function ImportStudentsPanel({ onImportDone }) {
           ok: true,
           warning: mismatches.length ? `Didn't save: ${mismatches.join(", ")}` : null,
         });
+        phaseEntries.push({
+          studentId:     result?.student?.id,
+          enrollmentNo:  result?.enrollment?.enrollment_no,
+          snapshot:      buildPhaseSnapshot(payload, result?.enrollment?.enrollment_no),
+        });
       } catch(err) {
         log.push({ name: s.firstName + " " + s.lastName, ok: false, err: err?.message || "Error" });
       }
@@ -2727,6 +2743,12 @@ function ImportStudentsPanel({ onImportDone }) {
     setImporting(false);
     setStep("done");
     if (onImportDone) onImportDone();
+    // REQ-FEAT-019: one locked "Added" phase covering every row that
+    // actually saved in this run, for the UDISE/PEN submission report -
+    // failures above are simply excluded, not retried or blocked on.
+    try {
+      await recordPhase({ type: "Added", source: "import_students", createdBy: authUser?.id, entries: phaseEntries });
+    } catch {}
   }
 
   function reset() { setParsed([]); setRowErrors([]); setStep("idle"); setImportLog([]); }
@@ -2976,6 +2998,7 @@ function studentToReplaceRow(s) {
 // fields are touched; Class/Section columns are still validated (must
 // resolve to a real class) for consistency with the shared template shape.
 function FullDetailsReplaceImportPanel({ students, onImportDone }) {
+  const { authUser } = useStore();
   const fileRef = useRef(null);
   const [step,      setStep]      = useState("idle");
   const [parsed,    setParsed]    = useState([]);
@@ -3108,6 +3131,7 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
     setImporting(true);
     setImportLog([]);
     const log = [];
+    const phaseEntries = [];
 
     // Phase 1 — resolve each row's existing enrollment and build its update
     // payload, without writing anything yet. A row whose Enrollment No
@@ -3204,6 +3228,11 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
       try {
         await dbUpdateStudent(existing._studentId, payload);
         log.push({ name: label, ok: true });
+        phaseEntries.push({
+          studentId:    existing._studentId,
+          enrollmentNo: s.enrollmentNo,
+          snapshot:     buildPhaseSnapshot(payload, s.enrollmentNo),
+        });
       } catch(err) {
         // Postgres 23505 on this specific constraint means the sheet's
         // Roll No/Class/Section for this row is already taken by another
@@ -3228,6 +3257,11 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
     setImporting(false);
     setStep("done");
     if (onImportDone) onImportDone();
+    // REQ-FEAT-019: one locked "Replaced" phase covering every row that
+    // actually saved in this run.
+    try {
+      await recordPhase({ type: "Replaced", source: "replace_full_details", createdBy: authUser?.id, entries: phaseEntries });
+    } catch {}
   }
 
   function reset() {
