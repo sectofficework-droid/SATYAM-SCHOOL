@@ -136,6 +136,22 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  // REQ-FEAT-018 (2026-10-18): students flagged by the backend's exam/
+  // daily-log/attendance signals, scoped to classes this teacher teaches -
+  // re-evaluates server-side before returning, so it's always fresh.
+  static Future<List<Map<String, dynamic>>> fetchMyClassRiskAlerts(String employeeId, String sessionToken) async {
+    final res = await client.rpc('fetch_my_class_risk_alerts', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken,
+    }) as List;
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  static Future<void> acknowledgeRiskFlag(String employeeId, String sessionToken, String flagId) async {
+    await client.rpc('acknowledge_risk_flag', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_flag_id': flagId,
+    });
+  }
+
   // Attendance edit-request workflow ─────────────────────────────────────────
 
   // REQ-SEC-002 Category 3 Group A (2026-09-19): these 9 tables moved from

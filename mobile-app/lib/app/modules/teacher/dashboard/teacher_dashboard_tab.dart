@@ -6,6 +6,7 @@ import '../../../../app/routes/app_routes.dart';
 import '../../../../common/widgets/stat_card.dart';
 import '../../../../common/widgets/responsive_module_grid.dart';
 import '../../../../common/widgets/todays_birthdays_card.dart';
+import '../../../../common/widgets/at_risk_students_card.dart';
 
 class TeacherDashboardTab extends StatefulWidget {
   const TeacherDashboardTab({super.key});
@@ -174,6 +175,16 @@ class _TeacherDashboardTabState extends State<TeacherDashboardTab>
                 ],
               ),
             ),
+
+            const SizedBox(height: 20),
+
+            // User feedback (2026-10-18): this card was originally placed up
+            // near the greeting banner, above the module grid - with a real
+            // flagged count in the dozens it pushed every navigation icon
+            // off the first screen. Moved below the grid (secondary/
+            // informational, not primary navigation) and the card itself
+            // now caps how many rows it renders regardless of count.
+            const AtRiskStudentsCard(),
           ],
         ),
       ),
