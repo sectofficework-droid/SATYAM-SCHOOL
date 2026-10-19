@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X, Loader2 } from "lucide-react";
 import { getStudentsForReport, getAcademicYearLabels } from "@/lib/reportService";
 import { getPhases, getAllPhaseEntryEnrollments } from "@/lib/studentPhaseService";
@@ -157,7 +158,18 @@ function StatusPill({ status }) {
 }
 
 export default function GovernmentEntryPage() {
-  const [tab, setTab] = useState("udise"); // "udise" | "pen"
+  const router = useRouter();
+  const [mainTab, setMainTab] = useState("udise"); // "udise" | "pen" | "mismatch"
+  // mismatchDir (2026-10-19, user request: "if any student is eligible for
+  // udise but not eligible for pen then mark those under separate tab" -
+  // then "add both directions") - which direction of the UDISE/PEN
+  // eligibility mismatch the Mismatch tab is currently showing.
+  const [mismatchDir, setMismatchDir] = useState("udiseOnly"); // "udiseOnly" | "penOnly"
+  // effectiveTab resolves which entry type (UDISE vs PEN) the columns/
+  // status/modal below should actually behave as - same as mainTab for the
+  // two normal tabs, but for the Mismatch tab it follows mismatchDir
+  // instead (a "UDISE Only" mismatch row is still worked as a UDISE entry).
+  const effectiveTab = mainTab === "mismatch" ? (mismatchDir === "udiseOnly" ? "udise" : "pen") : mainTab;
   const [dbStudents, setDbStudents] = useState([]);
   const [dbSessions, setDbSessions] = useState(SESSIONS_FALLBACK);
   const [dbPhases, setDbPhases] = useState([]);
@@ -217,30 +229,63 @@ export default function GovernmentEntryPage() {
     let d = dbStudents.map(decorate);
     if (filters.cls !== "All") d = d.filter(x => x.cls === filters.cls);
     if (filters.session !== "All") d = d.filter(x => x.session === filters.session);
-    if (eligTab === "ineligible") {
-      // Not in any batch at all - the Entry Batch dropdown doesn't apply here.
-      d = d.filter(x => !enrollToBatches.get(x.enrollNo)?.size);
+
+    const inAnyBatch = x => !!enrollToBatches.get(x.enrollNo)?.size;
+    // Birth cert reg no + birth place (city/district/state - the 3
+    // composePlaceOfBirth() fields from AddStudentForm.js; Birth Village is
+    // optional there) all filled means the UDISE record is actually
+    // fileable even with no batch and nothing saved yet.
+    const birthDetailsFilled = x => !!(
+      String(x.birthCertRegNo || "").trim() &&
+      String(x.birthState || "").trim() &&
+      String(x.birthDistrict || "").trim() &&
+      String(x.birthCity || "").trim()
+    );
+    const aadharAvailable = x => !!String(x.aadharNo || "").trim();
+    // Eligible = the entry is already filed (UDISE: Done; PEN: Done or Not
+    // Defined - an Entry Done save already happened, so it's eligible
+    // regardless of the rest), OR - for one not yet filed - EVERY one of
+    // the prerequisites below holds at once (AND, not OR: e.g. being in a
+    // batch alone is not enough for PEN if Aadhar isn't available).
+    // Computed for BOTH types regardless of which tab is active, so the
+    // Mismatch tab can compare them against each other.
+    const udiseEligible = x => x.udiseStatus === "Done" || (inAnyBatch(x) && birthDetailsFilled(x));
+    const penEligible = x => x.penStatus === "Done" || x.penStatus === "Not Defined" ||
+      (inAnyBatch(x) && birthDetailsFilled(x) && aadharAvailable(x));
+
+    if (mainTab === "mismatch") {
+      d = mismatchDir === "udiseOnly"
+        ? d.filter(x => udiseEligible(x) && !penEligible(x))
+        : d.filter(x => penEligible(x) && !udiseEligible(x));
     } else {
-      d = d.filter(x => enrollToBatches.get(x.enrollNo)?.size);
-      if (filters.batch !== "All") {
-        const n = Number(String(filters.batch).match(/\d+/)?.[0]);
-        d = d.filter(x => enrollToBatches.get(x.enrollNo)?.has(n));
+      const eligibleFn = effectiveTab === "udise" ? udiseEligible : penEligible;
+      if (eligTab === "ineligible") {
+        d = d.filter(x => !eligibleFn(x));
+      } else {
+        d = d.filter(eligibleFn);
+        if (filters.batch !== "All") {
+          // The dropdown filters to students actually IN that batch - a
+          // student eligible only via "already filed"/birth-details drops
+          // out here correctly, since they're not actually in it.
+          const n = Number(String(filters.batch).match(/\d+/)?.[0]);
+          d = d.filter(x => enrollToBatches.get(x.enrollNo)?.has(n));
+        }
       }
     }
-    if (tab === "pen" && showNotDefinedOnly) d = d.filter(x => x.penStatus === "Not Defined");
+    if (mainTab === "pen" && showNotDefinedOnly) d = d.filter(x => x.penStatus === "Not Defined");
     // Done first, then Not Defined (pen only), then Pending - so filed
     // entries don't get lost among the ones still waiting.
     const rank = { Done: 0, "Not Defined": 1, Pending: 2 };
-    const statusKey = tab === "udise" ? "udiseStatus" : "penStatus";
+    const statusKey = effectiveTab === "udise" ? "udiseStatus" : "penStatus";
     return d.slice().sort((a, b) => rank[a[statusKey]] - rank[b[statusKey]]);
-  }, [dbStudents, filters, enrollToBatches, tab, showNotDefinedOnly, eligTab]);
+  }, [dbStudents, filters, enrollToBatches, mainTab, mismatchDir, effectiveTab, showNotDefinedOnly, eligTab]);
 
   const pendingNotDefinedCount = useMemo(
     () => dbStudents.map(decorate).filter(x => x.penStatus === "Not Defined").length,
     [dbStudents]
   );
 
-  const columns = tab === "udise" ? UDISE_ENTRY_COLUMNS : PEN_ENTRY_COLUMNS;
+  const columns = effectiveTab === "udise" ? UDISE_ENTRY_COLUMNS : PEN_ENTRY_COLUMNS;
 
   // ── Entry Done modal ────────────────────────────────────────────────────
   const [modalRow, setModalRow] = useState(null);
@@ -250,6 +295,14 @@ export default function GovernmentEntryPage() {
   const [formPenNotDefined, setFormPenNotDefined] = useState(false);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // Double-click a row to jump to that student's profile for editing - the
+  // profile page (student/[id]/page.js) already has its own "Go Back"
+  // button using router.back(), so returning here is just that existing
+  // button, not anything new added on this page.
+  function openStudentProfile(row) {
+    router.push(`/student/${row.enrollNo}?session=${row.session}`);
+  }
 
   function openEntryModal(row) {
     setModalRow(row);
@@ -268,7 +321,7 @@ export default function GovernmentEntryPage() {
     if (!modalRow) return;
     setFormError("");
 
-    if (tab === "udise") {
+    if (effectiveTab === "udise") {
       const digits = formUdise.trim();
       if (!/^\d{18}$/.test(digits)) {
         setFormError("UDISE No must be exactly 18 digits.");
@@ -333,36 +386,62 @@ export default function GovernmentEntryPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-        <button onClick={() => setTab("udise")}
-          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${tab === "udise" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+        <button onClick={() => setMainTab("udise")}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "udise" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
           <Landmark className="w-3.5 h-3.5"/> UDISE Entry (State)
         </button>
-        <button onClick={() => setTab("pen")}
-          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${tab === "pen" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+        <button onClick={() => setMainTab("pen")}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "pen" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
           <IdCard className="w-3.5 h-3.5"/> PEN Entry (National)
         </button>
-      </div>
-
-      {/* Eligibility sub-tabs - eligible (in any batch) vs not eligible (in no batch) */}
-      <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-        <button onClick={() => setEligTab("eligible")}
-          className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "eligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-          Eligible for Entry
-        </button>
-        <button onClick={() => setEligTab("ineligible")}
-          className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "ineligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-          Not Eligible for Entry
+        <button onClick={() => setMainTab("mismatch")}
+          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "mismatch" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+          <AlertTriangle className="w-3.5 h-3.5"/> Mismatch
         </button>
       </div>
 
-      {eligTab === "ineligible" && (
+      {mainTab === "mismatch" ? (
+        <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+          <button onClick={() => setMismatchDir("udiseOnly")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "udiseOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+            UDISE Eligible, PEN Not
+          </button>
+          <button onClick={() => setMismatchDir("penOnly")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "penOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+            PEN Eligible, UDISE Not
+          </button>
+        </div>
+      ) : (
+        /* Eligibility sub-tabs - eligible (in any batch, already filed, or
+           has enough data) vs not eligible (none of those) */
+        <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+          <button onClick={() => setEligTab("eligible")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "eligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+            Eligible for Entry
+          </button>
+          <button onClick={() => setEligTab("ineligible")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "ineligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+            Not Eligible for Entry
+          </button>
+        </div>
+      )}
+
+      {mainTab === "mismatch" && (
+        <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-500">
+          {mismatchDir === "udiseOnly"
+            ? "These students qualify for UDISE Entry but not yet for PEN Entry (missing Aadhar and/or not in any batch/already filed)."
+            : "These students qualify for PEN Entry but not yet for UDISE Entry (missing birth details and/or not in any batch/already filed)."}
+        </div>
+      )}
+
+      {mainTab !== "mismatch" && eligTab === "ineligible" && (
         <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-500">
           These students aren&apos;t mentioned in any Entry Batch yet, so they&apos;re kept separate from the eligible list above.
         </div>
       )}
 
       {/* PEN "Not Defined" reminder */}
-      {tab === "pen" && pendingNotDefinedCount > 0 && (
+      {mainTab === "pen" && pendingNotDefinedCount > 0 && (
         <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
           <div className="flex items-center gap-2">
             <AlertTriangle className="w-4 h-4 flex-shrink-0"/>
@@ -400,7 +479,7 @@ export default function GovernmentEntryPage() {
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Entry Batch</label>
-            <select disabled={eligTab === "ineligible"}
+            <select disabled={mainTab === "mismatch" || eligTab === "ineligible"}
               className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28 disabled:opacity-50 disabled:cursor-not-allowed"
               value={filters.batch} onChange={e => setFilters(prev => ({ ...prev, batch: e.target.value }))}>
               {["All", ...batchOptions].map(o => <option key={o}>{o}</option>)}
@@ -424,9 +503,12 @@ export default function GovernmentEntryPage() {
           </thead>
           <tbody>
             {rows.map((row, idx) => {
-              const status = tab === "udise" ? row.udiseStatus : row.penStatus;
+              const status = effectiveTab === "udise" ? row.udiseStatus : row.penStatus;
               return (
-                <tr key={row.enrollNo || idx} className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}>
+                <tr key={row.enrollNo || idx}
+                  onDoubleClick={() => openStudentProfile(row)}
+                  title="Double-click to open this student's profile"
+                  className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}>
                   <td className="px-3 py-2 text-gray-400 font-medium">{idx + 1}</td>
                   <td className="px-3 py-2"><StatusPill status={status}/></td>
                   {columns.map(c => {
@@ -463,7 +545,7 @@ export default function GovernmentEntryPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <div>
                 <h3 className="text-base font-bold text-gray-800">
-                  {tab === "udise" ? "Complete UDISE Entry" : "Complete PEN Entry"}
+                  {effectiveTab === "udise" ? "Complete UDISE Entry" : "Complete PEN Entry"}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">{modalRow.name} - {modalRow.cls} - Enroll No {modalRow.enrollNo}</p>
               </div>
@@ -480,7 +562,7 @@ export default function GovernmentEntryPage() {
                   placeholder="GR No"/>
               </div>
 
-              {tab === "udise" ? (
+              {effectiveTab === "udise" ? (
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">UDISE No (18 digits)</label>
                   <input type="text" value={formUdise} onChange={e => setFormUdise(e.target.value.replace(/[^\d]/g, ""))}
