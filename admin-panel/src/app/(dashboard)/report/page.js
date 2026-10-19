@@ -2599,6 +2599,16 @@ export default function ReportPage() {
           <ListChecks className="w-6 h-6"/>
           <span className="text-xs font-semibold leading-tight text-center">Daily Progress</span>
         </button>
+        <button onClick={() => setShowAtRiskReport(true)}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Flag className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">At Risk</span>
+        </button>
+        <button onClick={() => setShowPhasesReport(true)}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Layers className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Entry Batches</span>
+        </button>
       </div>
 
       {/* Filters */}
