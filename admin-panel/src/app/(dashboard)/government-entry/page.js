@@ -166,6 +166,15 @@ export default function GovernmentEntryPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [filters, setFilters] = useState({ cls: "All", session: "All", batch: "All" });
   const [showNotDefinedOnly, setShowNotDefinedOnly] = useState(false);
+  // eligTab (2026-10-19, user request: "only whose names are mentioned in
+  // batch are eligible for entry, rest should stay separately under
+  // uneligible for entry in a separate tab") - "eligible" means the student
+  // has at least one entry in ANY batch/phase (enrollToBatches below), not
+  // just the one currently picked in the Entry Batch dropdown. Kept as its
+  // own sub-tab under both UDISE and PEN rather than a single shared tab,
+  // since eligibility is the same fact either way but the two entry types
+  // are reviewed separately.
+  const [eligTab, setEligTab] = useState("eligible"); // "eligible" | "ineligible"
 
   const loadAll = useCallback(async () => {
     setRefreshing(true);
@@ -208,9 +217,15 @@ export default function GovernmentEntryPage() {
     let d = dbStudents.map(decorate);
     if (filters.cls !== "All") d = d.filter(x => x.cls === filters.cls);
     if (filters.session !== "All") d = d.filter(x => x.session === filters.session);
-    if (filters.batch !== "All") {
-      const n = Number(String(filters.batch).match(/\d+/)?.[0]);
-      d = d.filter(x => enrollToBatches.get(x.enrollNo)?.has(n));
+    if (eligTab === "ineligible") {
+      // Not in any batch at all - the Entry Batch dropdown doesn't apply here.
+      d = d.filter(x => !enrollToBatches.get(x.enrollNo)?.size);
+    } else {
+      d = d.filter(x => enrollToBatches.get(x.enrollNo)?.size);
+      if (filters.batch !== "All") {
+        const n = Number(String(filters.batch).match(/\d+/)?.[0]);
+        d = d.filter(x => enrollToBatches.get(x.enrollNo)?.has(n));
+      }
     }
     if (tab === "pen" && showNotDefinedOnly) d = d.filter(x => x.penStatus === "Not Defined");
     // Done first, then Not Defined (pen only), then Pending - so filed
@@ -218,7 +233,7 @@ export default function GovernmentEntryPage() {
     const rank = { Done: 0, "Not Defined": 1, Pending: 2 };
     const statusKey = tab === "udise" ? "udiseStatus" : "penStatus";
     return d.slice().sort((a, b) => rank[a[statusKey]] - rank[b[statusKey]]);
-  }, [dbStudents, filters, enrollToBatches, tab, showNotDefinedOnly]);
+  }, [dbStudents, filters, enrollToBatches, tab, showNotDefinedOnly, eligTab]);
 
   const pendingNotDefinedCount = useMemo(
     () => dbStudents.map(decorate).filter(x => x.penStatus === "Not Defined").length,
@@ -328,6 +343,24 @@ export default function GovernmentEntryPage() {
         </button>
       </div>
 
+      {/* Eligibility sub-tabs - eligible (in any batch) vs not eligible (in no batch) */}
+      <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+        <button onClick={() => setEligTab("eligible")}
+          className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "eligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+          Eligible for Entry
+        </button>
+        <button onClick={() => setEligTab("ineligible")}
+          className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "ineligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+          Not Eligible for Entry
+        </button>
+      </div>
+
+      {eligTab === "ineligible" && (
+        <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-500">
+          These students aren&apos;t mentioned in any Entry Batch yet, so they&apos;re kept separate from the eligible list above.
+        </div>
+      )}
+
       {/* PEN "Not Defined" reminder */}
       {tab === "pen" && pendingNotDefinedCount > 0 && (
         <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
@@ -367,7 +400,8 @@ export default function GovernmentEntryPage() {
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Entry Batch</label>
-            <select className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28"
+            <select disabled={eligTab === "ineligible"}
+              className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28 disabled:opacity-50 disabled:cursor-not-allowed"
               value={filters.batch} onChange={e => setFilters(prev => ({ ...prev, batch: e.target.value }))}>
               {["All", ...batchOptions].map(o => <option key={o}>{o}</option>)}
             </select>
