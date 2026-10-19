@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X, Loader2, HelpCircle, Search } from "lucide-react";
 import { getStudentsForReport, getAcademicYearLabels } from "@/lib/reportService";
@@ -176,7 +176,7 @@ export default function GovernmentEntryPage() {
   const [dbPhaseEntryEnrollments, setDbPhaseEntryEnrollments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filters, setFilters] = useState({ cls: "All", session: "All", batch: "All" });
+  const [filters, setFilters] = useState({ cls: "All", session: "All", batch: "All", status: "All" });
   const [search, setSearch] = useState("");
   const [showNotDefinedOnly, setShowNotDefinedOnly] = useState(false);
   // eligTab (2026-10-19, user request: "only whose names are mentioned in
@@ -213,6 +213,10 @@ export default function GovernmentEntryPage() {
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  // "Not Defined" only exists for PEN - reset the Status filter on tab
+  // switch so it never gets stuck on a value the new tab can't match.
+  useEffect(() => { setFilters(prev => ({ ...prev, status: "All" })); }, [effectiveTab]);
 
   const batchOptions = useMemo(
     () => dbPhases.slice().sort((a, b) => a.phase_number - b.phase_number).map(p => `Batch ${p.phase_number}`),
@@ -281,10 +285,11 @@ export default function GovernmentEntryPage() {
       }
     }
     if (mainTab === "pen" && showNotDefinedOnly) d = d.filter(x => x.penStatus === "Not Defined");
+    const statusKey = effectiveTab === "udise" ? "udiseStatus" : "penStatus";
+    if (filters.status !== "All") d = d.filter(x => x[statusKey] === filters.status);
     // Done first, then Not Defined (pen only), then Pending - so filed
     // entries don't get lost among the ones still waiting.
     const rank = { Done: 0, "Not Defined": 1, Pending: 2 };
-    const statusKey = effectiveTab === "udise" ? "udiseStatus" : "penStatus";
     return d.slice().sort((a, b) => rank[a[statusKey]] - rank[b[statusKey]]);
   }, [dbStudents, filters, search, enrollToBatches, mainTab, mismatchDir, effectiveTab, showNotDefinedOnly, eligTab]);
 
@@ -294,6 +299,33 @@ export default function GovernmentEntryPage() {
   );
 
   const columns = effectiveTab === "udise" ? UDISE_ENTRY_COLUMNS : PEN_ENTRY_COLUMNS;
+
+  // Frozen (sticky-left) columns while scrolling horizontally: Action, #,
+  // Status, Class always; PEN also freezes Student Father Surname (its
+  // only name-like column, already sitting right after Class) - UDISE's
+  // actual "Student Name" column sits much further right among the
+  // birth-detail columns, so it's deliberately NOT frozen (user chose to
+  // skip reordering columns rather than move it next to Class). Action
+  // moved to the 1st column (was last) so it's always reachable without
+  // scrolling, and frozen along with the rest.
+  const frozenCount = effectiveTab === "udise" ? 4 : 5;
+  const frozenHeaderRefs = useRef([]);
+  const [stickyLeft, setStickyLeft] = useState([0, 0, 0, 0, 0]);
+
+  useLayoutEffect(() => {
+    function measure() {
+      const offsets = [];
+      let acc = 0;
+      for (let i = 0; i < frozenCount; i++) {
+        offsets.push(acc);
+        acc += frozenHeaderRefs.current[i]?.offsetWidth || 0;
+      }
+      setStickyLeft(offsets);
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [frozenCount, rows, columns]);
 
   // ── Entry Done modal ────────────────────────────────────────────────────
   const [modalRow, setModalRow] = useState(null);
@@ -508,6 +540,13 @@ export default function GovernmentEntryPage() {
               {["All", ...batchOptions].map(o => <option key={o}>{o}</option>)}
             </select>
           </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Status</label>
+            <select className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28"
+              value={filters.status} onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}>
+              {(effectiveTab === "udise" ? ["All", "Done", "Pending"] : ["All", "Done", "Not Defined", "Pending"]).map(o => <option key={o}>{o}</option>)}
+            </select>
+          </div>
         </div>
       </div>
 
@@ -516,41 +555,60 @@ export default function GovernmentEntryPage() {
         <table className="text-xs w-full">
           <thead>
             <tr className="bg-school-navy text-white">
-              <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap w-8">#</th>
-              <th className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">Status</th>
-              {columns.map(c => (
-                <th key={c.key} className="px-3 py-2.5 text-left font-semibold whitespace-nowrap">{c.label}</th>
-              ))}
-              <th className="px-3 py-2.5 text-center font-semibold whitespace-nowrap">Action</th>
+              <th ref={el => { frozenHeaderRefs.current[0] = el; }}
+                style={{ position: "sticky", top: 0, left: stickyLeft[0], zIndex: 30 }}
+                className="bg-school-navy px-3 py-2.5 text-center font-semibold whitespace-nowrap">Action</th>
+              <th ref={el => { frozenHeaderRefs.current[1] = el; }}
+                style={{ position: "sticky", top: 0, left: stickyLeft[1], zIndex: 30 }}
+                className="bg-school-navy px-3 py-2.5 text-left font-semibold whitespace-nowrap w-8">#</th>
+              <th ref={el => { frozenHeaderRefs.current[2] = el; }}
+                style={{ position: "sticky", top: 0, left: stickyLeft[2], zIndex: 30 }}
+                className="bg-school-navy px-3 py-2.5 text-left font-semibold whitespace-nowrap">Status</th>
+              {columns.map((c, i) => {
+                const frozenIdx = i + 3;
+                const isFrozen = frozenIdx < frozenCount;
+                return (
+                  <th key={c.key}
+                    ref={isFrozen ? (el => { frozenHeaderRefs.current[frozenIdx] = el; }) : undefined}
+                    style={isFrozen ? { position: "sticky", top: 0, left: stickyLeft[frozenIdx], zIndex: 30 } : { position: "sticky", top: 0, zIndex: 20 }}
+                    className="bg-school-navy px-3 py-2.5 text-left font-semibold whitespace-nowrap">
+                    {c.label}
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
             {rows.map((row, idx) => {
               const status = effectiveTab === "udise" ? row.udiseStatus : row.penStatus;
+              const rowBg = idx % 2 === 0 ? "bg-white" : "bg-gray-50/40";
               return (
                 <tr key={row.enrollNo || idx}
                   onDoubleClick={() => openStudentProfile(row)}
                   title="Double-click to edit this student"
-                  className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}>
-                  <td className="px-3 py-2 text-gray-400 font-medium">{idx + 1}</td>
-                  <td className="px-3 py-2"><StatusPill status={status}/></td>
-                  {columns.map(c => {
-                    const rawValue = formatCellValue(c, row[c.key]);
-                    return (
-                      <td key={c.key}
-                        tabIndex={0}
-                        onFocus={() => copyCellToClipboard(rawValue)}
-                        className="px-3 py-2 text-gray-700 whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-school-navy focus:bg-blue-50">
-                        {rawValue !== "" ? String(rawValue) : <span className="text-gray-300">-</span>}
-                      </td>
-                    );
-                  })}
-                  <td className="px-3 py-2 text-center whitespace-nowrap">
+                  className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${rowBg}`}>
+                  <td style={{ position: "sticky", left: stickyLeft[0], zIndex: 10 }} className={`${rowBg} px-3 py-2 text-center whitespace-nowrap`}>
                     <button onClick={() => openEntryModal(row)}
                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-school-navy text-white hover:bg-school-navy/90 transition-colors">
                       <CheckCircle2 className="w-3 h-3"/> Entry Done
                     </button>
                   </td>
+                  <td style={{ position: "sticky", left: stickyLeft[1], zIndex: 10 }} className={`${rowBg} px-3 py-2 text-gray-400 font-medium`}>{idx + 1}</td>
+                  <td style={{ position: "sticky", left: stickyLeft[2], zIndex: 10 }} className={`${rowBg} px-3 py-2`}><StatusPill status={status}/></td>
+                  {columns.map((c, i) => {
+                    const rawValue = formatCellValue(c, row[c.key]);
+                    const frozenIdx = i + 3;
+                    const isFrozen = frozenIdx < frozenCount;
+                    return (
+                      <td key={c.key}
+                        tabIndex={0}
+                        onFocus={() => copyCellToClipboard(rawValue)}
+                        style={isFrozen ? { position: "sticky", left: stickyLeft[frozenIdx], zIndex: 10 } : undefined}
+                        className={`${isFrozen ? rowBg : ""} px-3 py-2 text-gray-700 whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-school-navy focus:bg-blue-50`}>
+                        {rawValue !== "" ? String(rawValue) : <span className="text-gray-300">-</span>}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })}
