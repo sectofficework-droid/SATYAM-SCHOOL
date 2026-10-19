@@ -212,7 +212,7 @@ function ReadOnlyField({ label, value }) {
 }
 
 // ── Edit Form — receives pre-loaded student ────────────────────
-function EditForm({ existing, id, router }) {
+function EditForm({ existing, router }) {
   const { authUser } = useStore();
   const [batchId, setBatchId] = useState(null);
   const [standards, setStandards] = useState([]);
@@ -621,7 +621,7 @@ function EditForm({ existing, id, router }) {
       }
 
       alert("Student profile updated successfully!");
-      router.replace(`/student/${id}`);
+      router.back();
     } catch (err) {
       alert("Failed to update: " + err.message);
     } finally {
@@ -1263,7 +1263,7 @@ function EditForm({ existing, id, router }) {
       <BatchSelector phaseType="Replaced" value={batchId} onChange={setBatchId} className="max-w-xs" />
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
-          type="button" onClick={() => router.replace(`/student/${id}`)}
+          type="button" onClick={() => router.back()}
           className="px-6 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
         >
           Cancel
@@ -1319,7 +1319,7 @@ export default function EditStudentPage() {
     <div className="max-w-4xl mx-auto space-y-6 pb-10">
       <div className="flex items-center gap-3">
         <button
-          type="button" onClick={() => router.replace(`/student/${id}`)}
+          type="button" onClick={() => router.back()}
           className="p-2 rounded-xl bg-white border border-gray-200 hover:bg-gray-50 transition-colors"
         >
           <ArrowLeft className="w-4 h-4 text-gray-600" />
@@ -1335,7 +1335,7 @@ export default function EditStudentPage() {
         </div>
       </div>
 
-      <EditForm existing={existing} id={id} router={router} />
+      <EditForm existing={existing} router={router} />
     </div>
   );
 }

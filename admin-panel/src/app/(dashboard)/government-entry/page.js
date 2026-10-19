@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X, Loader2 } from "lucide-react";
+import { Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X, Loader2, HelpCircle } from "lucide-react";
 import { getStudentsForReport, getAcademicYearLabels } from "@/lib/reportService";
 import { getPhases, getAllPhaseEntryEnrollments } from "@/lib/studentPhaseService";
 import { updateStudentGovId } from "@/lib/studentService";
@@ -187,6 +187,7 @@ export default function GovernmentEntryPage() {
   // since eligibility is the same fact either way but the two entry types
   // are reviewed separately.
   const [eligTab, setEligTab] = useState("eligible"); // "eligible" | "ineligible"
+  const [showRules, setShowRules] = useState(false);
 
   const loadAll = useCallback(async () => {
     setRefreshing(true);
@@ -296,12 +297,12 @@ export default function GovernmentEntryPage() {
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Double-click a row to jump to that student's profile for editing - the
-  // profile page (student/[id]/page.js) already has its own "Go Back"
-  // button using router.back(), so returning here is just that existing
-  // button, not anything new added on this page.
+  // Double-click a row to jump straight into editing that student - the
+  // edit page's Cancel/back-arrow/post-save redirect all use router.back()
+  // (changed from a hardcoded /student/[id] redirect specifically for this),
+  // so they land back here exactly, not on the profile view page first.
   function openStudentProfile(row) {
-    router.push(`/student/${row.enrollNo}?session=${row.session}`);
+    router.push(`/student/${row.enrollNo}/edit`);
   }
 
   function openEntryModal(row) {
@@ -377,11 +378,17 @@ export default function GovernmentEntryPage() {
           <h2 className="text-xl font-bold text-gray-800">Government Entry</h2>
           <p className="text-sm text-gray-500 mt-0.5">File UDISE / PEN entries into the government portals and record the result</p>
         </div>
-        <button onClick={loadAll} disabled={refreshing}
-          className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors disabled:opacity-60">
-          <RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin text-school-navy" : ""}`}/>
-          {refreshing ? "Refreshing..." : "Refresh"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowRules(true)}
+            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
+            <HelpCircle className="w-3.5 h-3.5"/> Rules
+          </button>
+          <button onClick={loadAll} disabled={refreshing}
+            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors disabled:opacity-60">
+            <RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin text-school-navy" : ""}`}/>
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -507,7 +514,7 @@ export default function GovernmentEntryPage() {
               return (
                 <tr key={row.enrollNo || idx}
                   onDoubleClick={() => openStudentProfile(row)}
-                  title="Double-click to open this student's profile"
+                  title="Double-click to edit this student"
                   className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${idx % 2 === 0 ? "bg-white" : "bg-gray-50/40"}`}>
                   <td className="px-3 py-2 text-gray-400 font-medium">{idx + 1}</td>
                   <td className="px-3 py-2"><StatusPill status={status}/></td>
@@ -605,6 +612,64 @@ export default function GovernmentEntryPage() {
                 className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors disabled:opacity-60">
                 {saving && <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
                 {saving ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rules modal */}
+      {showRules && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 sticky top-0 bg-white">
+              <h3 className="text-base font-bold text-gray-800">Eligibility Rules</h3>
+              <button onClick={() => setShowRules(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5"/>
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4 text-xs text-gray-600">
+              <div>
+                <p className="font-bold text-gray-800 mb-1">UDISE Entry - Eligible if:</p>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  <li>UDISE is already marked <b>Done</b>, <u>or</u></li>
+                  <li>The student is in <b>any Entry Batch</b> <u>AND</u> all of Birth Cert Reg No, Birth State, Birth District and Birth City are filled in</li>
+                </ul>
+              </div>
+
+              <div>
+                <p className="font-bold text-gray-800 mb-1">PEN Entry - Eligible if:</p>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  <li>PEN is already marked <b>Done</b> or <b>Not Defined</b>, <u>or</u></li>
+                  <li>The student is in <b>any Entry Batch</b> <u>AND</u> all of Birth Cert Reg No, Birth State, Birth District and Birth City are filled in <u>AND</u> Aadhar Number is filled in</li>
+                </ul>
+              </div>
+
+              <div>
+                <p className="font-bold text-gray-800 mb-1">Not Eligible for Entry</p>
+                <p>Anyone who doesn&apos;t meet the Eligible rule above for that tab (UDISE or PEN).</p>
+              </div>
+
+              <div>
+                <p className="font-bold text-gray-800 mb-1">Mismatch tab</p>
+                <p>
+                  <b>UDISE Eligible, PEN Not</b> - meets the UDISE rule above but not the PEN rule.<br/>
+                  <b>PEN Eligible, UDISE Not</b> - meets the PEN rule above but not the UDISE rule.
+                </p>
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-blue-800">
+                The Entry Batch filter dropdown only narrows the Eligible list down to students
+                actually in that specific batch - it&apos;s disabled on the Not Eligible and
+                Mismatch views since batch membership alone doesn&apos;t decide those.
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end px-5 py-4 border-t border-gray-100">
+              <button onClick={() => setShowRules(false)}
+                className="text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors">
+                Got it
               </button>
             </div>
           </div>
