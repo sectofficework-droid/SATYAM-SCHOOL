@@ -9,6 +9,7 @@ import { addStudent, getClasses } from "@/lib/studentService";
 import { normalizeDate } from "@/lib/importUtils";
 import { recordPhase, buildPhaseSnapshot } from "@/lib/studentPhaseService";
 import useStore from "@/lib/store";
+import BatchSelector from "@/components/BatchSelector";
 
 // Basic Details Import - Student module. Only the fields a school can
 // realistically collect for its whole roster in one pass: Class, Name,
@@ -44,6 +45,7 @@ function splitName(full) {
 
 export default function BasicDetailsImportModal({ onClose, onImported }) {
   const { authUser } = useStore();
+  const [batchId, setBatchId] = useState(null);
   const fileRef = useRef(null);
   const [classNames, setClassNames] = useState([]);
   const [step,      setStep]      = useState("idle");
@@ -191,7 +193,7 @@ export default function BasicDetailsImportModal({ onClose, onImported }) {
     // REQ-FEAT-019: one locked "Added" phase covering every row that
     // actually saved in this run.
     try {
-      await recordPhase({ type: "Added", source: "basic_details_import", createdBy: authUser?.id, entries: phaseEntries });
+      await recordPhase({ type: "Added", source: "basic_details_import", createdBy: authUser?.id, existingBatchId: batchId, entries: phaseEntries });
     } catch {}
   }
 
@@ -322,6 +324,7 @@ export default function BasicDetailsImportModal({ onClose, onImported }) {
                   </table>
                 </div>
               </div>
+              <BatchSelector phaseType="Added" value={batchId} onChange={setBatchId} className="max-w-xs" />
               <div className="flex gap-3">
                 <button onClick={reset}
                   className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">

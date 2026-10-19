@@ -2341,7 +2341,7 @@ export default function ReportPage() {
         <button onClick={() => setShowPhasesReport(true)}
           className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
           <Layers className="w-6 h-6"/>
-          <span className="text-xs font-semibold leading-tight text-center">Phases</span>
+          <span className="text-xs font-semibold leading-tight text-center">Entry Batches</span>
         </button>
       </div>
 
@@ -2409,7 +2409,7 @@ export default function ReportPage() {
         <button onClick={() => { setShowExamsReport(false); setShowPhasesReport(true); }}
           className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
           <Layers className="w-6 h-6"/>
-          <span className="text-xs font-semibold leading-tight text-center">Phases</span>
+          <span className="text-xs font-semibold leading-tight text-center">Entry Batches</span>
         </button>
       </div>
 
@@ -2457,7 +2457,7 @@ export default function ReportPage() {
         <button onClick={() => { setShowDailyLogReport(false); setShowPhasesReport(true); }}
           className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
           <Layers className="w-6 h-6"/>
-          <span className="text-xs font-semibold leading-tight text-center">Phases</span>
+          <span className="text-xs font-semibold leading-tight text-center">Entry Batches</span>
         </button>
       </div>
 
@@ -2505,7 +2505,7 @@ export default function ReportPage() {
         <button onClick={() => { setShowAtRiskReport(false); setShowPhasesReport(true); }}
           className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
           <Layers className="w-6 h-6"/>
-          <span className="text-xs font-semibold leading-tight text-center">Phases</span>
+          <span className="text-xs font-semibold leading-tight text-center">Entry Batches</span>
         </button>
       </div>
 
@@ -2553,7 +2553,7 @@ export default function ReportPage() {
         <button onClick={() => setShowPhasesReport(true)}
           className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-school-navy bg-school-navy text-white shadow-lg transition-all">
           <Layers className="w-6 h-6"/>
-          <span className="text-xs font-semibold leading-tight text-center">Phases</span>
+          <span className="text-xs font-semibold leading-tight text-center">Entry Batches</span>
         </button>
       </div>
 

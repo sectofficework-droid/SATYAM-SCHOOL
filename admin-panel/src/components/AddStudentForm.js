@@ -5,6 +5,7 @@ import supabase from "@/lib/supabase";
 import { addStudent as svcAddStudent, getNextEnrollmentNo, searchStudentsForSibling } from "@/lib/studentService";
 import { recordPhase, buildPhaseSnapshot } from "@/lib/studentPhaseService";
 import useStore from "@/lib/store";
+import BatchSelector from "@/components/BatchSelector";
 import { getActiveClasses } from "@/lib/settingsService";
 import {
   ChevronDown, Upload, X, Plus, FileText, AlertTriangle,
@@ -148,6 +149,7 @@ function YesNoToggle({ value, onChange }) {
 export default function AddStudentForm({ variant = "page", onCancel, onSaved }) {
   const { authUser } = useStore();
   const [sessionId] = useState(() => crypto.randomUUID());
+  const [batchId, setBatchId] = useState(null);
 
   const [standards, setStandards]           = useState([]);
   const [nextEnrollment, setNextEnrollment] = useState("...");
@@ -565,7 +567,7 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
       // REQ-FEAT-019: one locked "Added" phase for this single save.
       try {
         await recordPhase({
-          type: "Added", source: "add_student_form", createdBy: authUser?.id,
+          type: "Added", source: "add_student_form", createdBy: authUser?.id, existingBatchId: batchId,
           entries: [{ studentId: student?.id, enrollmentNo, snapshot: buildPhaseSnapshot(payload, enrollmentNo) }],
         });
       } catch {}
@@ -1440,6 +1442,7 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
         </div>
 
         {/* ══ Submit ══ */}
+        <BatchSelector phaseType="Added" value={batchId} onChange={setBatchId} className="max-w-xs" />
         <div className="flex items-center justify-end gap-3 pt-2">
           <button type="button" onClick={onCancel}
             className="px-6 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">

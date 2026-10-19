@@ -148,14 +148,38 @@ export function buildPhaseSnapshot(payload, enrollmentNo) {
 // entries: [{ studentId, enrollmentNo, snapshot }], one per student row
 // actually written in this save/import run. No-ops (returns null) if
 // entries is empty - never records an empty phase.
-export async function recordPhase({ type, source, createdBy, entries }) {
+//
+// existingBatchId (2026-10-19, user request: "while doing new entry, new
+// import, new replacement, i should be able to select batch") - pass an
+// existing student_import_phases.id to add these entries into that batch
+// instead of starting a new one (student_count incremented, not
+// overwritten), matching the real workflow of processing 5-10 students'
+// documents across more than one save/import session but wanting them
+// counted as the same batch.
+export async function recordPhase({ type, source, createdBy, entries, existingBatchId }) {
   if (!entries?.length) return null;
-  const { data: phase, error: phaseErr } = await supabase
-    .from("student_import_phases")
-    .insert({ phase_type: type, source, created_by: createdBy || null, student_count: entries.length })
-    .select()
-    .single();
-  if (phaseErr) throw phaseErr;
+  let phase;
+  if (existingBatchId) {
+    const { data: current, error: fetchErr } = await supabase
+      .from("student_import_phases").select("id, student_count").eq("id", existingBatchId).single();
+    if (fetchErr) throw fetchErr;
+    const { data: updated, error: updateErr } = await supabase
+      .from("student_import_phases")
+      .update({ student_count: (current.student_count || 0) + entries.length })
+      .eq("id", existingBatchId)
+      .select()
+      .single();
+    if (updateErr) throw updateErr;
+    phase = updated;
+  } else {
+    const { data: created, error: phaseErr } = await supabase
+      .from("student_import_phases")
+      .insert({ phase_type: type, source, created_by: createdBy || null, student_count: entries.length })
+      .select()
+      .single();
+    if (phaseErr) throw phaseErr;
+    phase = created;
+  }
 
   const rows = entries.map(e => ({
     phase_id:      phase.id,
@@ -185,4 +209,42 @@ export async function getPhaseEntries(phaseId) {
     .order("created_at", { ascending: true });
   if (error) throw error;
   return data || [];
+}
+
+// REQ-FEAT-019 follow-up (2026-10-19) - 428 students were given basic
+// details up front; since then, full details are being completed in small
+// batches (5-10 students, whenever their documents physically arrive in
+// the office) - each batch is one "Replaced" phase. The user wants to know,
+// per student, which phase(s) they were completed in, specifically to
+// catch a student accidentally included in a second batch (redone twice).
+// Grouped client-side rather than via a DB aggregate - same pattern this
+// file already uses elsewhere, and keeps the "locked" per-phase detail
+// (name/class as recorded at that time) directly from each entry's own
+// snapshot, no extra join back to the live students table needed.
+export async function getReplacedStudentPhases() {
+  const { data, error } = await supabase
+    .from("student_import_phase_entries")
+    .select("student_id, enrollment_no, snapshot, created_at, phase:student_import_phases!inner(phase_number, phase_type, created_at)")
+    .eq("phase.phase_type", "Replaced")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+
+  const byStudent = new Map();
+  for (const row of data || []) {
+    // Fall back to enrollment_no when student_id is null (a permanently
+    // deleted student whose historical entries still exist) so that case
+    // still groups sensibly instead of colliding under a single "null" key.
+    const key = row.student_id || `enr:${row.enrollment_no}`;
+    if (!byStudent.has(key)) {
+      byStudent.set(key, {
+        studentId:    row.student_id,
+        enrollmentNo: row.enrollment_no,
+        name:         `${row.snapshot?.firstName || ""} ${row.snapshot?.lastName || ""}`.trim(),
+        cls:          row.snapshot?.cls || "",
+        phases:       [],
+      });
+    }
+    byStudent.get(key).phases.push({ phaseNumber: row.phase.phase_number, createdAt: row.created_at });
+  }
+  return Array.from(byStudent.values()).sort((a, b) => b.phases.length - a.phases.length || a.name.localeCompare(b.name));
 }

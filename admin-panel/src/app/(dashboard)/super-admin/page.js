@@ -19,6 +19,7 @@ import {
 } from "@/lib/validators";
 import { getStudents, getClasses, getStudentByEnrollment, addStudent as dbAddStudent, updateStudent as dbUpdateStudent, deleteStudentPermanently, bagItemAllowedForClass } from "@/lib/studentService";
 import { recordPhase, buildPhaseSnapshot } from "@/lib/studentPhaseService";
+import BatchSelector from "@/components/BatchSelector";
 import { normalizeDate, normalizeAgainstList } from "@/lib/importUtils";
 import { getCurrentYearClassFees } from "@/lib/settingsService";
 import { DEFAULT_DOCS } from "@/lib/constants";
@@ -476,6 +477,7 @@ function validateStudentForm(form) {
 function SingleStudentTool({ students, onStudentUpdated }) {
   const authUser  = useStore(s => s.authUser);
   const canDelete = authUser && authUser.role !== "normal_admin"; // senior_admin & management only
+  const [batchId, setBatchId] = useState(null);
 
   const [selClass, setSelClass] = useState("");
   const [search,   setSearch]   = useState("");
@@ -555,7 +557,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
       // REQ-FEAT-019: one locked "Replaced" phase for this single save.
       try {
         await recordPhase({
-          type: "Replaced", source: "single_student_update", createdBy: authUser?.id,
+          type: "Replaced", source: "single_student_update", createdBy: authUser?.id, existingBatchId: batchId,
           entries: [{ studentId: selected._studentId, enrollmentNo: selected.enrollment, snapshot: buildPhaseSnapshot(updatePayload, selected.enrollment) }],
         });
       } catch {}
@@ -799,7 +801,8 @@ function SingleStudentTool({ students, onStudentUpdated }) {
         </div>
       </div>
 
-      <div className="mt-6 flex items-center gap-3">
+      <BatchSelector phaseType="Replaced" value={batchId} onChange={setBatchId} className="mt-6 max-w-xs" />
+      <div className="mt-3 flex items-center gap-3">
         <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-school-navy text-white px-6 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-60"><Save className="w-4 h-4"/>{saving ? "Saving..." : "Save Changes"}</button>
         <button onClick={() => { setForm({...selected}); setErrors({}); resetMedia(); }} className="flex items-center gap-2 border border-gray-200 text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold"><RefreshCw className="w-4 h-4"/>Reset</button>
         {canDelete && (
@@ -2512,6 +2515,7 @@ function PendingDetailsPanel({ students }) {
 
 function ImportStudentsPanel({ onImportDone }) {
   const { authUser } = useStore();
+  const [batchId, setBatchId] = useState(null);
   const fileRef = useRef(null);
   const [step,      setStep]      = useState("idle");
   const [parsed,    setParsed]    = useState([]);
@@ -2747,7 +2751,7 @@ function ImportStudentsPanel({ onImportDone }) {
     // actually saved in this run, for the UDISE/PEN submission report -
     // failures above are simply excluded, not retried or blocked on.
     try {
-      await recordPhase({ type: "Added", source: "import_students", createdBy: authUser?.id, entries: phaseEntries });
+      await recordPhase({ type: "Added", source: "import_students", createdBy: authUser?.id, existingBatchId: batchId, entries: phaseEntries });
     } catch {}
   }
 
@@ -2862,6 +2866,7 @@ function ImportStudentsPanel({ onImportDone }) {
               </table>
             </div>
           </div>
+          <BatchSelector phaseType="Added" value={batchId} onChange={setBatchId} className="max-w-xs" />
           <div className="flex gap-3">
             <button onClick={reset}
               className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">
@@ -2999,6 +3004,7 @@ function studentToReplaceRow(s) {
 // resolve to a real class) for consistency with the shared template shape.
 function FullDetailsReplaceImportPanel({ students, onImportDone }) {
   const { authUser } = useStore();
+  const [batchId, setBatchId] = useState(null);
   const fileRef = useRef(null);
   const [step,      setStep]      = useState("idle");
   const [parsed,    setParsed]    = useState([]);
@@ -3260,7 +3266,7 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
     // REQ-FEAT-019: one locked "Replaced" phase covering every row that
     // actually saved in this run.
     try {
-      await recordPhase({ type: "Replaced", source: "replace_full_details", createdBy: authUser?.id, entries: phaseEntries });
+      await recordPhase({ type: "Replaced", source: "replace_full_details", createdBy: authUser?.id, existingBatchId: batchId, entries: phaseEntries });
     } catch {}
   }
 
@@ -3426,6 +3432,7 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
               </table>
             </div>
           </div>
+          <BatchSelector phaseType="Replaced" value={batchId} onChange={setBatchId} className="max-w-xs" />
           <div className="flex gap-3">
             <button onClick={reset}
               className="px-5 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">

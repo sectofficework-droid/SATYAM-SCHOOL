@@ -13,6 +13,7 @@ import {
 import { getStudentByEnrollment, updateStudent as svcUpdate, searchStudentsForSibling } from "@/lib/studentService";
 import { recordPhase, buildPhaseSnapshot } from "@/lib/studentPhaseService";
 import useStore from "@/lib/store";
+import BatchSelector from "@/components/BatchSelector";
 import { fmtDMY } from "@/lib/utils";
 import { getActiveClasses } from "@/lib/settingsService";
 import { uploadFileToS3, getS3ViewUrl, slugify, fileExt } from "@/lib/s3Upload";
@@ -213,6 +214,7 @@ function ReadOnlyField({ label, value }) {
 // ── Edit Form — receives pre-loaded student ────────────────────
 function EditForm({ existing, id, router }) {
   const { authUser } = useStore();
+  const [batchId, setBatchId] = useState(null);
   const [standards, setStandards] = useState([]);
 
   useEffect(() => {
@@ -550,7 +552,7 @@ function EditForm({ existing, id, router }) {
       // REQ-FEAT-019: one locked "Replaced" phase for this single save.
       try {
         await recordPhase({
-          type: "Replaced", source: "edit_student_form", createdBy: authUser?.id,
+          type: "Replaced", source: "edit_student_form", createdBy: authUser?.id, existingBatchId: batchId,
           entries: [{ studentId: existing._studentId, enrollmentNo: existing.enrollment, snapshot: buildPhaseSnapshot(updatePayload, existing.enrollment) }],
         });
       } catch {}
@@ -1258,6 +1260,7 @@ function EditForm({ existing, id, router }) {
       </div>
 
       {/* ══ Submit ══ */}
+      <BatchSelector phaseType="Replaced" value={batchId} onChange={setBatchId} className="max-w-xs" />
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
           type="button" onClick={() => router.replace(`/student/${id}`)}
