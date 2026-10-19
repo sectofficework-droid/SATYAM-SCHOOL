@@ -248,3 +248,20 @@ export async function getReplacedStudentPhases() {
   }
   return Array.from(byStudent.values()).sort((a, b) => b.phases.length - a.phases.length || a.name.localeCompare(b.name));
 }
+
+// REQ-FEAT-019 follow-up (2026-10-19, user request: "in report udise entry
+// and pen entry add a filter of batch") - the original motivation for the
+// whole Phases/Batch feature: let the user filter the UDISE (State) / PEN
+// (National) Entry reports down to just the students touched by one chosen
+// batch, so they can submit only the latest added/replaced students to the
+// registries instead of re-submitting everyone each time. Returns every
+// entry's enrollment_no + phase_number (no enrollment_no = nothing to match
+// against a student row, so those are skipped).
+export async function getAllPhaseEntryEnrollments() {
+  const { data, error } = await supabase
+    .from("student_import_phase_entries")
+    .select("enrollment_no, phase:student_import_phases!inner(phase_number)")
+    .not("enrollment_no", "is", null);
+  if (error) throw error;
+  return (data || []).map(r => ({ enrollmentNo: r.enrollment_no, phaseNumber: r.phase.phase_number }));
+}

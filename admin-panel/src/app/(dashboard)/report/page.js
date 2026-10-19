@@ -27,6 +27,7 @@ import ExamsReportSection from "./ExamsReportSection";
 import StudentDailyLogReportSection from "./StudentDailyLogReportSection";
 import AtRiskStudentsReportSection from "./AtRiskStudentsReportSection";
 import StudentImportPhasesReportSection from "./StudentImportPhasesReportSection";
+import { getPhases, getAllPhaseEntryEnrollments } from "@/lib/studentPhaseService";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CLASSES   = ["JR.KG","SR.KG","Balvatika","1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th","11th - Commerce","12th - Commerce"];
@@ -237,6 +238,16 @@ function entryGetSummary(cols) {
 const ENTRY_QUICK_FILTERS = [
   {key:"cls",     label:"Class",         options:["All",...CLASSES] },
   {key:"session", label:"Academic Year", options:["All",...SESSIONS_FALLBACK]},
+];
+
+// UDISE/PEN Entry only - lets the user narrow the report to just the
+// students touched by one Entry Batch (see studentPhaseService.js), so they
+// can submit only the latest added/replaced students to the state/national
+// registries. "options" is patched with the live batch list at render time
+// the same way "session" is patched elsewhere (activeQuickFilters below).
+const ENTRY_QUICK_FILTERS_WITH_BATCH = [
+  ...ENTRY_QUICK_FILTERS,
+  {key:"batch", label:"Entry Batch", options:["All"]},
 ];
 
 // pool of optional fields that can be inserted as a one-off "extra field" into a fixed register
@@ -775,7 +786,7 @@ const REPORT_CONFIGS = {
     isFixedEntry:true,
     fixedColumns: UDISE_ENTRY_COLUMNS,
     extraFieldPool: STUDENT_FIELD_POOL.filter(f => !UDISE_ENTRY_COLUMNS.some(c => c.key === f.key)),
-    quickFilters: ENTRY_QUICK_FILTERS,
+    quickFilters: ENTRY_QUICK_FILTERS_WITH_BATCH,
     dateField:null, dateLabel:null,
     columns: UDISE_ENTRY_COLUMNS,
     getData: entryGetData,
@@ -786,7 +797,7 @@ const REPORT_CONFIGS = {
     isFixedEntry:true,
     fixedColumns: PEN_ENTRY_COLUMNS,
     extraFieldPool: STUDENT_FIELD_POOL.filter(f => !PEN_ENTRY_COLUMNS.some(c => c.key === f.key)),
-    quickFilters: ENTRY_QUICK_FILTERS,
+    quickFilters: ENTRY_QUICK_FILTERS_WITH_BATCH,
     dateField:null, dateLabel:null,
     columns: PEN_ENTRY_COLUMNS,
     getData: entryGetData,
@@ -1679,6 +1690,8 @@ export default function ReportPage() {
   const [dbInventory, setDbInventory] = useState([]);
   const [dbTcIssued,  setDbTcIssued]  = useState([]);
   const [dbStaffAttendance, setDbStaffAttendance] = useState([]);
+  const [dbPhases, setDbPhases] = useState([]);
+  const [dbPhaseEntryEnrollments, setDbPhaseEntryEnrollments] = useState([]);
   const [dbLoading,   setDbLoading]   = useState(true);
   const [dbSessions,  setDbSessions]  = useState(SESSIONS_FALLBACK);
   const [refreshing,  setRefreshing]  = useState(false);
@@ -1695,8 +1708,10 @@ export default function ReportPage() {
         getAcademicYearLabels(),
         getTcIssuedForReport(),
         getStaffAttendanceForReport(),
+        getPhases(),
+        getAllPhaseEntryEnrollments(),
       ]);
-      const [students, fees, payments, employees, inventory, sessions, tcIssued, staffAttendance] = results;
+      const [students, fees, payments, employees, inventory, sessions, tcIssued, staffAttendance, phases, phaseEntryEnrollments] = results;
       if (students.status === "fulfilled") setDbStudents(students.value);
       if (fees.status === "fulfilled") setDbFees(fees.value);
       if (payments.status === "fulfilled") setDbPayments(payments.value);
@@ -1705,6 +1720,8 @@ export default function ReportPage() {
       if (sessions.status === "fulfilled" && sessions.value?.length) setDbSessions(sessions.value);
       if (tcIssued.status === "fulfilled") setDbTcIssued(tcIssued.value);
       if (staffAttendance.status === "fulfilled") setDbStaffAttendance(staffAttendance.value);
+      if (phases.status === "fulfilled") setDbPhases(phases.value);
+      if (phaseEntryEnrollments.status === "fulfilled") setDbPhaseEntryEnrollments(phaseEntryEnrollments.value);
     } catch (e) {
       console.error("Report loadAll error:", e);
     } finally {
@@ -1764,14 +1781,34 @@ export default function ReportPage() {
     [dbStaffAttendance]
   );
 
+  // Entry Batch options (udiseEntry/penEntry only) - "Batch N" per existing
+  // student_import_phases row, oldest first, matching the Entry Batches
+  // report's own numbering.
+  const batchOptions = useMemo(
+    () => dbPhases.slice().sort((a, b) => a.phase_number - b.phase_number).map(p => `Batch ${p.phase_number}`),
+    [dbPhases]
+  );
+  // enrollNo -> Set of phase_numbers that touched that student, built once
+  // from every phase entry that has an enrollment_no - lets the Entry Batch
+  // filter below narrow udiseEntry/penEntry down to one batch's students.
+  const enrollToBatches = useMemo(() => {
+    const m = new Map();
+    for (const e of dbPhaseEntryEnrollments) {
+      if (!m.has(e.enrollmentNo)) m.set(e.enrollmentNo, new Set());
+      m.get(e.enrollmentNo).add(e.phaseNumber);
+    }
+    return m;
+  }, [dbPhaseEntryEnrollments]);
+
   // Patch session filter options with live DB years (module-level config uses SESSIONS_FALLBACK as static placeholder)
   const activeQuickFilters = useMemo(() =>
     (ecfg.quickFilters || []).map(f => {
       if (f.key === "session")     return { ...f, options: ["All", ...dbSessions] };
       if (f.key === "designation" && rType === "staffAttendance") return { ...f, options: ["All", ...dbStaffDesignations] };
       if (f.key === "department"  && rType === "staffAttendance") return { ...f, options: ["All", ...dbStaffDepartments] };
+      if (f.key === "batch")       return { ...f, options: ["All", ...batchOptions] };
       return f;
-    }), [ecfg.quickFilters, dbSessions, rType, dbStaffDesignations, dbStaffDepartments]);
+    }), [ecfg.quickFilters, dbSessions, rType, dbStaffDesignations, dbStaffDepartments, batchOptions]);
 
   useEffect(() => {
     const activeCols = cfg.isFeesModule
@@ -1827,6 +1864,10 @@ export default function ReportPage() {
   // (including the date range) narrows the rollup too, instead of being
   // applied to rows that no longer carry those fields.
   let data = (isStaffRollup ? cfg : ecfg).getData(sourceData, filters, dateFrom, dateTo, search);
+  if ((rType === "udiseEntry" || rType === "penEntry") && filters.batch && filters.batch !== "All") {
+    const batchNum = Number(String(filters.batch).match(/\d+/)?.[0]);
+    data = data.filter(x => enrollToBatches.get(x.enrollNo)?.has(batchNum));
+  }
   if (rType === "fees" && feesView === "status" && filters.status === "Partial" && partialMaxAmount !== "") {
     const maxAmt = Number(partialMaxAmount);
     if (!isNaN(maxAmt) && maxAmt >= 0) {
