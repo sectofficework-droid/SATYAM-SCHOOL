@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X, Loader2, HelpCircle, Search } from "lucide-react";
+import { Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X, Loader2, HelpCircle, Search, Maximize2, Minimize2 } from "lucide-react";
 import { getStudentsForReport, getAcademicYearLabels } from "@/lib/reportService";
 import { getPhases, getAllPhaseEntryEnrollments } from "@/lib/studentPhaseService";
 import { updateStudentGovId } from "@/lib/studentService";
@@ -189,6 +189,19 @@ export default function GovernmentEntryPage() {
   // are reviewed separately.
   const [eligTab, setEligTab] = useState("eligible"); // "eligible" | "ineligible"
   const [showRules, setShowRules] = useState(false);
+  // Fullscreen (2026-10-19, user request: "fullscreen button which expand
+  // it to full totally clean") - a fixed, full-viewport overlay (not the
+  // real browser Fullscreen API, which needs a permission prompt and hides
+  // browser chrome too) that sits above the dashboard sidebar/topbar so
+  // only this page's own content shows, maximizing room for the wide
+  // Government Entry table.
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    if (!fullscreen) return;
+    function onKey(e) { if (e.key === "Escape") setFullscreen(false); }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
 
   const loadAll = useCallback(async () => {
     setRefreshing(true);
@@ -410,7 +423,7 @@ export default function GovernmentEntryPage() {
   );
 
   return (
-    <div className="space-y-5">
+    <div className={fullscreen ? "fixed inset-0 z-[100] bg-white overflow-y-auto p-5 space-y-3" : "space-y-3"}>
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>
@@ -427,50 +440,62 @@ export default function GovernmentEntryPage() {
             <RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin text-school-navy" : ""}`}/>
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
+          <button onClick={() => setFullscreen(v => !v)}
+            title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
+            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
+            {fullscreen ? <Minimize2 className="w-3.5 h-3.5"/> : <Maximize2 className="w-3.5 h-3.5"/>}
+            {fullscreen ? "Exit Fullscreen" : "Fullscreen"}
+          </button>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-        <button onClick={() => setMainTab("udise")}
-          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "udise" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-          <Landmark className="w-3.5 h-3.5"/> UDISE Entry (State)
-        </button>
-        <button onClick={() => setMainTab("pen")}
-          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "pen" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-          <IdCard className="w-3.5 h-3.5"/> PEN Entry (National)
-        </button>
-        <button onClick={() => setMainTab("mismatch")}
-          className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "mismatch" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-          <AlertTriangle className="w-3.5 h-3.5"/> Mismatch
-        </button>
-      </div>
+      {/* Tabs - main + sub-tabs share one row (was two stacked rows) to
+          save vertical space, since the table below is already tight on
+          room, especially in fullscreen. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+          <button onClick={() => setMainTab("udise")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "udise" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+            <Landmark className="w-3.5 h-3.5"/> UDISE Entry (State)
+          </button>
+          <button onClick={() => setMainTab("pen")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "pen" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+            <IdCard className="w-3.5 h-3.5"/> PEN Entry (National)
+          </button>
+          <button onClick={() => setMainTab("mismatch")}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "mismatch" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+            <AlertTriangle className="w-3.5 h-3.5"/> Mismatch
+          </button>
+        </div>
 
-      {mainTab === "mismatch" ? (
-        <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-          <button onClick={() => setMismatchDir("udiseOnly")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "udiseOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-            UDISE Eligible, PEN Not
-          </button>
-          <button onClick={() => setMismatchDir("penOnly")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "penOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-            PEN Eligible, UDISE Not
-          </button>
-        </div>
-      ) : (
-        /* Eligibility sub-tabs - eligible (in any batch, already filed, or
-           has enough data) vs not eligible (none of those) */
-        <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-          <button onClick={() => setEligTab("eligible")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "eligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-            Eligible for Entry
-          </button>
-          <button onClick={() => setEligTab("ineligible")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "ineligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-            Not Eligible for Entry
-          </button>
-        </div>
-      )}
+        <span className="hidden sm:block w-px h-6 bg-gray-200"/>
+
+        {mainTab === "mismatch" ? (
+          <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+            <button onClick={() => setMismatchDir("udiseOnly")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "udiseOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              UDISE Eligible, PEN Not
+            </button>
+            <button onClick={() => setMismatchDir("penOnly")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "penOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              PEN Eligible, UDISE Not
+            </button>
+          </div>
+        ) : (
+          /* Eligibility sub-tabs - eligible (in any batch, already filed, or
+             has enough data) vs not eligible (none of those) */
+          <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+            <button onClick={() => setEligTab("eligible")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "eligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              Eligible for Entry
+            </button>
+            <button onClick={() => setEligTab("ineligible")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "ineligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              Not Eligible for Entry
+            </button>
+          </div>
+        )}
+      </div>
 
       {mainTab === "mismatch" && (
         <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-500">
@@ -500,49 +525,41 @@ export default function GovernmentEntryPage() {
         </div>
       )}
 
-      {/* Copy-to-portal hint */}
-      <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800">
-        <span className="font-semibold">Tip:</span>
-        click any cell below, then press Tab to move field-by-field - each cell is copied to your clipboard automatically, ready to paste into the government portal. This table is read-only; use "Entry Done" once the portal gives you a number.
-      </div>
-
-      {/* Filters */}
-      <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-        <div className="flex flex-wrap gap-3 items-end">
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Search</label>
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
-              <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Name, Enroll No or GR No"
-                className="border border-gray-200 rounded-lg pl-8 pr-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-52"/>
-            </div>
+      {/* Filters - one compact row (label beside each control, not above
+          it) rather than the previous 2-line-per-field layout. */}
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-2">
+        <div className="flex flex-wrap gap-x-4 gap-y-1.5 items-center">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
+            <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="Name, Enroll No or GR No"
+              className="border border-gray-200 rounded-lg pl-8 pr-2.5 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-48"/>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Class</label>
-            <select className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28"
+          <div className="flex items-center gap-1.5">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Class</label>
+            <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
               value={filters.cls} onChange={e => setFilters(prev => ({ ...prev, cls: e.target.value }))}>
               {["All", ...CLASSES].map(o => <option key={o}>{o}</option>)}
             </select>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Academic Year</label>
-            <select className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28"
+          <div className="flex items-center gap-1.5">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Year</label>
+            <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
               value={filters.session} onChange={e => setFilters(prev => ({ ...prev, session: e.target.value }))}>
               {["All", ...dbSessions].map(o => <option key={o}>{o}</option>)}
             </select>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Entry Batch</label>
+          <div className="flex items-center gap-1.5">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Batch</label>
             <select disabled={mainTab === "mismatch" || eligTab === "ineligible"}
-              className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24 disabled:opacity-50 disabled:cursor-not-allowed"
               value={filters.batch} onChange={e => setFilters(prev => ({ ...prev, batch: e.target.value }))}>
               {["All", ...batchOptions].map(o => <option key={o}>{o}</option>)}
             </select>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Status</label>
-            <select className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28"
+          <div className="flex items-center gap-1.5">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Status</label>
+            <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
               value={filters.status} onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}>
               {(effectiveTab === "udise" ? ["All", "Done", "Pending"] : ["All", "Done", "Not Defined", "Pending"]).map(o => <option key={o}>{o}</option>)}
             </select>
@@ -551,7 +568,7 @@ export default function GovernmentEntryPage() {
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto rounded-xl border border-gray-200 shadow-sm">
+      <div className={`overflow-auto rounded-xl border border-gray-200 shadow-sm ${fullscreen ? "max-h-[calc(100vh-220px)]" : "max-h-[70vh]"}`}>
         <table className="text-xs w-full">
           <thead>
             <tr className="bg-school-navy text-white">
@@ -582,19 +599,26 @@ export default function GovernmentEntryPage() {
             {rows.map((row, idx) => {
               const status = effectiveTab === "udise" ? row.udiseStatus : row.penStatus;
               const rowBg = idx % 2 === 0 ? "bg-white" : "bg-gray-50/40";
+              // Sticky cells need a fully OPAQUE background - the striped
+              // rowBg above uses /40 (40% opacity) so columns scrolling
+              // underneath a frozen cell would show through it, which is
+              // exactly the "transparent, looks odd" bug reported. Frozen
+              // cells use this solid equivalent instead; everything else
+              // keeps the translucent stripe.
+              const rowBgSolid = idx % 2 === 0 ? "bg-white" : "bg-gray-100";
               return (
                 <tr key={row.enrollNo || idx}
                   onDoubleClick={() => openStudentProfile(row)}
                   title="Double-click to edit this student"
                   className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${rowBg}`}>
-                  <td style={{ position: "sticky", left: stickyLeft[0], zIndex: 10 }} className={`${rowBg} px-3 py-2 text-center whitespace-nowrap`}>
+                  <td style={{ position: "sticky", left: stickyLeft[0], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2 text-center whitespace-nowrap`}>
                     <button onClick={() => openEntryModal(row)}
                       className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-school-navy text-white hover:bg-school-navy/90 transition-colors">
                       <CheckCircle2 className="w-3 h-3"/> Entry Done
                     </button>
                   </td>
-                  <td style={{ position: "sticky", left: stickyLeft[1], zIndex: 10 }} className={`${rowBg} px-3 py-2 text-gray-400 font-medium`}>{idx + 1}</td>
-                  <td style={{ position: "sticky", left: stickyLeft[2], zIndex: 10 }} className={`${rowBg} px-3 py-2`}><StatusPill status={status}/></td>
+                  <td style={{ position: "sticky", left: stickyLeft[1], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2 text-gray-400 font-medium`}>{idx + 1}</td>
+                  <td style={{ position: "sticky", left: stickyLeft[2], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2`}><StatusPill status={status}/></td>
                   {columns.map((c, i) => {
                     const rawValue = formatCellValue(c, row[c.key]);
                     const frozenIdx = i + 3;
@@ -604,7 +628,7 @@ export default function GovernmentEntryPage() {
                         tabIndex={0}
                         onFocus={() => copyCellToClipboard(rawValue)}
                         style={isFrozen ? { position: "sticky", left: stickyLeft[frozenIdx], zIndex: 10 } : undefined}
-                        className={`${isFrozen ? rowBg : ""} px-3 py-2 text-gray-700 whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-school-navy focus:bg-blue-50`}>
+                        className={`${isFrozen ? rowBgSolid : ""} px-3 py-2 text-gray-700 whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-school-navy focus:bg-blue-50`}>
                         {rawValue !== "" ? String(rawValue) : <span className="text-gray-300">-</span>}
                       </td>
                     );
@@ -737,6 +761,13 @@ export default function GovernmentEntryPage() {
                 The Entry Batch filter dropdown only narrows the Eligible list down to students
                 actually in that specific batch - it&apos;s disabled on the Not Eligible and
                 Mismatch views since batch membership alone doesn&apos;t decide those.
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-blue-800">
+                <span className="font-semibold">Tip:</span> click any cell in the table, then press
+                Tab to move field-by-field - each cell is copied to your clipboard automatically,
+                ready to paste into the government portal. The table is read-only; use &quot;Entry
+                Done&quot; once the portal gives you a number.
               </div>
             </div>
 
