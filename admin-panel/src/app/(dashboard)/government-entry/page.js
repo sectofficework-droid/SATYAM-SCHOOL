@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X, Loader2, HelpCircle } from "lucide-react";
+import { Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X, Loader2, HelpCircle, Search } from "lucide-react";
 import { getStudentsForReport, getAcademicYearLabels } from "@/lib/reportService";
 import { getPhases, getAllPhaseEntryEnrollments } from "@/lib/studentPhaseService";
 import { updateStudentGovId } from "@/lib/studentService";
@@ -177,6 +177,7 @@ export default function GovernmentEntryPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filters, setFilters] = useState({ cls: "All", session: "All", batch: "All" });
+  const [search, setSearch] = useState("");
   const [showNotDefinedOnly, setShowNotDefinedOnly] = useState(false);
   // eligTab (2026-10-19, user request: "only whose names are mentioned in
   // batch are eligible for entry, rest should stay separately under
@@ -230,6 +231,12 @@ export default function GovernmentEntryPage() {
     let d = dbStudents.map(decorate);
     if (filters.cls !== "All") d = d.filter(x => x.cls === filters.cls);
     if (filters.session !== "All") d = d.filter(x => x.session === filters.session);
+    const q = search.trim().toLowerCase();
+    if (q) d = d.filter(x =>
+      String(x.name || "").toLowerCase().includes(q) ||
+      String(x.enrollNo || "").toLowerCase().includes(q) ||
+      String(x.grNo || "").toLowerCase().includes(q)
+    );
 
     const inAnyBatch = x => !!enrollToBatches.get(x.enrollNo)?.size;
     // Birth cert reg no + birth place (city/district/state - the 3
@@ -279,7 +286,7 @@ export default function GovernmentEntryPage() {
     const rank = { Done: 0, "Not Defined": 1, Pending: 2 };
     const statusKey = effectiveTab === "udise" ? "udiseStatus" : "penStatus";
     return d.slice().sort((a, b) => rank[a[statusKey]] - rank[b[statusKey]]);
-  }, [dbStudents, filters, enrollToBatches, mainTab, mismatchDir, effectiveTab, showNotDefinedOnly, eligTab]);
+  }, [dbStudents, filters, search, enrollToBatches, mainTab, mismatchDir, effectiveTab, showNotDefinedOnly, eligTab]);
 
   const pendingNotDefinedCount = useMemo(
     () => dbStudents.map(decorate).filter(x => x.penStatus === "Not Defined").length,
@@ -470,6 +477,15 @@ export default function GovernmentEntryPage() {
       {/* Filters */}
       <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
         <div className="flex flex-wrap gap-3 items-end">
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Search</label>
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
+              <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="Name, Enroll No or GR No"
+                className="border border-gray-200 rounded-lg pl-8 pr-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-52"/>
+            </div>
+          </div>
           <div className="flex flex-col gap-1">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Class</label>
             <select className="border border-gray-200 rounded-lg px-2.5 py-1.5 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-28"
