@@ -101,6 +101,7 @@ function formatCellValue(col, value) {
   return col.isDate ? fmtDate(value) : value;
 }
 
+
 // ── Father/Mother Name with Surname ──────────────────────────────────────────
 function nameWithSurname(name, surname) {
   return [name, surname].filter(Boolean).join(" ").trim();
@@ -206,6 +207,11 @@ function decorateStudentForEntry(st) {
     motherName:           nameWithSurname(st.motherName, st.surname),
     fullAddress:          [st.plotNo, st.society, st.landmark, st.area, "Surat", "Gujarat", st.pinCode].filter(Boolean).join(", "),
     bagColor:             getBagColor(st.cls),
+    // "Done" only once the real number is on file - a PEN of "Not Defined"
+    // (the Government Entry module's placeholder for a not-yet-generated
+    // PEN) still counts as Pending here, same as it does over there.
+    udiseStatus:          st.udise && st.udise.trim() ? "Done" : "Pending",
+    penStatus:            st.pen && st.pen.trim() && st.pen.trim() !== "Not Defined" ? "Done" : "Pending",
   };
 }
 
@@ -306,6 +312,7 @@ const GR_REGISTER_COLUMNS = [
 
 const PEN_ENTRY_COLUMNS = [
   { key:"cls",                  label:"Class" },
+  { key:"penStatus",            label:"Entry Status" },
   { key:"studentFatherSurname", label:"Student Father Surname" },
   { key:"gender",                label:"Gender" },
   { key:"dob",                   label:"Date of Birth", isDate:true },
@@ -330,6 +337,7 @@ const PEN_ENTRY_COLUMNS = [
 
 const UDISE_ENTRY_COLUMNS = [
   { key:"cls",               label:"Class" },
+  { key:"udiseStatus",       label:"Entry Status" },
   { key:"udise",             label:"UDISE No" },
   { key:"birthCertRegNo",    label:"Birth Cert Reg No" },
   { key:"birthYear",         label:"Birth Year" },
@@ -922,7 +930,7 @@ const COLOR_MAP = {
 function StatusBadge({ value }) {
   if (!value) return <span className="text-gray-300">-</span>;
   const cls =
-    ["Active","Fully Paid","Present"].includes(value)                        ? "bg-green-100 text-green-700"  :
+    ["Active","Fully Paid","Present","Done"].includes(value)                 ? "bg-green-100 text-green-700"  :
     value === "Partial"                                             ? "bg-amber-100 text-amber-700"  :
     value === "On Leave"                                            ? "bg-amber-100 text-amber-700"  :
     value === "Leave"                                               ? "bg-orange-100 text-orange-700":
@@ -1890,7 +1898,15 @@ export default function ReportPage() {
   // Sorted against the ACTIVE view's columns, not a hardcoded config - the two
   // staff views have different keys, and every other report type sorts its own
   // columns (a numeric one would otherwise degrade to string order).
-  if (sort.key) data = sortRows(data, sort.key, sort.dir, ecfg.columns);
+  if (sort.key) {
+    data = sortRows(data, sort.key, sort.dir, ecfg.columns);
+  } else if (rType === "udiseEntry" || rType === "penEntry") {
+    // Default order (until the admin picks a column to sort by): Done
+    // entries first, then Pending - so completed government-portal entries
+    // don't get lost among the ones still waiting to be filed.
+    const statusKey = rType === "udiseEntry" ? "udiseStatus" : "penStatus";
+    data = data.slice().sort((a, b) => (a[statusKey] === b[statusKey] ? 0 : a[statusKey] === "Done" ? -1 : 1));
+  }
   // actCols follows selection order; fixed-entry types use locked order + inserted extra fields
   const actCols = ecfg.isFixedEntry
     ? buildFixedCols(ecfg.fixedColumns, extraFields).filter(c => !hiddenFixedCols.includes(c.key))
@@ -3135,15 +3151,18 @@ export default function ReportPage() {
                     </td>
                   )}
                   <td className="px-3 py-2 text-gray-400 font-medium">{idx+1}</td>
-                  {actCols.map(c=>(
-                    <td key={c.key} className="px-3 py-2 text-gray-700 whitespace-nowrap">
-                      {c.key==="status"
-                        ? <StatusBadge value={row[c.key]}/>
-                        : formatCellValue(c, row[c.key]) !== ""
-                          ? String(formatCellValue(c, row[c.key]))
-                          : <span className="text-gray-300">-</span>}
-                    </td>
-                  ))}
+                  {actCols.map(c=>{
+                    const rawValue = formatCellValue(c, row[c.key]);
+                    return (
+                      <td key={c.key} className="px-3 py-2 text-gray-700 whitespace-nowrap">
+                        {c.key==="status" || c.key==="udiseStatus" || c.key==="penStatus"
+                          ? <StatusBadge value={row[c.key]}/>
+                          : rawValue !== ""
+                            ? String(rawValue)
+                            : <span className="text-gray-300">-</span>}
+                      </td>
+                    );
+                  })}
                   {rType === "staffAttendance" && (
                     <td className="px-3 py-2 text-center whitespace-nowrap">
                       <button

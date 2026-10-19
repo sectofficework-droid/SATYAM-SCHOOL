@@ -25,6 +25,7 @@ const pageTitles = {
   "/employee": { title: "Employee Management", sub: "Staff records & assignments" },
   "/inventory": { title: "Inventory Management", sub: "Stock, vendors & purchase tracking" },
   "/report": { title: "Reports", sub: "Attendance, fee & student reports" },
+  "/government-entry": { title: "Government Entry", sub: "UDISE / PEN portal filing" },
   "/settings": { title: "Settings", sub: "System configuration & preferences" },
   "/sef/dashboard": { title: "SEF Dashboard", sub: "Satyam Education Foundation overview" },
   "/sef/student": { title: "SEF Students", sub: "Tuition student records" },

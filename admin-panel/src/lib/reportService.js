@@ -52,6 +52,7 @@ export async function getStudentsForReport() {
       .some(d => d.document_types?.name === "Birth Certificate" && d.status === "Uploaded");
 
     return {
+      studentId:          s.id,
       enrollNo:           row.enrollment_no,
       name:               `${s.first_name} ${s.last_name}`.trim(),
       firstName:          s.first_name,

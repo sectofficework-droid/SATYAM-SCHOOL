@@ -862,6 +862,21 @@ export async function updateStudentBasicDetails(studentId, data) {
   }
 }
 
+// ── Government Entry (UDISE/PEN portal filing) ───────────────────────────────
+// A deliberately narrow update - only grno + udise, or grno + pen - used by
+// the Government Entry module's "Entry Done" action. Keeping it separate
+// from updateStudent() (which rewrites every field from a full formData
+// object) means marking a government portal entry done can never
+// accidentally blank out the rest of a student's record.
+export async function updateStudentGovId(studentId, { grNo, udise, pen }) {
+  const fields = { updated_at: new Date().toISOString() };
+  if (grNo !== undefined)  fields.grno  = grNo || null;
+  if (udise !== undefined) fields.udise = udise || null;
+  if (pen !== undefined)   fields.pen   = pen || null;
+  const { error } = await supabase.from("students").update(fields).eq("id", studentId);
+  if (error) throw error;
+}
+
 // ── Deactivate Student ────────────────────────────────────────────────────────
 
 export async function deactivateStudent(studentId, enrollmentId, reason, date) {
