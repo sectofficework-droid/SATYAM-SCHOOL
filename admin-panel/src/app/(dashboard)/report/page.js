@@ -5,7 +5,7 @@ import {
   GraduationCap, IndianRupee, Users, Package, Search,
   RefreshCw, Download, FileText, ShieldCheck, BookOpen, Landmark, IdCard,
   CheckSquare, X, LogOut, Fingerprint, ArrowUp, ArrowDown, ChevronsUpDown,
-  Trash2, ChevronLeft, ChevronRight, Award, ListChecks, Flag, Layers,
+  Trash2, ChevronLeft, ChevronRight, Award, ListChecks, Flag, Layers, Notebook,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
@@ -27,6 +27,7 @@ import ExamsReportSection from "./ExamsReportSection";
 import StudentDailyLogReportSection from "./StudentDailyLogReportSection";
 import AtRiskStudentsReportSection from "./AtRiskStudentsReportSection";
 import StudentImportPhasesReportSection from "./StudentImportPhasesReportSection";
+import NotebookReportSection from "./NotebookReportSection";
 import { getPhases, getAllPhaseEntryEnrollments } from "@/lib/studentPhaseService";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1663,6 +1664,9 @@ export default function ReportPage() {
   // REQ-FEAT-019 (2026-10-18): Student Import Phases - same self-contained-
   // section pattern as the flags above.
   const [showPhasesReport, setShowPhasesReport] = useState(false);
+  // REQ-FEAT-020 follow-up (2026-10-19): Notebook checks -> marks report -
+  // same self-contained-section pattern as the flags above.
+  const [showNotebookReport, setShowNotebookReport] = useState(false);
   const [filters,  setFilters]  = useState({});
   const [selCols,  setSelCols]  = useState([]); // ordered array of selected column keys
   const [dateFrom, setDateFrom] = useState("");
@@ -2468,6 +2472,11 @@ export default function ReportPage() {
           <Layers className="w-6 h-6"/>
           <span className="text-xs font-semibold leading-tight text-center">Entry Batches</span>
         </button>
+        <button onClick={() => { setShowExamsReport(false); setShowNotebookReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Notebook className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Notebook</span>
+        </button>
       </div>
 
       <ExamsReportSection />
@@ -2515,6 +2524,11 @@ export default function ReportPage() {
           className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
           <Layers className="w-6 h-6"/>
           <span className="text-xs font-semibold leading-tight text-center">Entry Batches</span>
+        </button>
+        <button onClick={() => { setShowDailyLogReport(false); setShowNotebookReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Notebook className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Notebook</span>
         </button>
       </div>
 
@@ -2564,6 +2578,11 @@ export default function ReportPage() {
           <Layers className="w-6 h-6"/>
           <span className="text-xs font-semibold leading-tight text-center">Entry Batches</span>
         </button>
+        <button onClick={() => { setShowAtRiskReport(false); setShowNotebookReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Notebook className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Notebook</span>
+        </button>
       </div>
 
       <AtRiskStudentsReportSection />
@@ -2612,9 +2631,67 @@ export default function ReportPage() {
           <Layers className="w-6 h-6"/>
           <span className="text-xs font-semibold leading-tight text-center">Entry Batches</span>
         </button>
+        <button onClick={() => { setShowPhasesReport(false); setShowNotebookReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Notebook className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Notebook</span>
+        </button>
       </div>
 
       <StudentImportPhasesReportSection />
+    </div>
+  );
+
+  if (showNotebookReport) return (
+    <div className="space-y-5">
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-xl font-bold text-gray-800">Reports & Export</h2>
+          <p className="text-sm text-gray-500 mt-0.5">Generate, filter and export reports for any module</p>
+        </div>
+      </div>
+
+      {/* Report type selector - same tiles as the normal view, Notebook active */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+        {Object.entries(REPORT_CONFIGS).map(([key, c]) => {
+          const Icon = c.icon;
+          return (
+            <button key={key} onClick={() => { setShowNotebookReport(false); setRType(key); }}
+              className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+              <Icon className="w-6 h-6"/>
+              <span className="text-xs font-semibold leading-tight text-center">{c.label}</span>
+            </button>
+          );
+        })}
+        <button onClick={() => { setShowNotebookReport(false); setShowExamsReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Award className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Exams</span>
+        </button>
+        <button onClick={() => { setShowNotebookReport(false); setShowDailyLogReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <ListChecks className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Daily Progress</span>
+        </button>
+        <button onClick={() => { setShowNotebookReport(false); setShowAtRiskReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Flag className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">At Risk</span>
+        </button>
+        <button onClick={() => { setShowNotebookReport(false); setShowPhasesReport(true); }}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Layers className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Entry Batches</span>
+        </button>
+        <button onClick={() => setShowNotebookReport(true)}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-school-navy bg-school-navy text-white shadow-lg transition-all">
+          <Notebook className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Notebook</span>
+        </button>
+      </div>
+
+      <NotebookReportSection />
     </div>
   );
 
@@ -2665,6 +2742,11 @@ export default function ReportPage() {
           className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
           <Layers className="w-6 h-6"/>
           <span className="text-xs font-semibold leading-tight text-center">Entry Batches</span>
+        </button>
+        <button onClick={() => setShowNotebookReport(true)}
+          className="flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-gray-200 bg-white text-gray-600 hover:border-school-navy/40 transition-all">
+          <Notebook className="w-6 h-6"/>
+          <span className="text-xs font-semibold leading-tight text-center">Notebook</span>
         </button>
       </div>
 

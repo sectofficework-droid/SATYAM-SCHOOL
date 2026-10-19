@@ -19,6 +19,8 @@ abstract class Routes {
   static const teacherLeave     = '/teacher/leave';
   static const teacherDailyTasks = '/teacher/daily-tasks';
   static const teacherDailyLog  = '/teacher/daily-log';
+  static const teacherNotebook  = '/teacher/notebook';
+  static const teacherNotebookReport = '/teacher/notebook-report';
   static const studentHome      = '/student/home';
   static const studentAttend    = '/student/attendance';
   static const studentMarks     = '/student/marks';

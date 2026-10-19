@@ -98,7 +98,36 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Current — Session 2026-10-17 — three features coded (REQ-FEAT-015/016/017),
+**Current — Session 2026-10-19 — new Notebook module + marks report coded
+(REQ-FEAT-020), not committed yet (about to be, per user's "push after
+done").** Per-student, per-subject notebook-complete grid with autosave,
+plus a tick-based marks report. New `notebook_log` table (RLS +
+`is_admin_user()` policy, `anon`'s default grant explicitly revoked up
+front this time) and 3 session-gated RPCs (`save_notebook_entry` -
+single-cell upsert for the autosave, `fetch_notebook_log` - prefill,
+`fetch_notebook_report` - per-subject/overall tick aggregation over a date
+range) - `mobile-app/SUPABASE_NOTEBOOK_LOG.sql` +
+`SUPABASE_NOTEBOOK_REPORT.sql`, both applied live via Supabase MCP. Teacher
+app: `TeacherNotebookPage` (hand-rolled frozen-header grid, two synced
+`ScrollController` pairs, no new dependency) + `TeacherNotebookReportPage`
+(`lib/app/modules/teacher/notebook/`), new routes, new dashboard tile.
+Admin panel: `NotebookReportSection.js` (mirrors `StudentDailyLogReportSection.js`),
+wired as a 5th report-type tile across all 5 toggle states in
+`report/page.js`. Scope was refined live with the user across several
+follow-ups before/during coding (class-teacher-only → any-class, no date
+picker → today-only → full date-range picker, plus the marks-report
+addition after the base grid already shipped) - see `planning/TODO.md`
+REQ-FEAT-020 for the full trail. **Verified**: both migrations applied
+live; confirmed after the fact via direct SQL that `notebook_log` has
+`rowsecurity = true` and zero `anon` table grants; Supabase security
+advisor shows only the generic SECURITY DEFINER search-path advisory every
+teacher RPC already carries, no new RLS gap. `flutter analyze` clean on
+every new/changed Dart file; `npm run lint` clean; admin-panel dev server
+compiled `/report` with the new tile/section, 200, no errors. **Not yet
+live-verified on a real device or a logged-in browser session** - no
+BlueStacks run this session, no actual click-through past compile-success.
+
+**Prior — Session 2026-10-17 — three features coded (REQ-FEAT-015/016/017),
 none committed (not asked).** (1) Admin panel's `Full Address` (Add + Edit
 Student) made fully derived/read-only from Room/Society/Landmark/Area/Pin
 Code - Add already auto-built it, Edit never had the sync. (2) Mobile Teacher
@@ -1337,6 +1366,16 @@ Earlier checkpoints, one line each (full detail in the linked files):
 ## Next step
 Open items, most recent first (superseded/completed items removed — see
 the checkpoint list above for what already shipped):
+
+00. **REQ-FEAT-020 (Notebook module + marks report) needs its real
+    device/browser click-through** — this session only verified via
+    `flutter analyze`/`npm run lint`/compile-success and direct SQL
+    checks, never an actual tap-through on BlueStacks or a logged-in
+    admin-panel session. Next session: tick/untick a few cells on a real
+    class+date, confirm the autosave round-trips in `notebook_log`, then
+    confirm the Notebook Report screen and the admin-panel report tile
+    show matching marks for the same data. See `planning/TODO.md`
+    REQ-FEAT-020.
 
 0. **REQ-BUG-072 (MIL (Odia) optional-subject fix) needs its end-to-end
    click-through** — no browser/device session ran this session. Next

@@ -3784,6 +3784,73 @@ pattern), it is noted as already-known and not re-filed as new.
       (green) for the other two - teacher-app entry and admin-panel report
       agree exactly, over a real session-token RPC and real RLS-gated
       table read, not a mock.
+- [x] **REQ-FEAT-020 — New Notebook module: per-student, per-subject
+      notebook-complete grid with autosave, plus a marks report. DONE
+      2026-10-19.** User: "add module Notebook - mam will click class
+      todays date then those class students name will be loaded and class
+      will be in header row; by default the notebook cell will be ticked
+      (that student notbook is complete) if any students notbook is
+      incomplete then it will be unticked and it wll autosave." Clarified
+      via bundled questions before coding: no class-teacher restriction -
+      any teacher may open any class (removed an initial "homeroom only"
+      answer per the user's own follow-up correction); one grid per
+      class+date, student names frozen down the left, every subject of
+      that class (from `class_subjects`, not a per-teacher subject list)
+      frozen across the top; each cell autosaves on tap (no batch Save
+      button, unlike REQ-FEAT-017's Daily Log); date defaults to today but
+      is picker-editable (last 60 days), added after the user asked for it
+      mid-design. Follow-up same session: "every subject is assigned 10
+      marks if ticked total will be counted towards how much time the
+      notebook is checked (different date)" - a report, not a data-model
+      change (marks = tick count x 10, computed on the fly).
+      New `notebook_log` table (`student_id, class, subject, date` unique,
+      one `complete` boolean default `true`, `marked_by`) - RLS enabled,
+      `anon`'s accidental default table grant explicitly revoked up front
+      this time (REQ-FEAT-017's own note flagged this project auto-grants
+      it), admin panel kept full access via the same `authenticated` +
+      `is_admin_user()` policy pattern (`mobile-app/SUPABASE_NOTEBOOK_LOG.sql`,
+      applied live via Supabase MCP). Two SECURITY DEFINER RPCs,
+      `save_notebook_entry` (single-cell upsert, the autosave path) /
+      `fetch_notebook_log` (prefill), gated by session identity only - same
+      "any class" philosophy as homework/exams/syllabus/daily-log. A third
+      RPC for the report, `fetch_notebook_report` (`mobile-app/
+      SUPABASE_NOTEBOOK_REPORT.sql`), aggregates checks-done/checks-total
+      per student+subject over a date range server-side.
+      Teacher app: new `TeacherNotebookPage` (`lib/app/modules/teacher/
+      notebook/`) - a hand-rolled frozen-header grid (two independent
+      `ScrollController` pairs mirroring each other's offset, no new
+      dependency added) with a Class dropdown (`allSchoolClasses`, any
+      class) + date picker bar. New `TeacherNotebookReportPage` (same
+      folder) reachable via an app-bar action on the grid, showing per-
+      subject and overall tick-based marks for a class + date range. Wired
+      via new `Routes.teacherNotebook`/`teacherNotebookReport` + a
+      "Notebook" dashboard tile (indigo, `Icons.auto_stories_rounded`).
+      Admin panel: new self-contained `NotebookReportSection.js` (same
+      pattern as `StudentDailyLogReportSection.js`), filtered by Class +
+      date range, reading `notebook_log` directly (already `authenticated`
+      + `is_admin_user()`-gated) - per-subject and overall marks columns,
+      Excel export. Added as a 5th report-type tile (`Notebook`, `Layers`-
+      adjacent) across all 5 toggle states in `report/page.js`, mirroring
+      the existing Exams/Daily Progress/At Risk/Entry Batches pattern
+      exactly (REQ-FEAT-019 - Student Import Phases - was the most recent
+      of those, which is why this feature is numbered -020 despite two
+      REQ-FEAT-019 tags already existing in-repo for different things; not
+      renumbering those to avoid touching already-applied migration
+      comments).
+      **Verified**: both migrations applied live via Supabase MCP;
+      confirmed afterward via direct SQL that `notebook_log` has
+      `rowsecurity = true` and `anon` holds zero table-level privileges
+      (only `authenticated`/`postgres`/`service_role` do); Supabase security
+      advisor shows no new RLS-disabled-without-policy finding for this
+      table - the three new functions only carry the generic SECURITY
+      DEFINER search-path advisory every existing teacher RPC already has.
+      `flutter analyze` clean on every changed/new Dart file; `npm run
+      lint` clean; admin-panel dev server compiled `/report` with the new
+      tile and section with no errors (200, 1243 modules). **Not yet
+      live-verified on a real device/browser session** (no BlueStacks run
+      this session, and the admin-panel check above was compile-only, not
+      a logged-in click-through) - flagged here the same way REQ-FEAT-016's
+      note always has, so it isn't mistaken for a device-tested feature.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

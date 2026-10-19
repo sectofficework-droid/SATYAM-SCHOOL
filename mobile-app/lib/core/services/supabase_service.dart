@@ -136,6 +136,53 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  // REQ-FEAT-020 (2026-10-19): Notebook-completion grid, one cell per
+  // student x subject for a class+date. Single-cell upsert - called on
+  // every tick/untick for the autosave UX (no batch Save button here,
+  // unlike saveStudentDailyLogBatch above). Gated by session identity only
+  // (any teacher may open any class, same "any class" philosophy as
+  // homework/exams/syllabus/daily-log) - not is_teacher_of_class.
+  static Future<void> saveNotebookEntry({
+    required String employeeId,
+    required String sessionToken,
+    required String className,
+    required String subject,
+    required String date,
+    required String studentId,
+    required bool complete,
+  }) async {
+    await client.rpc('save_notebook_entry', params: {
+      'p_employee_id': employeeId,
+      'p_session_token': sessionToken,
+      'p_class_name': className,
+      'p_subject': subject,
+      'p_date': date,
+      'p_student_id': studentId,
+      'p_complete': complete,
+    });
+  }
+
+  // Already-saved (student_id, subject, complete) rows for a class+date -
+  // used to prefill the grid with real prior taps (not a blank all-ticked
+  // grid) when a teacher reopens a class/date already started.
+  static Future<List<Map<String, dynamic>>> fetchNotebookLog(String employeeId, String sessionToken, String className, String date) async {
+    final res = await client.rpc('fetch_notebook_log', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_class_name': className, 'p_date': date,
+    }) as List;
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  // REQ-FEAT-020 follow-up (2026-10-19): per student+subject tick counts
+  // over a date range - (student_id, subject, checks_done, checks_total).
+  // Marks (checks_done * 10) are computed client-side, not stored.
+  static Future<List<Map<String, dynamic>>> fetchNotebookReport(String employeeId, String sessionToken, String className, String startDate, String endDate) async {
+    final res = await client.rpc('fetch_notebook_report', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_class_name': className,
+      'p_start_date': startDate, 'p_end_date': endDate,
+    }) as List;
+    return List<Map<String, dynamic>>.from(res);
+  }
+
   // REQ-FEAT-018 (2026-10-18): students flagged by the backend's exam/
   // daily-log/attendance signals, scoped to classes this teacher teaches -
   // re-evaluates server-side before returning, so it's always fresh.
