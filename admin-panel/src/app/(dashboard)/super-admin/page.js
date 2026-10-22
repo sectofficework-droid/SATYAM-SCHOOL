@@ -477,7 +477,6 @@ function validateStudentForm(form) {
 function SingleStudentTool({ students, onStudentUpdated }) {
   const authUser  = useStore(s => s.authUser);
   const canDelete = authUser && authUser.role !== "normal_admin"; // senior_admin & management only
-  const [batchId, setBatchId] = useState(null);
 
   const [selClass, setSelClass] = useState("");
   const [search,   setSearch]   = useState("");
@@ -554,13 +553,11 @@ function SingleStudentTool({ students, onStudentUpdated }) {
         enrollmentId: selected._enrollmentId,
       };
       await dbUpdateStudent(selected._studentId, updatePayload);
-      // REQ-FEAT-019: one locked "Replaced" phase for this single save.
-      try {
-        await recordPhase({
-          type: "Replaced", source: "single_student_update", createdBy: authUser?.id, existingBatchId: batchId,
-          entries: [{ studentId: selected._studentId, enrollmentNo: selected.enrollment, snapshot: buildPhaseSnapshot(updatePayload, selected.enrollment) }],
-        });
-      } catch {}
+      // REQ-FEAT-021 (2026-10-22): this single-student update tool no
+      // longer records a phase at all (was "single_student_update",
+      // REQ-FEAT-019) - a routine edit to an existing record was never
+      // the "physical document batch" workflow that feature models, and
+      // was the actual source of a new 1-student batch on every save.
 
       const { data: docTypes } = await supabase.from("document_types").select("id, name");
       if (docTypes?.length) {
@@ -801,7 +798,6 @@ function SingleStudentTool({ students, onStudentUpdated }) {
         </div>
       </div>
 
-      <BatchSelector phaseType="Replaced" value={batchId} onChange={setBatchId} className="mt-6 max-w-xs" />
       <div className="mt-3 flex items-center gap-3">
         <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-school-navy text-white px-6 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-60"><Save className="w-4 h-4"/>{saving ? "Saving..." : "Save Changes"}</button>
         <button onClick={() => { setForm({...selected}); setErrors({}); resetMedia(); }} className="flex items-center gap-2 border border-gray-200 text-gray-600 px-6 py-2.5 rounded-lg text-sm font-semibold"><RefreshCw className="w-4 h-4"/>Reset</button>
@@ -2515,7 +2511,7 @@ function PendingDetailsPanel({ students }) {
 
 function ImportStudentsPanel({ onImportDone }) {
   const { authUser } = useStore();
-  const [batchId, setBatchId] = useState(null);
+  const [batchId, setBatchId] = useState("none"); // REQ-FEAT-021: default "no batch"
   const fileRef = useRef(null);
   const [step,      setStep]      = useState("idle");
   const [parsed,    setParsed]    = useState([]);
@@ -2750,9 +2746,12 @@ function ImportStudentsPanel({ onImportDone }) {
     // REQ-FEAT-019: one locked "Added" phase covering every row that
     // actually saved in this run, for the UDISE/PEN submission report -
     // failures above are simply excluded, not retried or blocked on.
-    try {
-      await recordPhase({ type: "Added", source: "import_students", createdBy: authUser?.id, existingBatchId: batchId, entries: phaseEntries });
-    } catch {}
+    // REQ-FEAT-021: only when a batch was explicitly picked.
+    if (batchId !== "none") {
+      try {
+        await recordPhase({ type: "Added", source: "import_students", createdBy: authUser?.id, existingBatchId: batchId || null, entries: phaseEntries });
+      } catch {}
+    }
   }
 
   function reset() { setParsed([]); setRowErrors([]); setStep("idle"); setImportLog([]); }
@@ -3004,7 +3003,7 @@ function studentToReplaceRow(s) {
 // resolve to a real class) for consistency with the shared template shape.
 function FullDetailsReplaceImportPanel({ students, onImportDone }) {
   const { authUser } = useStore();
-  const [batchId, setBatchId] = useState(null);
+  const [batchId, setBatchId] = useState("none"); // REQ-FEAT-021: default "no batch"
   const fileRef = useRef(null);
   const [step,      setStep]      = useState("idle");
   const [parsed,    setParsed]    = useState([]);
@@ -3264,10 +3263,13 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
     setStep("done");
     if (onImportDone) onImportDone();
     // REQ-FEAT-019: one locked "Replaced" phase covering every row that
-    // actually saved in this run.
-    try {
-      await recordPhase({ type: "Replaced", source: "replace_full_details", createdBy: authUser?.id, existingBatchId: batchId, entries: phaseEntries });
-    } catch {}
+    // actually saved in this run. REQ-FEAT-021: only when a batch was
+    // explicitly picked.
+    if (batchId !== "none") {
+      try {
+        await recordPhase({ type: "Replaced", source: "replace_full_details", createdBy: authUser?.id, existingBatchId: batchId || null, entries: phaseEntries });
+      } catch {}
+    }
   }
 
   function reset() {

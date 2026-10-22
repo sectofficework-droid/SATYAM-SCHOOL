@@ -1,0 +1,19 @@
+-- REQ-FEAT-021 (2026-10-22) - Batch Management (Settings) + default the
+-- admin-panel batch selector to "No Batch".
+--
+-- User: "in admin web panel there is a batch which is available for
+-- everytime i do anything update its create new batch; which is not a bug
+-- it creates unnecssary extra batch everytime i do any students update
+-- provide a batch management system in super admin settings also set
+-- default to no batch". Root cause: BatchSelector.js's default value
+-- (null) meant "+ Start New Batch", so every single Add/Edit/Update save
+-- minted a new 1-student batch automatically. Fix is additive/reversible:
+-- - `label` lets an admin name a batch created ahead of time via the new
+--   Settings > Entry Batches tab ("Oct FD Batch 3"), instead of only
+--   showing its auto-incrementing phase_number.
+-- - `source` was always a free-text TEXT column with no CHECK constraint,
+--   so the new 'manual' value (an admin-created empty batch, not tied to
+--   any single Add/Import/Replace save) needs no constraint change here.
+-- - `phase_type`'s existing CHECK (IN ('Added','Replaced')) is unchanged -
+--   a manually-created batch still picks one of the two.
+ALTER TABLE public.student_import_phases ADD COLUMN IF NOT EXISTS label TEXT;

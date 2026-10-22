@@ -394,7 +394,57 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-10-17 — three features coded and clarified via
+**Current — Session 2026-10-22 — REQ-FEAT-021 (Batch Management +
+default batch selector to "No Batch"), MAJOR per J12B, coded and partly
+live-verified.**
+User: batch selection was "creat[ing] unnecssary extra batch everytime i
+do any students update" and asked for a batch management system in
+Settings + default to no batch. Root cause confirmed by reading
+`BatchSelector.js`/`studentPhaseService.js` and the live
+`student_import_phases` table: the selector's default value (`null`) was
+being treated as "+ Start New Batch", so every single Add/Edit/Update save
+auto-minted a new 1-student batch (confirmed live: batches 6-18, 13 junk
+1-student `edit_student_form` batches, all created 2026-10-22). Scoped via
+bundled AskUserQuestion before coding, then corrected once more on the
+user's own follow-up ("the selection was mainly for import / replacement
+or new entry so batch selection should be show there") - final shipped
+scope: (1) `BatchSelector.js` is now three-way (`— No Batch —` default /
+`+ Start New Batch` / existing batch) and shown ONLY on the
+import/replacement/new-entry tools - Add Student, Import Students,
+Replace Full Details, Basic Details Import; (2) the two single-student
+edit tools (Edit Student page, Super-Admin "Update Student") dropped the
+selector AND their `recordPhase()` call entirely - a routine edit to an
+existing record is no longer a batch event at all; (3) new Settings >
+Entry Batches tab (`EntryBatchesTab.js`, gated like every other Settings
+tab - senior_admin/management only) to create an empty batch ahead of
+time (with a `label`), rename, delete a batch, view/remove/move individual
+student entries, and recompute `student_count` from real entries (it was
+a write-time counter, never derived - already a latent drift source, now
+exercised by removal/move); (4) additive migration
+(`mobile-app/SUPABASE_BATCH_MANAGEMENT.sql`, applied live via Supabase MCP)
+adds `student_import_phases.label TEXT` - `source` needed no constraint
+change, it was always free-text; (5) **deleted the 13 junk batches
+(6-18)** from production after explicit §J4/§J5 disclosure (server,
+tables, data-loss, backup, rollback) - full pre-delete JSON dump of all 13
+phases+entries saved to `Scratch\SATYAM-SCHOOL\backups\
+BACKUP-2026-10-22-batches-6-18-deleted.json` (git-ignored, not
+`governance\work-log\`, since the dump carries raw student PII - Aadhar
+numbers, phone numbers, addresses - that a tracked/continuity file should
+not carry into git history) as the only rollback path; cascade-delete of
+`student_import_phase_entries` confirmed via a zero-orphan follow-up
+query. Batches 1-5 (the genuine ones) untouched.
+**Verified**: `npm run lint` clean; dev server compiled all 5 touched
+routes with zero errors (`/settings` 1407 modules, `/super-admin` 1494,
+`/student/add` 1504, `/student/[id]/edit` 1512, plus `/login`) - Level 1
+(static/compile) only, these routes sit behind the admin-panel login so
+no logged-in click-through happened this session. **Not yet verified**:
+an actual logged-in run of any of the 4 kept BatchSelector pickers, the
+new Entry Batches tab's create/rename/delete/move/recompute actions, or
+Government Entry's "Not in any batch" list reflecting the 13 removed
+students - all Level 4 (browser/device) work for next session. Staged,
+not committed - user has not asked for a commit this session.
+
+**Prior — Session 2026-10-17 — three features coded and clarified via
 AskUserQuestion before implementing: REQ-FEAT-015 (admin-panel address
 auto-generation made fully derived/read-only), REQ-FEAT-016 (mobile Add
 Student reordered + extended to full field parity with the admin panel's
@@ -1366,6 +1416,22 @@ Earlier checkpoints, one line each (full detail in the linked files):
 ## Next step
 Open items, most recent first (superseded/completed items removed — see
 the checkpoint list above for what already shipped):
+
+000. **REQ-FEAT-021 (Batch Management) needs its real browser
+     click-through** — this session only verified via `npm run lint` +
+     compile-success on the 5 touched routes, never an actual logged-in
+     session. Next session: (a) as senior_admin/management, open Settings
+     > Entry Batches, create a labeled empty batch, rename it, expand it,
+     move/remove an entry, delete a batch, and recompute a count; (b) add
+     a student via Add Student / Import Students / Replace Full Details /
+     Basic Details Import with "— No Batch —" left as default and confirm
+     nothing lands in `student_import_phases`, then repeat picking an
+     existing batch and confirm it does; (c) edit an existing student via
+     the Edit Student page or Super-Admin "Update Student" and confirm NO
+     batch selector appears and NO new phase is recorded at all; (d) check
+     Government Entry's "Not in any batch" tab now lists the 13 students
+     whose batches 6-18 were deleted (unless they're independently in
+     batches 1-5). See `planning/TODO.md` REQ-FEAT-021.
 
 00. **REQ-FEAT-020 (Notebook module + marks report) needs its real
     device/browser click-through** — this session only verified via

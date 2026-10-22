@@ -149,7 +149,7 @@ function YesNoToggle({ value, onChange }) {
 export default function AddStudentForm({ variant = "page", onCancel, onSaved }) {
   const { authUser } = useStore();
   const [sessionId] = useState(() => crypto.randomUUID());
-  const [batchId, setBatchId] = useState(null);
+  const [batchId, setBatchId] = useState("none"); // REQ-FEAT-021: default "no batch"
 
   const [standards, setStandards]           = useState([]);
   const [nextEnrollment, setNextEnrollment] = useState("...");
@@ -564,13 +564,16 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
     try {
       const { student, rollNo, enrollmentNo } = await svcAddStudent(payload);
       alert(`Student added! Enrollment: #${enrollmentNo} · Roll No: ${rollNo} for ${form.std}.`);
-      // REQ-FEAT-019: one locked "Added" phase for this single save.
-      try {
-        await recordPhase({
-          type: "Added", source: "add_student_form", createdBy: authUser?.id, existingBatchId: batchId,
-          entries: [{ studentId: student?.id, enrollmentNo, snapshot: buildPhaseSnapshot(payload, enrollmentNo) }],
-        });
-      } catch {}
+      // REQ-FEAT-019: one locked "Added" phase for this single save -
+      // REQ-FEAT-021: only when the admin explicitly picked a batch.
+      if (batchId !== "none") {
+        try {
+          await recordPhase({
+            type: "Added", source: "add_student_form", createdBy: authUser?.id, existingBatchId: batchId || null,
+            entries: [{ studentId: student?.id, enrollmentNo, snapshot: buildPhaseSnapshot(payload, enrollmentNo) }],
+          });
+        } catch {}
+      }
       onSaved?.();
     } catch (err) {
       alert("Failed to add student: " + err.message);

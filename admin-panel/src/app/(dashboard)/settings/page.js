@@ -13,7 +13,7 @@ import {
   GraduationCap, Lock, ChevronDown, ChevronUp, Pencil,
   AlertCircle, LogOut, SlidersHorizontal, LayoutGrid,
   Download, FileSpreadsheet, MessageSquare, CalendarRange, Layers, ScrollText, Award, Smartphone,
-  Link2, KeyRound, Fingerprint, Star,
+  Link2, KeyRound, Fingerprint, Star, Boxes,
 } from "lucide-react";
 import YearPlanningTab from "./YearPlanningTab";
 import RulesRegulationsTab from "./RulesRegulationsTab";
@@ -23,6 +23,7 @@ import AppUpdateTab from "./AppUpdateTab";
 import ImpersonationLogTab from "./ImpersonationLogTab";
 import KioskSettingsTab from "./KioskSettingsTab";
 import FeatureTogglesTab from "./FeatureTogglesTab";
+import EntryBatchesTab from "./EntryBatchesTab";
 import DateInputDMY from "@/components/DateInputDMY";
 import {
   isNonEmpty, isValidEmail, isValidPhone, isValidPincode, isValidName,
@@ -2509,6 +2510,7 @@ const TABS = [
   { key:"reminders",  label:"Fee Reminders",      icon:MessageSquare},
   { key:"users",      label:"Users & Roles",      icon:Users        },
   { key:"rules",      label:"Rules & Regulations",icon:ScrollText   },
+  { key:"batches",    label:"Entry Batches",      icon:Boxes        },
   { key:"appupdate",  label:"App Update",         icon:Smartphone   },
   { key:"impersonation", label:"Access Codes",    icon:KeyRound     },
   { key:"kiosk",      label:"Kiosk",              icon:Fingerprint  },
@@ -2563,6 +2565,7 @@ export default function SettingsPage() {
       {tab === "reminders"  && <FeeReminderTab/>}
       {tab === "users"      && <UsersRolesTab/>}
       {tab === "rules"      && <RulesRegulationsTab/>}
+      {tab === "batches"    && <EntryBatchesTab/>}
       {tab === "appupdate"  && <AppUpdateTab/>}
       {tab === "impersonation" && <ImpersonationLogTab/>}
       {tab === "kiosk"      && <KioskSettingsTab/>}

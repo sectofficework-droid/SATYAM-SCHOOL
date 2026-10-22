@@ -45,7 +45,7 @@ function splitName(full) {
 
 export default function BasicDetailsImportModal({ onClose, onImported }) {
   const { authUser } = useStore();
-  const [batchId, setBatchId] = useState(null);
+  const [batchId, setBatchId] = useState("none"); // REQ-FEAT-021: default "no batch"
   const fileRef = useRef(null);
   const [classNames, setClassNames] = useState([]);
   const [step,      setStep]      = useState("idle");
@@ -191,10 +191,13 @@ export default function BasicDetailsImportModal({ onClose, onImported }) {
     setStep("done");
     if (onImported) onImported();
     // REQ-FEAT-019: one locked "Added" phase covering every row that
-    // actually saved in this run.
-    try {
-      await recordPhase({ type: "Added", source: "basic_details_import", createdBy: authUser?.id, existingBatchId: batchId, entries: phaseEntries });
-    } catch {}
+    // actually saved in this run - REQ-FEAT-021: only when a batch was
+    // explicitly picked.
+    if (batchId !== "none") {
+      try {
+        await recordPhase({ type: "Added", source: "basic_details_import", createdBy: authUser?.id, existingBatchId: batchId || null, entries: phaseEntries });
+      } catch {}
+    }
   }
 
   function reset() { setParsed([]); setRowErrors([]); setStep("idle"); setImportLog([]); }

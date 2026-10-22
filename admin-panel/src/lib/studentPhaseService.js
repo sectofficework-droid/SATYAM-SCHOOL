@@ -143,11 +143,12 @@ export function buildPhaseSnapshot(payload, enrollmentNo) {
 
 // type: "Added" | "Replaced". source: a short machine tag identifying
 // which tool wrote this phase (shown in the Phases list) - e.g.
-// "add_student_form", "edit_student_form", "single_student_update",
-// "import_students", "replace_full_details", "basic_details_import".
-// entries: [{ studentId, enrollmentNo, snapshot }], one per student row
-// actually written in this save/import run. No-ops (returns null) if
-// entries is empty - never records an empty phase.
+// "add_student_form", "import_students", "replace_full_details",
+// "basic_details_import", or "manual" for a batch created ahead of time
+// via Settings > Entry Batches. entries: [{ studentId, enrollmentNo,
+// snapshot }], one per student row actually written in this save/import
+// run. No-ops (returns null) if entries is empty - never records an empty
+// phase.
 //
 // existingBatchId (2026-10-19, user request: "while doing new entry, new
 // import, new replacement, i should be able to select batch") - pass an
@@ -156,6 +157,13 @@ export function buildPhaseSnapshot(payload, enrollmentNo) {
 // overwritten), matching the real workflow of processing 5-10 students'
 // documents across more than one save/import session but wanting them
 // counted as the same batch.
+//
+// REQ-FEAT-021 (2026-10-22) - callers must not call recordPhase() at all
+// when the admin picked "No Batch" in BatchSelector (the new default);
+// there is no "skip" value accepted here, the decision is the caller's.
+// Single-student Edit/Update tools (edit_student_form,
+// single_student_update) dropped this call entirely - they no longer
+// record phases under any circumstance, see BatchSelector.js.
 export async function recordPhase({ type, source, createdBy, entries, existingBatchId }) {
   if (!entries?.length) return null;
   let phase;
@@ -195,10 +203,92 @@ export async function recordPhase({ type, source, createdBy, entries, existingBa
 export async function getPhases() {
   const { data, error } = await supabase
     .from("student_import_phases")
-    .select("id, phase_number, phase_type, source, student_count, created_at, created_by:admin_users(name)")
+    .select("id, phase_number, phase_type, source, label, student_count, created_at, created_by:admin_users(name)")
     .order("phase_number", { ascending: false });
   if (error) throw error;
   return data || [];
+}
+
+// ── REQ-FEAT-021 (2026-10-22) — Batch Management (Settings) ────────────────
+// Lets senior_admin/management create an empty batch ahead of time, rename
+// it, delete it outright, or move/remove individual student entries after
+// the fact - the follow-up to making batch selection manual-only (see
+// BatchSelector.js) so an admin isn't stuck with whatever recordPhase()
+// auto-created.
+
+// Creates an empty batch with no entries yet (student_count 0) so it shows
+// up in BatchSelector immediately, ready to be picked while entering
+// students. source is "manual" to distinguish it in the Entry Batches
+// report from the auto-recorded sources (add_student_form, import_students,
+// etc.) - `source` is a free-text column with no CHECK constraint, so this
+// needed no migration beyond adding `label`.
+export async function createEmptyBatch({ type, label, createdBy }) {
+  const { data, error } = await supabase
+    .from("student_import_phases")
+    .insert({ phase_type: type, source: "manual", label: label || null, created_by: createdBy || null, student_count: 0 })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function renameBatch(phaseId, label) {
+  const { error } = await supabase
+    .from("student_import_phases")
+    .update({ label: label || null })
+    .eq("id", phaseId);
+  if (error) throw error;
+}
+
+// Deletes a batch and (via the table's ON DELETE CASCADE) every entry
+// snapshot recorded under it. Permanent - the caller must disclose this per
+// §J4 before calling.
+export async function deleteBatch(phaseId) {
+  const { error } = await supabase.from("student_import_phases").delete().eq("id", phaseId);
+  if (error) throw error;
+}
+
+// Removes one student's entry from a batch (e.g. they were added to the
+// wrong one) and recomputes that batch's student_count from what's
+// actually left, rather than leaving the old incremented value stale.
+export async function deletePhaseEntry(entryId, phaseId) {
+  const { error } = await supabase.from("student_import_phase_entries").delete().eq("id", entryId);
+  if (error) throw error;
+  if (phaseId) await recomputeBatchCount(phaseId);
+}
+
+// Re-assigns one entry to a different batch (fixes a student put in the
+// wrong batch without re-entering their data) and recomputes both the
+// source and destination batch counts afterward.
+export async function moveEntryToBatch({ entryId, fromPhaseId, toPhaseId }) {
+  const { error } = await supabase
+    .from("student_import_phase_entries")
+    .update({ phase_id: toPhaseId })
+    .eq("id", entryId);
+  if (error) throw error;
+  await Promise.all([
+    fromPhaseId ? recomputeBatchCount(fromPhaseId) : Promise.resolve(),
+    recomputeBatchCount(toPhaseId),
+  ]);
+}
+
+// student_count is a counter recordPhase() increments on write - it was
+// never derived from the entries table, so it already over-counts a
+// student saved twice into the same batch, and will drift further now
+// that entries can be removed/moved after the fact. Recomputes it from a
+// real count of student_import_phase_entries for that phase.
+export async function recomputeBatchCount(phaseId) {
+  const { count, error: countErr } = await supabase
+    .from("student_import_phase_entries")
+    .select("id", { count: "exact", head: true })
+    .eq("phase_id", phaseId);
+  if (countErr) throw countErr;
+  const { error } = await supabase
+    .from("student_import_phases")
+    .update({ student_count: count || 0 })
+    .eq("id", phaseId);
+  if (error) throw error;
+  return count || 0;
 }
 
 export async function getPhaseEntries(phaseId) {

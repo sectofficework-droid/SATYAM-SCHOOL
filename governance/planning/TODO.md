@@ -3851,6 +3851,108 @@ pattern), it is noted as already-known and not re-filed as new.
       this session, and the admin-panel check above was compile-only, not
       a logged-in click-through) - flagged here the same way REQ-FEAT-016's
       note always has, so it isn't mistaken for a device-tested feature.
+- [x] **REQ-FEAT-021 — Batch management system in Settings + default the
+      batch selector to "No Batch". CODED 2026-10-22, not yet
+      browser-verified.** User: "in admin web panel there is a batch which is
+      available for everytime i do anything update its create new batch;
+      which is not a bug it creates unnecssary extra batch everytime i do
+      any students update provide a batch management system in super admin
+      settings also set default to no batch; so it does not crerate or add
+      to anybatch unless selected manually". Root cause confirmed by
+      reading the code and the live table, not assumed: `BatchSelector.js`
+      treats its default `value` of `null` as **"+ Start New Batch"**, and
+      `recordPhase()` inserts a fresh `student_import_phases` row whenever
+      `existingBatchId` is absent — so every single Add/Edit/Update save
+      mints a new 1-student batch. Live DB at the time of the report:
+      batches 1-5 are the genuine ones (`historical_backfill_ph1/ph2`,
+      `replace_full_details` — 30/16/26/30/3 students), batches **6-18 are
+      13 junk 1-student `edit_student_form` batches all created on
+      2026-10-22**.
+      **Classification: MAJOR (§J12B)** — changes approved REQ-FEAT-019
+      behavior (that doc's own scope line reads "Entirely automatic - no
+      manual start/close phase step"; this makes it opt-in), adds a
+      column to `student_import_phases`, and deletes existing rows.
+      **Approved scope (bundled questions, answered 2026-10-22; scope
+      corrected same day — see below):**
+      (1) **CORRECTED 2026-10-22** — the batch selector is only shown on
+      the import/replacement/new-entry tools: **Add Student** (new
+      entry), **Import Students**, **Replace Full Details**, **Basic
+      Details Import**. User's own words: "the selection was mainly for
+      import / replacement or new entry so batch selection should be show
+      there." The two single-student *edit* paths — **Edit Student**
+      page and Super-Admin **Update Student** (single) — lose the
+      `BatchSelector` UI entirely and their `recordPhase()` call is
+      removed outright; routine edits to an already-existing record were
+      never the "physical document batch" workflow this feature models,
+      so they stop writing phases at all, not just default to no batch.
+      (Supersedes the original answer of "all five entry points default
+      to No Batch" — that answer is kept above only as a record of what
+      was asked; this correction is what ships.) On the four remaining
+      tools, the selector is three-way: `— No Batch —` (default) / `+
+      Start New Batch` / each existing batch; `recordPhase()` is skipped
+      entirely when "No Batch" is chosen.
+      (2) **Delete all 13 junk batches (6-18) now** — §J4/§J5 disclosure
+      must still be given immediately before the delete runs.
+      (3) **Settings tab capabilities — all four requested:** create +
+      name an empty batch up front; delete a batch / remove one student
+      entry from a batch; move a student entry between batches; view a
+      batch's contents + recompute `student_count`. Tab lives in
+      `/settings` (already gated against `normal_admin`, i.e. senior_admin
+      + management only), named to match the existing "Entry Batches"
+      report tile.
+      **Migration needed** (additive, reversible): `student_import_phases`
+      gains `label TEXT` (so a batch can be "Oct FD Batch 3", not only
+      "Batch 7"), and `source` must accept `'manual'` for an
+      admin-created empty batch. `phase_type`'s existing
+      `CHECK (IN ('Added','Replaced'))` stays — a manual batch picks one.
+      **Known coupling to flag before/after shipping:** Government Entry's
+      UDISE/PEN eligibility is "student is in **any** batch AND birth
+      details filled" (`government-entry/page.js`'s `inAnyBatch`), so a
+      student who is only ever touched via Edit Student / Update Student
+      (single) now never lands in any batch at all, and a student
+      touched via Add Student / Import Students / Replace Full Details /
+      Basic Details Import only becomes batch-eligible when a batch is
+      picked manually. Either way, edited/added students stop
+      auto-becoming entry-eligible — they stay in the "Not in any batch"
+      list until deliberately batched. That is the intended trade (manual
+      control was the request) but it is a real change to that report's
+      population, and deleting batches 6-18 drops those 13 students out of
+      the eligible list unless they are in another batch.
+      **Pre-existing defect to fix while here, not separately:**
+      `student_count` is a stored counter incremented by `recordPhase()`,
+      never derived — it already over-counts when the same student is
+      saved twice into one batch, and will drift the moment entries can be
+      removed/moved. Hence the recompute action in (3).
+      **Shipped 2026-10-22**: migration applied live (`mobile-app/
+      SUPABASE_BATCH_MANAGEMENT.sql` — `label TEXT`, additive); all 4
+      BatchSelector call sites (`AddStudentForm.js`, super-admin's
+      `ImportStudentsPanel`/`FullDetailsReplaceImportPanel`,
+      `BasicDetailsImportModal.js`) default to `"none"` and skip
+      `recordPhase()` when picked; both single-edit call sites
+      (`student/[id]/edit/page.js`, super-admin's `SingleStudentTool`)
+      had the selector + `recordPhase()` call + now-unused imports
+      removed outright; new `EntryBatchesTab.js` wired into
+      `settings/page.js` as "Entry Batches" (`Boxes` icon); 6 new
+      `studentPhaseService.js` functions (`createEmptyBatch`,
+      `renameBatch`, `deleteBatch`, `deletePhaseEntry`,
+      `moveEntryToBatch`, `recomputeBatchCount`). The 13 junk batches
+      (6-18) were deleted from production after §J4/§J5 disclosure, with
+      a full pre-delete JSON dump saved to `Scratch\SATYAM-SCHOOL\backups\
+      BACKUP-2026-10-22-batches-6-18-deleted.json` (git-ignored — the dump
+      carries raw student PII, so it does not belong in a tracked
+      continuity file) as the only rollback path. Confirmed via SQL that
+      `student_import_phase_entries` has zero rows orphaned by the delete
+      (cascade worked) and that only batches 1-5 remain.
+      **Verified**: `npm run lint` clean; dev server compiled `/settings`
+      (1407 modules), `/super-admin` (1494), `/student/add` (1504),
+      `/student/[id]/edit` (1512) and `/login` with zero errors — Level 1
+      (static/compile) only. **Not yet verified**: no logged-in
+      click-through happened this session (all 5 routes sit behind
+      admin-panel auth) — see `BOOTSTRAP.md` "Next step" #000 for the
+      exact next-session checklist (new tab's CRUD actions, both default-
+      "No Batch" and "pick a batch" paths on all 4 kept tools, single-edit
+      paths recording nothing, and Government Entry's "Not in any batch"
+      list reflecting the 13 deleted entries).
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to
