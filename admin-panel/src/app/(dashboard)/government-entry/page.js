@@ -770,7 +770,7 @@ export default function GovernmentEntryPage() {
               const rowBg = idx % 2 === 0 ? "bg-white" : "bg-gray-50/40";
               const rowBgSolid = idx % 2 === 0 ? "bg-white" : "bg-gray-100";
               return (
-                <tr key={row.enrollNo || idx}
+                <tr key={`${row.studentId || row.enrollNo || idx}-${row.session}-${idx}`}
                   onDoubleClick={() => openStudentProfile(row)}
                   title="Double-click to edit this student"
                   className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${rowBg}`}>
