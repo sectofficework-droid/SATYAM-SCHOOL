@@ -14,10 +14,12 @@ export function isValidEmail(v) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.trim());
 }
 
-// Indian mobile numbers: 10 digits, starting 6-9.
-export function isValidPhone(v) {
+// Indian mobile numbers: 10 digits, starting 6-9 (optional allowPlaceholder for legacy imports).
+export function isValidPhone(v, { allowPlaceholder = false } = {}) {
   if (!isNonEmpty(v)) return false;
-  return /^[6-9]\d{9}$/.test(String(v).trim());
+  const s = String(v).trim();
+  if (allowPlaceholder && s === "0000000000") return true;
+  return /^[6-9]\d{9}$/.test(s);
 }
 
 export function isValidPincode(v) {

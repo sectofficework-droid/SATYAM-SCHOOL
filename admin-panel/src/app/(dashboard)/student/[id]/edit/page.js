@@ -432,8 +432,8 @@ function EditForm({ existing, router }) {
     if (!isValidName(form.fatherName)) errs.fatherName = "Enter a valid father's name.";
     if (!isValidName(form.motherName)) errs.motherName = "Enter a valid mother's name.";
 
-    if (!isValidPhone(form.mobile1)) errs.mobile1 = "Enter a valid 10-digit mobile number.";
-    if (form.mobile2 && !isValidPhone(form.mobile2)) errs.mobile2 = "Enter a valid 10-digit mobile number.";
+    if (!isValidPhone(form.mobile1, { allowPlaceholder: true })) errs.mobile1 = "Enter a valid 10-digit mobile number.";
+    if (form.mobile2 && !isValidPhone(form.mobile2, { allowPlaceholder: true })) errs.mobile2 = "Enter a valid 10-digit mobile number.";
 
     if (form.pinCode && !isValidPincode(form.pinCode)) errs.pinCode = "Enter a valid 6-digit pin code.";
 
@@ -1144,10 +1144,10 @@ function EditForm({ existing, router }) {
             <FieldLabel>Does the student have an Aadhar Card?</FieldLabel>
             <YesNoToggle
               value={hasAadhar}
-              disabled={existing.hasAadhar}
+              disabled={existing.hasAadhar && isValidAadhar(existing.aadhar)}
               onChange={(val) => { setHasAadhar(val); setAadharDisplay(""); setForm((p) => ({ ...p, aadharRaw: "", aadharName: "" })); }}
             />
-            {existing.hasAadhar && (
+            {existing.hasAadhar && isValidAadhar(existing.aadhar) && (
               <p className="text-xs text-gray-400 mt-1.5 flex items-center gap-1">
                 <Lock className="w-3 h-3" /> Aadhar already on file — contact Super Admin to remove or change it.
               </p>
