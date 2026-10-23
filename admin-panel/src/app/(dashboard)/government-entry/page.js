@@ -4,7 +4,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import { useRouter } from "next/navigation";
 import {
   Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X,
-  Loader2, HelpCircle, Search, Maximize2, Minimize2, BookOpen, Download
+  Loader2, HelpCircle, Search, Maximize2, Minimize2, Download
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { getStudentsForReport, getAcademicYearLabels } from "@/lib/reportService";
@@ -12,20 +12,15 @@ import { getPhases, getAllPhaseEntryEnrollments } from "@/lib/studentPhaseServic
 import { updateStudentGovId } from "@/lib/studentService";
 
 // Government Entry — action-oriented companion for government portal filings:
-// 1. Online General Register (State Online GR / Primary & General)
-// 2. UDISE Entry (State Child Tracking System)
-// 3. PEN Entry (National Portal)
-// 4. Mismatch (UDISE vs PEN eligibility discrepancies)
+// 1. UDISE Entry (State Child Tracking System)
+// 2. PEN Entry (National Portal)
+// 3. Mismatch (UDISE vs PEN eligibility discrepancies)
 //
 // Every cell has automatic click-to-copy / Tab-to-copy to clipboard for fast,
 // friction-free entry into the government portals. "Entry Done" records the
-// assigned identifiers (GR/PR No, UDISE No, PEN No, APAAR ID) back into
-// the student record.
+// assigned identifiers (GR No, UDISE No, PEN No) back into the student record.
 
 const CLASSES = ["JR.KG","SR.KG","Balvatika","1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th","11th - Commerce","12th - Commerce"];
-const PRIMARY_CLASSES = new Set(["JR.KG", "SR.KG", "Balvatika", "JR KG", "SR KG"]);
-const PRIMARY_CLASS_OPTIONS = ["JR.KG", "SR.KG", "Balvatika"];
-const GENERAL_CLASS_OPTIONS = ["1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th","11th - Commerce","12th - Commerce"];
 const SESSIONS_FALLBACK = ["2026-27","2025-26","2024-25","2023-24"];
 
 function fmtDate(dateStr) {
@@ -110,47 +105,6 @@ function decorate(st) {
   };
 }
 
-// Columns matching D:\Project\SSIS SCHOOL\ONLINE GENERAL REGISTER.xlsx exactly:
-// Sheet 1: PRIMARY (JR,SR,BALVATIKA) with PR column
-const ONLINE_GR_PRIMARY_COLUMNS = [
-  { key: "session",          label: "AY" },
-  { key: "tcStatus",         label: "TC" },
-  { key: "cls",              label: "STD" },
-  { key: "grNo",             label: "PR" },
-  { key: "name",             label: "NAME" },
-  { key: "mobile1",          label: "MOBILE 1" },
-  { key: "mobile2",          label: "MOBILE 2" },
-  { key: "dobSlash",         label: "DOB" },
-  { key: "doaSlash",         label: "DOA" },
-  { key: "doeSlash",         label: "DOE" },
-  { key: "aadharNo",         label: "AADHAR" },
-  { key: "udise",            label: "UID" },
-  { key: "pen",              label: "PEN" },
-  { key: "apaar",            label: "APAAR" },
-  { key: "remarks",          label: "REMARK" },
-  { key: "documentsPending", label: "DOCUMENTS PENDING" },
-];
-
-// Sheet 2: GENERAL(1ST+) with GR column
-const ONLINE_GR_GENERAL_COLUMNS = [
-  { key: "session",          label: "AY" },
-  { key: "tcStatus",         label: "TC" },
-  { key: "cls",              label: "STD" },
-  { key: "grNo",             label: "GR" },
-  { key: "name",             label: "NAME" },
-  { key: "mobile1",          label: "MOBILE 1" },
-  { key: "mobile2",          label: "MOBILE 2" },
-  { key: "dobSlash",         label: "DOB" },
-  { key: "doaSlash",         label: "DOA" },
-  { key: "doeSlash",         label: "DOE" },
-  { key: "aadharNo",         label: "AADHAR" },
-  { key: "udise",            label: "UID" },
-  { key: "pen",              label: "PEN" },
-  { key: "apaar",            label: "APAAR" },
-  { key: "remarks",          label: "REMARK" },
-  { key: "documentsPending", label: "DOCUMENTS PENDING" },
-];
-
 const UDISE_ENTRY_COLUMNS = [
   { key:"cls",               label:"Class" },
   { key:"udise",             label:"UDISE No" },
@@ -233,10 +187,9 @@ function StatusPill({ status }) {
 
 export default function GovernmentEntryPage() {
   const router = useRouter();
-  const [mainTab, setMainTab] = useState("onlineGr"); // "onlineGr" | "udise" | "pen" | "mismatch"
-  const [grSubTab, setGrSubTab] = useState("primary"); // "primary" | "general"
+  const [mainTab, setMainTab] = useState("udise"); // "udise" | "pen" | "mismatch"
   const [mismatchDir, setMismatchDir] = useState("udiseOnly"); // "udiseOnly" | "penOnly"
-  const effectiveTab = mainTab === "onlineGr" ? "onlineGr" : (mainTab === "mismatch" ? (mismatchDir === "udiseOnly" ? "udise" : "pen") : mainTab);
+  const effectiveTab = mainTab === "mismatch" ? (mismatchDir === "udiseOnly" ? "udise" : "pen") : mainTab;
 
   const [dbStudents, setDbStudents] = useState([]);
   const [dbSessions, setDbSessions] = useState(SESSIONS_FALLBACK);
@@ -285,7 +238,7 @@ export default function GovernmentEntryPage() {
   // Reset filters on tab switch
   useEffect(() => {
     setFilters(prev => ({ ...prev, status: "All", cls: "All" }));
-  }, [mainTab, grSubTab, effectiveTab]);
+  }, [mainTab, effectiveTab]);
 
   const batchOptions = useMemo(
     () => dbPhases.slice().sort((a, b) => a.phase_number - b.phase_number).map(p => `Batch ${p.phase_number}`),
@@ -300,28 +253,14 @@ export default function GovernmentEntryPage() {
     return m;
   }, [dbPhaseEntryEnrollments]);
 
-  const classOptions = useMemo(() => {
-    if (mainTab === "onlineGr") {
-      return grSubTab === "primary" ? PRIMARY_CLASS_OPTIONS : GENERAL_CLASS_OPTIONS;
-    }
-    return CLASSES;
-  }, [mainTab, grSubTab]);
+  const classOptions = CLASSES;
 
   const columns = useMemo(() => {
-    if (mainTab === "onlineGr") {
-      return grSubTab === "primary" ? ONLINE_GR_PRIMARY_COLUMNS : ONLINE_GR_GENERAL_COLUMNS;
-    }
     return effectiveTab === "udise" ? UDISE_ENTRY_COLUMNS : PEN_ENTRY_COLUMNS;
-  }, [mainTab, grSubTab, effectiveTab]);
+  }, [effectiveTab]);
 
   const rows = useMemo(() => {
     let d = dbStudents.map(decorate);
-
-    if (mainTab === "onlineGr") {
-      d = grSubTab === "primary"
-        ? d.filter(x => PRIMARY_CLASSES.has(x.cls))
-        : d.filter(x => !PRIMARY_CLASSES.has(x.cls));
-    }
 
     if (filters.cls !== "All") d = d.filter(x => x.cls === filters.cls);
     if (filters.session !== "All") d = d.filter(x => x.session === filters.session);
@@ -353,7 +292,7 @@ export default function GovernmentEntryPage() {
       d = mismatchDir === "udiseOnly"
         ? d.filter(x => udiseEligible(x) && !penEligible(x))
         : d.filter(x => penEligible(x) && !udiseEligible(x));
-    } else if (mainTab !== "onlineGr") {
+    } else {
       const eligibleFn = effectiveTab === "udise" ? udiseEligible : penEligible;
       if (eligTab === "ineligible") {
         d = d.filter(x => !eligibleFn(x));
@@ -364,16 +303,11 @@ export default function GovernmentEntryPage() {
           d = d.filter(x => enrollToBatches.get(x.enrollNo)?.has(n));
         }
       }
-    } else {
-      if (filters.batch !== "All") {
-        const n = Number(String(filters.batch).match(/\d+/)?.[0]);
-        d = d.filter(x => enrollToBatches.get(x.enrollNo)?.has(n));
-      }
     }
 
     if (mainTab === "pen" && showNotDefinedOnly) d = d.filter(x => x.penStatus === "Not Defined");
 
-    const statusKey = mainTab === "onlineGr" ? "grStatus" : (effectiveTab === "udise" ? "udiseStatus" : "penStatus");
+    const statusKey = effectiveTab === "udise" ? "udiseStatus" : "penStatus";
     if (filters.status !== "All") d = d.filter(x => x[statusKey] === filters.status);
 
     const rank = { Done: 0, "Not Defined": 1, Pending: 2 };
@@ -382,7 +316,7 @@ export default function GovernmentEntryPage() {
       if (diff !== 0) return diff;
       return String(a.grNo || "").localeCompare(String(b.grNo || ""), undefined, { numeric: true });
     });
-  }, [dbStudents, filters, search, enrollToBatches, mainTab, grSubTab, mismatchDir, effectiveTab, showNotDefinedOnly, eligTab]);
+  }, [dbStudents, filters, search, enrollToBatches, mainTab, mismatchDir, effectiveTab, showNotDefinedOnly, eligTab]);
 
   const pendingNotDefinedCount = useMemo(
     () => dbStudents.map(decorate).filter(x => x.penStatus === "Not Defined").length,
@@ -390,12 +324,11 @@ export default function GovernmentEntryPage() {
   );
 
   // Frozen count:
-  // For onlineGr: Action(0), #(1), Status(2), AY(3), TC(4), STD(5), PR/GR(6), NAME(7) -> 8 columns
   // For UDISE: Action, #, Status, Class -> 4 columns
   // For PEN: Action, #, Status, Class, Student Father Surname -> 5 columns
-  const frozenCount = mainTab === "onlineGr" ? 8 : (effectiveTab === "udise" ? 4 : 5);
+  const frozenCount = effectiveTab === "udise" ? 4 : 5;
   const frozenHeaderRefs = useRef([]);
-  const [stickyLeft, setStickyLeft] = useState([0, 0, 0, 0, 0, 0, 0, 0]);
+  const [stickyLeft, setStickyLeft] = useState([0, 0, 0, 0, 0]);
 
   useLayoutEffect(() => {
     function measure() {
@@ -447,31 +380,7 @@ export default function GovernmentEntryPage() {
     if (!modalRow) return;
     setFormError("");
 
-    if (mainTab === "onlineGr") {
-      const isPrimary = PRIMARY_CLASSES.has(modalRow.cls);
-      const regLabel = isPrimary ? "PR No" : "GR No";
-      if (!formGrNo.trim()) {
-        setFormError(`${regLabel} is required.`);
-        return;
-      }
-      setSaving(true);
-      try {
-        await updateStudentGovId(modalRow.studentId, {
-          grNo: formGrNo.trim(),
-          udise: formUdise.trim() || undefined,
-          pen: formPenNotDefined ? "Not Defined" : (formPen.trim() || undefined),
-          apaar: formApaar.trim() || undefined,
-          remarks: formRemarks.trim() || undefined,
-          enrollmentId: modalRow.enrollmentId,
-        });
-        await loadAll();
-        setModalRow(null);
-      } catch (e) {
-        setFormError(e.message || "Failed to save.");
-      } finally {
-        setSaving(false);
-      }
-    } else if (effectiveTab === "udise") {
+    if (effectiveTab === "udise") {
       const digits = formUdise.trim();
       if (!/^\d{18}$/.test(digits)) {
         setFormError("UDISE No must be exactly 18 digits.");
@@ -516,46 +425,17 @@ export default function GovernmentEntryPage() {
   // ── Excel Export ────────────────────────────────────────────────────────
   function exportExcel() {
     const today = new Date().toISOString().slice(0, 10);
-
-    if (mainTab === "onlineGr") {
-      const allDecorated = dbStudents.map(decorate);
-      const primaryList = allDecorated.filter(x => PRIMARY_CLASSES.has(x.cls))
-        .sort((a, b) => String(a.grNo || "").localeCompare(String(b.grNo || ""), undefined, { numeric: true }));
-      const generalList = allDecorated.filter(x => !PRIMARY_CLASSES.has(x.cls))
-        .sort((a, b) => String(a.grNo || "").localeCompare(String(b.grNo || ""), undefined, { numeric: true }));
-
-      const wb = XLSX.utils.book_new();
-
-      const primaryAoa = [
-        ONLINE_GR_PRIMARY_COLUMNS.map(c => c.label),
-        ...primaryList.map(r => ONLINE_GR_PRIMARY_COLUMNS.map(c => r[c.key] !== undefined && r[c.key] !== null ? r[c.key] : "-"))
-      ];
-      const wsPrimary = XLSX.utils.aoa_to_sheet(primaryAoa);
-      wsPrimary["!cols"] = ONLINE_GR_PRIMARY_COLUMNS.map(() => ({ wch: 18 }));
-      XLSX.utils.book_append_sheet(wb, wsPrimary, "PRIMARY (JR,SR,BALVATIKA)");
-
-      const generalAoa = [
-        ONLINE_GR_GENERAL_COLUMNS.map(c => c.label),
-        ...generalList.map(r => ONLINE_GR_GENERAL_COLUMNS.map(c => r[c.key] !== undefined && r[c.key] !== null ? r[c.key] : "-"))
-      ];
-      const wsGeneral = XLSX.utils.aoa_to_sheet(generalAoa);
-      wsGeneral["!cols"] = ONLINE_GR_GENERAL_COLUMNS.map(() => ({ wch: 18 }));
-      XLSX.utils.book_append_sheet(wb, wsGeneral, "GENERAL(1ST+)");
-
-      XLSX.writeFile(wb, `ONLINE_GENERAL_REGISTER_${today}.xlsx`);
-    } else {
-      const headerRow = columns.map(c => c.label);
-      const rowsAoa = [
-        headerRow,
-        ...rows.map(r => columns.map(c => formatCellValue(c, r[c.key])))
-      ];
-      const ws = XLSX.utils.aoa_to_sheet(rowsAoa);
-      ws["!cols"] = columns.map(() => ({ wch: 18 }));
-      const wb = XLSX.utils.book_new();
-      const sheetName = effectiveTab === "udise" ? "UDISE Entry" : "PEN Entry";
-      XLSX.utils.book_append_sheet(wb, ws, sheetName);
-      XLSX.writeFile(wb, `${sheetName.replace(/\s+/g, "_")}_${today}.xlsx`);
-    }
+    const headerRow = columns.map(c => c.label);
+    const rowsAoa = [
+      headerRow,
+      ...rows.map(r => columns.map(c => formatCellValue(c, r[c.key])))
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rowsAoa);
+    ws["!cols"] = columns.map(() => ({ wch: 18 }));
+    const wb = XLSX.utils.book_new();
+    const sheetName = effectiveTab === "udise" ? "UDISE Entry" : "PEN Entry";
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+    XLSX.writeFile(wb, `${sheetName.replace(/\s+/g, "_")}_${today}.xlsx`);
   }
 
   if (loading) return (
@@ -570,7 +450,7 @@ export default function GovernmentEntryPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-gray-800">Government Entry</h2>
-          <p className="text-sm text-gray-500 mt-0.5">File Online General Register, UDISE & PEN entries into government portals and record results</p>
+          <p className="text-sm text-gray-500 mt-0.5">File UDISE &amp; PEN entries into government portals and record results</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={exportExcel}
@@ -599,10 +479,6 @@ export default function GovernmentEntryPage() {
       {/* Tabs */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-          <button onClick={() => setMainTab("onlineGr")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "onlineGr" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-            <BookOpen className="w-3.5 h-3.5"/> Online General Register
-          </button>
           <button onClick={() => setMainTab("udise")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "udise" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
             <Landmark className="w-3.5 h-3.5"/> UDISE Entry (State)
@@ -619,18 +495,7 @@ export default function GovernmentEntryPage() {
 
         <span className="hidden sm:block w-px h-6 bg-gray-200"/>
 
-        {mainTab === "onlineGr" ? (
-          <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-            <button onClick={() => setGrSubTab("primary")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${grSubTab === "primary" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-              Primary (JR, SR, Balvatika)
-            </button>
-            <button onClick={() => setGrSubTab("general")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${grSubTab === "general" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-              General (1st+)
-            </button>
-          </div>
-        ) : mainTab === "mismatch" ? (
+        {mainTab === "mismatch" ? (
           <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
             <button onClick={() => setMismatchDir("udiseOnly")}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "udiseOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
@@ -655,18 +520,6 @@ export default function GovernmentEntryPage() {
         )}
       </div>
 
-      {mainTab === "onlineGr" && (
-        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800">
-          <BookOpen className="w-4 h-4 flex-shrink-0 text-school-navy"/>
-          <span>
-            {grSubTab === "primary"
-              ? "Online General Register — Pre-Primary section (JR.KG, SR.KG, Balvatika). Assigned Primary Register (PR) numbers."
-              : "Online General Register — Standard 1st and above. Assigned General Register (GR) numbers."}
-            {" Click any cell to copy its value to the clipboard, then Tab to move field-by-field into the government portal."}
-          </span>
-        </div>
-      )}
-
       {mainTab === "mismatch" && (
         <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-500">
           {mismatchDir === "udiseOnly"
@@ -675,7 +528,7 @@ export default function GovernmentEntryPage() {
         </div>
       )}
 
-      {mainTab !== "mismatch" && mainTab !== "onlineGr" && eligTab === "ineligible" && (
+      {mainTab !== "mismatch" && eligTab === "ineligible" && (
         <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-500">
           These students aren&apos;t mentioned in any Entry Batch yet, so they&apos;re kept separate from the eligible list above.
         </div>
@@ -720,7 +573,7 @@ export default function GovernmentEntryPage() {
           </div>
           <div className="flex items-center gap-1.5">
             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Batch</label>
-            <select disabled={mainTab === "mismatch" || (mainTab !== "onlineGr" && eligTab === "ineligible")}
+            <select disabled={mainTab === "mismatch" || eligTab === "ineligible"}
               className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24 disabled:opacity-50 disabled:cursor-not-allowed"
               value={filters.batch} onChange={e => setFilters(prev => ({ ...prev, batch: e.target.value }))}>
               {["All", ...batchOptions].map(o => <option key={o}>{o}</option>)}
@@ -766,7 +619,7 @@ export default function GovernmentEntryPage() {
           </thead>
           <tbody>
             {rows.map((row, idx) => {
-              const status = mainTab === "onlineGr" ? row.grStatus : (effectiveTab === "udise" ? row.udiseStatus : row.penStatus);
+              const status = effectiveTab === "udise" ? row.udiseStatus : row.penStatus;
               const rowBg = idx % 2 === 0 ? "bg-white" : "bg-gray-50/40";
               const rowBgSolid = idx % 2 === 0 ? "bg-white" : "bg-gray-100";
               return (
@@ -813,9 +666,7 @@ export default function GovernmentEntryPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <div>
                 <h3 className="text-base font-bold text-gray-800">
-                  {mainTab === "onlineGr"
-                    ? (PRIMARY_CLASSES.has(modalRow.cls) ? "Complete Primary Register Entry (PR)" : "Complete General Register Entry (GR)")
-                    : (effectiveTab === "udise" ? "Complete UDISE Entry" : "Complete PEN Entry")}
+                  {effectiveTab === "udise" ? "Complete UDISE Entry" : "Complete PEN Entry"}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">{modalRow.name} - {modalRow.cls} - Enroll No {modalRow.enrollNo}</p>
               </div>
@@ -825,54 +676,7 @@ export default function GovernmentEntryPage() {
             </div>
 
             <div className="px-5 py-4 space-y-3">
-              {mainTab === "onlineGr" ? (
-                <>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                      {PRIMARY_CLASSES.has(modalRow.cls) ? "PR No (Primary Register No)" : "GR No (General Register No)"}
-                    </label>
-                    <input type="text" value={formGrNo} onChange={e => setFormGrNo(e.target.value)}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"
-                      placeholder={PRIMARY_CLASSES.has(modalRow.cls) ? "e.g. P001" : "e.g. 101"}/>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">UID (UDISE No)</label>
-                    <input type="text" value={formUdise} onChange={e => setFormUdise(e.target.value.replace(/[^\d]/g, ""))}
-                      maxLength={18}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy"
-                      placeholder="18-digit state UID"/>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">PEN No</label>
-                    <input type="text" value={formPen} disabled={formPenNotDefined}
-                      onChange={e => setFormPen(e.target.value)}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy disabled:bg-gray-100 disabled:text-gray-400"
-                      placeholder="Permanent Education Number"/>
-                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer mt-1">
-                      <input type="checkbox" checked={formPenNotDefined}
-                        onChange={e => { setFormPenNotDefined(e.target.checked); if (e.target.checked) setFormPen(""); }}
-                        className="w-3.5 h-3.5 accent-school-navy"/>
-                      PEN not generated yet by portal (mark "Not Defined")
-                    </label>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">APAAR ID</label>
-                    <input type="text" value={formApaar} onChange={e => setFormApaar(e.target.value)}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy"
-                      placeholder="APAAR ID"/>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Remark</label>
-                    <input type="text" value={formRemarks} onChange={e => setFormRemarks(e.target.value)}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"
-                      placeholder="Optional remarks"/>
-                  </div>
-                </>
-              ) : effectiveTab === "udise" ? (
+              {effectiveTab === "udise" ? (
                 <>
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">GR No</label>
@@ -908,7 +712,7 @@ export default function GovernmentEntryPage() {
                     <input type="checkbox" checked={formPenNotDefined}
                       onChange={e => { setFormPenNotDefined(e.target.checked); if (e.target.checked) setFormPen(""); }}
                       className="w-3.5 h-3.5 accent-school-navy"/>
-                    PEN not generated yet by the portal - mark as "Not Defined" for now
+                    PEN not generated yet by the portal - mark as &quot;Not Defined&quot; for now
                   </label>
                 </>
               )}
@@ -947,16 +751,6 @@ export default function GovernmentEntryPage() {
             </div>
 
             <div className="px-5 py-4 space-y-4 text-xs text-gray-600">
-              <div>
-                <p className="font-bold text-gray-800 mb-1">Online General Register</p>
-                <ul className="list-disc pl-4 space-y-0.5">
-                  <li><b>Primary Section:</b> JR.KG, SR.KG, and Balvatika records mapped with Primary Register (PR) numbers.</li>
-                  <li><b>General Section:</b> Class 1st to 12th records mapped with General Register (GR) numbers.</li>
-                  <li><b>Status:</b> Marked <b>Done</b> when PR/GR number is registered, or <b>Pending</b> if not yet assigned.</li>
-                  <li><b>Export:</b> Generates a clean Excel workbook with both primary and general sheets matching the government register layout.</li>
-                </ul>
-              </div>
-
               <div>
                 <p className="font-bold text-gray-800 mb-1">UDISE Entry - Eligible if:</p>
                 <ul className="list-disc pl-4 space-y-0.5">

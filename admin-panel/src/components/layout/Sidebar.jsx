@@ -26,6 +26,7 @@ import {
   BookOpenCheck,
   Bug,
   Landmark,
+  FileSpreadsheet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import useStore from "@/lib/store";
@@ -38,6 +39,7 @@ const navItems = [
   { href: "/fees", label: "Fees", icon: IndianRupee, orgs: ["school"] },
   { href: "/report", label: "Report", icon: BarChart3, orgs: ["school"] },
   { href: "/government-entry", label: "Government Entry", icon: Landmark, orgs: ["school"] },
+  { href: "/online-general-register", label: "Online General Register", icon: FileSpreadsheet, orgs: ["school"] },
   { href: "/documents", label: "Documents", icon: FolderOpen, orgs: ["school"] },
   { href: "/tasks", label: "Task Management", icon: ClipboardList, orgs: ["school"] },
   { href: "/gr-book", label: "GR Book", icon: BookMarked, orgs: ["school"] },
