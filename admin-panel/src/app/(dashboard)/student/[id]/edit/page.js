@@ -458,7 +458,18 @@ function EditForm({ existing, router }) {
     }
 
     setErrors(errs);
-    return Object.keys(errs).length === 0;
+    const isValid = Object.keys(errs).length === 0;
+    if (!isValid) {
+      const errorMsg = Object.values(errs).join("\n• ");
+      alert("Please fix the following validation errors before saving:\n• " + errorMsg);
+      setTimeout(() => {
+        const firstErrEl = document.querySelector(".text-red-500");
+        if (firstErrEl) {
+          firstErrEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 100);
+    }
+    return isValid;
   };
 
   const handleSubmit = async (e) => {
@@ -623,7 +634,7 @@ function EditForm({ existing, router }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} noValidate className="space-y-6">
 
       {/* ══ SECTION 1: Admission Details ══ */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">

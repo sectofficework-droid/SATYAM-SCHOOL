@@ -73,6 +73,9 @@ export default function DateInputDMY({
     el.click();
   };
 
+  const safeMin = min && value && value < min ? undefined : min;
+  const safeMax = max && value && value > max ? undefined : max;
+
   return (
     <div className="relative">
       <input
@@ -105,10 +108,10 @@ export default function DateInputDMY({
         tabIndex={-1}
         aria-hidden="true"
         value={value || ""}
-        min={min}
-        max={max}
+        min={safeMin}
+        max={safeMax}
         onChange={(e) => fireChange(e.target.value)}
-        className="absolute inset-0 h-0 w-0 opacity-0"
+        className="absolute inset-0 h-0 w-0 opacity-0 pointer-events-none"
       />
     </div>
   );

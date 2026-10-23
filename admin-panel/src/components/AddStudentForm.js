@@ -453,7 +453,18 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
     }
 
     setErrors(errs);
-    return Object.keys(errs).length === 0;
+    const isValid = Object.keys(errs).length === 0;
+    if (!isValid) {
+      const errorMsg = Object.values(errs).join("\n• ");
+      alert("Please fix the following validation errors before submitting:\n• " + errorMsg);
+      setTimeout(() => {
+        const firstErrEl = document.querySelector(".text-red-500");
+        if (firstErrEl) {
+          firstErrEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }, 100);
+    }
+    return isValid;
   };
 
   const handleSubmit = async (e) => {
@@ -626,6 +637,7 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
 
       <form
         onSubmit={handleSubmit}
+        noValidate
         className={isModal ? "space-y-6 px-6 py-6 overflow-y-auto" : "space-y-6"}
       >
 
