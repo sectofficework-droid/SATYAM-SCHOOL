@@ -44,6 +44,12 @@ const defaultDocTypes = [
   "Marksheet",
 ];
 
+function findOptionCaseInsensitive(options, value, fallback = "") {
+  if (!value) return fallback;
+  const found = options.find((o) => o.toLowerCase() === String(value).trim().toLowerCase());
+  return found || fallback || value;
+}
+
 // ── Map DB student to EditForm format ─────────────────────────
 function mapToEditForm(student) {
   const uploadedDocs = {};
@@ -64,8 +70,8 @@ function mapToEditForm(student) {
     motherName:    student.motherName || "",
     dob:           student.dob || "",
     gender:        student.gender || "",
-    religion:      student.religion || "Hindu",
-    caste:         student.caste || "General",
+    religion:      findOptionCaseInsensitive(religions, student.religion, "Hindu"),
+    caste:         findOptionCaseInsensitive(castes, student.caste, "General"),
     motherTongue:  student.motherTongue || "",
     subCaste:      student.subCaste || "",
     height:        student.height || "",
@@ -85,8 +91,8 @@ function mapToEditForm(student) {
     birthVillage:  student.birthVillage || "",
     lastSchoolName:   student.lastSchoolName || "",
     lastSchoolGrNo:   student.lastSchoolGrNo || "",
-    lastSchoolClass:  student.lastSchoolClass || "",
-    lastSchoolMedium: student.lastSchoolMedium || "",
+    lastSchoolClass:  findOptionCaseInsensitive(prevStandards, student.lastSchoolClass, ""),
+    lastSchoolMedium: findOptionCaseInsensitive(mediums, student.lastSchoolMedium, ""),
     lastSchoolPlace:  student.lastSchoolPlace || "",
     prevPercentage:      student.prevPercentage || "",
     prevAttendanceDays:  student.prevAttendanceDays || "",
@@ -338,7 +344,8 @@ function EditForm({ existing, router }) {
     birthCertRegDate: existing.birthCertRegDate || "",
   });
 
-  const set = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value.toUpperCase() }));
+  const set      = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value.toUpperCase() }));
+  const setExact = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
 
   useEffect(() => {
     const parts = [form.roomPlotNo, form.society, form.landmark, form.area, "SURAT", form.pinCode]
@@ -850,7 +857,7 @@ function EditForm({ existing, router }) {
           </div>
           <div>
             <FieldLabel required>Religion</FieldLabel>
-            <SelectField value={form.religion} onChange={set("religion")} required>
+            <SelectField value={form.religion} onChange={setExact("religion")} required>
               {religions.map((r) => <option key={r}>{r}</option>)}
             </SelectField>
           </div>
@@ -858,7 +865,7 @@ function EditForm({ existing, router }) {
             <FieldLabel required>Category / Caste</FieldLabel>
             <SelectField
               value={form.caste}
-              onChange={(e) => { set("caste")(e); setCasteCertFile(null); setCasteCertKey(null); }}
+              onChange={(e) => { setExact("caste")(e); setCasteCertFile(null); setCasteCertKey(null); }}
               required
             >
               {castes.map((c) => <option key={c}>{c}</option>)}
@@ -1091,14 +1098,14 @@ function EditForm({ existing, router }) {
                 </div>
                 <div>
                   <FieldLabel>Last Class Attended</FieldLabel>
-                  <SelectField value={form.lastSchoolClass} onChange={set("lastSchoolClass")}>
+                  <SelectField value={form.lastSchoolClass} onChange={setExact("lastSchoolClass")}>
                     <option value="">Select Standard</option>
                     {prevStandards.map((s) => <option key={s}>{s}</option>)}
                   </SelectField>
                 </div>
                 <div>
                   <FieldLabel>Medium of Instruction</FieldLabel>
-                  <SelectField value={form.lastSchoolMedium} onChange={set("lastSchoolMedium")}>
+                  <SelectField value={form.lastSchoolMedium} onChange={setExact("lastSchoolMedium")}>
                     <option value="">Select Medium</option>
                     {mediums.map((m) => <option key={m}>{m}</option>)}
                   </SelectField>
