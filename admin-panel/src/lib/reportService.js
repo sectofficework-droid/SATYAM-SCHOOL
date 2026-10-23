@@ -20,7 +20,7 @@ export async function getStudentsForReport() {
   const { data, error } = await supabase
     .from("student_enrollments")
     .select(`
-      id, enrollment_no, roll_no, date_of_join,
+      id, enrollment_no, roll_no, date_of_join, deactivate_date,
       fee_total, fee_discount, deactivate_reason,
       student:students(
         id, first_name, last_name, grno, dob, gender,
@@ -34,7 +34,8 @@ export async function getStudentsForReport() {
         udise, pen, apaar,
         birth_cert_reg_no, birth_cert_reg_date,
         student_previous_school(school_name, grno, attendance_days, last_exam_given, percentage),
-        student_documents(status, document_types(name))
+        student_documents(status, document_types(name)),
+        transfer_certificates(id, tc_number, issue_date, leaving_date)
       ),
       class:classes!student_enrollments_class_id_fkey(name),
       academic_year:academic_years(label),
@@ -101,6 +102,10 @@ export async function getStudentsForReport() {
       hasBirthCert,
       remarks:            row.deactivate_reason || "",
       followUp:           "",
+      enrollmentId:       row.id,
+      deactivateDate:     row.deactivate_date || "",
+      transferCertificates: s.transfer_certificates || [],
+      studentDocuments:   s.student_documents || [],
       // student_id is student_previous_school's own primary key (one row per
       // student, not many), so Supabase nests this as a single object.
       lastSchoolName:     s.student_previous_school?.school_name || "",

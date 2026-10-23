@@ -868,13 +868,22 @@ export async function updateStudentBasicDetails(studentId, data) {
 // from updateStudent() (which rewrites every field from a full formData
 // object) means marking a government portal entry done can never
 // accidentally blank out the rest of a student's record.
-export async function updateStudentGovId(studentId, { grNo, udise, pen }) {
+export async function updateStudentGovId(studentId, { grNo, udise, pen, apaar, remarks, enrollmentId }) {
   const fields = { updated_at: new Date().toISOString() };
   if (grNo !== undefined)  fields.grno  = grNo || null;
   if (udise !== undefined) fields.udise = udise || null;
   if (pen !== undefined)   fields.pen   = pen || null;
+  if (apaar !== undefined) fields.apaar = apaar || null;
   const { error } = await supabase.from("students").update(fields).eq("id", studentId);
   if (error) throw error;
+
+  if (enrollmentId && remarks !== undefined) {
+    const { error: enrollErr } = await supabase
+      .from("student_enrollments")
+      .update({ deactivate_reason: remarks || null, updated_at: new Date().toISOString() })
+      .eq("id", enrollmentId);
+    if (enrollErr) console.warn("Failed to update remarks on enrollment:", enrollErr);
+  }
 }
 
 // ── Deactivate Student ────────────────────────────────────────────────────────
