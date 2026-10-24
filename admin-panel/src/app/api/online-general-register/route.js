@@ -97,3 +97,32 @@ export async function POST(request) {
     return NextResponse.json({ error: err.message || "Failed to update" }, { status: 500 });
   }
 }
+
+export async function DELETE(request) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+    const section = searchParams.get("section");
+
+    if (!id || !section) {
+      return NextResponse.json(
+        { error: "Missing required fields: id, section" },
+        { status: 400 }
+      );
+    }
+
+    const list = section === "primary" ? runtimeData.primary : runtimeData.general;
+    const index = list.findIndex((x) => x.id === id);
+    if (index < 0) {
+      return NextResponse.json({ error: "Record not found" }, { status: 404 });
+    }
+
+    list.splice(index, 1);
+    persistToFile();
+
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error("API error in online-general-register DELETE:", err);
+    return NextResponse.json({ error: err.message || "Failed to delete" }, { status: 500 });
+  }
+}

@@ -18,3 +18,14 @@ export async function updateOnlineGrRow(id, section, updates) {
   const json = await res.json();
   return json.item;
 }
+
+export async function deleteOnlineGrRow(id, section) {
+  const res = await fetch(`/api/online-general-register?id=${encodeURIComponent(id)}&section=${encodeURIComponent(section)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || "Failed to delete record");
+  }
+  return true;
+}

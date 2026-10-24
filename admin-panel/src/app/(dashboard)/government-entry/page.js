@@ -4,13 +4,14 @@ import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } fr
 import { useRouter } from "next/navigation";
 import {
   Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X,
-  Loader2, HelpCircle, Search, Maximize2, Minimize2, Download, BookOpen
+  Loader2, HelpCircle, Search, Maximize2, Minimize2, Download, BookOpen,
+  ChevronUp, ChevronDown, Trash2, UserPlus
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { getStudentsForReport, getAcademicYearLabels } from "@/lib/reportService";
 import { getPhases, getAllPhaseEntryEnrollments } from "@/lib/studentPhaseService";
 import { updateStudentGovId } from "@/lib/studentService";
-import { getOnlineGrData, updateOnlineGrRow } from "@/lib/onlineGrService";
+import { getOnlineGrData, updateOnlineGrRow, deleteOnlineGrRow } from "@/lib/onlineGrService";
 
 // Government Entry — Complete center for government portal filing and state registers:
 // 1. Online General Register (State Online GR / Primary & General — kept in separate records)
@@ -232,6 +233,7 @@ export default function GovernmentEntryPage() {
   const router = useRouter();
   const [mainTab, setMainTab] = useState("onlineGr"); // "onlineGr" | "udise" | "pen" | "mismatch"
   const [grSubTab, setGrSubTab] = useState("primary"); // "primary" | "general"
+  const [onlineGrSort, setOnlineGrSort] = useState({ key: null, dir: "asc" }); // Excel-like click-to-sort, Online GR only
   const [mismatchDir, setMismatchDir] = useState("udiseOnly"); // "udiseOnly" | "penOnly"
   const effectiveTab = mainTab === "onlineGr" ? "onlineGr" : (mainTab === "mismatch" ? (mismatchDir === "udiseOnly" ? "udise" : "pen") : mainTab);
 
@@ -249,6 +251,7 @@ export default function GovernmentEntryPage() {
   const [search, setSearch] = useState("");
   const [showNotDefinedOnly, setShowNotDefinedOnly] = useState(false);
   const [eligTab, setEligTab] = useState("eligible"); // "eligible" | "ineligible"
+  const [addPinnedEnrollNo, setAddPinnedEnrollNo] = useState(null); // Add New Student wizard: pin table to exactly one student
   const [showRules, setShowRules] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
 
@@ -305,6 +308,23 @@ export default function GovernmentEntryPage() {
     return m;
   }, [dbPhaseEntryEnrollments]);
 
+  // UDISE/PEN eligibility rules, shared between the rows table and the
+  // "Add New Student" picker (REQ: Online GR additions draw from the same pool).
+  const eligibilityFns = useMemo(() => {
+    const inAnyBatch = x => !!enrollToBatches.get(x.enrollNo)?.size;
+    const birthDetailsFilled = x => !!(
+      String(x.birthCertRegNo || "").trim() &&
+      String(x.birthState || "").trim() &&
+      String(x.birthDistrict || "").trim() &&
+      String(x.birthCity || "").trim()
+    );
+    const aadharAvailable = x => !!String(x.aadharNo || "").trim();
+    const udiseEligible = x => x.udiseStatus === "Done" || (inAnyBatch(x) && birthDetailsFilled(x));
+    const penEligible = x => x.penStatus === "Done" || x.penStatus === "Not Defined" ||
+      (inAnyBatch(x) && birthDetailsFilled(x) && aadharAvailable(x));
+    return { udiseEligible, penEligible };
+  }, [enrollToBatches]);
+
   const classOptions = useMemo(() => {
     if (mainTab === "onlineGr") {
       return grSubTab === "primary" ? PRIMARY_CLASSES_OPTIONS : GENERAL_CLASSES_OPTIONS;
@@ -343,6 +363,20 @@ export default function GovernmentEntryPage() {
 
       if (filters.status !== "All") list = list.filter(x => x.status === filters.status);
 
+      if (onlineGrSort.key) {
+        const { key, dir } = onlineGrSort;
+        return list.slice().sort((a, b) => {
+          const av = a[key], bv = b[key];
+          const aEmpty = av === undefined || av === null || String(av).trim() === "";
+          const bEmpty = bv === undefined || bv === null || String(bv).trim() === "";
+          if (aEmpty && bEmpty) return 0;
+          if (aEmpty) return 1;
+          if (bEmpty) return -1;
+          const cmp = String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: "base" });
+          return dir === "desc" ? -cmp : cmp;
+        });
+      }
+
       return list.slice().sort((a, b) => {
         const rank = { Done: 0, Pending: 1 };
         const diff = (rank[a.status] ?? 1) - (rank[b.status] ?? 1);
@@ -367,18 +401,12 @@ export default function GovernmentEntryPage() {
       String(x.udise || "").toLowerCase().includes(q)
     );
 
-    const inAnyBatch = x => !!enrollToBatches.get(x.enrollNo)?.size;
-    const birthDetailsFilled = x => !!(
-      String(x.birthCertRegNo || "").trim() &&
-      String(x.birthState || "").trim() &&
-      String(x.birthDistrict || "").trim() &&
-      String(x.birthCity || "").trim()
-    );
-    const aadharAvailable = x => !!String(x.aadharNo || "").trim();
+    // Add New Student wizard pins the table to exactly one student (by exact
+    // enrollNo, not substring search — a short enrollNo can otherwise
+    // false-match inside unrelated long UDISE/Aadhar numbers).
+    if (addPinnedEnrollNo) d = d.filter(x => x.enrollNo === addPinnedEnrollNo);
 
-    const udiseEligible = x => x.udiseStatus === "Done" || (inAnyBatch(x) && birthDetailsFilled(x));
-    const penEligible = x => x.penStatus === "Done" || x.penStatus === "Not Defined" ||
-      (inAnyBatch(x) && birthDetailsFilled(x) && aadharAvailable(x));
+    const { udiseEligible, penEligible } = eligibilityFns;
 
     if (mainTab === "mismatch") {
       d = mismatchDir === "udiseOnly"
@@ -408,12 +436,96 @@ export default function GovernmentEntryPage() {
       if (diff !== 0) return diff;
       return String(a.grNo || "").localeCompare(String(b.grNo || ""), undefined, { numeric: true });
     });
-  }, [mainTab, grSubTab, onlineGrDataset, dbStudents, filters, search, enrollToBatches, mismatchDir, effectiveTab, showNotDefinedOnly, eligTab]);
+  }, [mainTab, grSubTab, onlineGrDataset, dbStudents, filters, search, enrollToBatches, eligibilityFns, mismatchDir, effectiveTab, showNotDefinedOnly, eligTab, onlineGrSort, addPinnedEnrollNo]);
 
   const pendingNotDefinedCount = useMemo(
     () => dbStudents.map(decorate).filter(x => x.penStatus === "Not Defined").length,
     [dbStudents]
   );
+
+  // ── "Add New Student" eligible pool (Online GR only) ────────────────────
+  // Eligible = qualifies for UDISE or PEN entry (same rule as those tabs) and
+  // isn't already in the register section that matches the student's own
+  // class (Primary vs General is derived per-student, not from whichever
+  // subtab happens to be open — the picker spans both and a Class filter
+  // narrows it down). Rows added via this feature carry enrollNo, so those
+  // match directly — but rows seeded from the original sheet import predate
+  // that linkage, so those are matched, in order, by: mobile1, aadharNo,
+  // then name+class+DOB. Audited against live data (416 legacy rows, 429
+  // current students): mobile1/aadharNo alone catch 168 real duplicates,
+  // but 316 legacy rows have no mobile1 at all (mostly General-section rows
+  // from the 2024-25/2025-26 sheet import) and 186 have no aadharNo either.
+  // The name+class+DOB fallback (DOB compared loosely — the legacy sheet
+  // mixes DD/MM and MM/DD formatting, e.g. "07/11/2020" for a student whose
+  // real DOB is 11 July 2020 — so both orderings are tried) closes 54 more
+  // without the risk plain name+class would carry: 4 real same-name-
+  // same-class pairs exist among current students (e.g. two different
+  // "GANESH PRADHAN" in 1st), and only DOB tells them apart. A handful of
+  // residual cases have a real DOB mismatch too large to be a format swap
+  // (e.g. "AASHIKA YADAV" — 05/12/2016 vs. register's 11/07/2016) — those
+  // are left unmatched rather than guessed at (safer to risk showing an
+  // already-registered student than to wrongly hide one who still needs an
+  // entry). NOT name+mobile: the sheet import has names like "AYUSHMATI
+  // BASANTA DAKUA" for a student whose real record is "AYUSHMATI DAKUA"
+  // (no middle name) — same mobile, different name string.
+  const normKey = v => String(v || "").trim().toUpperCase();
+  function classSection(cls) {
+    if (PRIMARY_CLASSES_OPTIONS.includes(cls)) return "primary";
+    if (GENERAL_CLASSES_OPTIONS.includes(cls)) return "general";
+    return null;
+  }
+  function dobLooselyMatches(a, b) {
+    if (!a || a === "-" || !b || b === "-") return true; // missing data can't contradict a match
+    if (a === b) return true;
+    const [d1, m1, y1] = a.split("/");
+    const [d2, m2, y2] = b.split("/");
+    if (!d1 || !m1 || !y1 || !d2 || !m2 || !y2) return false;
+    return y1 === y2 && ((d1 === d2 && m1 === m2) || (d1 === m2 && m1 === d2));
+  }
+
+  const sectionAlreadyAdded = useMemo(() => {
+    const buildFor = section => {
+      const list = onlineGrDataset[section] || [];
+      const enrollNos = new Set(list.map(r => r.enrollNo).filter(Boolean));
+      const mobileKeys = new Set(
+        list
+          .map(r => normKey(r.mobile1))
+          .filter(v => v && v !== "-")
+      );
+      const aadharKeys = new Set(
+        list
+          .map(r => normKey(r.aadharNo))
+          .filter(v => v && v !== "-")
+      );
+      const byNameClass = new Map();
+      for (const r of list) {
+        const k = `${normKey(r.name)}|${normKey(r.cls)}`;
+        if (!byNameClass.has(k)) byNameClass.set(k, []);
+        byNameClass.get(k).push(r.dobSlash);
+      }
+      return { enrollNos, mobileKeys, aadharKeys, byNameClass };
+    };
+    return { primary: buildFor("primary"), general: buildFor("general") };
+  }, [onlineGrDataset]);
+
+  const addableStudents = useMemo(() => {
+    return dbStudents
+      .map(decorate)
+      .filter(x => classSection(x.cls))
+      .filter(x => eligibilityFns.udiseEligible(x) || eligibilityFns.penEligible(x))
+      .filter(x => {
+        const already = sectionAlreadyAdded[classSection(x.cls)];
+        if (already.enrollNos.has(x.enrollNo)) return false;
+        const mobileKey = normKey(x.mobile1);
+        if (mobileKey && mobileKey !== "-" && already.mobileKeys.has(mobileKey)) return false;
+        const aadharKey = normKey(x.aadharNo);
+        if (aadharKey && aadharKey !== "-" && already.aadharKeys.has(aadharKey)) return false;
+        const nameClassKey = `${normKey(x.name)}|${normKey(x.cls)}`;
+        const dobCandidates = already.byNameClass.get(nameClassKey);
+        if (dobCandidates && dobCandidates.some(d => dobLooselyMatches(d, x.dobSlash))) return false;
+        return true;
+      });
+  }, [dbStudents, sectionAlreadyAdded, eligibilityFns]);
 
   // Frozen count:
   // For onlineGr: Action(0), #(1), Status(2), AY(3), TC(4), STD(5), PR/GR(6), NAME(7) -> 8 columns
@@ -449,6 +561,234 @@ export default function GovernmentEntryPage() {
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // ── Delete confirmation (Online GR only) ────────────────────────────────
+  const [deleteRow, setDeleteRow] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
+  function openDeleteConfirm(row) {
+    setDeleteRow(row);
+    setDeleteError("");
+  }
+
+  function closeDeleteConfirm() {
+    if (deleting) return;
+    setDeleteRow(null);
+  }
+
+  async function handleDelete() {
+    if (!deleteRow) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      await deleteOnlineGrRow(deleteRow.id, grSubTab);
+      setOnlineGrDataset(prev => ({
+        ...prev,
+        [grSubTab]: (prev[grSubTab] || []).filter(r => r.id !== deleteRow.id),
+      }));
+      setDeleteRow(null);
+    } catch (e) {
+      setDeleteError(e.message || "Failed to delete record.");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  function toggleOnlineGrSort(key) {
+    setOnlineGrSort(prev => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
+  }
+
+  // ── Add New Student (Online GR only) — 4-stage wizard ───────────────────
+  // Stage 1: pick from the eligible pool (any class, filterable), type the
+  //          Reg No — SAVED immediately into the Primary/General section
+  //          determined by the student's own class. Own modal UI.
+  // Stage 2: switches to the real UDISE Entry (State) tab, filtered down to
+  //          just this student, so their full details are visible to copy —
+  //          same as normal admin workflow. A banner (not a modal, so the
+  //          table stays click-to-copy-able) offers "Next" once details are
+  //          copied, which THEN opens that tab's own "Complete UDISE Entry"
+  //          modal — the exact same modal/validation/save path used for any
+  //          other row.
+  // Stage 3: same two-phase dance (details → entry modal), on the real PEN
+  //          Entry (National) tab.
+  // Stage 4: back on Online GR — own modal again, final confirmation review
+  //          (DOB/DOA/DOE/AADHAR/UID/PEN/APAAR/REMARK/DOCUMENTS PENDING),
+  //          now reflecting whatever was just entered in stages 2–3.
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addWizardActive, setAddWizardActive] = useState(false);
+  const [addStep, setAddStep] = useState(1);
+  const [addSubPhase, setAddSubPhase] = useState("details"); // "details" | "entry" — within stage 2/3
+  const [addSearch, setAddSearch] = useState("");
+  const [addClassFilter, setAddClassFilter] = useState("All");
+  const [addSelectedStudent, setAddSelectedStudent] = useState(null);
+  const [addGrNo, setAddGrNo] = useState("");
+  const [addCreatedRowId, setAddCreatedRowId] = useState(null);
+  const [addError, setAddError] = useState("");
+  const [addSaving, setAddSaving] = useState(false);
+  const addSection = addSelectedStudent ? classSection(addSelectedStudent.cls) : null;
+  const addReview = addSelectedStudent ? decorate(addSelectedStudent) : null;
+  // GR/PR No was already asked in stage 1 — lock it during the UDISE/PEN
+  // entry modals so it can't drift from what was just registered.
+  const isWizardEntry = addWizardActive && addSubPhase === "entry";
+
+  function openAddModal() {
+    setAddModalOpen(true);
+    setAddWizardActive(false);
+    setAddStep(1);
+    setAddSubPhase("details");
+    setAddSearch("");
+    setAddClassFilter("All");
+    setAddSelectedStudent(null);
+    setAddGrNo("");
+    setAddCreatedRowId(null);
+    setAddPinnedEnrollNo(null);
+    setAddError("");
+  }
+
+  function closeAddModal() {
+    if (addSaving) return;
+    setAddModalOpen(false);
+    setAddWizardActive(false);
+  }
+
+  // Abort the wizard from the details-review banner (no modal open there).
+  function cancelAddWizard() {
+    setAddWizardActive(false);
+    setAddSubPhase("details");
+    setAddPinnedEnrollNo(null);
+  }
+
+  // Stage 2/3, phase "details" → "entry": the admin has copied what they need
+  // from the (now filtered-to-just-this-student) table, open the real tab's
+  // own Entry Done modal to type in the number.
+  // GR/PR No is asked once, in stage 1 — carry that same value into the
+  // UDISE and PEN steps instead of pulling the student's old (possibly
+  // different) GR No from their DB record, which risked a mismatch between
+  // what was just registered and what got saved to the student.
+  function proceedToUdiseEntryForm() {
+    setAddSubPhase("entry");
+    openEntryModal(addSelectedStudent);
+    setFormGrNo(addGrNo);
+  }
+  function proceedToPenEntryForm() {
+    setAddSubPhase("entry");
+    openEntryModal(addSelectedStudent);
+    setFormGrNo(addGrNo);
+  }
+
+  function selectAddStudent(st) {
+    setAddSelectedStudent(st);
+    setAddGrNo("");
+    setAddError("");
+  }
+
+  function changeAddStudent() {
+    if (addCreatedRowId) return; // already saved against this student — can't swap
+    setAddSelectedStudent(null);
+    setAddGrNo("");
+    setAddError("");
+  }
+
+  // Stage 1 — create/update the Online GR row right away, then hand off to
+  // the real UDISE Entry tab's own Entry Done modal for this student.
+  async function saveStep1AndContinue() {
+    if (!addSelectedStudent || !addSection) { setAddError("Select a student first."); return; }
+    if (!addGrNo.trim()) { setAddError(`${addSection === "primary" ? "PR" : "GR"} No is required.`); return; }
+    setAddSaving(true);
+    setAddError("");
+    try {
+      const dec = decorate(addSelectedStudent);
+      const id = addCreatedRowId || (
+        (typeof crypto !== "undefined" && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `gr_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
+      );
+      const created = await updateOnlineGrRow(id, addSection, {
+        enrollNo:         addSelectedStudent.enrollNo,
+        session:          addSelectedStudent.session || "",
+        tcStatus:         dec.tcStatus,
+        cls:              addSelectedStudent.cls || "",
+        grNo:             addGrNo.trim(),
+        name:             addSelectedStudent.name || "",
+        mobile1:          addSelectedStudent.mobile1 || "-",
+        mobile2:          addSelectedStudent.mobile2 || "-",
+        dobSlash:         dec.dobSlash,
+        doaSlash:         dec.doaSlash,
+        doeSlash:         dec.doeSlash,
+        aadharNo:         addSelectedStudent.aadharNo || "-",
+        udise:            addSelectedStudent.udise || "-",
+        pen:              addSelectedStudent.pen || "-",
+        apaar:            addSelectedStudent.apaar || "-",
+        remarks:          dec.remarks,
+        documentsPending: dec.documentsPending,
+      });
+      setAddCreatedRowId(id);
+      setOnlineGrDataset(prev => {
+        const list = prev[addSection] || [];
+        const idx = list.findIndex(r => r.id === id);
+        const nextList = idx >= 0 ? list.map(r => r.id === id ? created : r) : [...list, created];
+        return { ...prev, [addSection]: nextList };
+      });
+      // Hand off: close this modal, jump to the UDISE Entry tab filtered down
+      // to just this student so their details are visible to copy — the
+      // entry modal opens only once the admin clicks "Next" on that banner.
+      setAddModalOpen(false);
+      setAddWizardActive(true);
+      setAddStep(2);
+      setAddSubPhase("details");
+      setMainTab("udise");
+      setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
+      setEligTab(eligibilityFns.udiseEligible(addSelectedStudent) ? "eligible" : "ineligible");
+      setSearch("");
+      setAddPinnedEnrollNo(addSelectedStudent.enrollNo);
+    } catch (e) {
+      setAddSaving(false);
+      setAddError(e.message || "Failed to save.");
+      return;
+    }
+    setAddSaving(false);
+  }
+
+  // Stage 4 — final confirmation: push the (now-filled) UDISE/PEN values and
+  // recomputed Documents Pending back onto the Online GR row.
+  async function finalizeAdd() {
+    if (!addCreatedRowId || !addSection) { setAddModalOpen(false); setAddWizardActive(false); return; }
+    setAddSaving(true);
+    setAddError("");
+    try {
+      const dec = decorate(addSelectedStudent);
+      const created = await updateOnlineGrRow(addCreatedRowId, addSection, {
+        udise:            addSelectedStudent.udise || "-",
+        pen:              addSelectedStudent.pen || "-",
+        documentsPending: dec.documentsPending,
+      });
+      setOnlineGrDataset(prev => ({
+        ...prev,
+        [addSection]: (prev[addSection] || []).map(r => r.id === created.id ? created : r),
+      }));
+      setAddModalOpen(false);
+      setAddWizardActive(false);
+    } catch (e) {
+      setAddError(e.message || "Failed to finalize entry.");
+    } finally {
+      setAddSaving(false);
+    }
+  }
+
+  const filteredAddableStudents = useMemo(() => {
+    let list = addableStudents;
+    if (addClassFilter !== "All") list = list.filter(x => x.cls === addClassFilter);
+    const q = addSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(x =>
+        String(x.name || "").toLowerCase().includes(q) ||
+        String(x.enrollNo || "").toLowerCase().includes(q) ||
+        String(x.cls || "").toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [addableStudents, addClassFilter, addSearch]);
+
   function openStudentProfile(row) {
     if (mainTab === "onlineGr") return;
     if (row.enrollNo) router.push(`/student/${row.enrollNo}/edit`);
@@ -468,6 +808,10 @@ export default function GovernmentEntryPage() {
   function closeModal() {
     if (saving) return;
     setModalRow(null);
+    // Cancelling mid Add-New-Student wizard just ends the wizard here —
+    // whatever was already saved (the GR row, and UDISE if this was the PEN
+    // step) stays saved; only the remaining hand-off stops.
+    if (addWizardActive) { setAddWizardActive(false); setAddPinnedEnrollNo(null); }
   }
 
   async function handleSave() {
@@ -519,6 +863,20 @@ export default function GovernmentEntryPage() {
         await updateStudentGovId(modalRow.studentId, { grNo: formGrNo.trim(), udise: digits });
         await loadAll();
         setModalRow(null);
+        // Add-New-Student wizard, stage 2 done — hand off to the real PEN
+        // Entry tab, filtered down to this student's details again, before
+        // its own Entry Done modal opens.
+        if (addWizardActive && addStep === 2) {
+          const nextRow = { ...modalRow, udise: digits };
+          setAddSelectedStudent(nextRow);
+          setAddStep(3);
+          setAddSubPhase("details");
+          setMainTab("pen");
+          setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
+          setEligTab(eligibilityFns.penEligible(nextRow) ? "eligible" : "ineligible");
+          setSearch("");
+          setAddPinnedEnrollNo(nextRow.enrollNo);
+        }
       } catch (e) {
         setFormError(e.message || "Failed to save.");
       } finally {
@@ -538,9 +896,21 @@ export default function GovernmentEntryPage() {
     }
     setSaving(true);
     try {
-      await updateStudentGovId(modalRow.studentId, { grNo: formGrNo.trim(), pen: formPenNotDefined ? "Not Defined" : formPen.trim() });
+      const penValue = formPenNotDefined ? "Not Defined" : formPen.trim();
+      await updateStudentGovId(modalRow.studentId, { grNo: formGrNo.trim(), pen: penValue });
       await loadAll();
       setModalRow(null);
+      // Add-New-Student wizard, stage 3 done — back to Online GR for the
+      // final confirmation review (stage 4).
+      if (addWizardActive && addStep === 3) {
+        setAddSelectedStudent(prev => prev ? { ...prev, pen: penValue } : prev);
+        setAddStep(4);
+        setAddSubPhase("details");
+        setMainTab("onlineGr");
+        if (addSection) setGrSubTab(addSection);
+        setAddPinnedEnrollNo(null);
+        setAddModalOpen(true);
+      }
     } catch (e) {
       setFormError(e.message || "Failed to save.");
     } finally {
@@ -607,6 +977,13 @@ export default function GovernmentEntryPage() {
           <p className="text-sm text-gray-500 mt-0.5">File Online General Register, UDISE &amp; PEN entries into government portals and record results</p>
         </div>
         <div className="flex items-center gap-2">
+          {mainTab === "onlineGr" && (
+            <button onClick={openAddModal}
+              title="Add a new student into this register"
+              className="flex items-center gap-1.5 text-xs border border-school-navy/30 bg-school-navy/5 px-3 py-1.5 rounded-lg text-school-navy hover:bg-school-navy/10 transition-colors">
+              <UserPlus className="w-3.5 h-3.5"/> Add New Student
+            </button>
+          )}
           <button onClick={exportExcel}
             title="Download Excel export"
             className="flex items-center gap-1.5 text-xs border border-emerald-300 bg-emerald-50 px-3 py-1.5 rounded-lg text-emerald-800 hover:bg-emerald-100 transition-colors">
@@ -696,8 +1073,31 @@ export default function GovernmentEntryPage() {
             {grSubTab === "primary"
               ? "Online General Register — Pre-Primary section (JR.KG, SR.KG, Balvatika). Assigned Primary Register (PR) numbers."
               : "Online General Register — Standard 1st and above. Assigned General Register (GR) numbers."}
-            {" Saved separately for government state record keeping (not inserted into student database). Click any cell to copy to clipboard."}
+            {" Saved separately for government state record keeping (not inserted into student database). Click any cell to copy to clipboard, or click a column header to sort."}
           </span>
+        </div>
+      )}
+
+      {/* Add New Student wizard — details-review phase (table stays click-to-copy-able, no modal) */}
+      {addWizardActive && addSubPhase === "details" && (mainTab === "udise" || mainTab === "pen") && (
+        <div className="flex items-center justify-between gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800">
+          <div className="flex items-center gap-2">
+            <UserPlus className="w-4 h-4 flex-shrink-0 text-school-navy"/>
+            <span>
+              <span className="font-semibold">Add New Student — Step {mainTab === "udise" ? 2 : 3} of 4: {mainTab === "udise" ? "UDISE" : "PEN"} Entry.</span>
+              {" "}Copy {addSelectedStudent?.name || "this student"}&apos;s details below (click any cell to copy), then continue to enter the {mainTab === "udise" ? "UDISE" : "PEN"} No.
+            </span>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button onClick={cancelAddWizard}
+              className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-100 transition-colors">
+              Cancel
+            </button>
+            <button onClick={mainTab === "udise" ? proceedToUdiseEntryForm : proceedToPenEntryForm}
+              className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors">
+              Next: Enter {mainTab === "udise" ? "UDISE" : "PEN"} No →
+            </button>
+          </div>
         </div>
       )}
 
@@ -729,116 +1129,167 @@ export default function GovernmentEntryPage() {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="bg-gray-50 border border-gray-200 rounded-xl p-2">
-        <div className="flex flex-wrap gap-x-4 gap-y-1.5 items-center">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
-            <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-              placeholder="Name, Reg No, Mobile, Aadhar, UID"
-              className="border border-gray-200 rounded-lg pl-8 pr-2.5 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-48"/>
+      {addWizardActive && addSubPhase === "details" && (mainTab === "udise" || mainTab === "pen") ? (
+        /* Add New Student wizard — full details page for this one student, not a table row */
+        <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
+          <div className="mb-4">
+            <h3 className="text-base font-bold text-gray-800">{addSelectedStudent?.name}</h3>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {addSelectedStudent?.cls} · Reg No {addGrNo || "-"} · Click any field below to copy its value
+            </p>
           </div>
-          <div className="flex items-center gap-1.5">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Class</label>
-            <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
-              value={filters.cls} onChange={e => setFilters(prev => ({ ...prev, cls: e.target.value }))}>
-              {["All", ...classOptions].map(o => <option key={o}>{o}</option>)}
-            </select>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Year</label>
-            <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
-              value={filters.session} onChange={e => setFilters(prev => ({ ...prev, session: e.target.value }))}>
-              {(mainTab === "onlineGr" ? ONLINE_GR_YEARS : ["All", ...dbSessions]).map(o => <option key={o}>{o}</option>)}
-            </select>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Batch</label>
-            <select disabled={mainTab === "onlineGr" || mainTab === "mismatch" || (mainTab !== "onlineGr" && eligTab === "ineligible")}
-              className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24 disabled:opacity-50 disabled:cursor-not-allowed"
-              value={filters.batch} onChange={e => setFilters(prev => ({ ...prev, batch: e.target.value }))}>
-              {["All", ...batchOptions].map(o => <option key={o}>{o}</option>)}
-            </select>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Status</label>
-            <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
-              value={filters.status} onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}>
-              {(effectiveTab === "pen" ? ["All", "Done", "Not Defined", "Pending"] : ["All", "Done", "Pending"]).map(o => <option key={o}>{o}</option>)}
-            </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {columns.map(c => {
+              const rawValue = formatCellValue(c, addSelectedStudent?.[c.key]);
+              return (
+                <div key={c.key}
+                  tabIndex={0}
+                  onFocus={() => copyCellToClipboard(rawValue)}
+                  className="border border-gray-200 rounded-lg px-3 py-2 cursor-pointer hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-school-navy focus:bg-blue-50 transition-colors">
+                  <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{c.label}</div>
+                  <div className="text-sm text-gray-800 font-medium mt-0.5 break-words">
+                    {rawValue !== "" && rawValue !== "-" ? String(rawValue) : <span className="text-gray-300">-</span>}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
-      </div>
+      ) : (
+        <>
+          {/* Filters */}
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-2">
+            <div className="flex flex-wrap gap-x-4 gap-y-1.5 items-center">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
+                <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                  placeholder="Name, Reg No, Mobile, Aadhar, UID"
+                  className="border border-gray-200 rounded-lg pl-8 pr-2.5 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-48"/>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Class</label>
+                <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
+                  value={filters.cls} onChange={e => setFilters(prev => ({ ...prev, cls: e.target.value }))}>
+                  {["All", ...classOptions].map(o => <option key={o}>{o}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Year</label>
+                <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
+                  value={filters.session} onChange={e => setFilters(prev => ({ ...prev, session: e.target.value }))}>
+                  {(mainTab === "onlineGr" ? ONLINE_GR_YEARS : ["All", ...dbSessions]).map(o => <option key={o}>{o}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Batch</label>
+                <select disabled={mainTab === "onlineGr" || mainTab === "mismatch" || (mainTab !== "onlineGr" && eligTab === "ineligible")}
+                  className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24 disabled:opacity-50 disabled:cursor-not-allowed"
+                  value={filters.batch} onChange={e => setFilters(prev => ({ ...prev, batch: e.target.value }))}>
+                  {["All", ...batchOptions].map(o => <option key={o}>{o}</option>)}
+                </select>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Status</label>
+                <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
+                  value={filters.status} onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}>
+                  {(effectiveTab === "pen" ? ["All", "Done", "Not Defined", "Pending"] : ["All", "Done", "Pending"]).map(o => <option key={o}>{o}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
 
-      {/* Table */}
-      <div className={`overflow-auto rounded-xl border border-gray-200 shadow-sm ${fullscreen ? "max-h-[calc(100vh-220px)]" : "max-h-[70vh]"}`}>
-        <table className="text-xs w-full">
-          <thead>
-            <tr className="bg-school-navy text-white">
-              <th ref={el => { frozenHeaderRefs.current[0] = el; }}
-                style={{ position: "sticky", top: 0, left: stickyLeft[0], zIndex: 30 }}
-                className="bg-school-navy px-3 py-2.5 text-center font-semibold whitespace-nowrap">Action</th>
-              <th ref={el => { frozenHeaderRefs.current[1] = el; }}
-                style={{ position: "sticky", top: 0, left: stickyLeft[1], zIndex: 30 }}
-                className="bg-school-navy px-3 py-2.5 text-left font-semibold whitespace-nowrap w-8">#</th>
-              <th ref={el => { frozenHeaderRefs.current[2] = el; }}
-                style={{ position: "sticky", top: 0, left: stickyLeft[2], zIndex: 30 }}
-                className="bg-school-navy px-3 py-2.5 text-left font-semibold whitespace-nowrap">Status</th>
-              {columns.map((c, i) => {
-                const frozenIdx = i + 3;
-                const isFrozen = frozenIdx < frozenCount;
-                return (
-                  <th key={c.key}
-                    ref={isFrozen ? (el => { frozenHeaderRefs.current[frozenIdx] = el; }) : undefined}
-                    style={isFrozen ? { position: "sticky", top: 0, left: stickyLeft[frozenIdx], zIndex: 30 } : { position: "sticky", top: 0, zIndex: 20 }}
-                    className="bg-school-navy px-3 py-2.5 text-left font-semibold whitespace-nowrap">
-                    {c.label}
+          {/* Table */}
+          <div className={`overflow-auto rounded-xl border border-gray-200 shadow-sm ${fullscreen ? "max-h-[calc(100vh-220px)]" : "max-h-[70vh]"}`}>
+            <table className="text-xs w-full">
+              <thead>
+                <tr className="bg-school-navy text-white">
+                  <th ref={el => { frozenHeaderRefs.current[0] = el; }}
+                    style={{ position: "sticky", top: 0, left: stickyLeft[0], zIndex: 30 }}
+                    className="bg-school-navy px-3 py-2.5 text-center font-semibold whitespace-nowrap">Action</th>
+                  <th ref={el => { frozenHeaderRefs.current[1] = el; }}
+                    style={{ position: "sticky", top: 0, left: stickyLeft[1], zIndex: 30 }}
+                    className="bg-school-navy px-3 py-2.5 text-left font-semibold whitespace-nowrap w-8">#</th>
+                  <th ref={el => { frozenHeaderRefs.current[2] = el; }}
+                    onClick={mainTab === "onlineGr" ? () => toggleOnlineGrSort("status") : undefined}
+                    style={{ position: "sticky", top: 0, left: stickyLeft[2], zIndex: 30 }}
+                    className={`bg-school-navy px-3 py-2.5 text-left font-semibold whitespace-nowrap ${mainTab === "onlineGr" ? "cursor-pointer hover:bg-school-navy/80 select-none" : ""}`}>
+                    <span className="inline-flex items-center gap-0.5">
+                      Status
+                      {mainTab === "onlineGr" && onlineGrSort.key === "status" && (onlineGrSort.dir === "asc" ? <ChevronUp className="w-3 h-3"/> : <ChevronDown className="w-3 h-3"/>)}
+                    </span>
                   </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, idx) => {
-              const status = mainTab === "onlineGr" ? row.status : (effectiveTab === "udise" ? row.udiseStatus : row.penStatus);
-              const rowBg = idx % 2 === 0 ? "bg-white" : "bg-gray-50/40";
-              const rowBgSolid = idx % 2 === 0 ? "bg-white" : "bg-gray-100";
-              return (
-                <tr key={`${row.id || row.studentId || row.enrollNo || idx}-${row.session}-${idx}`}
-                  onDoubleClick={() => openStudentProfile(row)}
-                  title={mainTab === "onlineGr" ? "Online General Register entry" : "Double-click to edit this student"}
-                  className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${rowBg}`}>
-                  <td style={{ position: "sticky", left: stickyLeft[0], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2 text-center whitespace-nowrap`}>
-                    <button onClick={() => openEntryModal(row)}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-school-navy text-white hover:bg-school-navy/90 transition-colors">
-                      <CheckCircle2 className="w-3 h-3"/> Entry Done
-                    </button>
-                  </td>
-                  <td style={{ position: "sticky", left: stickyLeft[1], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2 text-gray-400 font-medium`}>{idx + 1}</td>
-                  <td style={{ position: "sticky", left: stickyLeft[2], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2`}><StatusPill status={status}/></td>
                   {columns.map((c, i) => {
-                    const rawValue = formatCellValue(c, row[c.key]);
                     const frozenIdx = i + 3;
                     const isFrozen = frozenIdx < frozenCount;
+                    const sortable = mainTab === "onlineGr";
+                    const isSorted = sortable && onlineGrSort.key === c.key;
                     return (
-                      <td key={c.key}
-                        tabIndex={0}
-                        onFocus={() => copyCellToClipboard(rawValue)}
-                        style={isFrozen ? { position: "sticky", left: stickyLeft[frozenIdx], zIndex: 10 } : undefined}
-                        className={`${isFrozen ? rowBgSolid : ""} px-3 py-2 text-gray-700 whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-school-navy focus:bg-blue-50`}>
-                        {rawValue !== "" && rawValue !== "-" ? String(rawValue) : <span className="text-gray-300">-</span>}
-                      </td>
+                      <th key={c.key}
+                        ref={isFrozen ? (el => { frozenHeaderRefs.current[frozenIdx] = el; }) : undefined}
+                        onClick={sortable ? () => toggleOnlineGrSort(c.key) : undefined}
+                        style={isFrozen ? { position: "sticky", top: 0, left: stickyLeft[frozenIdx], zIndex: 30 } : { position: "sticky", top: 0, zIndex: 20 }}
+                        className={`bg-school-navy px-3 py-2.5 text-left font-semibold whitespace-nowrap ${sortable ? "cursor-pointer hover:bg-school-navy/80 select-none" : ""}`}>
+                        <span className="inline-flex items-center gap-0.5">
+                          {c.label}
+                          {isSorted && (onlineGrSort.dir === "asc" ? <ChevronUp className="w-3 h-3"/> : <ChevronDown className="w-3 h-3"/>)}
+                        </span>
+                      </th>
                     );
                   })}
                 </tr>
-              );
-            })}
-            {rows.length === 0 && (
-              <tr><td colSpan={columns.length + 3} className="px-4 py-10 text-center text-gray-400 text-sm">No students match the selected filters</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+              </thead>
+              <tbody>
+                {rows.map((row, idx) => {
+                  const status = mainTab === "onlineGr" ? row.status : (effectiveTab === "udise" ? row.udiseStatus : row.penStatus);
+                  const rowBg = idx % 2 === 0 ? "bg-white" : "bg-gray-50/40";
+                  const rowBgSolid = idx % 2 === 0 ? "bg-white" : "bg-gray-100";
+                  return (
+                    <tr key={`${row.id || row.studentId || row.enrollNo || idx}-${row.session}-${idx}`}
+                      onDoubleClick={() => openStudentProfile(row)}
+                      title={mainTab === "onlineGr" ? "Online General Register entry" : "Double-click to edit this student"}
+                      className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${rowBg}`}>
+                      <td style={{ position: "sticky", left: stickyLeft[0], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2 text-center whitespace-nowrap`}>
+                        <div className="inline-flex items-center gap-1">
+                          <button onClick={() => openEntryModal(row)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-school-navy text-white hover:bg-school-navy/90 transition-colors">
+                            <CheckCircle2 className="w-3 h-3"/> Entry Done
+                          </button>
+                          {mainTab === "onlineGr" && (
+                            <button onClick={() => openDeleteConfirm(row)}
+                              title="Delete this record"
+                              className="inline-flex items-center justify-center p-1.5 rounded-lg text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors">
+                              <Trash2 className="w-3 h-3"/>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td style={{ position: "sticky", left: stickyLeft[1], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2 text-gray-400 font-medium`}>{idx + 1}</td>
+                      <td style={{ position: "sticky", left: stickyLeft[2], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2`}><StatusPill status={status}/></td>
+                      {columns.map((c, i) => {
+                        const rawValue = formatCellValue(c, row[c.key]);
+                        const frozenIdx = i + 3;
+                        const isFrozen = frozenIdx < frozenCount;
+                        return (
+                          <td key={c.key}
+                            tabIndex={0}
+                            onFocus={() => copyCellToClipboard(rawValue)}
+                            style={isFrozen ? { position: "sticky", left: stickyLeft[frozenIdx], zIndex: 10 } : undefined}
+                            className={`${isFrozen ? rowBgSolid : ""} px-3 py-2 text-gray-700 whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-school-navy focus:bg-blue-50`}>
+                            {rawValue !== "" && rawValue !== "-" ? String(rawValue) : <span className="text-gray-300">-</span>}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+                {rows.length === 0 && (
+                  <tr><td colSpan={columns.length + 3} className="px-4 py-10 text-center text-gray-400 text-sm">No students match the selected filters</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
 
       {/* Entry Done modal */}
       {modalRow && (
@@ -859,6 +1310,12 @@ export default function GovernmentEntryPage() {
             </div>
 
             <div className="px-5 py-4 space-y-3">
+              {addWizardActive && addSubPhase === "entry" && (addStep === 2 || addStep === 3) && (
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-school-navy bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1.5">
+                  <UserPlus className="w-3.5 h-3.5 flex-shrink-0"/>
+                  Add New Student — Step {addStep} of 4: enter the {addStep === 2 ? "UDISE" : "PEN"} No below for {modalRow?.name}.
+                </div>
+              )}
               {mainTab === "onlineGr" ? (
                 <>
                   <div className="flex flex-col gap-1">
@@ -910,8 +1367,8 @@ export default function GovernmentEntryPage() {
                 <>
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">GR No</label>
-                    <input type="text" value={formGrNo} onChange={e => setFormGrNo(e.target.value)}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"
+                    <input type="text" value={formGrNo} readOnly={isWizardEntry} onChange={e => !isWizardEntry && setFormGrNo(e.target.value)}
+                      className={`border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy ${isWizardEntry ? "bg-gray-100 text-gray-500" : ""}`}
                       placeholder="GR No"/>
                   </div>
                   <div className="flex flex-col gap-1">
@@ -927,8 +1384,8 @@ export default function GovernmentEntryPage() {
                 <>
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">GR No</label>
-                    <input type="text" value={formGrNo} onChange={e => setFormGrNo(e.target.value)}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"
+                    <input type="text" value={formGrNo} readOnly={isWizardEntry} onChange={e => !isWizardEntry && setFormGrNo(e.target.value)}
+                      className={`border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy ${isWizardEntry ? "bg-gray-100 text-gray-500" : ""}`}
                       placeholder="GR No"/>
                   </div>
                   <div className="flex flex-col gap-1">
@@ -963,6 +1420,179 @@ export default function GovernmentEntryPage() {
                 className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors disabled:opacity-60">
                 {saving && <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
                 {saving ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add New Student modal (Online GR only) — 4-step wizard */}
+      {addModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <div>
+                <h3 className="text-base font-bold text-gray-800">
+                  Add New Student
+                  {addSection && <span className="text-gray-400 font-semibold"> — {addSection === "primary" ? "Primary Register (PR)" : "General Register (GR)"}</span>}
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Step {addStep} of 4 — {
+                    addStep === 1 ? "Select student & enter Reg No" :
+                    addStep === 2 ? "UDISE Entry" :
+                    addStep === 3 ? "PEN Entry" : "Final confirmation"
+                  }
+                </p>
+              </div>
+              <button onClick={closeAddModal} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5"/>
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-3 overflow-y-auto">
+              {addStep === 1 && !addSelectedStudent && (
+                <>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
+                      <input type="text" value={addSearch} onChange={e => setAddSearch(e.target.value)}
+                        placeholder="Search eligible students by name, class, enroll no"
+                        className="w-full border border-gray-200 rounded-lg pl-8 pr-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"/>
+                    </div>
+                    <select value={addClassFilter} onChange={e => setAddClassFilter(e.target.value)}
+                      className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-school-navy">
+                      {["All", ...CLASSES].map(o => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+
+                  <div className="border border-gray-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
+                    {filteredAddableStudents.length === 0 ? (
+                      <div className="px-3 py-6 text-center text-xs text-gray-400">
+                        No eligible students found (eligible = qualifies for UDISE or PEN entry, and not already in the matching register section).
+                      </div>
+                    ) : filteredAddableStudents.map(st => (
+                      <button key={st.enrollNo} type="button" onClick={() => selectAddStudent(st)}
+                        className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition-colors">
+                        <span className="font-semibold text-gray-800">{st.name}</span>
+                        <span className="text-gray-400"> · {st.cls} · {st.session} · {st.mobile1 || "-"}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {addStep === 1 && addSelectedStudent && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Selected Student</span>
+                    {!addCreatedRowId && (
+                      <button type="button" onClick={changeAddStudent} className="text-[10px] font-semibold text-school-navy hover:underline">
+                        Change student
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div><span className="text-gray-400">AY</span><div className="font-semibold text-gray-700">{addSelectedStudent.session || "-"}</div></div>
+                    <div><span className="text-gray-400">TC</span><div className="font-semibold text-gray-700">{addReview?.tcStatus}</div></div>
+                    <div><span className="text-gray-400">STD</span><div className="font-semibold text-gray-700">{addSelectedStudent.cls}</div></div>
+                    <div><span className="text-gray-400">NAME</span><div className="font-semibold text-gray-700">{addSelectedStudent.name}</div></div>
+                    <div><span className="text-gray-400">MOBILE 1</span><div className="font-semibold text-gray-700">{addSelectedStudent.mobile1 || "-"}</div></div>
+                    <div><span className="text-gray-400">MOBILE 2</span><div className="font-semibold text-gray-700">{addSelectedStudent.mobile2 || "-"}</div></div>
+                  </div>
+                  <div className="flex flex-col gap-1 pt-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      {addSection === "primary" ? "PR No (Primary Register No)" : "GR No (General Register No)"}
+                    </label>
+                    <input type="text" value={addGrNo} onChange={e => setAddGrNo(e.target.value)}
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"
+                      placeholder={addSection === "primary" ? "e.g. P101" : "e.g. 201"}/>
+                  </div>
+                </div>
+              )}
+
+              {addStep === 4 && (
+                <div className="space-y-2">
+                  <p className="text-xs text-gray-500">
+                    Auto-filled from {addSelectedStudent?.name}&apos;s student record — nothing to type here, just confirm and save.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-xs bg-gray-50 border border-gray-200 rounded-lg p-3">
+                    <div><span className="text-gray-400">DOB</span><div className="font-semibold text-gray-700">{addReview?.dobSlash || "-"}</div></div>
+                    <div><span className="text-gray-400">DOA</span><div className="font-semibold text-gray-700">{addReview?.doaSlash || "-"}</div></div>
+                    <div><span className="text-gray-400">DOE</span><div className="font-semibold text-gray-700">{addReview?.doeSlash || "-"}</div></div>
+                    <div><span className="text-gray-400">AADHAR</span><div className="font-semibold text-gray-700">{addSelectedStudent?.aadharNo || "-"}</div></div>
+                    <div><span className="text-gray-400">UID</span><div className="font-semibold text-gray-700">{addSelectedStudent?.udise || "-"}</div></div>
+                    <div><span className="text-gray-400">PEN</span><div className="font-semibold text-gray-700">{addSelectedStudent?.pen || "-"}</div></div>
+                    <div><span className="text-gray-400">APAAR</span><div className="font-semibold text-gray-700">{addSelectedStudent?.apaar || "-"}</div></div>
+                    <div><span className="text-gray-400">REMARK</span><div className="font-semibold text-gray-700">{addReview?.remarks || "-"}</div></div>
+                    <div className="col-span-2"><span className="text-gray-400">DOCUMENTS PENDING</span><div className="font-semibold text-gray-700">{addReview?.documentsPending || "-"}</div></div>
+                  </div>
+                </div>
+              )}
+
+              {addError && (
+                <div className="flex items-center gap-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0"/> {addError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">
+              <button onClick={closeAddModal} disabled={addSaving}
+                className="text-xs font-semibold px-3.5 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors disabled:opacity-50">
+                Cancel
+              </button>
+              {addStep === 1 && (
+                <button onClick={saveStep1AndContinue} disabled={addSaving || !addSelectedStudent}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors disabled:opacity-60">
+                  {addSaving && <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
+                  {addSaving ? "Saving..." : "Save & Continue to UDISE Entry"}
+                </button>
+              )}
+              {addStep === 4 && (
+                <button onClick={finalizeAdd} disabled={addSaving}
+                  className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors disabled:opacity-60">
+                  {addSaving && <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
+                  {addSaving ? "Saving..." : "Entry Done"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h3 className="text-base font-bold text-gray-800">Delete Record</h3>
+              <button onClick={closeDeleteConfirm} className="text-gray-400 hover:text-gray-600">
+                <X className="w-5 h-5"/>
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-sm text-gray-600">
+                Permanently delete <span className="font-semibold text-gray-800">{deleteRow.name || "this record"}</span>
+                {" "}({grSubTab === "primary" ? "PR" : "GR"} {deleteRow.grNo || "-"}) from the Online General Register?
+                This cannot be undone.
+              </p>
+              {deleteError && (
+                <div className="flex items-center gap-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2.5 py-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0"/> {deleteError}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">
+              <button onClick={closeDeleteConfirm} disabled={deleting}
+                className="text-xs font-semibold px-3.5 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-60">
+                {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
+                {deleting ? "Deleting..." : "Delete"}
               </button>
             </div>
           </div>
