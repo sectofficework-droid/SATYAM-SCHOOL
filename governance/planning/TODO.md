@@ -2648,6 +2648,17 @@ pattern), it is noted as already-known and not re-filed as new.
       recovered from this record set) remains a user decision. The
       JSON file itself is still in the repo (REQ-BUG-077's storage move
       will resolve that properly).
+      **2026-10-25, later the SAME day: user made the repo PUBLIC again**
+      (user-reported; deployment was blocked while private — reads of
+      GitHub content by the Vercel build, or a related integration
+      edge — user reverted to public to unblock it). **The PII file and
+      its history are therefore publicly readable again**; the API-side
+      lock (REQ-SEC-022) still prevents *serving* the data without a
+      session. Priority shifted accordingly: removing the PII JSON from
+      the repo HEAD (the already-submitted REQ-BUG-077 follow-up) is now
+      urgent — a public repo can keep working fine for builds as
+      long as it no longer contains student data; the optional history
+      purge remains the only way to erase the two public-day copies.
 - [x] **REQ-SEC-022 — `/api/online-general-register` has ZERO
       authentication (GET/POST/DELETE).** Found 2026-10-24. The new route
       from 2026-10-23 (`admin-panel/src/app/api/online-general-register/
