@@ -2639,6 +2639,15 @@ pattern), it is noted as already-known and not re-filed as new.
       Severity amplified by REQ-SEC-022 (the same data is served live by an
       unauthenticated API) and REQ-SEC-023 (shared default password is
       public in the same repo).
+      **2026-10-25: repo made PRIVATE by the user — verified live by
+      fetching the repo URL unauthenticated (404).** Residual risk openly
+      recorded: the data was public ~2 days (2026-10-23→10-25), so crawlers
+      or clones may have captured it; deletion-from-HEAD doesn't remove
+      history copies, so an optional history purge (destructive, §J4)
+      and/or treating exposed values as compromised (rotate mobiles
+      recovered from this record set) remains a user decision. The
+      JSON file itself is still in the repo (REQ-BUG-077's storage move
+      will resolve that properly).
 - [x] **REQ-SEC-022 — `/api/online-general-register` has ZERO
       authentication (GET/POST/DELETE).** Found 2026-10-24. The new route
       from 2026-10-23 (`admin-panel/src/app/api/online-general-register/
@@ -3298,20 +3307,50 @@ pattern), it is noted as already-known and not re-filed as new.
       Fixed in code: `marksheetService.js` (`getClassSubjects`), `settingsService.js` (`getOptionalSubjects`, `saveClassSubjects`), and `supabase_service.dart` (`fetchClassSubjectsDetailed`) now defensively ensure any subject matching `/odi(a|ya)|mil/i` is always marked optional.
       In `marksheet-edit/page.js`: unentered optional subjects now display `—` instead of `0/50`, and saving empty optional inputs avoids creating phantom 0 marks.
       Verified: `npm run lint` clean (0 warnings), `flutter analyze` clean (0 new issues); confirmed in database that 100% of Odia/Odiya-Math subjects are `is_optional: true` and excluded from `totalMax` for non-Odia students.
-- [ ] **REQ-BUG-077 — Online General Register persistence is unreliable on
+- [~] **REQ-BUG-077 — Online General Register persistence is unreliable on
       Vercel and mutates a git-tracked file at runtime.** Found 2026-10-24
       (new module, commits 2026-10-23/24). `admin-panel/src/app/api/
-      online-general-register/route.js` keeps data in per-instance memory
-      and calls `fs.writeFileSync` into `src/data/onlineGeneralRegisterData.json`;
+      online-general-register/route.js` kept data in per-instance memory
+      and called `fs.writeFileSync` into `src/data/onlineGeneralRegisterData.json`;
       on Vercel serverless the filesystem is read-only/ephemeral, writes
-      fail **silently** (only a `console.warn`, route.js:27-29) and edits
-      vanish when the instance recycles, while concurrent instances diverge.
-      When writes DO succeed (dev/self-host), the route rewrites a
-      git-tracked source file full of student PII, generating diff noise
-      and risking mutated-PII commits. Real fix = a real store (Sonabase/
-      `student_import_phases`-style table — the module deliberately does
-      NOT touch `students`, keep that). Requires user decision before
-      coding (J12B: MAJOR-ish — data storage move).
+      failed **silently** (only a `console.warn`) and edits vanished when
+      the instance recycled, while concurrent instances diverged; in dev
+      it rewrote a git-tracked PII file. **CODED 2026-10-25 (user said
+      "code it"): storage moved to a real Supabase table.** New additive
+      migration `mobile-app/SUPABASE_ONLINE_GENERAL_REGISTER.sql` creates
+      `online_general_register` (id TEXT PK, section CHECK'd to
+      primary/general, snake_case columns matching the 16 register fields,
+      status default 'Pending', created/updated_at) +
+      `online_general_register_meta` (seed marker), RLS enabled +
+      `is_admin_user()` policy, anon defaults revoked up front. Route
+      rewritten: service-role client read/write (kiosk-settings pattern),
+      JSON persisted nowhere (in-memory cache and `fs.writeFileSync`
+      REMOVED entirely); first GET auto-seeds the table once from the
+      bundled JSON (idempotent upserts guarded by the meta seed marker, so
+      no PII rows in any tracked SQL file); camelCase JSON contract at the
+      route edge unchanged via a shared FIELD_MAP (page untouched).
+      Degradation contract: if the table is unavailable, GET still serves
+      the bundled snapshot plus an explicit top-level `warning`
+      (page keeps working ahead of the migration) while writes return an
+      explicit 500 naming the migration to run — never a fake write.
+      **PENDING (the one remaining step, user action): run
+      SUPABASE_ONLINE_GENERAL_REGISTER.sql in Supabase Dashboard → SQL
+      Editor** — this session had no Supabase MCP/DDL route, so the live
+      DB half is NOT yet applied or verified; local verification covered
+      lint + compile + the 401 auth gate only. After running: do one
+      logged-in Government Entry read (confirm data + no `warning`), one
+      edit round-trip, and (once seed is confirmed) the JSON file can be
+      removed from the repo in a follow-up (it stays in git history until
+      the optional REQ-SEC-021 purge).
+      **Migration APPLIED, verified 2026-10-25 (session 3): user ran it;
+      read-only PostgREST probe via curl with the service key from
+      .env.local (value never printed) returned 200 OK for BOTH
+      `online_general_register` and `online_general_register_meta`, 0 rows
+      — correct pre-seed state. Remaining after the route code is pushed:
+      deployed-route first read auto-seeds (expect 416 rows), then the
+      logged-in read/edit + no-warning click-through, then a follow-up
+      can remove the PII JSON from repo HEAD (history purge still
+      optional per REQ-SEC-021).**
 - [x] **REQ-BUG-078 — Online General Register input validation + error
       surfacing gaps.** Found 2026-10-24, same module. All 3 gaps
       **FIXED 2026-10-25** in the same change as REQ-SEC-022 (user said

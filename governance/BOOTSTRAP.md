@@ -98,7 +98,24 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Current — Session 2026-10-25 — REQ-SEC-022 FIXED + REQ-BUG-078 FIXED
+**Current — Session 2026-10-25-2 — REQ-BUG-077 CODED: Online GR storage
+moved to Supabase; migration PENDING (user apply).** New additive
+`mobile-app/SUPABASE_ONLINE_GENERAL_REGISTER.sql` (`online_general_register` +
+`online_general_register_meta`, RLS + `is_admin_user()` policy, anon
+revoked): run once in Supabase SQL Editor. Route rewritten onto the table
+(service-role client): per-instance memory cache and `fs.writeFileSync`
+REMOVED — no runtime writes to any file; first read auto-seeds once from
+the bundled JSON (idempotent, meta-marker-guarded); JSON contract at the
+route edge unchanged (page untouched); table-unavailable → GET serves
+bundled snapshot + explicit `warning`, writes give explicit
+"apply the migration" 500 (no fake success). REQ-SEC-022 guard +
+REQ-BUG-078 validation untouched. **Verified:** lint clean; route (99
+modules) + `/government-entry` (861 modules) compile clean; no-token GET
+→ 401. **NOT verified (blocked on migration + login):** DB read/write,
+auto-seed, browser behavior — checklist in TODO.md REQ-BUG-077. After
+seed confirmed, remove the PII JSON from repo HEAD in a follow-up.
+
+**Prior — Session 2026-10-25-1 — REQ-SEC-022 FIXED + REQ-BUG-078 FIXED
 (user said "start coding"), staged not committed.** `/api/online-general-register`
 route now verifies a real admin session on GET/POST/DELETE
 (`getAdminClient()` + `requireAdminSession()`, mirroring REQ-SEC-012's
@@ -1491,18 +1508,17 @@ Earlier checkpoints, one line each (full detail in the linked files):
 Open items, most recent first (superseded/completed items removed — see
 the checkpoint list above for what already shipped):
 
-0000. **REQ-SEC-022 route auth is FIXED (2026-10-25) — remaining from
-     the 2026-10-24 scan decisions:** (a) make
-     `github.com/sectofficework-droid/SATYAM-SCHOOL` private NOW (user,
-     one click — contains 416 students' PII incl. Aadhaar);
-     (b) decide on a history purge (destructive, §J4 approval needed);
-     (c) DONE — route auth + `authedFetch` live-verified 401s (see
-     SESSION-2026-10-25-1) but needs its logged-in happy-path
-     click-through: open Government Entry → Online GR as a real admin and
-     confirm the register loads/edits exactly as before + the new red
-     banner appears when a load fails (test with devtools offline);
-     (d) decide the OGR storage target (Supabase table instead of the
-     git-tracked JSON — REQ-BUG-077). Then REQ-SEC-023.
+0000. **RUN `mobile-app/SUPABASE_ONLINE_GENERAL_REGISTER.sql` (user,
+     Supabase Dashboard → SQL Editor) + then click-through** — the OGR
+     storage move (REQ-BUG-077) is coded: after running the SQL, do one
+     logged-in Government Entry read (data present, NO warning banner)
+     and one edit round-trip; the deployed route auto-seeds the table on
+     its first read. Once seed confirmed, a follow-up can delete
+     `admin-panel/src/data/onlineGeneralRegisterData.json` from HEAD.
+     Remaining decisions: (a) optional PII history purge (destructive,
+     §J4); (b) REQ-SEC-023 rate limiting + old-plaintext-regressor SQL
+     hygiene; (c) confirm prior work: Government Entry happy path on the
+     LIVE site (REQ-SEC-022 landed with `deea7e9`).
 
 000. **REQ-FEAT-021 (Batch Management) needs its real browser
      click-through** — this session only verified via `npm run lint` +
