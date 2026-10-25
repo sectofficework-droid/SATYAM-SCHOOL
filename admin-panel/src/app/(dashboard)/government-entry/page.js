@@ -247,6 +247,10 @@ export default function GovernmentEntryPage() {
   const [dbPhaseEntryEnrollments, setDbPhaseEntryEnrollments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  // REQ-BUG-078 (3): loadAll's individual Promise.allSettled rejections
+  // were silently swallowed before, rendering as an empty table with "no
+  // students match" instead of an error. loadError names what failed.
+  const [loadError, setLoadError] = useState(null);
   const [filters, setFilters] = useState({ cls: "All", session: "All", batch: "All", status: "All" });
   const [search, setSearch] = useState("");
   const [showNotDefinedOnly, setShowNotDefinedOnly] = useState(false);
@@ -265,13 +269,14 @@ export default function GovernmentEntryPage() {
   const loadAll = useCallback(async () => {
     setRefreshing(true);
     try {
-      const results = await Promise.allSettled([
-        getStudentsForReport(),
-        getAcademicYearLabels(),
-        getPhases(),
-        getAllPhaseEntryEnrollments(),
-        getOnlineGrData(),
-      ]);
+      const namedLoads = [
+        ["student roster", getStudentsForReport()],
+        ["academic sessions", getAcademicYearLabels()],
+        ["entry batches", getPhases()],
+        ["batch entries", getAllPhaseEntryEnrollments()],
+        ["online register", getOnlineGrData()],
+      ];
+      const results = await Promise.allSettled(namedLoads.map(([, p]) => p));
       const [students, sessions, phases, entries, grData] = results;
       if (students.status === "fulfilled") setDbStudents(students.value || []);
       if (sessions.status === "fulfilled" && sessions.value?.length) setDbSessions(sessions.value);
@@ -280,8 +285,23 @@ export default function GovernmentEntryPage() {
       if (grData.status === "fulfilled" && grData.value) {
         setOnlineGrDataset(grData.value);
       }
+      // REQ-BUG-078 (3): surface any failed load instead of showing an
+      // empty table that looks like "no data". First failure's own error
+      // message is kept for the actual cause (promise keeps it in .reason).
+      const failures = namedLoads
+        .map(([name], i) => ({ name, result: results[i] }))
+        .filter(({ result }) => result.status === "rejected");
+      if (failures.length) {
+        setLoadError(
+          "Failed to load: " +
+            failures.map(({ name, result }) => `${name} (${result.reason?.message || "unknown error"})`).join("; ")
+        );
+      } else {
+        setLoadError(null);
+      }
     } catch (e) {
       console.error("Government Entry loadAll error:", e);
+      setLoadError(e?.message || "Failed to load government entry data");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -970,6 +990,14 @@ export default function GovernmentEntryPage() {
 
   return (
     <div className={fullscreen ? "fixed inset-0 z-[100] bg-white overflow-y-auto p-5 space-y-3" : "space-y-3"}>
+      {/* REQ-BUG-078 (3): failed data loads used to render as a silent
+          empty table - show an explicit banner with what failed. */}
+      {loadError && (
+        <div className="flex items-start gap-2 border border-red-200 bg-red-50 text-red-800 px-3 py-2 rounded-lg text-sm">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-red-600"/>
+          <span>{loadError}</span>
+        </div>
+      )}
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>

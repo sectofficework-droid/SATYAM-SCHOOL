@@ -1391,6 +1391,16 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       in the repo; all verification is manual/local.
       **2026-09-04: user chose to skip for now**, same reasoning as
       REQ-HYG-001. Left open, not closed.
+- [ ] **REQ-HYG-008 — Session/work logs missing for the 2026-10-23 and
+      2026-10-24 commits (7 commits, Online General Register work).**
+      Found 2026-10-24 during the full-project issue scan: commits
+      `301d760`..`6918360` (new OGR module, student-edit validation fixes)
+      have no `SESSION-*.md`, no `LOG-*.md`, and no `BOOTSTRAP.md`
+      checkpoint — §D logging was skipped two sessions running.
+      `BOOTSTRAP.md`'s "staged, not committed" note from 2026-10-22 is now
+      stale (git is clean and pushed). Backfill still pending; the
+      2026-10-24 scan session (`SESSION-2026-10-24-1.md`) recorded the
+      drift but did not reconstruct the missing sessions' detail.
 - [~] **REQ-HYG-006 — No centralized diagnostic/observability logging.**
       Added 2026-09-16 when `AGENTS.md`/`RULEBOOK.md` §L (mandatory
       debugging & diagnostic logging) was merged in.
@@ -2613,6 +2623,68 @@ pattern), it is noted as already-known and not re-filed as new.
       (the RPC itself also requires `MARK_ABSENT_CRON_SECRET`); `attendance-
       reminders` does not, so a misconfigured deployment would let anyone
       trigger bulk attendance-nag notifications to every class teacher.
+- [ ] **REQ-SEC-021 — 416-student PII register (incl. Aadhaar) committed to
+      the PUBLIC GitHub repo.** Found 2026-10-24. `admin-panel/src/data/
+      onlineGeneralRegisterData.json` (commit `eedeeda`, 2026-10-23, pushed
+      to `origin/main`) holds 416 real student records with `name`,
+      `mobile1`/`mobile2`, DOB, **`aadharNo`**, PEN, APAAR, UDISE — minors'
+      PII. `github.com/sectofficework-droid/SATYAM-SCHOOL` is **Public**
+      (verified 2026-10-24 by fetching it unauthenticated). Directly
+      contradicts the 2026-10-22 session's own practice of keeping student
+      PII out of tracked files. Deleting the file is NOT sufficient — the
+      data is in git history on a public remote. Needs a decision from the
+      user: make the repo private (one click, reversible, recommended
+      first step) and/or purge history (filter-repo/BFG + force-push =
+      destructive, needs §J4 approval), plus removing the file from HEAD.
+      Severity amplified by REQ-SEC-022 (the same data is served live by an
+      unauthenticated API) and REQ-SEC-023 (shared default password is
+      public in the same repo).
+- [x] **REQ-SEC-022 — `/api/online-general-register` has ZERO
+      authentication (GET/POST/DELETE).** Found 2026-10-24. The new route
+      from 2026-10-23 (`admin-panel/src/app/api/online-general-register/
+      route.js`) performed no session check on any handler — unauthenticated
+      GET returned the full 416-record PII register live from the deployed
+      Vercel URL, and unauthenticated POST/DELETE could create/update/delete
+      records. Reintroduced exactly the REQ-SEC-012 bug class fixed for
+      `kiosk-settings`/`staff-attendance` on 2026-10-04, skipping the
+      codebase's own `requireAdminSession()` pattern
+      (`src/lib/apiAuth.js:33`). Client half also skipped: `onlineGrService.js`
+      used plain `fetch` instead of `authedFetch`.
+      **FIXED 2026-10-25 (user said "start coding").** Mirrors the
+      REQ-SEC-012 pattern exactly: `getAdminClient()` +
+      `requireAdminSession()` guard on all 3 handlers (shared local
+      `authorizeAdmin(request)` in route.js), and `onlineGrService.js`
+      rewritten onto `authedFetch` so the client attaches the real session
+      token (same mechanism UsersRolesTab.js → /api/admin-users uses in
+      production). Zero mobile callers re-confirmed before applying the
+      web-session helper (grep of mobile-app/lib for the path: no matches)
+      per `apiAuth.js`'s own usage rule. **Verified (Level 3, dev server,
+      live HTTP):** `npm run lint` clean; dev server compiled the route
+      (101 modules) and `/government-entry` (862 modules) with zero
+      errors; unauthenticated GET → 401 `{"error":"Not authenticated"}`,
+      no-token DELETE → 401, garbage-token GET → 401, no-token POST → 401.
+      **NOT verified in-browser:** no logged-in session credential this
+      session — the authorized happy path (logged-in admin reads the
+      register) is pattern-proven by UsersRolesTab.js's identical
+      mechanism in production, but not click-through; exercise
+      Government Entry → Online GR yourself before relying on it.
+      REQ-SEC-021 (the PII in the public repo + git history) is UNTOUCHED
+      by this fix — still needs the user's repo-privacy/history decisions.
+- [ ] **REQ-SEC-023 — Shared default password `Satyam@123` is publicly
+      known + login RPCs have no rate limiting.** Found 2026-10-24 (amplify
+      of a pre-existing design, new because of repo visibility). The
+      default `app_password` literal appears throughout `mobile-app/*.sql`
+      (e.g. `SUPABASE_FIX_COLUMNS.sql:5-6`, older plaintext-compare login
+      RPCs in `SUPABASE_SUPPORTING_TEACHERS.sql`, `SUPABASE_TEACHER_CLASS_FIX.sql`,
+      `SUPABASE_HELPDESK.sql`) and lives in the PUBLIC repo. Combined with
+      REQ-SEC-002's still-open no-rate-limiting remainder on
+      `teacher_login`/`student_login` (anon-granted, unlimited attempts),
+      any staff/student who never changed the default is trivially
+      guessable by anyone who reads GitHub. Needs a user decision: whether
+      the repo goes private (REQ-SEC-021) is enough, or the default must be
+      rotated per-account / rate limiting added. Old SQL files that would
+      regress the bcrypt fix if re-run (`SUPABASE_APP_AUTH.sql`,
+      `SUPABASE_FIX_COLUMNS.sql` plaintext UPDATE) should be marked/run-order-gated.
 
 ### New functional bugs — mobile app (found during this audit)
 
@@ -3226,6 +3298,56 @@ pattern), it is noted as already-known and not re-filed as new.
       Fixed in code: `marksheetService.js` (`getClassSubjects`), `settingsService.js` (`getOptionalSubjects`, `saveClassSubjects`), and `supabase_service.dart` (`fetchClassSubjectsDetailed`) now defensively ensure any subject matching `/odi(a|ya)|mil/i` is always marked optional.
       In `marksheet-edit/page.js`: unentered optional subjects now display `—` instead of `0/50`, and saving empty optional inputs avoids creating phantom 0 marks.
       Verified: `npm run lint` clean (0 warnings), `flutter analyze` clean (0 new issues); confirmed in database that 100% of Odia/Odiya-Math subjects are `is_optional: true` and excluded from `totalMax` for non-Odia students.
+- [ ] **REQ-BUG-077 — Online General Register persistence is unreliable on
+      Vercel and mutates a git-tracked file at runtime.** Found 2026-10-24
+      (new module, commits 2026-10-23/24). `admin-panel/src/app/api/
+      online-general-register/route.js` keeps data in per-instance memory
+      and calls `fs.writeFileSync` into `src/data/onlineGeneralRegisterData.json`;
+      on Vercel serverless the filesystem is read-only/ephemeral, writes
+      fail **silently** (only a `console.warn`, route.js:27-29) and edits
+      vanish when the instance recycles, while concurrent instances diverge.
+      When writes DO succeed (dev/self-host), the route rewrites a
+      git-tracked source file full of student PII, generating diff noise
+      and risking mutated-PII commits. Real fix = a real store (Sonabase/
+      `student_import_phases`-style table — the module deliberately does
+      NOT touch `students`, keep that). Requires user decision before
+      coding (J12B: MAJOR-ish — data storage move).
+- [x] **REQ-BUG-078 — Online General Register input validation + error
+      surfacing gaps.** Found 2026-10-24, same module. All 3 gaps
+      **FIXED 2026-10-25** in the same change as REQ-SEC-022 (user said
+      "start coding"). (1) `route.js`: `section` now routes through
+      `pickSectionList()` which returns null for anything but exactly
+      `"primary"`/`"general"` → 400 with an explicit message (was a truthy
+      ternary silently writing to General). (2) `route.js`: new
+      `UPDATABLE_FIELDS` allowlist (16 register fields; `id`/`section`
+      excluded) — `updates` keys are filtered into `safeUpdates` before
+      any spread, and `updates` itself must be a non-array object (400
+      otherwise); the create branch now spreads `safeUpdates` over
+      explicit per-field defaults instead of `...updates`, and its
+      computed `status` no longer reads raw `updates` (uses
+      `updatedItem.grNo` — same observable rule: grNo present ⇒ Done).
+      (3) `government-entry/page.js`: `loadAll` now names its loads, maps
+      rejected results to a `loadError` string (`"Failed to load: <name>
+      (<error message>)"`), and a red `AlertTriangle` banner renders above
+      the page header when set (state added alongside `refreshing`;
+      matches the file's existing `AlertTriangle` usage). Skipped any →
+      the banner lists them specifically. **Verified:** `npm run lint`
+      clean; dev server compiled `/government-entry` (862 modules) +
+      the API route with zero errors; unauthed 401 gates confirmed live
+      (see REQ-SEC-022). **NOT verified in-browser:** the banner's visual
+      rendering needs a real logged-in session and a deliberately failing
+      backend call — do a refresh with network throttled/offline once to
+      see it. Also note: persistent-divergence root cause is separate
+      (REQ-BUG-077, still open — storage decision pending).
+- [ ] **REQ-BUG-079 — TC generator date fields fall back to UNESCAPED
+      `String(v)` (stored-XSS residual).** Found 2026-10-24 re-scan of
+      REQ-SEC-015. `src/lib/tcGenerator.js`'s `fmtTcDate`/`dobParts`
+      (lines 107/113/127) interpolate via `dobDmy`/`admissionDmy`/
+      `leavingDmy` at lines 368/385/411 — when the value isn't a parseable
+      date it falls through to unescaped `String(v)` in
+      `generateSchoolLeavingCertificateSheet`; only backdrop is import-time
+      date validation. Minor (admin-typed data, admin-only render), but
+      cheap to close: wrap the fallback in `esc()`.
 - [x] **REQ-FEAT-010 — Staff Attendance (Kiosk) report gained a third,
       spreadsheet-style editable "Grid" view. DONE 2026-10-15.** User asked
       for the attendance report to be "easily editable by admin like a

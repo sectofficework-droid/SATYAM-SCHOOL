@@ -98,9 +98,48 @@ Do not re-verify these next session unless the task depends on them or the
 environment may have changed (§C.2).
 
 ## Code status
-**Current — Session 2026-10-19 — new Notebook module + marks report coded
+**Current — Session 2026-10-25 — REQ-SEC-022 FIXED + REQ-BUG-078 FIXED
+(user said "start coding"), staged not committed.** `/api/online-general-register`
+route now verifies a real admin session on GET/POST/DELETE
+(`getAdminClient()` + `requireAdminSession()`, mirroring REQ-SEC-012's
+kiosk-settings pattern; mobile-caller grep re-run first: zero matches), and
+`onlineGrService.js` switched onto `authedFetch` so page calls carry the
+real token. Same change: section now validated to exactly
+"primary"/"general" (400 otherwise) and `updates` filtered through a
+16-field `UPDATABLE_FIELDS` allowlist; `government-entry/page.js`
+surfaces per-load failures in a red AlertTriangle banner (loadError
+state) instead of a silent empty table. **Verified Level 3 (dev server,
+live HTTP):** lint clean; route + `/government-entry` compiled zero
+errors; unauthed/garbage-token GET/POST/DELETE all → 401 live. **NOT
+verified in-browser:** logged-in happy path (no credentials here) — open
+Government Entry yourself once. UNCHANGED and still critical:
+REQ-SEC-021 (PII in public GitHub repo + history), REQ-SEC-023, REQ-BUG-077.
+Detail: `ai-context\SESSION-2026-10-25-1.md`, `work-log\LOG-2026-10-25.md`.
+
+**Prior — Session 2026-10-24 — full-project issue scan (read-only audit),
+findings recorded, NO code changed.** Repo clean + in sync with
+`origin/main` at `6918360`. Scan found 3 CRITICAL + several lesser issues,
+all now tracked in `planning\TODO.md`: **REQ-SEC-021** (416-student PII
+JSON incl. Aadhaar committed to the now-verified-PUBLIC GitHub repo,
+commits 2026-10-23/24) · **REQ-SEC-022** (new `/api/online-general-register`
+route has zero auth — GET serves the PII register live, POST/DELETE are
+open writes) · **REQ-SEC-023** (default `app_password` `Satyam@123` publicly
+in-repo + no login rate limiting) · **REQ-BUG-077/078** (OGR persistence
+silently fails on Vercel + mutates a tracked file; no input validation /
+silent error swallowing) · **REQ-BUG-079** (TC generator date-field escaping
+residual) · **REQ-HYG-008** (session logs missing for the 7 commits of
+2026-10-23/24 — two sessions skipped §D logging; backfill pending). All
+four `api/s3/*` routes (REQ-SEC-013) and both cron guards (REQ-SEC-020)
+re-verified STILL open against current code. Awaiting user decisions:
+repo → private now? / PII history purge? / "code it" for the route fix.
+Detail: `ai-context\SESSION-2026-10-24-1.md`, `work-log\LOG-2026-10-24.md`.
+
+**Prior — Session 2026-10-19 — new Notebook module + marks report coded
 (REQ-FEAT-020), not committed yet (about to be, per user's "push after
-done").** Per-student, per-subject notebook-complete grid with autosave,
+done").** *(Note 2026-10-24: the "not committed" claim is stale — git has
+been clean and pushed since; REQ-FEAT-020 is `[x]` in TODO.md. The 7
+commits since are the unlogged 2026-10-23/24 work, see REQ-HYG-008.)*
+Per-student, per-subject notebook-complete grid with autosave,
 plus a tick-based marks report. New `notebook_log` table (RLS +
 `is_admin_user()` policy, `anon`'s default grant explicitly revoked up
 front this time) and 3 session-gated RPCs (`save_notebook_entry` -
@@ -394,7 +433,42 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-10-22 — REQ-FEAT-021 (Batch Management +
+**Current — Session 2026-10-25 — REQ-SEC-022 + REQ-BUG-078 FIXED
+(user: "start coding").** Files: `admin-panel/src/app/api/online-general-register/route.js`
+(admin-session guard on all 3 handlers via shared local `authorizeAdmin()` +
+`pickSectionList()` + `UPDATABLE_FIELDS` whitelist),
+`admin-panel/src/lib/onlineGrService.js` (plain `fetch` → `authedFetch`),
+`admin-panel/src/app/(dashboard)/government-entry/page.js` (`loadError`
+state + red banner for failed loads). Mobile-caller grep re-confirmed
+zero matches before applying the web-session helper (apiAuth.js's own
+rule). **Verified:** `npm run lint` clean; dev-server live HTTP —
+unauthed/garbage-token GET/POST/DELETE → 401 every time; route (101
+modules) + `/government-entry` (862 modules) compiled zero errors. **NOT
+verified:** logged-in happy path in a real browser session. Staged, not
+committed. Still the #1 blocker: REQ-SEC-021 (PII + public repo + git
+history) — user decision; then REQ-BUG-077 storage, REQ-SEC-023.
+
+**Prior — Session 2026-10-24 — full-project issue scan (read-only
+audit), findings recorded; no code, git, or DB action taken.** Repo clean
+on `main`, in sync with `origin/main` (`6918360`, 2026-10-24 20:02).
+Critical findings now tracked in `planning\TODO.md` — REQ-SEC-021
+(416-student PII incl. Aadhaar in the PUBLIC GitHub repo via
+`admin-panel/src/data/onlineGeneralRegisterData.json`, pushed 2026-10-23) ·
+REQ-SEC-022 (`/api/online-general-register` GET/POST/DELETE with zero
+auth, live on Vercel; service uses plain `fetch` not `authedFetch`) ·
+REQ-SEC-023 (public `Satyam@123` default password + no login rate
+limiting). Plus REQ-BUG-077 (OGR persistence silently fails on Vercel +
+mutates the tracked JSON), REQ-BUG-078 (no `section` validation, raw
+`...updates`, swallowed `allSettled` errors), REQ-BUG-079 (TC date-field
+escaping residual), REQ-HYG-008 (the 7 commits of 2026-10-23/24 are
+unlogged — required this session's backfill of the gap-marker, not yet the
+missing session detail). REQ-SEC-013 (all 4 `api/s3/*` routes unauthed +
+wildcard CORS in `view-url`) and REQ-SEC-020 (both cron guards fail open)
+verified still open. **Blocked on user decisions:** repo → private?
+/ history purge? / "code it" for the route fix. Detail:
+`ai-context\SESSION-2026-10-24-1.md`, `work-log\LOG-2026-10-24.md`.
+
+**Prior — Session 2026-10-22 — REQ-FEAT-021 (Batch Management +
 default batch selector to "No Batch"), MAJOR per J12B, coded and partly
 live-verified.**
 User: batch selection was "creat[ing] unnecssary extra batch everytime i
@@ -1416,6 +1490,19 @@ Earlier checkpoints, one line each (full detail in the linked files):
 ## Next step
 Open items, most recent first (superseded/completed items removed — see
 the checkpoint list above for what already shipped):
+
+0000. **REQ-SEC-022 route auth is FIXED (2026-10-25) — remaining from
+     the 2026-10-24 scan decisions:** (a) make
+     `github.com/sectofficework-droid/SATYAM-SCHOOL` private NOW (user,
+     one click — contains 416 students' PII incl. Aadhaar);
+     (b) decide on a history purge (destructive, §J4 approval needed);
+     (c) DONE — route auth + `authedFetch` live-verified 401s (see
+     SESSION-2026-10-25-1) but needs its logged-in happy-path
+     click-through: open Government Entry → Online GR as a real admin and
+     confirm the register loads/edits exactly as before + the new red
+     banner appears when a load fails (test with devtools offline);
+     (d) decide the OGR storage target (Supabase table instead of the
+     git-tracked JSON — REQ-BUG-077). Then REQ-SEC-023.
 
 000. **REQ-FEAT-021 (Batch Management) needs its real browser
      click-through** — this session only verified via `npm run lint` +
