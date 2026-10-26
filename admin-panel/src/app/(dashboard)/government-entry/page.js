@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X,
   Loader2, HelpCircle, Search, Maximize2, Minimize2, Download, BookOpen,
-  ChevronUp, ChevronDown, Trash2, UserPlus, Upload, FileText, Calendar, Pencil,
-  ChevronsDown, ChevronsUp
+  ChevronUp, ChevronDown, Trash2, UserPlus, Upload, FileText, Calendar, Pencil
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import supabase from "@/lib/supabase";
@@ -671,39 +670,21 @@ export default function GovernmentEntryPage() {
     return () => window.removeEventListener("resize", measure);
   }, [frozenCount, rows, columns]);
 
-  // ── Table Scrolling & Fast Scroll Down ──────────────────────────────────
+  // ── Auto-scroll to end of table by default ──────────────────────────────
   const tableContainerRef = useRef(null);
-  const [tableScrollPos, setTableScrollPos] = useState({ isAtTop: true, isAtBottom: false, hasScroll: false });
-
-  const handleTableScroll = useCallback(() => {
-    const el = tableContainerRef.current;
-    if (!el) return;
-    const isAtTop = el.scrollTop <= 40;
-    const isAtBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 40;
-    const hasScroll = el.scrollHeight > el.clientHeight + 60;
-    setTableScrollPos({ isAtTop, isAtBottom, hasScroll });
-  }, []);
 
   useEffect(() => {
-    const timer = setTimeout(handleTableScroll, 120);
+    const el = tableContainerRef.current;
+    if (!el) return;
+    const scrollToEnd = () => {
+      if (tableContainerRef.current) {
+        tableContainerRef.current.scrollTop = tableContainerRef.current.scrollHeight;
+      }
+    };
+    requestAnimationFrame(scrollToEnd);
+    const timer = setTimeout(scrollToEnd, 60);
     return () => clearTimeout(timer);
-  }, [rows, mainTab, grSubTab, handleTableScroll]);
-
-  function scrollTableToBottom(smooth = true) {
-    if (!tableContainerRef.current) return;
-    tableContainerRef.current.scrollTo({
-      top: tableContainerRef.current.scrollHeight,
-      behavior: smooth ? "smooth" : "auto",
-    });
-  }
-
-  function scrollTableToTop(smooth = true) {
-    if (!tableContainerRef.current) return;
-    tableContainerRef.current.scrollTo({
-      top: 0,
-      behavior: smooth ? "smooth" : "auto",
-    });
-  }
+  }, [rows, mainTab, grSubTab, filters]);
 
   // ── Entry Done modal ────────────────────────────────────────────────────
   const [modalRow, setModalRow] = useState(null);
@@ -2321,30 +2302,6 @@ export default function GovernmentEntryPage() {
                   {rows.length} {rows.length === 1 ? "student" : "students"}
                 </span>
 
-                {/* Fast scroll down / top toolbar buttons */}
-                {rows.length > 5 && (
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => scrollTableToBottom(true)}
-                      title="Fast scroll down to bottom of table"
-                      className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 hover:text-school-navy shadow-xs transition-all"
-                    >
-                      <ChevronsDown className="w-3.5 h-3.5 text-school-navy"/> Scroll Down
-                    </button>
-                    {!tableScrollPos.isAtTop && (
-                      <button
-                        type="button"
-                        onClick={() => scrollTableToTop(true)}
-                        title="Scroll back to top of table"
-                        className="flex items-center gap-1 text-xs font-semibold px-2 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 hover:text-school-navy shadow-xs transition-all"
-                      >
-                        <ChevronsUp className="w-3.5 h-3.5 text-school-navy"/> Top
-                      </button>
-                    )}
-                  </div>
-                )}
-
                 {mainTab === "onlineGr" && (
                   <button
                     type="button"
@@ -2360,12 +2317,10 @@ export default function GovernmentEntryPage() {
           </div>
 
           {/* Table */}
-          <div className="relative group">
-            <div
-              ref={tableContainerRef}
-              onScroll={handleTableScroll}
-              className={`overflow-auto rounded-xl border border-gray-200 shadow-sm ${fullscreen ? "max-h-[calc(100vh-220px)]" : "max-h-[70vh]"}`}
-            >
+          <div
+            ref={tableContainerRef}
+            className={`overflow-auto rounded-xl border border-gray-200 shadow-sm ${fullscreen ? "max-h-[calc(100vh-220px)]" : "max-h-[70vh]"}`}
+          >
               <table className="text-xs w-full">
               <thead>
                 <tr className="bg-school-navy text-white">
@@ -2523,33 +2478,6 @@ export default function GovernmentEntryPage() {
               </tbody>
             </table>
           </div>
-
-          {/* Floating fast scroll down / top action widget */}
-          {rows.length > 8 && (
-            <div className="absolute bottom-4 right-5 flex flex-col items-end gap-1.5 z-20 pointer-events-none">
-              {!tableScrollPos.isAtTop && (
-                <button
-                  type="button"
-                  onClick={() => scrollTableToTop(true)}
-                  title="Scroll to top of table"
-                  className="pointer-events-auto flex items-center gap-1 bg-white/95 hover:bg-white text-school-navy border border-gray-300 text-[11px] font-semibold px-2.5 py-1 rounded-full shadow-md backdrop-blur-xs transition-all hover:scale-105 active:scale-95"
-                >
-                  <ChevronsUp className="w-3.5 h-3.5 text-school-navy"/> Top
-                </button>
-              )}
-              {!tableScrollPos.isAtBottom && (
-                <button
-                  type="button"
-                  onClick={() => scrollTableToBottom(true)}
-                  title="Fast scroll down to bottom of table"
-                  className="pointer-events-auto flex items-center gap-1.5 bg-school-navy hover:bg-blue-900 text-white text-xs font-semibold px-3.5 py-2 rounded-full shadow-xl transition-all hover:scale-105 active:scale-95 border border-white/20"
-                >
-                  <ChevronsDown className="w-4 h-4 animate-bounce"/> Fast Scroll Down
-                </button>
-              )}
-            </div>
-          )}
-        </div>
         </>
       )}
 
