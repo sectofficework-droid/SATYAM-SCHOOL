@@ -2373,7 +2373,11 @@ export default function GovernmentEntryPage() {
           <div
             ref={tableContainerRef}
             onScroll={handleTableScroll}
-            className={`overflow-auto rounded-xl border border-gray-200 shadow-sm ${fullscreen ? "max-h-[calc(100vh-220px)]" : "max-h-[70vh]"}`}
+            className={`overflow-auto rounded-xl border border-gray-200 shadow-sm ${
+              fullscreen
+                ? "max-h-[calc(100vh-250px)]"
+                : "max-h-[calc(100vh-280px)] min-h-[350px]"
+            }`}
           >
               <table className="text-xs w-full">
               <thead>
@@ -2538,23 +2542,23 @@ export default function GovernmentEntryPage() {
             </table>
           </div>
 
-          {/* Sub-tabs below table for Online General Register (Primary vs General) */}
+          {/* Sub-tabs frozen below table for Online General Register (Primary vs General) */}
           {mainTab === "onlineGr" && (
-            <div className="flex flex-wrap items-center justify-between gap-3 mt-2">
-              <div className="flex gap-1 bg-gray-100/90 border border-gray-200 rounded-xl p-1 w-fit shadow-xs">
+            <div className="sticky bottom-0 z-30 bg-white/95 backdrop-blur-md border border-gray-200 rounded-xl px-3.5 py-2 shadow-md flex flex-wrap items-center justify-between gap-3 mt-1.5">
+              <div className="flex gap-1 bg-gray-100 p-1 rounded-xl border border-gray-200 w-fit">
                 <button
                   type="button"
                   onClick={() => setGrSubTab("primary")}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     grSubTab === "primary"
-                      ? "bg-white text-school-navy shadow-sm border border-gray-200"
-                      : "text-gray-600 hover:text-gray-900 hover:bg-white/50"
+                      ? "bg-school-navy text-white shadow-sm"
+                      : "text-gray-600 hover:text-gray-900 hover:bg-white/60"
                   }`}
                 >
-                  <BookOpen className="w-3.5 h-3.5 text-school-navy"/>
-                  Primary (JR, SR, Balvatika)
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                    grSubTab === "primary" ? "bg-blue-50 text-school-navy" : "bg-gray-200/80 text-gray-600"
+                  <BookOpen className="w-3.5 h-3.5"/>
+                  <span>Primary (JR, SR, Balvatika)</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    grSubTab === "primary" ? "bg-white/20 text-white" : "bg-gray-200 text-gray-700"
                   }`}>
                     {(onlineGrDataset.primary || []).length}
                   </span>
@@ -2562,24 +2566,27 @@ export default function GovernmentEntryPage() {
                 <button
                   type="button"
                   onClick={() => setGrSubTab("general")}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
                     grSubTab === "general"
-                      ? "bg-white text-school-navy shadow-sm border border-gray-200"
-                      : "text-gray-600 hover:text-gray-900 hover:bg-white/50"
+                      ? "bg-school-navy text-white shadow-sm"
+                      : "text-gray-600 hover:text-gray-900 hover:bg-white/60"
                   }`}
                 >
-                  <BookOpen className="w-3.5 h-3.5 text-school-navy"/>
-                  General (1st+)
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                    grSubTab === "general" ? "bg-blue-50 text-school-navy" : "bg-gray-200/80 text-gray-600"
+                  <BookOpen className="w-3.5 h-3.5"/>
+                  <span>General (1st+)</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    grSubTab === "general" ? "bg-white/20 text-white" : "bg-gray-200 text-gray-700"
                   }`}>
                     {(onlineGrDataset.general || []).length}
                   </span>
                 </button>
               </div>
 
-              <div className="text-xs text-gray-500 font-medium">
-                Register: <span className="font-semibold text-gray-700">{grSubTab === "primary" ? "Primary Register (PR)" : "General Register (GR)"}</span>
+              <div className="flex items-center gap-2 text-xs text-gray-500 font-medium">
+                <span className="hidden sm:inline">Active Register:</span>
+                <span className="font-bold text-gray-800 bg-gray-100 px-2.5 py-1 rounded-lg border border-gray-200">
+                  {grSubTab === "primary" ? "Primary Register (PR)" : "General Register (GR)"}
+                </span>
               </div>
             </div>
           )}
