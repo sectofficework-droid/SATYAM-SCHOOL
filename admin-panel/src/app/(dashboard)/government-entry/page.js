@@ -697,6 +697,7 @@ export default function GovernmentEntryPage() {
   const [addEligFilter, setAddEligFilter] = useState("eligible"); // "eligible" | "ineligible" | "all"
   const [addSelectedStudent, setAddSelectedStudent] = useState(null);
   const [addGrNo, setAddGrNo] = useState("");
+  const [addGrEditing, setAddGrEditing] = useState(false);
   const [addCreatedRowId, setAddCreatedRowId] = useState(null);
   const [addError, setAddError] = useState("");
   const [addSaving, setAddSaving] = useState(false);
@@ -717,6 +718,7 @@ export default function GovernmentEntryPage() {
     setAddEligFilter("eligible");
     setAddSelectedStudent(null);
     setAddGrNo("");
+    setAddGrEditing(false);
     setAddCreatedRowId(null);
     setAddPinnedEnrollNo(null);
     setAddError("");
@@ -753,9 +755,26 @@ export default function GovernmentEntryPage() {
     setFormGrNo(addGrNo);
   }
 
+  function getSavedGrNo(st) {
+    if (!st) return "";
+    if (st.grNo && st.grNo !== "-") return String(st.grNo).trim();
+    const sec = classSection(st.cls);
+    if (sec && onlineGrDataset[sec]) {
+      const found = onlineGrDataset[sec].find(r =>
+        (r.enrollNo && r.enrollNo === st.enrollNo) ||
+        (st.aadharNo && r.aadharNo && r.aadharNo !== "-" && r.aadharNo === st.aadharNo) ||
+        (st.mobile1 && r.mobile1 && r.mobile1 !== "-" && r.mobile1 === st.mobile1)
+      );
+      if (found?.grNo && found.grNo !== "-") return String(found.grNo).trim();
+    }
+    return "";
+  }
+
   function selectAddStudent(st) {
+    const existingGr = getSavedGrNo(st);
     setAddSelectedStudent(st);
-    setAddGrNo("");
+    setAddGrNo(existingGr);
+    setAddGrEditing(!existingGr);
     setAddError("");
   }
 
@@ -763,6 +782,7 @@ export default function GovernmentEntryPage() {
     if (addCreatedRowId) return; // already saved against this student — can't swap
     setAddSelectedStudent(null);
     setAddGrNo("");
+    setAddGrEditing(false);
     setAddError("");
   }
 
@@ -774,7 +794,18 @@ export default function GovernmentEntryPage() {
     setAddSaving(true);
     setAddError("");
     try {
-      const dec = decorate(addSelectedStudent);
+      // If GR No was changed or newly set, also sync to students table
+      const studentId = addSelectedStudent.studentId || addSelectedStudent.id;
+      if (studentId && addGrNo.trim() !== String(addSelectedStudent.grNo || "").trim()) {
+        try {
+          await updateStudentGovId(studentId, { grNo: addGrNo.trim() });
+          setDbStudents(prev => prev.map(s => s.enrollNo === addSelectedStudent.enrollNo ? { ...s, grNo: addGrNo.trim() } : s));
+        } catch (err) {
+          console.warn("Could not sync GR No to student record:", err);
+        }
+      }
+
+      const dec = decorate({ ...addSelectedStudent, grNo: addGrNo.trim() });
       const id = addCreatedRowId || (
         (typeof crypto !== "undefined" && crypto.randomUUID)
           ? crypto.randomUUID()
@@ -813,7 +844,7 @@ export default function GovernmentEntryPage() {
         documentsPending: dec.documentsPending,
       });
       setAddCreatedRowId(id);
-      setAddSelectedStudent(prev => prev ? { ...prev, remarks: remarksToSave } : prev);
+      setAddSelectedStudent(prev => prev ? { ...prev, grNo: addGrNo.trim(), remarks: remarksToSave } : prev);
       setOnlineGrDataset(prev => {
         const list = prev[addSection] || [];
         const idx = list.findIndex(r => r.id === id);
@@ -1870,14 +1901,85 @@ export default function GovernmentEntryPage() {
                     );
                   })()}
 
-                  <div className="flex flex-col gap-1 pt-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                      {addSection === "primary" ? "PR No (Primary Register No)" : "GR No (General Register No)"}
-                    </label>
-                    <input type="text" value={addGrNo} onChange={e => setAddGrNo(e.target.value)}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"
-                      placeholder={addSection === "primary" ? "e.g. P101" : "e.g. 201"}/>
-                  </div>
+                  {/* GR / PR Number Section */}
+                  {(() => {
+                    const existingGr = getSavedGrNo(addSelectedStudent);
+                    const isPrimary = addSection === "primary";
+                    const labelTitle = isPrimary ? "PR No (Primary Register No)" : "GR No (General Register No)";
+
+                    if (existingGr && !addGrEditing) {
+                      return (
+                        <div className="flex items-center justify-between p-3 bg-green-50/80 border border-green-200 rounded-lg">
+                          <div className="flex items-center gap-2.5">
+                            <span className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0 animate-pulse"></span>
+                            <div>
+                              <div className="text-[10px] font-bold text-green-800 uppercase tracking-wider flex items-center gap-1.5">
+                                <span>{labelTitle}</span>
+                                <span className="bg-green-200 text-green-800 text-[9px] px-1.5 py-0.5 rounded font-semibold">Already Saved in Record</span>
+                              </div>
+                              <div className="text-base font-bold text-gray-900 tracking-wide font-mono mt-0.5">
+                                {addGrNo || existingGr}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setAddGrEditing(true)}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-school-navy hover:text-blue-900 bg-white border border-gray-300 hover:border-school-navy px-3 py-1.5 rounded-md shadow-sm transition-all"
+                          >
+                            ✏️ Edit {isPrimary ? "PR No" : "GR No"}
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="flex flex-col gap-1.5 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wider">
+                            {existingGr ? `Edit ${labelTitle}` : `${labelTitle} *`}
+                          </label>
+                          {existingGr && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAddGrNo(existingGr);
+                                setAddGrEditing(false);
+                              }}
+                              className="text-[11px] font-medium text-gray-500 hover:text-gray-700 underline"
+                            >
+                              Cancel edit (keep {existingGr})
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={addGrNo}
+                            onChange={e => setAddGrNo(e.target.value)}
+                            placeholder={isPrimary ? "e.g. P101" : "e.g. 201"}
+                            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy bg-white"
+                            autoFocus={addGrEditing}
+                          />
+                          {existingGr && (
+                            <button
+                              type="button"
+                              onClick={() => setAddGrEditing(false)}
+                              disabled={!addGrNo.trim()}
+                              className="text-xs font-semibold px-3 py-2 bg-school-navy text-white rounded-lg hover:bg-blue-900 transition-colors disabled:opacity-50"
+                            >
+                              Done
+                            </button>
+                          )}
+                        </div>
+                        {!existingGr && (
+                          <span className="text-[11px] text-amber-700">
+                            ℹ️ Student currently does not have a {isPrimary ? "PR No" : "GR No"} assigned. Enter it here to save.
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
