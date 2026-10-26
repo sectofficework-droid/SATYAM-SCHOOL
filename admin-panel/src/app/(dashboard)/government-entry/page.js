@@ -710,6 +710,148 @@ export default function GovernmentEntryPage() {
   // entry modals so it can't drift from what was just registered.
   const isWizardEntry = addWizardActive && addSubPhase === "entry";
 
+  // ── Persistent In-Progress Wizard State (Resume Progress) ───────────────
+  const [inProgressSession, setInProgressSession] = useState(null);
+
+  useEffect(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem("ssis_gov_entry_wizard_progress") : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.enrollNo || parsed?.grNo) {
+          setInProgressSession(parsed);
+        }
+      }
+    } catch {}
+  }, []);
+
+  function saveProgressToStorage(data) {
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.setItem("ssis_gov_entry_wizard_progress", JSON.stringify(data));
+      }
+      setInProgressSession(data);
+    } catch {}
+  }
+
+  function clearProgressFromStorage() {
+    try {
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("ssis_gov_entry_wizard_progress");
+      }
+      setInProgressSession(null);
+    } catch {}
+  }
+
+  function dismissInProgress() {
+    clearProgressFromStorage();
+  }
+
+  function resumeProgress(saved) {
+    if (!saved) return;
+    const student = dbStudents.find(
+      s => (saved.enrollNo && s.enrollNo === saved.enrollNo) ||
+           (saved.studentId && (s.studentId === saved.studentId || s.id === saved.studentId)) ||
+           (saved.grNo && s.grNo === saved.grNo)
+    ) || (saved.student ? decorate(saved.student) : null);
+
+    if (!student) {
+      alert("Could not locate the student record in database.");
+      return;
+    }
+
+    const step = saved.step || 2;
+    const subPhase = saved.subPhase || "details";
+    const grNo = saved.grNo || student.grNo || "";
+    const createdRowId = saved.createdRowId || null;
+
+    setAddSelectedStudent(student);
+    setAddGrNo(grNo);
+    setAddCreatedRowId(createdRowId);
+    setAddStep(step);
+    setAddSubPhase(subPhase);
+    setAddWizardActive(true);
+
+    if (step === 2) {
+      setMainTab("udise");
+      setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
+      setEligTab(eligibilityFns.udiseEligible(student) ? "eligible" : "ineligible");
+      setSearch("");
+      setAddPinnedEnrollNo(student.enrollNo);
+      setAddModalOpen(false);
+      if (subPhase === "entry") {
+        openEntryModal(student);
+        setFormGrNo(grNo);
+      }
+    } else if (step === 3) {
+      setMainTab("pen");
+      setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
+      setEligTab(eligibilityFns.penEligible(student) ? "eligible" : "ineligible");
+      setSearch("");
+      setAddPinnedEnrollNo(student.enrollNo);
+      setAddModalOpen(false);
+      if (subPhase === "entry") {
+        openEntryModal(student);
+        setFormGrNo(grNo);
+      }
+    } else if (step === 4) {
+      setMainTab("onlineGr");
+      const sec = classSection(student.cls);
+      if (sec) setGrSubTab(sec);
+      setAddPinnedEnrollNo(null);
+      setAddModalOpen(true);
+    } else {
+      setMainTab("onlineGr");
+      setAddModalOpen(true);
+    }
+  }
+
+  function resumeFromOnlineGrRow(row) {
+    if (!row) return;
+    const student = dbStudents.find(
+      s => (row.enrollNo && s.enrollNo === row.enrollNo) ||
+           (row.aadharNo && row.aadharNo !== "-" && s.aadharNo === row.aadharNo) ||
+           (row.mobile1 && row.mobile1 !== "-" && s.mobile1 === row.mobile1) ||
+           (row.name && s.name && s.name.toUpperCase() === row.name.toUpperCase() && s.cls === row.cls)
+    );
+
+    if (!student) {
+      alert(`Could not link ${row.name || "this row"} to a database student record.`);
+      return;
+    }
+
+    const grNo = row.grNo || student.grNo || "";
+    const createdRowId = row.id;
+
+    const hasUdise = (student.udise && student.udise !== "-") || (row.udise && row.udise !== "-");
+    const hasPen = (student.pen && student.pen !== "-" && student.pen !== "Not Defined") || (row.pen && row.pen !== "-" && row.pen !== "Not Defined");
+    const penNotDefined = student.pen === "Not Defined" || row.pen === "Not Defined";
+
+    let step = 2;
+    if (hasUdise && !(hasPen || penNotDefined)) {
+      step = 3;
+    } else if (hasUdise && (hasPen || penNotDefined)) {
+      step = 4;
+    }
+
+    const sessionData = {
+      enrollNo: student.enrollNo,
+      studentId: student.studentId || student.id,
+      grNo,
+      step,
+      subPhase: "details",
+      createdRowId,
+      section: row.section || classSection(student.cls),
+      studentName: student.name,
+      cls: student.cls,
+      session: student.session || row.session,
+      timestamp: Date.now(),
+    };
+
+    saveProgressToStorage(sessionData);
+    resumeProgress(sessionData);
+  }
+
   function openAddModal() {
     setAddModalOpen(true);
     setAddWizardActive(false);
@@ -1111,6 +1253,19 @@ export default function GovernmentEntryPage() {
 
       // Hand off depending on eligibility:
       if (udiseInfo.eligible) {
+        saveProgressToStorage({
+          enrollNo: addSelectedStudent.enrollNo,
+          studentId: addSelectedStudent.studentId || addSelectedStudent.id,
+          grNo: addGrNo.trim(),
+          step: 2,
+          subPhase: "details",
+          createdRowId: id,
+          section: addSection,
+          studentName: addSelectedStudent.name,
+          cls: addSelectedStudent.cls,
+          session: addSelectedStudent.session,
+          timestamp: Date.now(),
+        });
         setAddModalOpen(false);
         setAddWizardActive(true);
         setAddStep(2);
@@ -1122,6 +1277,19 @@ export default function GovernmentEntryPage() {
         setAddPinnedEnrollNo(addSelectedStudent.enrollNo);
       } else if (penInfo.eligible) {
         // UDISE ineligible — skip UDISE step and go to PEN
+        saveProgressToStorage({
+          enrollNo: addSelectedStudent.enrollNo,
+          studentId: addSelectedStudent.studentId || addSelectedStudent.id,
+          grNo: addGrNo.trim(),
+          step: 3,
+          subPhase: "details",
+          createdRowId: id,
+          section: addSection,
+          studentName: addSelectedStudent.name,
+          cls: addSelectedStudent.cls,
+          session: addSelectedStudent.session,
+          timestamp: Date.now(),
+        });
         setAddModalOpen(false);
         setAddWizardActive(true);
         setAddStep(3);
@@ -1133,6 +1301,7 @@ export default function GovernmentEntryPage() {
         setAddPinnedEnrollNo(addSelectedStudent.enrollNo);
       } else {
         // Both ineligible — next steps are disabled, saved directly to register with remarks
+        clearProgressFromStorage();
         setAddModalOpen(false);
         setAddWizardActive(false);
         setAddPinnedEnrollNo(null);
@@ -1165,6 +1334,19 @@ export default function GovernmentEntryPage() {
       }));
 
       if (penInfo.eligible) {
+        saveProgressToStorage({
+          enrollNo: addSelectedStudent.enrollNo,
+          studentId: addSelectedStudent.studentId || addSelectedStudent.id,
+          grNo: addGrNo,
+          step: 3,
+          subPhase: "details",
+          createdRowId: addCreatedRowId,
+          section: addSection,
+          studentName: addSelectedStudent.name,
+          cls: addSelectedStudent.cls,
+          session: addSelectedStudent.session,
+          timestamp: Date.now(),
+        });
         setAddStep(3);
         setAddSubPhase("details");
         setMainTab("pen");
@@ -1173,6 +1355,19 @@ export default function GovernmentEntryPage() {
         setSearch("");
         setAddPinnedEnrollNo(addSelectedStudent.enrollNo);
       } else {
+        saveProgressToStorage({
+          enrollNo: addSelectedStudent.enrollNo,
+          studentId: addSelectedStudent.studentId || addSelectedStudent.id,
+          grNo: addGrNo,
+          step: 4,
+          subPhase: "details",
+          createdRowId: addCreatedRowId,
+          section: addSection,
+          studentName: addSelectedStudent.name,
+          cls: addSelectedStudent.cls,
+          session: addSelectedStudent.session,
+          timestamp: Date.now(),
+        });
         setAddStep(4);
         setAddSubPhase("details");
         setMainTab("onlineGr");
@@ -1203,6 +1398,19 @@ export default function GovernmentEntryPage() {
         [addSection]: (prev[addSection] || []).map(r => r.id === created.id ? created : r),
       }));
 
+      saveProgressToStorage({
+        enrollNo: addSelectedStudent.enrollNo,
+        studentId: addSelectedStudent.studentId || addSelectedStudent.id,
+        grNo: addGrNo,
+        step: 4,
+        subPhase: "details",
+        createdRowId: addCreatedRowId,
+        section: addSection,
+        studentName: addSelectedStudent.name,
+        cls: addSelectedStudent.cls,
+        session: addSelectedStudent.session,
+        timestamp: Date.now(),
+      });
       setAddStep(4);
       setAddSubPhase("details");
       setMainTab("onlineGr");
@@ -1232,6 +1440,7 @@ export default function GovernmentEntryPage() {
         ...prev,
         [addSection]: (prev[addSection] || []).map(r => r.id === created.id ? created : r),
       }));
+      clearProgressFromStorage();
       setAddModalOpen(false);
       setAddWizardActive(false);
     } catch (e) {
@@ -1375,6 +1584,19 @@ export default function GovernmentEntryPage() {
         // its own Entry Done modal opens.
         if (addWizardActive && addStep === 2) {
           const nextRow = { ...modalRow, udise: digits };
+          saveProgressToStorage({
+            enrollNo: nextRow.enrollNo,
+            studentId: modalRow.studentId,
+            grNo: formGrNo.trim(),
+            step: 3,
+            subPhase: "details",
+            createdRowId: addCreatedRowId,
+            section: addSection,
+            studentName: nextRow.name,
+            cls: nextRow.cls,
+            session: nextRow.session,
+            timestamp: Date.now(),
+          });
           setAddSelectedStudent(nextRow);
           setAddStep(3);
           setAddSubPhase("details");
@@ -1410,6 +1632,19 @@ export default function GovernmentEntryPage() {
       // Add-New-Student wizard, stage 3 done — back to Online GR for the
       // final confirmation review (stage 4).
       if (addWizardActive && addStep === 3) {
+        saveProgressToStorage({
+          enrollNo: addSelectedStudent.enrollNo,
+          studentId: modalRow.studentId,
+          grNo: addGrNo,
+          step: 4,
+          subPhase: "details",
+          createdRowId: addCreatedRowId,
+          section: addSection,
+          studentName: addSelectedStudent.name,
+          cls: addSelectedStudent.cls,
+          session: addSelectedStudent.session,
+          timestamp: Date.now(),
+        });
         setAddSelectedStudent(prev => prev ? { ...prev, pen: penValue } : prev);
         setAddStep(4);
         setAddSubPhase("details");
@@ -1492,6 +1727,17 @@ export default function GovernmentEntryPage() {
           <p className="text-sm text-gray-500 mt-0.5">File Online General Register, UDISE &amp; PEN entries into government portals and record results</p>
         </div>
         <div className="flex items-center gap-2">
+          {inProgressSession && !addWizardActive && (
+            <button
+              type="button"
+              onClick={() => resumeProgress(inProgressSession)}
+              title={`Resume entry for ${inProgressSession.grNo || inProgressSession.studentName}`}
+              className="flex items-center gap-1.5 text-xs border border-amber-400 bg-amber-100 px-3 py-1.5 rounded-lg text-amber-900 hover:bg-amber-200 transition-all shadow-sm font-semibold animate-pulse"
+            >
+              <span className="w-2 h-2 rounded-full bg-amber-600"></span>
+              Resume {inProgressSession.grNo || "Progress"}
+            </button>
+          )}
           {mainTab === "onlineGr" && (
             <button onClick={openAddModal}
               title="Add a new student into this register"
@@ -1521,6 +1767,50 @@ export default function GovernmentEntryPage() {
           </button>
         </div>
       </div>
+
+      {/* In Progress Resume Banner */}
+      {inProgressSession && !addWizardActive && (
+        <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-300 rounded-xl p-3 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex items-center gap-3">
+            <span className="relative flex h-3 w-3 flex-shrink-0">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+            </span>
+            <div>
+              <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5 flex-wrap">
+                <span>Entry in Progress:</span>
+                <span className="font-mono bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-bold">{inProgressSession.grNo || "Student"}</span>
+                <span>· {inProgressSession.studentName} ({inProgressSession.cls})</span>
+              </div>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                You left off at <b>Step {inProgressSession.step} of 4: {
+                  inProgressSession.step === 2 ? "UDISE Entry" :
+                  inProgressSession.step === 3 ? "PEN Entry" :
+                  inProgressSession.step === 4 ? "Final Confirmation" : "Select Student"
+                }</b>. Click Resume to continue right where you left off.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => resumeProgress(inProgressSession)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs rounded-lg shadow-sm transition-all"
+            >
+              ▶ Resume {inProgressSession.grNo ? `${inProgressSession.grNo} ` : ""}Progress
+            </button>
+            <button
+              type="button"
+              onClick={dismissInProgress}
+              title="Discard this in-progress entry"
+              className="text-xs font-semibold px-2.5 py-1.5 text-gray-500 hover:text-gray-700 hover:bg-amber-100 rounded-lg transition-colors"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex flex-wrap items-center gap-2">
@@ -1832,6 +2122,16 @@ export default function GovernmentEntryPage() {
                                   }`}
                                 >
                                   {getBcDoc(row) ? <Download className="w-3 h-3" /> : <Upload className="w-3 h-3" />}
+                                </button>
+                              )}
+                              {isOnlineGr && status === "Pending" && (
+                                <button
+                                  type="button"
+                                  onClick={() => resumeFromOnlineGrRow(row)}
+                                  title={`Resume progress for ${row.grNo || row.name}`}
+                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-100 transition-colors shadow-xs"
+                                >
+                                  ▶ Resume
                                 </button>
                               )}
                               {isOnlineGr && (
