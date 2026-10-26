@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X,
   Loader2, HelpCircle, Search, Maximize2, Minimize2, Download, BookOpen,
-  ChevronUp, ChevronDown, Trash2, UserPlus, Upload, FileText, Calendar
+  ChevronUp, ChevronDown, Trash2, UserPlus, Upload, FileText, Calendar, Pencil
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import supabase from "@/lib/supabase";
@@ -672,6 +672,16 @@ export default function GovernmentEntryPage() {
 
   // ── Entry Done modal ────────────────────────────────────────────────────
   const [modalRow, setModalRow] = useState(null);
+  const modalIsDone = useMemo(() => {
+    if (!modalRow) return false;
+    if (mainTab === "onlineGr") {
+      return modalRow.status === "Done" || Boolean(modalRow.grNo && modalRow.grNo !== "-");
+    }
+    if (effectiveTab === "udise") {
+      return modalRow.udiseStatus === "Done" || Boolean(modalRow.udise && String(modalRow.udise).trim() && String(modalRow.udise).trim() !== "-");
+    }
+    return modalRow.penStatus === "Done" || modalRow.penStatus === "Not Defined" || Boolean(modalRow.pen && String(modalRow.pen).trim() && String(modalRow.pen).trim() !== "-");
+  }, [modalRow, mainTab, effectiveTab]);
   const [formGrNo, setFormGrNo] = useState("");
   const [formDoeSlash, setFormDoeSlash] = useState("");
   const [formUdise, setFormUdise] = useState("");
@@ -1730,7 +1740,10 @@ export default function GovernmentEntryPage() {
   }, [addableStudents, addEligFilter, addClassFilter, addStatusFilter, addSearch, eligibilityFns]);
 
   function openStudentProfile(row) {
-    if (mainTab === "onlineGr") return;
+    if (mainTab === "onlineGr") {
+      openEntryModal(row);
+      return;
+    }
     if (row.enrollNo) router.push(`/student/${row.enrollNo}/edit`);
   }
 
@@ -1807,7 +1820,11 @@ export default function GovernmentEntryPage() {
       }
       setSaving(true);
       try {
-        await updateStudentGovId(modalRow.studentId, { grNo: formGrNo.trim(), udise: digits });
+        await updateStudentGovId(modalRow.studentId, {
+          grNo: formGrNo.trim(),
+          udise: digits,
+          apaar: formApaar.trim() || null,
+        });
         await loadAll();
         setModalRow(null);
         // Add-New-Student wizard, stage 2 done — hand off to the real PEN
@@ -1857,7 +1874,11 @@ export default function GovernmentEntryPage() {
     setSaving(true);
     try {
       const penValue = formPenNotDefined ? "Not Defined" : formPen.trim();
-      await updateStudentGovId(modalRow.studentId, { grNo: formGrNo.trim(), pen: penValue });
+      await updateStudentGovId(modalRow.studentId, {
+        grNo: formGrNo.trim(),
+        pen: penValue,
+        apaar: formApaar.trim() || null,
+      });
       await loadAll();
       setModalRow(null);
       // Add-New-Student wizard, stage 3 done — back to Online GR for the
@@ -2314,7 +2335,7 @@ export default function GovernmentEntryPage() {
                   return (
                     <tr key={`${row.id || row.studentId || row.enrollNo || idx}-${row.session}-${idx}`}
                       onDoubleClick={() => openStudentProfile(row)}
-                      title={mainTab === "onlineGr" ? "Online General Register entry" : "Double-click to edit this student"}
+                      title={mainTab === "onlineGr" ? "Double-click to edit this entry" : "Double-click to edit this student"}
                       className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${rowBg}`}>
                       <td style={{ position: "sticky", left: stickyLeft[0], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2 text-center whitespace-nowrap`}>
                         {(() => {
@@ -2325,19 +2346,43 @@ export default function GovernmentEntryPage() {
                             : (isUdise ? eligibilityFns.getUdiseEligibility(row) : eligibilityFns.getPenEligibility(row));
                           const isElig = eligInfo.eligible;
 
+                          const isDone = isOnlineGr
+                            ? (row.status === "Done" || Boolean(row.grNo && row.grNo !== "-"))
+                            : isUdise
+                            ? (row.udiseStatus === "Done" || Boolean(row.udise && String(row.udise).trim() && String(row.udise).trim() !== "-"))
+                            : (row.penStatus === "Done" || row.penStatus === "Not Defined" || Boolean(row.pen && String(row.pen).trim() && String(row.pen).trim() !== "-"));
+
                           return (
                             <div className="inline-flex items-center gap-1">
-                              <button
-                                onClick={() => isElig && openEntryModal(row)}
-                                disabled={!isElig}
-                                title={!isElig ? `Not eligible for ${isUdise ? "UDISE" : "PEN"} Entry: ${eligInfo.reason}` : "Entry Done"}
-                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
-                                  isElig
-                                    ? "bg-school-navy text-white hover:bg-school-navy/90"
-                                    : "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-60"
-                                }`}>
-                                <CheckCircle2 className="w-3 h-3"/> Entry Done
-                              </button>
+                              {isDone ? (
+                                <button
+                                  onClick={() => isElig && openEntryModal(row)}
+                                  disabled={!isElig}
+                                  title={
+                                    !isElig
+                                      ? `Not eligible for ${isUdise ? "UDISE" : "PEN"} Entry: ${eligInfo.reason}`
+                                      : (isOnlineGr ? "Edit General Register entry" : `Edit ${isUdise ? "UDISE" : "PEN"} details`)
+                                  }
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                                    isElig
+                                      ? "bg-blue-50 text-school-navy border border-blue-300 hover:bg-school-navy hover:text-white shadow-xs"
+                                      : "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-60"
+                                  }`}>
+                                  <Pencil className="w-3 h-3"/> Edit
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => isElig && openEntryModal(row)}
+                                  disabled={!isElig}
+                                  title={!isElig ? `Not eligible for ${isUdise ? "UDISE" : "PEN"} Entry: ${eligInfo.reason}` : "Entry Done"}
+                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                                    isElig
+                                      ? "bg-school-navy text-white hover:bg-school-navy/90 shadow-xs"
+                                      : "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-60"
+                                  }`}>
+                                  <CheckCircle2 className="w-3 h-3"/> Entry Done
+                                </button>
+                              )}
                               {isUdise && (
                                 <button
                                   type="button"
@@ -2411,9 +2456,15 @@ export default function GovernmentEntryPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <div>
                 <h3 className="text-base font-bold text-gray-800">
-                  {mainTab === "onlineGr"
-                    ? (grSubTab === "primary" ? "Complete Primary Register Entry (PR)" : "Complete General Register Entry (GR)")
-                    : (effectiveTab === "udise" ? "Complete UDISE Entry" : "Complete PEN Entry")}
+                  {modalIsDone ? (
+                    mainTab === "onlineGr"
+                      ? (grSubTab === "primary" ? "Edit Primary Register Entry (PR)" : "Edit General Register Entry (GR)")
+                      : (effectiveTab === "udise" ? "Edit UDISE Entry" : "Edit PEN Entry")
+                  ) : (
+                    mainTab === "onlineGr"
+                      ? (grSubTab === "primary" ? "Complete Primary Register Entry (PR)" : "Complete General Register Entry (GR)")
+                      : (effectiveTab === "udise" ? "Complete UDISE Entry" : "Complete PEN Entry")
+                  )}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">{modalRow.name || "Student"} - {modalRow.cls || ""} - Reg No {modalRow.grNo || "-"}</p>
               </div>
@@ -2423,12 +2474,17 @@ export default function GovernmentEntryPage() {
             </div>
 
             <div className="px-5 py-4 space-y-3">
-              {addWizardActive && addSubPhase === "entry" && (addStep === 2 || addStep === 3) && (
+              {addWizardActive && addSubPhase === "entry" && (addStep === 2 || addStep === 3) ? (
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold text-school-navy bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1.5">
                   <UserPlus className="w-3.5 h-3.5 flex-shrink-0"/>
                   Add New Student — Step {addStep} of 4: enter the {addStep === 2 ? "UDISE" : "PEN"} No below for {modalRow?.name}.
                 </div>
-              )}
+              ) : modalIsDone ? (
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-900 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1.5">
+                  <Pencil className="w-3.5 h-3.5 flex-shrink-0 text-school-navy"/>
+                  Editing saved details for {modalRow?.name}. Update any fields below and click Save Changes.
+                </div>
+              ) : null}
               {mainTab === "onlineGr" ? (
                 <>
                   <div className="flex flex-col gap-1">
@@ -2550,6 +2606,13 @@ export default function GovernmentEntryPage() {
                       placeholder="e.g. 242215044262310036"/>
                     <span className="text-[10px] text-gray-400">{formUdise.length}/18 digits</span>
                   </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">APAAR ID (Optional)</label>
+                    <input type="text" value={formApaar} onChange={e => setFormApaar(e.target.value)}
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy"
+                      placeholder="APAAR ID"/>
+                  </div>
                 </>
               ) : (
                 <>
@@ -2583,6 +2646,13 @@ export default function GovernmentEntryPage() {
                       className="w-3.5 h-3.5 accent-school-navy"/>
                     PEN not generated yet by the portal - mark as &quot;Not Defined&quot; for now
                   </label>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">APAAR ID (Optional)</label>
+                    <input type="text" value={formApaar} onChange={e => setFormApaar(e.target.value)}
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy"
+                      placeholder="APAAR ID"/>
+                  </div>
                 </>
               )}
 
@@ -2601,7 +2671,7 @@ export default function GovernmentEntryPage() {
               <button onClick={handleSave} disabled={saving || !!formGrConflict}
                 className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors disabled:opacity-60">
                 {saving && <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
-                {saving ? "Saving..." : "Save"}
+                {saving ? "Saving..." : (modalIsDone ? "Save Changes" : "Save")}
               </button>
             </div>
           </div>
