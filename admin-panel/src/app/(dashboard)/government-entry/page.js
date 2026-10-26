@@ -693,7 +693,8 @@ export default function GovernmentEntryPage() {
   const [addSubPhase, setAddSubPhase] = useState("details"); // "details" | "entry" — within stage 2/3
   const [addSearch, setAddSearch] = useState("");
   const [addClassFilter, setAddClassFilter] = useState("All");
-  const [addStatusFilter, setAddStatusFilter] = useState("All"); // "All" | "Both Pending" | "UDISE Pending" | "PEN Pending" | "Both Done"
+  const [addStatusFilter, setAddStatusFilter] = useState("All"); // "All" | "UDISE Eligible" | "PEN Eligible" | "Both Pending" | "UDISE Pending" | "PEN Pending" | "Both Done"
+  const [addEligFilter, setAddEligFilter] = useState("eligible"); // "eligible" | "ineligible" | "all"
   const [addSelectedStudent, setAddSelectedStudent] = useState(null);
   const [addGrNo, setAddGrNo] = useState("");
   const [addCreatedRowId, setAddCreatedRowId] = useState(null);
@@ -713,6 +714,7 @@ export default function GovernmentEntryPage() {
     setAddSearch("");
     setAddClassFilter("All");
     setAddStatusFilter("All");
+    setAddEligFilter("eligible");
     setAddSelectedStudent(null);
     setAddGrNo("");
     setAddCreatedRowId(null);
@@ -951,8 +953,26 @@ export default function GovernmentEntryPage() {
     }
   }
 
+  const addEligCounts = useMemo(() => {
+    let eligible = 0;
+    let ineligible = 0;
+    for (const st of addableStudents) {
+      if (eligibilityFns.udiseEligible(st) || eligibilityFns.penEligible(st)) {
+        eligible++;
+      } else {
+        ineligible++;
+      }
+    }
+    return { eligible, ineligible, all: addableStudents.length };
+  }, [addableStudents, eligibilityFns]);
+
   const filteredAddableStudents = useMemo(() => {
     let list = addableStudents;
+    if (addEligFilter === "eligible") {
+      list = list.filter(x => eligibilityFns.udiseEligible(x) || eligibilityFns.penEligible(x));
+    } else if (addEligFilter === "ineligible") {
+      list = list.filter(x => !eligibilityFns.udiseEligible(x) && !eligibilityFns.penEligible(x));
+    }
     if (addClassFilter !== "All") list = list.filter(x => x.cls === addClassFilter);
     if (addStatusFilter !== "All") {
       list = list.filter(x => {
@@ -960,6 +980,8 @@ export default function GovernmentEntryPage() {
         const penDone = x.penStatus === "Done";
         const penDefined = x.penStatus === "Not Defined";
         switch (addStatusFilter) {
+          case "UDISE Eligible":   return eligibilityFns.udiseEligible(x);
+          case "PEN Eligible":     return eligibilityFns.penEligible(x);
           case "Both Pending":     return !udiseDone && x.penStatus === "Pending";
           case "UDISE Pending":    return !udiseDone;
           case "PEN Pending":      return x.penStatus === "Pending";
@@ -984,7 +1006,7 @@ export default function GovernmentEntryPage() {
       );
     }
     return list;
-  }, [addableStudents, addClassFilter, addStatusFilter, addSearch]);
+  }, [addableStudents, addEligFilter, addClassFilter, addStatusFilter, addSearch, eligibilityFns]);
 
   function openStudentProfile(row) {
     if (mainTab === "onlineGr") return;
@@ -1700,6 +1722,29 @@ export default function GovernmentEntryPage() {
             <div className="px-6 py-4 space-y-3 overflow-y-auto flex-1 flex flex-col min-h-0">
               {addStep === 1 && !addSelectedStudent && (
                 <div className="space-y-3 flex-1 flex flex-col min-h-0">
+                  {/* Eligibility filter pills */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 flex-shrink-0">
+                    <div className="flex bg-gray-100 p-0.5 rounded-lg border border-gray-200 text-xs flex-shrink-0">
+                      <button type="button" onClick={() => setAddEligFilter("eligible")}
+                        className={`px-3 py-1.5 rounded-md font-semibold transition-colors ${addEligFilter === "eligible" ? "bg-school-navy text-white shadow" : "text-gray-600 hover:text-gray-900"}`}>
+                        Eligible Only ({addEligCounts.eligible})
+                      </button>
+                      <button type="button" onClick={() => setAddEligFilter("ineligible")}
+                        className={`px-3 py-1.5 rounded-md font-semibold transition-colors ${addEligFilter === "ineligible" ? "bg-school-navy text-white shadow" : "text-gray-600 hover:text-gray-900"}`}>
+                        Ineligible Only ({addEligCounts.ineligible})
+                      </button>
+                      <button type="button" onClick={() => setAddEligFilter("all")}
+                        className={`px-3 py-1.5 rounded-md font-semibold transition-colors ${addEligFilter === "all" ? "bg-school-navy text-white shadow" : "text-gray-600 hover:text-gray-900"}`}>
+                        All Students ({addEligCounts.all})
+                      </button>
+                    </div>
+                    <div className="text-[11px] text-gray-500 font-medium">
+                      {addEligFilter === "eligible" && "Ready for UDISE or PEN portal entry"}
+                      {addEligFilter === "ineligible" && "Missing batch assignment / birth / Aadhar details"}
+                      {addEligFilter === "all" && "All enrolled students in database"}
+                    </div>
+                  </div>
+
                   <div className="flex gap-2 flex-shrink-0">
                     <div className="relative flex-1">
                       <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
@@ -1714,6 +1759,8 @@ export default function GovernmentEntryPage() {
                     <select value={addStatusFilter} onChange={e => setAddStatusFilter(e.target.value)}
                       className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-school-navy">
                       <option value="All">All Statuses</option>
+                      <option value="UDISE Eligible">UDISE Eligible</option>
+                      <option value="PEN Eligible">PEN Eligible</option>
                       <option value="Both Pending">UDISE &amp; PEN Both Pending</option>
                       <option value="UDISE Pending">UDISE Pending</option>
                       <option value="PEN Pending">PEN Pending</option>
@@ -1726,14 +1773,23 @@ export default function GovernmentEntryPage() {
                   <div className="border border-gray-200 rounded-lg flex-1 min-h-[320px] overflow-y-auto divide-y divide-gray-100">
                     {filteredAddableStudents.length === 0 ? (
                       <div className="px-3 py-6 text-center text-xs text-gray-400">
-                        No eligible students found matching your filters.<br/>
-                        Eligible = qualifies for UDISE or PEN entry.
+                        No {addEligFilter === "eligible" ? "eligible" : addEligFilter === "ineligible" ? "ineligible" : ""} students found matching your filters.<br/>
+                        {addEligFilter === "eligible" && "Eligible = qualifies for UDISE or PEN entry."}
                       </div>
                     ) : (
                       <>
-                        <div className="px-3 py-2 text-[10px] text-gray-500 bg-gray-50 border-b">
-                          {filteredAddableStudents.length} of {addableStudents.length} eligible student{addableStudents.length !== 1 ? "s" : ""} shown
-                          {addableStudents.length > filteredAddableStudents.length && " (filtered)"}
+                        <div className="px-3 py-2 text-[10px] text-gray-500 bg-gray-50 border-b flex items-center justify-between">
+                          <span>
+                            Showing <strong className="text-gray-700">{filteredAddableStudents.length}</strong> of{" "}
+                            <strong className="text-gray-700">
+                              {addEligFilter === "eligible" ? addEligCounts.eligible : addEligFilter === "ineligible" ? addEligCounts.ineligible : addEligCounts.all}
+                            </strong>{" "}
+                            {addEligFilter === "eligible" ? "eligible" : addEligFilter === "ineligible" ? "ineligible" : ""} student{filteredAddableStudents.length !== 1 ? "s" : ""}
+                            {(addSearch || addClassFilter !== "All" || addStatusFilter !== "All") && " (filtered)"}
+                          </span>
+                          <span className="text-gray-400">
+                            Total in database: {addEligCounts.all}
+                          </span>
                         </div>
                         {filteredAddableStudents.map(st => (
                           <button key={st.enrollNo} type="button" onClick={() => selectAddStudent(st)}
