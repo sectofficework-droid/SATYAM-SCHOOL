@@ -2143,42 +2143,35 @@ export default function GovernmentEntryPage() {
           </button>
         </div>
 
-        <span className="hidden sm:block w-px h-6 bg-gray-200"/>
-
-        {mainTab === "onlineGr" ? (
-          <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-            <button onClick={() => setGrSubTab("primary")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${grSubTab === "primary" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-              Primary (JR, SR, Balvatika)
-            </button>
-            <button onClick={() => setGrSubTab("general")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${grSubTab === "general" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-              General (1st+)
-            </button>
-          </div>
-        ) : mainTab === "mismatch" ? (
-          <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-            <button onClick={() => setMismatchDir("udiseOnly")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "udiseOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-              UDISE Eligible, PEN Not
-            </button>
-            <button onClick={() => setMismatchDir("penOnly")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "penOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-              PEN Eligible, UDISE Not
-            </button>
-          </div>
-        ) : (
-          <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-            <button onClick={() => setEligTab("eligible")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "eligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-              Eligible for Entry
-            </button>
-            <button onClick={() => setEligTab("ineligible")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "ineligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-              Not Eligible for Entry
-            </button>
-          </div>
-        )}
+        {mainTab === "mismatch" ? (
+          <>
+            <span className="hidden sm:block w-px h-6 bg-gray-200"/>
+            <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+              <button onClick={() => setMismatchDir("udiseOnly")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "udiseOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                UDISE Eligible, PEN Not
+              </button>
+              <button onClick={() => setMismatchDir("penOnly")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "penOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                PEN Eligible, UDISE Not
+              </button>
+            </div>
+          </>
+        ) : mainTab !== "onlineGr" ? (
+          <>
+            <span className="hidden sm:block w-px h-6 bg-gray-200"/>
+            <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+              <button onClick={() => setEligTab("eligible")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "eligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                Eligible for Entry
+              </button>
+              <button onClick={() => setEligTab("ineligible")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "ineligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                Not Eligible for Entry
+              </button>
+            </div>
+          </>
+        ) : null}
       </div>
 
       {/* Add New Student wizard — details-review phase (table stays click-to-copy-able, no modal) */}
@@ -2521,6 +2514,52 @@ export default function GovernmentEntryPage() {
               </tbody>
             </table>
           </div>
+
+          {/* Sub-tabs below table for Online General Register (Primary vs General) */}
+          {mainTab === "onlineGr" && (
+            <div className="flex flex-wrap items-center justify-between gap-3 mt-2">
+              <div className="flex gap-1 bg-gray-100/90 border border-gray-200 rounded-xl p-1 w-fit shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setGrSubTab("primary")}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    grSubTab === "primary"
+                      ? "bg-white text-school-navy shadow-sm border border-gray-200"
+                      : "text-gray-600 hover:text-gray-900 hover:bg-white/50"
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-school-navy"/>
+                  Primary (JR, SR, Balvatika)
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                    grSubTab === "primary" ? "bg-blue-50 text-school-navy" : "bg-gray-200/80 text-gray-600"
+                  }`}>
+                    {(onlineGrDataset.primary || []).length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGrSubTab("general")}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                    grSubTab === "general"
+                      ? "bg-white text-school-navy shadow-sm border border-gray-200"
+                      : "text-gray-600 hover:text-gray-900 hover:bg-white/50"
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-school-navy"/>
+                  General (1st+)
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                    grSubTab === "general" ? "bg-blue-50 text-school-navy" : "bg-gray-200/80 text-gray-600"
+                  }`}>
+                    {(onlineGrDataset.general || []).length}
+                  </span>
+                </button>
+              </div>
+
+              <div className="text-xs text-gray-500 font-medium">
+                Register: <span className="font-semibold text-gray-700">{grSubTab === "primary" ? "Primary Register (PR)" : "General Register (GR)"}</span>
+              </div>
+            </div>
+          )}
         </>
       )}
 
