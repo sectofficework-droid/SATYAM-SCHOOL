@@ -31,22 +31,39 @@ const GENERAL_CLASSES_OPTIONS = ["1st","2nd","3rd","4th","5th","6th","7th","8th"
 const ONLINE_GR_YEARS = ["All", "2026-27", "2025-26", "2024-25"];
 const SESSIONS_FALLBACK = ["2026-27","2025-26","2024-25","2023-24"];
 
+function parseDateParts(dateStr) {
+  if (!dateStr || dateStr === "-") return null;
+  const str = String(dateStr).trim();
+  const clean = str.includes("T") ? str.split("T")[0] : str;
+  const delim = clean.includes("-") ? "-" : (clean.includes("/") ? "/" : null);
+  if (!delim) return null;
+  const parts = clean.split(delim);
+  if (parts.length !== 3) return null;
+  if (parts[0].length === 4) {
+    // YYYY-MM-DD or YYYY/MM/DD
+    const [y, m, d] = parts;
+    if (!y || !m || !d) return null;
+    return { y: String(y), m: String(m).padStart(2, "0"), d: String(d).padStart(2, "0") };
+  } else {
+    // DD-MM-YYYY or DD/MM/YYYY
+    const [d, m, y] = parts;
+    if (!y || !m || !d) return null;
+    return { y: String(y), m: String(m).padStart(2, "0"), d: String(d).padStart(2, "0") };
+  }
+}
+
 function fmtDate(dateStr) {
   if (!dateStr) return "";
-  const parts = String(dateStr).split("-");
-  if (parts.length !== 3) return dateStr;
-  const [y, m, d] = parts;
-  if (!y || !m || !d) return dateStr;
-  return `${d.padStart(2,"0")}/${m.padStart(2,"0")}/${y}`;
+  const p = parseDateParts(dateStr);
+  if (!p) return dateStr;
+  return `${p.d}/${p.m}/${p.y}`;
 }
 
 function fmtDateDMY(dateStr) {
   if (!dateStr) return "";
-  const parts = String(dateStr).split("-");
-  if (parts.length !== 3) return "";
-  const [y, m, d] = parts;
-  if (!y || !m || !d) return "";
-  return `${d.padStart(2,"0")}-${m.padStart(2,"0")}-${y}`;
+  const p = parseDateParts(dateStr);
+  if (!p) return "";
+  return `${p.d}-${p.m}-${p.y}`;
 }
 
 function getTodaySlash() {
@@ -59,50 +76,34 @@ function getTodaySlash() {
 
 function slashToIso(slash) {
   if (!slash || slash === "-") return "";
-  const parts = String(slash).replace(/-/g, "/").split("/");
-  if (parts.length === 3) {
-    if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}`;
-    const [d, m, y] = parts;
-    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
-  }
+  const p = parseDateParts(slash);
+  if (p) return `${p.y}-${p.m}-${p.d}`;
   return "";
 }
 
 function isoToSlash(iso) {
   if (!iso) return "";
-  const parts = String(iso).split("-");
-  if (parts.length === 3) {
-    const [y, m, d] = parts;
-    return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
-  }
+  const p = parseDateParts(iso);
+  if (p) return `${p.d}/${p.m}/${p.y}`;
   return iso;
 }
 
 function normSlashDate(str) {
   if (!str) return "";
-  const cleaned = String(str).trim().replace(/-/g, "/");
-  const parts = cleaned.split("/");
-  if (parts.length === 3) {
-    if (parts[0].length === 4) {
-      const [y, m, d] = parts;
-      return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
-    }
-    const [d, m, y] = parts;
-    return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
-  }
-  return cleaned;
+  const p = parseDateParts(str);
+  if (p) return `${p.d}/${p.m}/${p.y}`;
+  return String(str).trim();
 }
 
 const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 function dobParts(dateStr) {
   if (!dateStr) return { birthYear: "", birthMonth: "", birthDate: "" };
-  const parts = String(dateStr).split("-");
-  if (parts.length !== 3) return { birthYear: "", birthMonth: "", birthDate: "" };
-  const [y, m, d] = parts;
-  const mi = parseInt(m, 10), di = parseInt(d, 10);
+  const p = parseDateParts(dateStr);
+  if (!p) return { birthYear: "", birthMonth: "", birthDate: "" };
+  const mi = parseInt(p.m, 10), di = parseInt(p.d, 10);
   return {
-    birthYear:  y || "",
-    birthMonth: mi ? `${mi}-${MONTH_ABBR[mi - 1]}` : "",
+    birthYear:  p.y || "",
+    birthMonth: mi && mi >= 1 && mi <= 12 ? `${mi}-${MONTH_ABBR[mi - 1]}` : "",
     birthDate:  di ? String(di) : "",
   };
 }
@@ -112,8 +113,9 @@ function nameWithSurname(name, surname) {
 }
 
 function decorate(st) {
-  const fatherNameOnly = st.fatherName || "";
-  const motherNameOnly = st.motherName || "";
+  if (!st) return null;
+  const fatherNameOnly = st.fatherNameOnly || st.fatherName || "";
+  const motherNameOnly = st.motherNameOnly || st.motherName || "";
 
   // TC Status: ISSUED / PENDING / -
   let tcStatus = "-";
@@ -134,19 +136,22 @@ function decorate(st) {
   const documentsPending = missing.length > 0 ? missing.join(", ") : "-";
 
   const grStatus = st.grNo && String(st.grNo).trim() ? "Done" : "Pending";
+  const effectiveDob = st.dob || (st.dobSlash && st.dobSlash !== "-" ? slashToIso(st.dobSlash) : "") || (st.dob_slash && st.dob_slash !== "-" ? slashToIso(st.dob_slash) : "");
+  const dobP = dobParts(effectiveDob || st.dob || st.dobSlash || st.dob_slash);
 
   return {
     ...st,
-    ...dobParts(st.dob),
-    dobDMY:               fmtDateDMY(st.dob),
-    dobSlash:             fmtDate(st.dob) || "-",
-    doaSlash:             fmtDate(st.joinDate) || "-",
+    dob:                  effectiveDob || st.dob || "",
+    ...dobP,
+    dobDMY:               fmtDateDMY(effectiveDob || st.dob || st.dobSlash || st.dob_slash),
+    dobSlash:             fmtDate(effectiveDob || st.dob || st.dobSlash || st.dob_slash) || "-",
+    doaSlash:             fmtDate(st.joinDate || st.doaSlash) || "-",
     doeSlash:             (st.doeSlash && st.doeSlash !== "-") ? st.doeSlash : (st.dateOfEntry ? fmtDate(st.dateOfEntry) : getTodaySlash()),
     fatherNameOnly,
     motherNameOnly,
-    fatherName:           nameWithSurname(st.fatherName, st.surname),
-    motherName:           nameWithSurname(st.motherName, st.surname),
-    studentFatherSurname: `${st.firstName || ""} ${st.fatherName || ""} ${st.surname || ""}`.trim(),
+    fatherName:           nameWithSurname(fatherNameOnly, st.surname),
+    motherName:           nameWithSurname(motherNameOnly, st.surname),
+    studentFatherSurname: `${st.firstName || ""} ${fatherNameOnly} ${st.surname || ""}`.trim(),
     fullAddress:          [st.plotNo, st.society, st.landmark, st.area, "Surat", "Gujarat", st.pinCode].filter(Boolean).join(", "),
     udiseStatus:          st.udise && String(st.udise).trim() ? "Done" : "Pending",
     penStatus:            st.pen && String(st.pen).trim() && String(st.pen).trim() !== "Not Defined" ? "Done" : (st.pen && String(st.pen).trim() === "Not Defined" ? "Not Defined" : "Pending"),
@@ -254,9 +259,21 @@ const PEN_ENTRY_COLUMNS = [
   { key:"weight",               label:"Weight (kg)" },
 ];
 
-function formatCellValue(col, value) {
-  if (value === undefined || value === null || value === "") return "";
-  return col.isDate ? fmtDate(value) : value;
+function formatCellValue(col, value, row) {
+  let v = value;
+  if ((v === undefined || v === null || v === "" || v === "-") && row) {
+    const dobSrc = row.dob || (row.dobSlash && row.dobSlash !== "-" ? row.dobSlash : "") || (row.dob_slash && row.dob_slash !== "-" ? row.dob_slash : "");
+    if (col.key === "dobDMY") v = fmtDateDMY(dobSrc);
+    else if (col.key === "birthYear") v = dobParts(dobSrc).birthYear;
+    else if (col.key === "birthMonth") v = dobParts(dobSrc).birthMonth;
+    else if (col.key === "birthDate") v = dobParts(dobSrc).birthDate;
+    else if (col.key === "fatherNameOnly") v = row.fatherNameOnly || row.fatherName || "";
+    else if (col.key === "motherNameOnly") v = row.motherNameOnly || row.motherName || "";
+    else if (col.key === "dobSlash") v = fmtDate(dobSrc) || "-";
+    else if (col.key === "dob") v = dobSrc;
+  }
+  if (v === undefined || v === null || v === "") return "";
+  return col.isDate ? fmtDate(v) : v;
 }
 
 async function copyCellToClipboard(value) {
@@ -871,11 +888,12 @@ export default function GovernmentEntryPage() {
 
   function resumeProgress(saved) {
     if (!saved) return;
-    const student = dbStudents.find(
+    const rawStudent = dbStudents.find(
       s => (saved.enrollNo && s.enrollNo === saved.enrollNo) ||
            (saved.studentId && (s.studentId === saved.studentId || s.id === saved.studentId)) ||
            (saved.grNo && s.grNo === saved.grNo)
-    ) || (saved.student ? decorate(saved.student) : null);
+    );
+    const student = rawStudent ? decorate(rawStudent) : (saved.student ? decorate(saved.student) : null);
 
     if (!student) {
       alert("Could not locate the student record in database.");
@@ -931,17 +949,19 @@ export default function GovernmentEntryPage() {
 
   function resumeFromOnlineGrRow(row) {
     if (!row) return;
-    const student = dbStudents.find(
+    const rawStudent = dbStudents.find(
       s => (row.enrollNo && s.enrollNo === row.enrollNo) ||
            (row.aadharNo && row.aadharNo !== "-" && s.aadharNo === row.aadharNo) ||
            (row.mobile1 && row.mobile1 !== "-" && s.mobile1 === row.mobile1) ||
            (row.name && s.name && s.name.toUpperCase() === row.name.toUpperCase() && s.cls === row.cls)
     );
 
-    if (!student) {
+    if (!rawStudent) {
       alert(`Could not link ${row.name || "this row"} to a database student record.`);
       return;
     }
+
+    const student = decorate(rawStudent);
 
     const grNo = row.grNo || student.grNo || "";
     const createdRowId = row.id;
@@ -1375,6 +1395,11 @@ export default function GovernmentEntryPage() {
                     <AlertTriangle className="w-3 h-3 text-amber-600" /> Not Uploaded
                   </span>
                 )}
+                {(student?.dob || student?.dobSlash || student?.dobDMY) && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold bg-white text-gray-800 px-2 py-0.5 rounded border border-gray-200 shadow-xs" title="Date of Birth">
+                    DOB: {student?.dobDMY || fmtDateDMY(student?.dob || student?.dobSlash) || student?.dobSlash}
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-gray-600 truncate mt-0.5">
                 {isUploaded
@@ -1538,7 +1563,7 @@ export default function GovernmentEntryPage() {
 
       const finalId = created.id || id;
       setAddCreatedRowId(finalId);
-      setAddSelectedStudent(prev => prev ? { ...prev, grNo: addGrNo.trim(), remarks: remarksToSave } : prev);
+      setAddSelectedStudent(prev => prev ? { ...prev, ...dec, grNo: addGrNo.trim(), remarks: remarksToSave } : prev);
       setOnlineGrDataset(prev => {
         const list = prev[addSection] || [];
         const idx = list.findIndex(r => r.id === finalId);
@@ -1813,14 +1838,16 @@ export default function GovernmentEntryPage() {
   }
 
   function openEntryModal(row) {
-    setModalRow(row);
-    setFormGrNo(row.grNo && row.grNo !== "-" ? row.grNo : "");
-    setFormDoeSlash(row.doeSlash && row.doeSlash !== "-" ? row.doeSlash : getTodaySlash());
-    setFormUdise(row.udise && row.udise !== "-" ? row.udise : "");
-    setFormPen(row.pen && row.pen !== "-" && row.pen !== "Not Defined" ? row.pen : "");
-    setFormPenNotDefined(row.pen === "Not Defined");
-    setFormApaar(row.apaar && row.apaar !== "-" ? row.apaar : "");
-    setFormRemarks(row.remarks && row.remarks !== "-" ? row.remarks : "");
+    if (!row) return;
+    const fullRow = row.birthYear !== undefined ? row : (decorate(row) || row);
+    setModalRow(fullRow);
+    setFormGrNo(fullRow.grNo && fullRow.grNo !== "-" ? fullRow.grNo : "");
+    setFormDoeSlash(fullRow.doeSlash && fullRow.doeSlash !== "-" ? fullRow.doeSlash : getTodaySlash());
+    setFormUdise(fullRow.udise && fullRow.udise !== "-" ? fullRow.udise : "");
+    setFormPen(fullRow.pen && fullRow.pen !== "-" && fullRow.pen !== "Not Defined" ? fullRow.pen : "");
+    setFormPenNotDefined(fullRow.pen === "Not Defined");
+    setFormApaar(fullRow.apaar && fullRow.apaar !== "-" ? fullRow.apaar : "");
+    setFormRemarks(fullRow.remarks && fullRow.remarks !== "-" ? fullRow.remarks : "");
     setFormError("");
   }
 
@@ -2010,7 +2037,7 @@ export default function GovernmentEntryPage() {
       const headerRow = columns.map(c => c.label);
       const rowsAoa = [
         headerRow,
-        ...rows.map(r => columns.map(c => formatCellValue(c, r[c.key])))
+        ...rows.map(r => columns.map(c => formatCellValue(c, r[c.key], r)))
       ];
       const ws = XLSX.utils.aoa_to_sheet(rowsAoa);
       ws["!cols"] = columns.map(() => ({ wch: 18 }));
@@ -2263,7 +2290,8 @@ export default function GovernmentEntryPage() {
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {columns.map(c => {
-              const rawValue = formatCellValue(c, addSelectedStudent?.[c.key]);
+              const currentObj = addReview || addSelectedStudent;
+              const rawValue = formatCellValue(c, currentObj?.[c.key], currentObj);
               return (
                 <div key={c.key}
                   tabIndex={0}
@@ -2482,7 +2510,7 @@ export default function GovernmentEntryPage() {
                       <td style={{ position: "sticky", left: stickyLeft[1], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2 text-gray-400 font-medium`}>{idx + 1}</td>
                       <td style={{ position: "sticky", left: stickyLeft[2], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2`}><StatusPill status={status}/></td>
                       {columns.map((c, i) => {
-                        const rawValue = formatCellValue(c, row[c.key]);
+                        const rawValue = formatCellValue(c, row[c.key], row);
                         const frozenIdx = i + 3;
                         const isFrozen = frozenIdx < frozenCount;
                         return (
@@ -2689,6 +2717,61 @@ export default function GovernmentEntryPage() {
                 <>
                   {/* Birth Certificate Action Section (UDISE Entry Modal) */}
                   {renderBirthCertCard(modalRow)}
+
+                  {/* Student Birth & Portal Reference Info */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs space-y-2">
+                    <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">UDISE Portal Filing Info (Click any cell to copy)</span>
+                      <span className="text-[11px] font-semibold text-school-navy">{modalRow?.cls || ""}</span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.dobDMY || fmtDateDMY(modalRow?.dob || modalRow?.dobSlash) || modalRow?.dobSlash)}
+                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors col-span-2">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Date of Birth (DOB)</span>
+                        <span className="font-semibold text-gray-900 text-sm">{modalRow?.dobDMY || fmtDateDMY(modalRow?.dob || modalRow?.dobSlash) || modalRow?.dobSlash || "-"}</span>
+                      </div>
+                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.birthDate || dobParts(modalRow?.dob || modalRow?.dobSlash).birthDate)}
+                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Birth Date</span>
+                        <span className="font-semibold text-gray-800">{modalRow?.birthDate || dobParts(modalRow?.dob || modalRow?.dobSlash).birthDate || "-"}</span>
+                      </div>
+                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.birthMonth || dobParts(modalRow?.dob || modalRow?.dobSlash).birthMonth)}
+                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Birth Month</span>
+                        <span className="font-semibold text-gray-800">{modalRow?.birthMonth || dobParts(modalRow?.dob || modalRow?.dobSlash).birthMonth || "-"}</span>
+                      </div>
+                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.birthYear || dobParts(modalRow?.dob || modalRow?.dobSlash).birthYear)}
+                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Birth Year</span>
+                        <span className="font-semibold text-gray-800">{modalRow?.birthYear || dobParts(modalRow?.dob || modalRow?.dobSlash).birthYear || "-"}</span>
+                      </div>
+                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.gender)}
+                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Gender</span>
+                        <span className="font-semibold text-gray-800">{modalRow?.gender || "-"}</span>
+                      </div>
+                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.birthCertRegNo)}
+                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Birth Reg No</span>
+                        <span className="font-semibold text-gray-800">{modalRow?.birthCertRegNo || "-"}</span>
+                      </div>
+                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.firstName)}
+                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Student Name</span>
+                        <span className="font-semibold text-gray-800">{modalRow?.firstName || modalRow?.name || "-"}</span>
+                      </div>
+                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.fatherNameOnly || modalRow?.fatherName)}
+                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Father's Name</span>
+                        <span className="font-semibold text-gray-800">{modalRow?.fatherNameOnly || modalRow?.fatherName || "-"}</span>
+                      </div>
+                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.motherNameOnly || modalRow?.motherName)}
+                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
+                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Mother's Name</span>
+                        <span className="font-semibold text-gray-800">{modalRow?.motherNameOnly || modalRow?.motherName || "-"}</span>
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">GR No</label>
@@ -2915,6 +2998,8 @@ export default function GovernmentEntryPage() {
                     <div><span className="text-gray-400">TC</span><div className="font-semibold text-gray-700">{addReview?.tcStatus}</div></div>
                     <div><span className="text-gray-400">STD</span><div className="font-semibold text-gray-700">{addSelectedStudent.cls}</div></div>
                     <div><span className="text-gray-400">NAME</span><div className="font-semibold text-gray-700">{addSelectedStudent.name}</div></div>
+                    <div><span className="text-gray-400">DOB</span><div className="font-semibold text-gray-700">{addReview?.dobDMY || addReview?.dobSlash || fmtDate(addSelectedStudent.dob) || "-"}</div></div>
+                    <div><span className="text-gray-400">AADHAR</span><div className="font-semibold text-gray-700">{addSelectedStudent.aadharNo || "-"}</div></div>
                     <div><span className="text-gray-400">MOBILE 1</span><div className="font-semibold text-gray-700">{addSelectedStudent.mobile1 || "-"}</div></div>
                     <div><span className="text-gray-400">MOBILE 2</span><div className="font-semibold text-gray-700">{addSelectedStudent.mobile2 || "-"}</div></div>
                     <div className="col-span-2 pt-1">{eligibilityBadge(addReview)}</div>
