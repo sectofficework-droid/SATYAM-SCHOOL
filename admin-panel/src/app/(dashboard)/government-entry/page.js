@@ -2132,18 +2132,6 @@ export default function GovernmentEntryPage() {
         )}
       </div>
 
-      {mainTab === "onlineGr" && (
-        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800">
-          <BookOpen className="w-4 h-4 flex-shrink-0 text-school-navy"/>
-          <span>
-            {grSubTab === "primary"
-              ? "Online General Register — Pre-Primary section (JR.KG, SR.KG, Balvatika). Assigned Primary Register (PR) numbers."
-              : "Online General Register — Standard 1st and above. Assigned General Register (GR) numbers."}
-            {" Saved separately for government state record keeping (not inserted into student database). Click any cell to copy to clipboard, or click a column header to sort."}
-          </span>
-        </div>
-      )}
-
       {/* Add New Student wizard — details-review phase (table stays click-to-copy-able, no modal) */}
       {addWizardActive && addSubPhase === "details" && (mainTab === "udise" || mainTab === "pen") && (
         (() => {
