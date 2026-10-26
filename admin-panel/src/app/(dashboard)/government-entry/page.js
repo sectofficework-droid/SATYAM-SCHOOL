@@ -532,20 +532,40 @@ export default function GovernmentEntryPage() {
     return dbStudents
       .map(decorate)
       .filter(x => classSection(x.cls))
-      .filter(x => eligibilityFns.udiseEligible(x) || eligibilityFns.penEligible(x))
-      .filter(x => {
-        const already = sectionAlreadyAdded[classSection(x.cls)];
-        if (already.enrollNos.has(x.enrollNo)) return false;
-        const mobileKey = normKey(x.mobile1);
-        if (mobileKey && mobileKey !== "-" && already.mobileKeys.has(mobileKey)) return false;
-        const aadharKey = normKey(x.aadharNo);
-        if (aadharKey && aadharKey !== "-" && already.aadharKeys.has(aadharKey)) return false;
-        const nameClassKey = `${normKey(x.name)}|${normKey(x.cls)}`;
-        const dobCandidates = already.byNameClass.get(nameClassKey);
-        if (dobCandidates && dobCandidates.some(d => dobLooselyMatches(d, x.dobSlash))) return false;
-        return true;
-      });
-  }, [dbStudents, sectionAlreadyAdded, eligibilityFns]);
+      .filter(x => eligibilityFns.udiseEligible(x) || eligibilityFns.penEligible(x));
+  }, [dbStudents, eligibilityFns]);
+
+  // REQ-VIEW-001: eligibility status badge for the Add New Student picker.
+  // Shows a compact colored badge indicating what the admin still needs to
+  // enter for this student before their Online GR row can be finalized.
+  const eligibilityBadge = (st) => {
+    const udiseDone  = st.udiseStatus  === "Done";
+    const penDone    = st.penStatus    === "Done";
+    const penDefined = st.penStatus    === "Not Defined"; // allowed to skip PEN
+
+    // Both done
+    if (udiseDone && penDone) {
+      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-green-100 text-green-800">✅ UDISE Done · PEN Done</span>;
+    }
+    // UDISE done, PEN pending
+    if (udiseDone && st.penStatus === "Pending") {
+      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-800">⏳ UDISE Done · PEN Pending</span>;
+    }
+    // UDISE done, PEN not defined (allowed to skip)
+    if (udiseDone && penDefined) {
+      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-100 text-blue-800">✅ UDISE Done · PEN Not Defined</span>;
+    }
+    // UDISE pending, PEN done
+    if (!udiseDone && penDone) {
+      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-800">⏳ UDISE Pending · PEN Done</span>;
+    }
+    // UDISE pending, PEN not defined
+    if (!udiseDone && penDefined) {
+      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-gray-100 text-gray-600">⏳ UDISE Pending · PEN Not Defined</span>;
+    }
+    // Both pending
+    return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-100 text-red-800">⏳ UDISE Pending · PEN Pending</span>;
+  };
 
   // Frozen count:
   // For onlineGr: Action(0), #(1), Status(2), AY(3), TC(4), STD(5), PR/GR(6), NAME(7) -> 8 columns
@@ -640,6 +660,7 @@ export default function GovernmentEntryPage() {
   const [addSubPhase, setAddSubPhase] = useState("details"); // "details" | "entry" — within stage 2/3
   const [addSearch, setAddSearch] = useState("");
   const [addClassFilter, setAddClassFilter] = useState("All");
+  const [addStatusFilter, setAddStatusFilter] = useState("All"); // "All" | "Both Pending" | "UDISE Pending" | "PEN Pending" | "Both Done"
   const [addSelectedStudent, setAddSelectedStudent] = useState(null);
   const [addGrNo, setAddGrNo] = useState("");
   const [addCreatedRowId, setAddCreatedRowId] = useState(null);
@@ -658,6 +679,7 @@ export default function GovernmentEntryPage() {
     setAddSubPhase("details");
     setAddSearch("");
     setAddClassFilter("All");
+    setAddStatusFilter("All");
     setAddSelectedStudent(null);
     setAddGrNo("");
     setAddCreatedRowId(null);
@@ -798,6 +820,22 @@ export default function GovernmentEntryPage() {
   const filteredAddableStudents = useMemo(() => {
     let list = addableStudents;
     if (addClassFilter !== "All") list = list.filter(x => x.cls === addClassFilter);
+    if (addStatusFilter !== "All") {
+      list = list.filter(x => {
+        const udiseDone = x.udiseStatus === "Done";
+        const penDone = x.penStatus === "Done";
+        const penDefined = x.penStatus === "Not Defined";
+        switch (addStatusFilter) {
+          case "Both Pending":     return !udiseDone && x.penStatus === "Pending";
+          case "UDISE Pending":    return !udiseDone;
+          case "PEN Pending":      return x.penStatus === "Pending";
+          case "Both Done":        return udiseDone && penDone;
+          case "UDISE Done":       return udiseDone;
+          case "PEN Done":         return penDone || penDefined;
+          default:                 return true;
+        }
+      });
+    }
     const q = addSearch.trim().toLowerCase();
     if (q) {
       list = list.filter(x =>
@@ -807,7 +845,7 @@ export default function GovernmentEntryPage() {
       );
     }
     return list;
-  }, [addableStudents, addClassFilter, addSearch]);
+  }, [addableStudents, addClassFilter, addStatusFilter, addSearch]);
 
   function openStudentProfile(row) {
     if (mainTab === "onlineGr") return;
@@ -1457,7 +1495,7 @@ export default function GovernmentEntryPage() {
       {/* Add New Student modal (Online GR only) — 4-step wizard */}
       {addModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[95vh] flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <div>
                 <h3 className="text-base font-bold text-gray-800">
@@ -1479,7 +1517,7 @@ export default function GovernmentEntryPage() {
 
             <div className="px-5 py-4 space-y-3 overflow-y-auto">
               {addStep === 1 && !addSelectedStudent && (
-                <>
+                <div className="space-y-3">
                   <div className="flex gap-2">
                     <div className="relative flex-1">
                       <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
@@ -1491,22 +1529,46 @@ export default function GovernmentEntryPage() {
                       className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-school-navy">
                       {["All", ...CLASSES].map(o => <option key={o}>{o}</option>)}
                     </select>
+                    <select value={addStatusFilter} onChange={e => setAddStatusFilter(e.target.value)}
+                      className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-school-navy">
+                      <option value="All">All Statuses</option>
+                      <option value="Both Pending">UDISE &amp; PEN Both Pending</option>
+                      <option value="UDISE Pending">UDISE Pending</option>
+                      <option value="PEN Pending">PEN Pending</option>
+                      <option value="UDISE Done">UDISE Done</option>
+                      <option value="PEN Done">PEN Done</option>
+                      <option value="Both Done">UDISE &amp; PEN Both Done</option>
+                    </select>
                   </div>
 
                   <div className="border border-gray-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
                     {filteredAddableStudents.length === 0 ? (
                       <div className="px-3 py-6 text-center text-xs text-gray-400">
-                        No eligible students found (eligible = qualifies for UDISE or PEN entry, and not already in the matching register section).
+                        No eligible students found matching your filters.<br/>
+                        Eligible = qualifies for UDISE or PEN entry.
                       </div>
-                    ) : filteredAddableStudents.map(st => (
-                      <button key={st.enrollNo} type="button" onClick={() => selectAddStudent(st)}
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition-colors">
-                        <span className="font-semibold text-gray-800">{st.name}</span>
-                        <span className="text-gray-400"> · {st.cls} · {st.session} · {st.mobile1 || "-"}</span>
-                      </button>
-                    ))}
+                    ) : (
+                      <>
+                        <div className="px-3 py-2 text-[10px] text-gray-500 bg-gray-50 border-b">
+                          {filteredAddableStudents.length} of {addableStudents.length} eligible student{addableStudents.length !== 1 ? "s" : ""} shown
+                          {addableStudents.length > filteredAddableStudents.length && " (filtered)"}
+                        </div>
+                        {filteredAddableStudents.map(st => (
+                          <button key={st.enrollNo} type="button" onClick={() => selectAddStudent(st)}
+                            className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition-colors">
+                            <div className="flex items-center justify-between gap-2">
+                              <span>
+                                <span className="font-semibold text-gray-800">{st.name}</span>
+                                <span className="text-gray-400"> · {st.cls} · {st.session}</span>
+                              </span>
+                              <span className="flex-shrink-0">{eligibilityBadge(st)}</span>
+                            </div>
+                          </button>
+                        ))}
+                      </>
+                    )}
                   </div>
-                </>
+                </div>
               )}
 
               {addStep === 1 && addSelectedStudent && (
@@ -1526,6 +1588,7 @@ export default function GovernmentEntryPage() {
                     <div><span className="text-gray-400">NAME</span><div className="font-semibold text-gray-700">{addSelectedStudent.name}</div></div>
                     <div><span className="text-gray-400">MOBILE 1</span><div className="font-semibold text-gray-700">{addSelectedStudent.mobile1 || "-"}</div></div>
                     <div><span className="text-gray-400">MOBILE 2</span><div className="font-semibold text-gray-700">{addSelectedStudent.mobile2 || "-"}</div></div>
+                    <div className="col-span-2 pt-1">{eligibilityBadge(addReview)}</div>
                   </div>
                   <div className="flex flex-col gap-1 pt-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
