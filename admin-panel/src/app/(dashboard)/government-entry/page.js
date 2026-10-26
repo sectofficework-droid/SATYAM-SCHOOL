@@ -852,6 +852,118 @@ export default function GovernmentEntryPage() {
     resumeProgress(sessionData);
   }
 
+  // ── GR / PR Number Conflict Checking ─────────────────────────────────────
+  // Ensures one GR No (General) or PR No (Primary) cannot be assigned to another
+  // student if already taken by someone else in the database or Online GR register.
+  const checkGrConflict = useCallback((candidateGrNo, currentStudent, section, currentRowId) => {
+    const normVal = normKey(candidateGrNo);
+    if (!normVal || normVal === "-") return null;
+
+    const currentEnrollNo = currentStudent?.enrollNo ? normKey(currentStudent.enrollNo) : (currentStudent?.enroll_no ? normKey(currentStudent.enroll_no) : null);
+    const currentStudentId = currentStudent?.studentId || currentStudent?.id || null;
+    const currentAadhar = currentStudent?.aadharNo && currentStudent.aadharNo !== "-"
+      ? normKey(currentStudent.aadharNo)
+      : (currentStudent?.aadhar_no && currentStudent.aadhar_no !== "-" ? normKey(currentStudent.aadhar_no) : null);
+    const currentName = currentStudent?.name ? normKey(currentStudent.name) : null;
+    const currentCls = currentStudent?.cls ? normKey(currentStudent.cls) : null;
+
+    const isSameStudent = (candidate) => {
+      const candEnroll = candidate?.enrollNo ? normKey(candidate.enrollNo) : (candidate?.enroll_no ? normKey(candidate.enroll_no) : null);
+      if (currentEnrollNo && candEnroll && currentEnrollNo === candEnroll) return true;
+
+      const candStudentId = candidate?.studentId || candidate?.id || null;
+      if (currentStudentId && candStudentId && currentStudentId === candStudentId) return true;
+
+      const candAadhar = candidate?.aadharNo && candidate.aadharNo !== "-"
+        ? normKey(candidate.aadharNo)
+        : (candidate?.aadhar_no && candidate.aadhar_no !== "-" ? normKey(candidate.aadhar_no) : null);
+      if (currentAadhar && candAadhar && currentAadhar === candAadhar) return true;
+
+      const candName = candidate?.name ? normKey(candidate.name) : null;
+      const candCls = candidate?.cls ? normKey(candidate.cls) : null;
+      if (currentName && candName && currentName === candName) {
+        if (!currentCls || !candCls || currentCls === candCls) return true;
+      }
+
+      return false;
+    };
+
+    const sec = section || (currentStudent?.cls ? classSection(currentStudent.cls) : null);
+
+    // 1. Check in dbStudents
+    for (const s of dbStudents) {
+      const sGr = normKey(s.grNo);
+      if (!sGr || sGr === "-") continue;
+      if (sGr === normVal) {
+        if (isSameStudent(s)) continue;
+        if (sec) {
+          const sSec = classSection(s.cls);
+          if (sSec && sSec !== sec) continue;
+        }
+        return {
+          source: "database",
+          name: s.name,
+          cls: s.cls,
+          enrollNo: s.enrollNo,
+          grNo: s.grNo,
+        };
+      }
+    }
+
+    // 2. Check in onlineGrDataset
+    const sectionsToCheck = sec ? [sec] : ["primary", "general"];
+    for (const sName of sectionsToCheck) {
+      const list = onlineGrDataset[sName] || [];
+      for (const r of list) {
+        const rGr = normKey(r.grNo || r.gr_no);
+        if (!rGr || rGr === "-") continue;
+        if (rGr === normVal) {
+          if (currentRowId && r.id === currentRowId) continue;
+          if (isSameStudent({
+            enrollNo: r.enrollNo || r.enroll_no,
+            studentId: r.studentId,
+            id: r.id,
+            aadharNo: r.aadharNo || r.aadhar_no,
+            name: r.name,
+            cls: r.cls,
+          })) {
+            continue;
+          }
+          return {
+            source: "onlineGr",
+            name: r.name,
+            cls: r.cls,
+            enrollNo: r.enrollNo || r.enroll_no,
+            grNo: r.grNo || r.gr_no,
+          };
+        }
+      }
+    }
+
+    return null;
+  }, [dbStudents, onlineGrDataset]);
+
+  const getConflictWarning = useCallback((conflict, section) => {
+    if (!conflict) return "";
+    const regLabel = section === "primary" ? "PR No" : "GR No";
+    const details = [];
+    if (conflict.cls) details.push(conflict.cls);
+    if (conflict.enrollNo && conflict.enrollNo !== "-") details.push(`Enroll: ${conflict.enrollNo}`);
+    const studentDesc = `${conflict.name}${details.length ? ` (${details.join(" · ")})` : ""}`;
+    return `This ${regLabel} (${conflict.grNo}) is already assigned to ${studentDesc}. You first need to change that student's ${regLabel} to assign this ${regLabel} to this student.`;
+  }, []);
+
+  const addGrConflict = useMemo(
+    () => checkGrConflict(addGrNo, addSelectedStudent, addSection, addCreatedRowId),
+    [checkGrConflict, addGrNo, addSelectedStudent, addSection, addCreatedRowId]
+  );
+
+  const formGrSection = mainTab === "onlineGr" ? grSubTab : classSection(modalRow?.cls);
+  const formGrConflict = useMemo(
+    () => checkGrConflict(formGrNo, modalRow, formGrSection, modalRow?.id),
+    [checkGrConflict, formGrNo, modalRow, formGrSection]
+  );
+
   function openAddModal() {
     setAddModalOpen(true);
     setAddWizardActive(false);
@@ -1190,6 +1302,10 @@ export default function GovernmentEntryPage() {
   async function saveStep1AndContinue() {
     if (!addSelectedStudent || !addSection) { setAddError("Select a student first."); return; }
     if (!addGrNo.trim()) { setAddError(`${addSection === "primary" ? "PR" : "GR"} No is required.`); return; }
+    if (addGrConflict) {
+      setAddError(getConflictWarning(addGrConflict, addSection));
+      return;
+    }
     setAddSaving(true);
     setAddError("");
     try {
@@ -1533,6 +1649,11 @@ export default function GovernmentEntryPage() {
   async function handleSave() {
     if (!modalRow) return;
     setFormError("");
+
+    if (formGrConflict) {
+      setFormError(getConflictWarning(formGrConflict, formGrSection));
+      return;
+    }
 
     // 1. Online General Register — update SEPARATE record, do NOT insert into students table!
     if (mainTab === "onlineGr") {
@@ -2204,9 +2325,20 @@ export default function GovernmentEntryPage() {
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                       {grSubTab === "primary" ? "PR No (Primary Register No)" : "GR No (General Register No)"}
                     </label>
-                    <input type="text" value={formGrNo} onChange={e => setFormGrNo(e.target.value)}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"
+                    <input type="text" value={formGrNo}
+                      onChange={e => { setFormGrNo(e.target.value); if (formError) setFormError(""); }}
+                      className={`border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                        formGrConflict
+                          ? "border-red-400 focus:ring-red-400 bg-red-50/30"
+                          : "border-gray-200 focus:ring-school-navy"
+                      }`}
                       placeholder={grSubTab === "primary" ? "e.g. P001" : "e.g. 101"}/>
+                    {formGrConflict && (
+                      <div className="flex items-start gap-1.5 p-2 bg-red-50 border border-red-200 rounded-md text-xs text-red-800 mt-0.5">
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-600 mt-0.5" />
+                        <span className="font-medium">{getConflictWarning(formGrConflict, formGrSection)}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-1">
@@ -2252,9 +2384,20 @@ export default function GovernmentEntryPage() {
 
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">GR No</label>
-                    <input type="text" value={formGrNo} readOnly={isWizardEntry} onChange={e => !isWizardEntry && setFormGrNo(e.target.value)}
-                      className={`border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy ${isWizardEntry ? "bg-gray-100 text-gray-500" : ""}`}
+                    <input type="text" value={formGrNo} readOnly={isWizardEntry}
+                      onChange={e => { if (!isWizardEntry) { setFormGrNo(e.target.value); if (formError) setFormError(""); } }}
+                      className={`border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                        formGrConflict && !isWizardEntry
+                          ? "border-red-400 focus:ring-red-400 bg-red-50/30"
+                          : "border-gray-200 focus:ring-school-navy"
+                      } ${isWizardEntry ? "bg-gray-100 text-gray-500" : ""}`}
                       placeholder="GR No"/>
+                    {formGrConflict && !isWizardEntry && (
+                      <div className="flex items-start gap-1.5 p-2 bg-red-50 border border-red-200 rounded-md text-xs text-red-800 mt-0.5">
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-600 mt-0.5" />
+                        <span className="font-medium">{getConflictWarning(formGrConflict, formGrSection)}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">UDISE No (18 digits)</label>
@@ -2269,9 +2412,20 @@ export default function GovernmentEntryPage() {
                 <>
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">GR No</label>
-                    <input type="text" value={formGrNo} readOnly={isWizardEntry} onChange={e => !isWizardEntry && setFormGrNo(e.target.value)}
-                      className={`border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy ${isWizardEntry ? "bg-gray-100 text-gray-500" : ""}`}
+                    <input type="text" value={formGrNo} readOnly={isWizardEntry}
+                      onChange={e => { if (!isWizardEntry) { setFormGrNo(e.target.value); if (formError) setFormError(""); } }}
+                      className={`border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ${
+                        formGrConflict && !isWizardEntry
+                          ? "border-red-400 focus:ring-red-400 bg-red-50/30"
+                          : "border-gray-200 focus:ring-school-navy"
+                      } ${isWizardEntry ? "bg-gray-100 text-gray-500" : ""}`}
                       placeholder="GR No"/>
+                    {formGrConflict && !isWizardEntry && (
+                      <div className="flex items-start gap-1.5 p-2 bg-red-50 border border-red-200 rounded-md text-xs text-red-800 mt-0.5">
+                        <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-600 mt-0.5" />
+                        <span className="font-medium">{getConflictWarning(formGrConflict, formGrSection)}</span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">PEN No</label>
@@ -2301,7 +2455,7 @@ export default function GovernmentEntryPage() {
                 className="text-xs font-semibold px-3.5 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors disabled:opacity-50">
                 Cancel
               </button>
-              <button onClick={handleSave} disabled={saving}
+              <button onClick={handleSave} disabled={saving || !!formGrConflict}
                 className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors disabled:opacity-60">
                 {saving && <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
                 {saving ? "Saving..." : "Save"}
@@ -2493,26 +2647,46 @@ export default function GovernmentEntryPage() {
 
                     if (existingGr && !addGrEditing) {
                       return (
-                        <div className="flex items-center justify-between p-3 bg-green-50/80 border border-green-200 rounded-lg">
-                          <div className="flex items-center gap-2.5">
-                            <span className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0 animate-pulse"></span>
-                            <div>
-                              <div className="text-[10px] font-bold text-green-800 uppercase tracking-wider flex items-center gap-1.5">
-                                <span>{labelTitle}</span>
-                                <span className="bg-green-200 text-green-800 text-[9px] px-1.5 py-0.5 rounded font-semibold">Already Saved in Record</span>
-                              </div>
-                              <div className="text-base font-bold text-gray-900 tracking-wide font-mono mt-0.5">
-                                {addGrNo || existingGr}
+                        <div className="flex flex-col gap-2">
+                          <div className={`flex items-center justify-between p-3 rounded-lg border ${
+                            addGrConflict
+                              ? "bg-red-50/80 border-red-300"
+                              : "bg-green-50/80 border-green-200"
+                          }`}>
+                            <div className="flex items-center gap-2.5">
+                              <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 animate-pulse ${
+                                addGrConflict ? "bg-red-500" : "bg-green-500"
+                              }`}></span>
+                              <div>
+                                <div className={`text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 ${
+                                  addGrConflict ? "text-red-800" : "text-green-800"
+                                }`}>
+                                  <span>{labelTitle}</span>
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${
+                                    addGrConflict ? "bg-red-200 text-red-800" : "bg-green-200 text-green-800"
+                                  }`}>
+                                    {addGrConflict ? "Conflict with another student" : "Already Saved in Record"}
+                                  </span>
+                                </div>
+                                <div className="text-base font-bold text-gray-900 tracking-wide font-mono mt-0.5">
+                                  {addGrNo || existingGr}
+                                </div>
                               </div>
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => setAddGrEditing(true)}
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-school-navy hover:text-blue-900 bg-white border border-gray-300 hover:border-school-navy px-3 py-1.5 rounded-md shadow-sm transition-all"
+                            >
+                              ✏️ Edit {isPrimary ? "PR No" : "GR No"}
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => setAddGrEditing(true)}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-school-navy hover:text-blue-900 bg-white border border-gray-300 hover:border-school-navy px-3 py-1.5 rounded-md shadow-sm transition-all"
-                          >
-                            ✏️ Edit {isPrimary ? "PR No" : "GR No"}
-                          </button>
+                          {addGrConflict && (
+                            <div className="flex items-start gap-1.5 p-2 bg-red-50 border border-red-200 rounded-md text-xs text-red-800">
+                              <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-600 mt-0.5" />
+                              <span className="font-medium">{getConflictWarning(addGrConflict, addSection)}</span>
+                            </div>
+                          )}
                         </div>
                       );
                     }
@@ -2529,6 +2703,7 @@ export default function GovernmentEntryPage() {
                               onClick={() => {
                                 setAddGrNo(existingGr);
                                 setAddGrEditing(false);
+                                if (addError) setAddError("");
                               }}
                               className="text-[11px] font-medium text-gray-500 hover:text-gray-700 underline"
                             >
@@ -2540,23 +2715,36 @@ export default function GovernmentEntryPage() {
                           <input
                             type="text"
                             value={addGrNo}
-                            onChange={e => setAddGrNo(e.target.value)}
+                            onChange={e => {
+                              setAddGrNo(e.target.value);
+                              if (addError) setAddError("");
+                            }}
                             placeholder={isPrimary ? "e.g. P101" : "e.g. 201"}
-                            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy bg-white"
+                            className={`flex-1 border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 bg-white ${
+                              addGrConflict
+                                ? "border-red-400 focus:ring-red-400 bg-red-50/30"
+                                : "border-gray-300 focus:ring-school-navy"
+                            }`}
                             autoFocus={addGrEditing}
                           />
                           {existingGr && (
                             <button
                               type="button"
                               onClick={() => setAddGrEditing(false)}
-                              disabled={!addGrNo.trim()}
+                              disabled={!addGrNo.trim() || !!addGrConflict}
                               className="text-xs font-semibold px-3 py-2 bg-school-navy text-white rounded-lg hover:bg-blue-900 transition-colors disabled:opacity-50"
                             >
                               Done
                             </button>
                           )}
                         </div>
-                        {!existingGr && (
+                        {addGrConflict && (
+                          <div className="flex items-start gap-1.5 p-2 bg-red-50 border border-red-200 rounded-md text-xs text-red-800">
+                            <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-600 mt-0.5" />
+                            <span className="font-medium">{getConflictWarning(addGrConflict, addSection)}</span>
+                          </div>
+                        )}
+                        {!existingGr && !addGrConflict && (
                           <span className="text-[11px] text-amber-700">
                             ℹ️ Student currently does not have a {isPrimary ? "PR No" : "GR No"} assigned. Enter it here to save.
                           </span>
@@ -2605,7 +2793,7 @@ export default function GovernmentEntryPage() {
                   const bothIneligible = addSelectedStudent && !udiseInfo.eligible && !penInfo.eligible;
 
                   return (
-                    <button onClick={saveStep1AndContinue} disabled={addSaving || !addSelectedStudent}
+                    <button onClick={saveStep1AndContinue} disabled={addSaving || !addSelectedStudent || !!addGrConflict}
                       className={`flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg transition-colors disabled:opacity-60 ${
                         bothIneligible
                           ? "bg-amber-600 text-white hover:bg-amber-700"
