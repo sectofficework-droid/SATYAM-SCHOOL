@@ -2037,47 +2037,6 @@ export default function GovernmentEntryPage() {
           <span>{loadError}</span>
         </div>
       )}
-      {/* Page header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-gray-800">Government Entry</h2>
-          <p className="text-sm text-gray-500 mt-0.5">File Online General Register, UDISE &amp; PEN entries into government portals and record results</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {inProgressSession && !addWizardActive && (
-            <button
-              type="button"
-              onClick={() => resumeProgress(inProgressSession)}
-              title={`Resume entry for ${inProgressSession.grNo || inProgressSession.studentName}`}
-              className="flex items-center gap-1.5 text-xs border border-amber-400 bg-amber-100 px-3 py-1.5 rounded-lg text-amber-900 hover:bg-amber-200 transition-all shadow-sm font-semibold animate-pulse"
-            >
-              <span className="w-2 h-2 rounded-full bg-amber-600"></span>
-              Resume {inProgressSession.grNo || "Progress"}
-            </button>
-          )}
-          <button onClick={exportExcel}
-            title="Download Excel export"
-            className="flex items-center gap-1.5 text-xs border border-emerald-300 bg-emerald-50 px-3 py-1.5 rounded-lg text-emerald-800 hover:bg-emerald-100 transition-colors">
-            <Download className="w-3.5 h-3.5 text-emerald-700"/> Export Excel
-          </button>
-          <button onClick={() => setShowRules(true)}
-            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
-            <HelpCircle className="w-3.5 h-3.5"/> Rules
-          </button>
-          <button onClick={loadAll} disabled={refreshing}
-            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors disabled:opacity-60">
-            <RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin text-school-navy" : ""}`}/>
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </button>
-          <button onClick={() => setFullscreen(v => !v)}
-            title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
-            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
-            {fullscreen ? <Minimize2 className="w-3.5 h-3.5"/> : <Maximize2 className="w-3.5 h-3.5"/>}
-            {fullscreen ? "Exit Fullscreen" : "Fullscreen"}
-          </button>
-        </div>
-      </div>
-
       {/* In Progress Resume Banner */}
       {inProgressSession && !addWizardActive && (
         <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-300 rounded-xl p-3 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
@@ -2122,56 +2081,92 @@ export default function GovernmentEntryPage() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-          <button onClick={() => setMainTab("onlineGr")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "onlineGr" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-            <BookOpen className="w-3.5 h-3.5"/> Online General Register
-          </button>
-          <button onClick={() => setMainTab("udise")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "udise" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-            <Landmark className="w-3.5 h-3.5"/> UDISE Entry (State)
-          </button>
-          <button onClick={() => setMainTab("pen")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "pen" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-            <IdCard className="w-3.5 h-3.5"/> PEN Entry (National)
-          </button>
-          <button onClick={() => setMainTab("mismatch")}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "mismatch" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-            <AlertTriangle className="w-3.5 h-3.5"/> Mismatch
-          </button>
+      {/* Tabs & Top Controls */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+            <button onClick={() => setMainTab("onlineGr")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "onlineGr" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              <BookOpen className="w-3.5 h-3.5"/> Online General Register
+            </button>
+            <button onClick={() => setMainTab("udise")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "udise" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              <Landmark className="w-3.5 h-3.5"/> UDISE Entry (State)
+            </button>
+            <button onClick={() => setMainTab("pen")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "pen" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              <IdCard className="w-3.5 h-3.5"/> PEN Entry (National)
+            </button>
+            <button onClick={() => setMainTab("mismatch")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "mismatch" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              <AlertTriangle className="w-3.5 h-3.5"/> Mismatch
+            </button>
+          </div>
+
+          {mainTab === "mismatch" ? (
+            <>
+              <span className="hidden sm:block w-px h-6 bg-gray-200"/>
+              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+                <button onClick={() => setMismatchDir("udiseOnly")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "udiseOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                  UDISE Eligible, PEN Not
+                </button>
+                <button onClick={() => setMismatchDir("penOnly")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "penOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                  PEN Eligible, UDISE Not
+                </button>
+              </div>
+            </>
+          ) : mainTab !== "onlineGr" ? (
+            <>
+              <span className="hidden sm:block w-px h-6 bg-gray-200"/>
+              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+                <button onClick={() => setEligTab("eligible")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "eligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                  Eligible for Entry
+                </button>
+                <button onClick={() => setEligTab("ineligible")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "ineligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                  Not Eligible for Entry
+                </button>
+              </div>
+            </>
+          ) : null}
         </div>
 
-        {mainTab === "mismatch" ? (
-          <>
-            <span className="hidden sm:block w-px h-6 bg-gray-200"/>
-            <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-              <button onClick={() => setMismatchDir("udiseOnly")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "udiseOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-                UDISE Eligible, PEN Not
-              </button>
-              <button onClick={() => setMismatchDir("penOnly")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "penOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-                PEN Eligible, UDISE Not
-              </button>
-            </div>
-          </>
-        ) : mainTab !== "onlineGr" ? (
-          <>
-            <span className="hidden sm:block w-px h-6 bg-gray-200"/>
-            <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
-              <button onClick={() => setEligTab("eligible")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "eligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-                Eligible for Entry
-              </button>
-              <button onClick={() => setEligTab("ineligible")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "ineligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
-                Not Eligible for Entry
-              </button>
-            </div>
-          </>
-        ) : null}
+        <div className="flex items-center gap-2">
+          {inProgressSession && !addWizardActive && (
+            <button
+              type="button"
+              onClick={() => resumeProgress(inProgressSession)}
+              title={`Resume entry for ${inProgressSession.grNo || inProgressSession.studentName}`}
+              className="flex items-center gap-1.5 text-xs border border-amber-400 bg-amber-100 px-3 py-1.5 rounded-lg text-amber-900 hover:bg-amber-200 transition-all shadow-sm font-semibold animate-pulse"
+            >
+              <span className="w-2 h-2 rounded-full bg-amber-600"></span>
+              Resume {inProgressSession.grNo || "Progress"}
+            </button>
+          )}
+          <button onClick={exportExcel}
+            title="Download Excel export"
+            className="flex items-center gap-1.5 text-xs border border-emerald-300 bg-emerald-50 px-3 py-1.5 rounded-lg text-emerald-800 hover:bg-emerald-100 transition-colors">
+            <Download className="w-3.5 h-3.5 text-emerald-700"/> Export Excel
+          </button>
+          <button onClick={() => setShowRules(true)}
+            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
+            <HelpCircle className="w-3.5 h-3.5"/> Rules
+          </button>
+          <button onClick={loadAll} disabled={refreshing}
+            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors disabled:opacity-60">
+            <RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin text-school-navy" : ""}`}/>
+            {refreshing ? "Refreshing..." : "Refresh"}
+          </button>
+          <button onClick={() => setFullscreen(v => !v)}
+            title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
+            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
+            {fullscreen ? <Minimize2 className="w-3.5 h-3.5"/> : <Maximize2 className="w-3.5 h-3.5"/>}
+            {fullscreen ? "Exit Fullscreen" : "Fullscreen"}
+          </button>
+        </div>
       </div>
 
       {/* Add New Student wizard — details-review phase (table stays click-to-copy-able, no modal) */}
