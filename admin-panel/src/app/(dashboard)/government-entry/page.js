@@ -953,9 +953,45 @@ export default function GovernmentEntryPage() {
     return `This ${regLabel} (${conflict.grNo}) is already assigned to ${studentDesc}. You first need to change that student's ${regLabel} to assign this ${regLabel} to this student.`;
   }, []);
 
+  const findExistingOnlineGrRow = useCallback((st, section) => {
+    if (!st || !section) return null;
+    const list = onlineGrDataset[section] || [];
+    const stEnroll = st.enrollNo ? normKey(st.enrollNo) : null;
+    const stAadhar = st.aadharNo && st.aadharNo !== "-" ? normKey(st.aadharNo) : null;
+    const stMobile = st.mobile1 && st.mobile1 !== "-" ? normKey(st.mobile1) : null;
+    const stName = st.name ? normKey(st.name) : null;
+    const stCls = st.cls ? normKey(st.cls) : null;
+
+    return list.find(r => {
+      const rEnroll = r.enrollNo || r.enroll_no ? normKey(r.enrollNo || r.enroll_no) : null;
+      if (stEnroll && rEnroll && rEnroll === stEnroll) return true;
+
+      const rAadhar = r.aadhar_no || r.aadharNo;
+      if (stAadhar && rAadhar && rAadhar !== "-" && normKey(rAadhar) === stAadhar) return true;
+
+      const rName = r.name ? normKey(r.name) : null;
+      const rCls = r.cls ? normKey(r.cls) : null;
+      if (stName && rName && rName === stName) {
+        if (!stCls || !rCls || rCls === stCls) return true;
+      }
+
+      const rMobile = r.mobile1;
+      if (stMobile && rMobile && rMobile !== "-" && normKey(rMobile) === stMobile && stName && rName && rName === stName) {
+        return true;
+      }
+
+      return false;
+    }) || null;
+  }, [onlineGrDataset]);
+
+  const addExistingRow = useMemo(
+    () => findExistingOnlineGrRow(addSelectedStudent, addSection),
+    [findExistingOnlineGrRow, addSelectedStudent, addSection]
+  );
+
   const addGrConflict = useMemo(
-    () => checkGrConflict(addGrNo, addSelectedStudent, addSection, addCreatedRowId),
-    [checkGrConflict, addGrNo, addSelectedStudent, addSection, addCreatedRowId]
+    () => checkGrConflict(addGrNo, addSelectedStudent, addSection, addCreatedRowId || addExistingRow?.id),
+    [checkGrConflict, addGrNo, addSelectedStudent, addSection, addCreatedRowId, addExistingRow]
   );
 
   const formGrSection = mainTab === "onlineGr" ? grSubTab : classSection(modalRow?.cls);
@@ -1282,16 +1318,23 @@ export default function GovernmentEntryPage() {
   }
 
   function selectAddStudent(st) {
-    const existingGr = getSavedGrNo(st);
+    const sec = classSection(st.cls);
+    const existingRow = findExistingOnlineGrRow(st, sec);
+    const existingGr = existingRow?.grNo && existingRow.grNo !== "-"
+      ? String(existingRow.grNo).trim()
+      : getSavedGrNo(st);
+
     setAddSelectedStudent(st);
+    setAddCreatedRowId(existingRow ? existingRow.id : null);
     setAddGrNo(existingGr);
     setAddGrEditing(!existingGr);
     setAddError("");
   }
 
   function changeAddStudent() {
-    if (addCreatedRowId) return; // already saved against this student — can't swap
+    if (addWizardActive) return; // already proceeded past stage 1 in wizard — can't swap
     setAddSelectedStudent(null);
+    setAddCreatedRowId(null);
     setAddGrNo("");
     setAddGrEditing(false);
     setAddError("");
@@ -1321,7 +1364,9 @@ export default function GovernmentEntryPage() {
       }
 
       const dec = decorate({ ...addSelectedStudent, grNo: addGrNo.trim() });
-      const id = addCreatedRowId || (
+      const existingRow = findExistingOnlineGrRow(addSelectedStudent, addSection);
+      const targetId = addCreatedRowId || existingRow?.id;
+      const id = targetId || (
         (typeof crypto !== "undefined" && crypto.randomUUID)
           ? crypto.randomUUID()
           : `gr_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
@@ -1358,12 +1403,14 @@ export default function GovernmentEntryPage() {
         remarks:          remarksToSave,
         documentsPending: dec.documentsPending,
       });
-      setAddCreatedRowId(id);
+
+      const finalId = created.id || id;
+      setAddCreatedRowId(finalId);
       setAddSelectedStudent(prev => prev ? { ...prev, grNo: addGrNo.trim(), remarks: remarksToSave } : prev);
       setOnlineGrDataset(prev => {
         const list = prev[addSection] || [];
-        const idx = list.findIndex(r => r.id === id);
-        const nextList = idx >= 0 ? list.map(r => r.id === id ? created : r) : [...list, created];
+        const idx = list.findIndex(r => r.id === finalId);
+        const nextList = idx >= 0 ? list.map(r => r.id === finalId ? created : r) : [...list, created];
         return { ...prev, [addSection]: nextList };
       });
 
@@ -1375,7 +1422,7 @@ export default function GovernmentEntryPage() {
           grNo: addGrNo.trim(),
           step: 2,
           subPhase: "details",
-          createdRowId: id,
+          createdRowId: finalId,
           section: addSection,
           studentName: addSelectedStudent.name,
           cls: addSelectedStudent.cls,
@@ -1399,7 +1446,7 @@ export default function GovernmentEntryPage() {
           grNo: addGrNo.trim(),
           step: 3,
           subPhase: "details",
-          createdRowId: id,
+          createdRowId: finalId,
           section: addSection,
           studentName: addSelectedStudent.name,
           cls: addSelectedStudent.cls,
@@ -2648,6 +2695,14 @@ export default function GovernmentEntryPage() {
                     if (existingGr && !addGrEditing) {
                       return (
                         <div className="flex flex-col gap-2">
+                          {addExistingRow && (
+                            <div className="flex items-center gap-2 p-2 bg-blue-50/80 border border-blue-200 rounded-lg text-xs text-blue-900">
+                              <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-blue-600" />
+                              <span>
+                                Already registered in {isPrimary ? "Primary Register" : "Online General Register"} · Saving updates existing record in-place (no duplicate created)
+                              </span>
+                            </div>
+                          )}
                           <div className={`flex items-center justify-between p-3 rounded-lg border ${
                             addGrConflict
                               ? "bg-red-50/80 border-red-300"
@@ -2693,6 +2748,12 @@ export default function GovernmentEntryPage() {
 
                     return (
                       <div className="flex flex-col gap-1.5 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                        {addExistingRow && (
+                          <div className="flex items-center gap-1.5 p-2 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-900">
+                            <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-blue-600" />
+                            <span>Already in {isPrimary ? "Primary Register" : "Online General Register"} · Saving updates existing record in-place</span>
+                          </div>
+                        )}
                         <div className="flex items-center justify-between">
                           <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wider">
                             {existingGr ? `Edit ${labelTitle}` : `${labelTitle} *`}

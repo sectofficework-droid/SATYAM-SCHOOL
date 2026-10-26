@@ -226,7 +226,27 @@ export async function POST(request) {
     }
 
     let updatedItem;
+    const regLabel = section === "primary" ? "PR No" : "GR No";
+
     if (existing) {
+      // Validate that grNo is not already taken by another student in this section
+      if (safeUpdates.grNo && safeUpdates.grNo !== "-") {
+        const { data: dupGr } = await supabaseAdmin
+          .from(TABLE)
+          .select("id, name, cls, gr_no")
+          .eq("section", section)
+          .ilike("gr_no", safeUpdates.grNo.trim())
+          .neq("id", id)
+          .maybeSingle();
+
+        if (dupGr) {
+          return NextResponse.json(
+            { error: `This ${regLabel} (${safeUpdates.grNo}) is already assigned to ${dupGr.name}${dupGr.cls ? ` (${dupGr.cls})` : ""}. You first need to change that student's ${regLabel} to assign this ${regLabel} to this student.` },
+            { status: 409 }
+          );
+        }
+      }
+
       // Merge onto the stored record (mirrors the original in-place
       // update) and recompute status from the merged grNo — same
       // observable rule as before: grNo present ⇒ Done.
@@ -245,6 +265,70 @@ export async function POST(request) {
         return NextResponse.json({ error: updateErr.message }, { status: 500 });
       }
     } else {
+      // Check if student already exists in this section (prevent duplicate row creation for the same student)
+      let existingStudentRecord = null;
+      if (safeUpdates.aadharNo && safeUpdates.aadharNo !== "-") {
+        const { data: byAadhar } = await supabaseAdmin
+          .from(TABLE)
+          .select("*")
+          .eq("section", section)
+          .eq("aadhar_no", safeUpdates.aadharNo.trim())
+          .neq("id", id)
+          .maybeSingle();
+        if (byAadhar) existingStudentRecord = byAadhar;
+      }
+      if (!existingStudentRecord && safeUpdates.name && safeUpdates.cls) {
+        const { data: byName } = await supabaseAdmin
+          .from(TABLE)
+          .select("*")
+          .eq("section", section)
+          .ilike("name", safeUpdates.name.trim())
+          .ilike("cls", safeUpdates.cls.trim())
+          .neq("id", id)
+          .maybeSingle();
+        if (byName) existingStudentRecord = byName;
+      }
+
+      if (existingStudentRecord) {
+        // Student already exists in this section — update their existing record in-place instead of creating a duplicate row!
+        const camelExisting = fromDbRow(existingStudentRecord);
+        camelExisting.section = section;
+        updatedItem = { ...camelExisting, ...safeUpdates };
+        updatedItem.status = (safeUpdates.grNo ?? camelExisting.grNo)
+          ? "Done"
+          : "Pending";
+        const { error: updateErr } = await supabaseAdmin
+          .from(TABLE)
+          .update(toDbRow(updatedItem, section))
+          .eq("id", existingStudentRecord.id)
+          .eq("section", section);
+        if (updateErr) {
+          return NextResponse.json({ error: updateErr.message }, { status: 500 });
+        }
+        return NextResponse.json({
+          success: true,
+          item: updatedItem,
+        });
+      }
+
+      // Truly new student: validate that grNo is not already taken by another row in this section
+      if (safeUpdates.grNo && safeUpdates.grNo !== "-") {
+        const { data: dupGr } = await supabaseAdmin
+          .from(TABLE)
+          .select("id, name, cls, gr_no")
+          .eq("section", section)
+          .ilike("gr_no", safeUpdates.grNo.trim())
+          .neq("id", id)
+          .maybeSingle();
+
+        if (dupGr) {
+          return NextResponse.json(
+            { error: `This ${regLabel} (${safeUpdates.grNo}) is already assigned to ${dupGr.name}${dupGr.cls ? ` (${dupGr.cls})` : ""}. You first need to change that student's ${regLabel} to assign this ${regLabel} to this student.` },
+            { status: 409 }
+          );
+        }
+      }
+
       // New record added — same per-field defaults as the original
       // create branch; approved fields flow in through the whitelist.
       const defaults = {
