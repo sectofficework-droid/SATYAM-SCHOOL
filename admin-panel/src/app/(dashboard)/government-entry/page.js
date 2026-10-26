@@ -1395,11 +1395,6 @@ export default function GovernmentEntryPage() {
                     <AlertTriangle className="w-3 h-3 text-amber-600" /> Not Uploaded
                   </span>
                 )}
-                {(student?.dob || student?.dobSlash || student?.dobDMY) && (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold bg-white text-gray-800 px-2 py-0.5 rounded border border-gray-200 shadow-xs" title="Date of Birth">
-                    DOB: {student?.dobDMY || fmtDateDMY(student?.dob || student?.dobSlash) || student?.dobSlash}
-                  </span>
-                )}
               </div>
               <p className="text-[11px] text-gray-600 truncate mt-0.5">
                 {isUploaded
@@ -2724,61 +2719,6 @@ export default function GovernmentEntryPage() {
                 <>
                   {/* Birth Certificate Action Section (UDISE Entry Modal) */}
                   {renderBirthCertCard(modalRow)}
-
-                  {/* Student Birth & Portal Reference Info */}
-                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs space-y-2">
-                    <div className="flex items-center justify-between border-b border-gray-200 pb-1.5">
-                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">UDISE Portal Filing Info (Click any cell to copy)</span>
-                      <span className="text-[11px] font-semibold text-school-navy">{modalRow?.cls || ""}</span>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.dobDMY || fmtDateDMY(modalRow?.dob || modalRow?.dobSlash) || modalRow?.dobSlash)}
-                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors col-span-2">
-                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Date of Birth (DOB)</span>
-                        <span className="font-semibold text-gray-900 text-sm">{modalRow?.dobDMY || fmtDateDMY(modalRow?.dob || modalRow?.dobSlash) || modalRow?.dobSlash || "-"}</span>
-                      </div>
-                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.birthDate || dobParts(modalRow?.dob || modalRow?.dobSlash).birthDate)}
-                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
-                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Birth Date</span>
-                        <span className="font-semibold text-gray-800">{modalRow?.birthDate || dobParts(modalRow?.dob || modalRow?.dobSlash).birthDate || "-"}</span>
-                      </div>
-                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.birthMonth || dobParts(modalRow?.dob || modalRow?.dobSlash).birthMonth)}
-                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
-                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Birth Month</span>
-                        <span className="font-semibold text-gray-800">{modalRow?.birthMonth || dobParts(modalRow?.dob || modalRow?.dobSlash).birthMonth || "-"}</span>
-                      </div>
-                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.birthYear || dobParts(modalRow?.dob || modalRow?.dobSlash).birthYear)}
-                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
-                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Birth Year</span>
-                        <span className="font-semibold text-gray-800">{modalRow?.birthYear || dobParts(modalRow?.dob || modalRow?.dobSlash).birthYear || "-"}</span>
-                      </div>
-                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.gender)}
-                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
-                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Gender</span>
-                        <span className="font-semibold text-gray-800">{modalRow?.gender || "-"}</span>
-                      </div>
-                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.birthCertRegNo)}
-                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
-                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Birth Reg No</span>
-                        <span className="font-semibold text-gray-800">{modalRow?.birthCertRegNo || "-"}</span>
-                      </div>
-                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.firstName)}
-                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
-                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Student Name</span>
-                        <span className="font-semibold text-gray-800">{modalRow?.firstName || modalRow?.name || "-"}</span>
-                      </div>
-                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.fatherNameOnly || modalRow?.fatherName)}
-                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
-                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Father's Name</span>
-                        <span className="font-semibold text-gray-800">{modalRow?.fatherNameOnly || modalRow?.fatherName || "-"}</span>
-                      </div>
-                      <div tabIndex={0} onFocus={() => copyCellToClipboard(modalRow?.motherNameOnly || modalRow?.motherName)}
-                        className="cursor-pointer p-1.5 rounded-lg border border-gray-200 bg-white hover:bg-blue-50 transition-colors">
-                        <span className="text-[10px] text-gray-400 block font-bold uppercase">Mother's Name</span>
-                        <span className="font-semibold text-gray-800">{modalRow?.motherNameOnly || modalRow?.motherName || "-"}</span>
-                      </div>
-                    </div>
-                  </div>
 
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">GR No</label>
