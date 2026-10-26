@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import {
   Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X,
   Loader2, HelpCircle, Search, Maximize2, Minimize2, Download, BookOpen,
-  ChevronUp, ChevronDown, Trash2, UserPlus, Upload, FileText
+  ChevronUp, ChevronDown, Trash2, UserPlus, Upload, FileText, Calendar
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import supabase from "@/lib/supabase";
@@ -47,6 +47,50 @@ function fmtDateDMY(dateStr) {
   const [y, m, d] = parts;
   if (!y || !m || !d) return "";
   return `${d.padStart(2,"0")}-${m.padStart(2,"0")}-${y}`;
+}
+
+function getTodaySlash() {
+  const now = new Date();
+  const d = String(now.getDate()).padStart(2, "0");
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const y = now.getFullYear();
+  return `${d}/${m}/${y}`;
+}
+
+function slashToIso(slash) {
+  if (!slash || slash === "-") return "";
+  const parts = String(slash).replace(/-/g, "/").split("/");
+  if (parts.length === 3) {
+    if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, "0")}-${parts[2].padStart(2, "0")}`;
+    const [d, m, y] = parts;
+    return `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`;
+  }
+  return "";
+}
+
+function isoToSlash(iso) {
+  if (!iso) return "";
+  const parts = String(iso).split("-");
+  if (parts.length === 3) {
+    const [y, m, d] = parts;
+    return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
+  }
+  return iso;
+}
+
+function normSlashDate(str) {
+  if (!str) return "";
+  const cleaned = String(str).trim().replace(/-/g, "/");
+  const parts = cleaned.split("/");
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      const [y, m, d] = parts;
+      return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
+    }
+    const [d, m, y] = parts;
+    return `${d.padStart(2, "0")}/${m.padStart(2, "0")}/${y}`;
+  }
+  return cleaned;
 }
 
 const MONTH_ABBR = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -97,7 +141,7 @@ function decorate(st) {
     dobDMY:               fmtDateDMY(st.dob),
     dobSlash:             fmtDate(st.dob) || "-",
     doaSlash:             fmtDate(st.joinDate) || "-",
-    doeSlash:             fmtDate(st.leavingDate || st.deactivateDate) || "-",
+    doeSlash:             (st.doeSlash && st.doeSlash !== "-") ? st.doeSlash : (st.dateOfEntry ? fmtDate(st.dateOfEntry) : getTodaySlash()),
     fatherNameOnly,
     motherNameOnly,
     fatherName:           nameWithSurname(st.fatherName, st.surname),
@@ -629,6 +673,7 @@ export default function GovernmentEntryPage() {
   // ── Entry Done modal ────────────────────────────────────────────────────
   const [modalRow, setModalRow] = useState(null);
   const [formGrNo, setFormGrNo] = useState("");
+  const [formDoeSlash, setFormDoeSlash] = useState("");
   const [formUdise, setFormUdise] = useState("");
   const [formPen, setFormPen] = useState("");
   const [formPenNotDefined, setFormPenNotDefined] = useState(false);
@@ -701,6 +746,8 @@ export default function GovernmentEntryPage() {
   const [addSelectedStudent, setAddSelectedStudent] = useState(null);
   const [addGrNo, setAddGrNo] = useState("");
   const [addGrEditing, setAddGrEditing] = useState(false);
+  const [addDoeSlash, setAddDoeSlash] = useState("");
+  const [addDoeEditing, setAddDoeEditing] = useState(false);
   const [addCreatedRowId, setAddCreatedRowId] = useState(null);
   const [addError, setAddError] = useState("");
   const [addSaving, setAddSaving] = useState(false);
@@ -767,6 +814,7 @@ export default function GovernmentEntryPage() {
 
     setAddSelectedStudent(student);
     setAddGrNo(grNo);
+    if (saved.doeSlash) setAddDoeSlash(saved.doeSlash);
     setAddCreatedRowId(createdRowId);
     setAddStep(step);
     setAddSubPhase(subPhase);
@@ -1012,6 +1060,8 @@ export default function GovernmentEntryPage() {
     setAddSelectedStudent(null);
     setAddGrNo("");
     setAddGrEditing(false);
+    setAddDoeSlash(getTodaySlash());
+    setAddDoeEditing(false);
     setAddCreatedRowId(null);
     setAddPinnedEnrollNo(null);
     setAddError("");
@@ -1323,11 +1373,16 @@ export default function GovernmentEntryPage() {
     const existingGr = existingRow?.grNo && existingRow.grNo !== "-"
       ? String(existingRow.grNo).trim()
       : getSavedGrNo(st);
+    const existingDoe = existingRow?.doeSlash && existingRow.doeSlash !== "-"
+      ? String(existingRow.doeSlash).trim()
+      : getTodaySlash();
 
     setAddSelectedStudent(st);
     setAddCreatedRowId(existingRow ? existingRow.id : null);
     setAddGrNo(existingGr);
     setAddGrEditing(!existingGr);
+    setAddDoeSlash(existingDoe);
+    setAddDoeEditing(false);
     setAddError("");
   }
 
@@ -1337,6 +1392,8 @@ export default function GovernmentEntryPage() {
     setAddCreatedRowId(null);
     setAddGrNo("");
     setAddGrEditing(false);
+    setAddDoeSlash(getTodaySlash());
+    setAddDoeEditing(false);
     setAddError("");
   }
 
@@ -1395,7 +1452,7 @@ export default function GovernmentEntryPage() {
         mobile2:          addSelectedStudent.mobile2 || "-",
         dobSlash:         dec.dobSlash,
         doaSlash:         dec.doaSlash,
-        doeSlash:         dec.doeSlash,
+        doeSlash:         normSlashDate(addDoeSlash) || getTodaySlash(),
         aadharNo:         addSelectedStudent.aadharNo || "-",
         udise:            addSelectedStudent.udise || "-",
         pen:              addSelectedStudent.pen || "-",
@@ -1420,6 +1477,7 @@ export default function GovernmentEntryPage() {
           enrollNo: addSelectedStudent.enrollNo,
           studentId: addSelectedStudent.studentId || addSelectedStudent.id,
           grNo: addGrNo.trim(),
+          doeSlash: normSlashDate(addDoeSlash) || getTodaySlash(),
           step: 2,
           subPhase: "details",
           createdRowId: finalId,
@@ -1444,6 +1502,7 @@ export default function GovernmentEntryPage() {
           enrollNo: addSelectedStudent.enrollNo,
           studentId: addSelectedStudent.studentId || addSelectedStudent.id,
           grNo: addGrNo.trim(),
+          doeSlash: normSlashDate(addDoeSlash) || getTodaySlash(),
           step: 3,
           subPhase: "details",
           createdRowId: finalId,
@@ -1593,7 +1652,9 @@ export default function GovernmentEntryPage() {
     setAddError("");
     try {
       const dec = decorate(addSelectedStudent);
+      const chosenDoe = normSlashDate(addDoeSlash) || getTodaySlash();
       const created = await updateOnlineGrRow(addCreatedRowId, addSection, {
+        doeSlash:         chosenDoe,
         udise:            addSelectedStudent.udise || "-",
         pen:              addSelectedStudent.pen || "-",
         remarks:          addSelectedStudent.remarks || dec.remarks || "-",
@@ -1676,6 +1737,7 @@ export default function GovernmentEntryPage() {
   function openEntryModal(row) {
     setModalRow(row);
     setFormGrNo(row.grNo && row.grNo !== "-" ? row.grNo : "");
+    setFormDoeSlash(row.doeSlash && row.doeSlash !== "-" ? row.doeSlash : getTodaySlash());
     setFormUdise(row.udise && row.udise !== "-" ? row.udise : "");
     setFormPen(row.pen && row.pen !== "-" && row.pen !== "Not Defined" ? row.pen : "");
     setFormPenNotDefined(row.pen === "Not Defined");
@@ -1713,6 +1775,7 @@ export default function GovernmentEntryPage() {
       try {
         const updated = await updateOnlineGrRow(modalRow.id, grSubTab, {
           grNo: formGrNo.trim(),
+          doeSlash: normSlashDate(formDoeSlash) || getTodaySlash(),
           udise: formUdise.trim() || "-",
           pen: formPenNotDefined ? "Not Defined" : (formPen.trim() || "-"),
           apaar: formApaar.trim() || "-",
@@ -2389,6 +2452,39 @@ export default function GovernmentEntryPage() {
                   </div>
 
                   <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                        Date of Entry (DOE)
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setFormDoeSlash(getTodaySlash())}
+                        className="text-[10px] font-semibold text-school-navy hover:underline"
+                      >
+                        Set to Today ({getTodaySlash()})
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={formDoeSlash}
+                        onChange={e => setFormDoeSlash(e.target.value)}
+                        placeholder="DD/MM/YYYY"
+                        className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy"
+                      />
+                      <input
+                        type="date"
+                        value={slashToIso(formDoeSlash)}
+                        onChange={e => {
+                          if (e.target.value) setFormDoeSlash(isoToSlash(e.target.value));
+                        }}
+                        className="w-10 border border-gray-200 rounded-lg p-1.5 text-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-school-navy cursor-pointer bg-white"
+                        title="Pick from calendar"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">UID (UDISE No)</label>
                     <input type="text" value={formUdise} onChange={e => setFormUdise(e.target.value.replace(/[^\d]/g, ""))}
                       maxLength={18}
@@ -2813,6 +2909,108 @@ export default function GovernmentEntryPage() {
                       </div>
                     );
                   })()}
+
+                  {/* Date of Entry (DOE) Section */}
+                  {(() => {
+                    const today = getTodaySlash();
+                    const currentDoe = addDoeSlash || today;
+                    const isToday = currentDoe === today;
+
+                    if (!addDoeEditing) {
+                      return (
+                        <div className="flex items-center justify-between p-3 rounded-lg border bg-blue-50/60 border-blue-200">
+                          <div className="flex items-center gap-2.5">
+                            <Calendar className="w-4 h-4 text-school-navy flex-shrink-0" />
+                            <div>
+                              <div className="text-[10px] font-bold uppercase tracking-wider text-school-navy flex items-center gap-1.5">
+                                <span>Date of Entry (DOE)</span>
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${
+                                  isToday ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800"
+                                }`}>
+                                  {isToday ? "Today (Default)" : "Custom Date"}
+                                </span>
+                              </div>
+                              <div className="text-base font-bold text-gray-900 tracking-wide font-mono mt-0.5">
+                                {currentDoe}
+                              </div>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setAddDoeEditing(true)}
+                            className="inline-flex items-center gap-1 text-xs font-semibold text-school-navy hover:text-blue-900 bg-white border border-gray-300 hover:border-school-navy px-3 py-1.5 rounded-md shadow-sm transition-all"
+                          >
+                            ✏️ Edit Date
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="flex flex-col gap-1.5 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wider flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5 text-school-navy" />
+                            Date of Entry (DOE)
+                          </label>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAddDoeSlash(today);
+                                if (addError) setAddError("");
+                              }}
+                              className="text-[11px] font-medium text-school-navy hover:underline"
+                            >
+                              Set to Today ({today})
+                            </button>
+                            <span className="text-gray-300">|</span>
+                            <button
+                              type="button"
+                              onClick={() => setAddDoeEditing(false)}
+                              className="text-[11px] font-medium text-gray-500 hover:text-gray-700 underline"
+                            >
+                              Done
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={addDoeSlash}
+                            onChange={e => {
+                              setAddDoeSlash(e.target.value);
+                              if (addError) setAddError("");
+                            }}
+                            placeholder="DD/MM/YYYY"
+                            className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy bg-white"
+                          />
+                          <input
+                            type="date"
+                            value={slashToIso(addDoeSlash)}
+                            onChange={e => {
+                              if (e.target.value) {
+                                setAddDoeSlash(isoToSlash(e.target.value));
+                                if (addError) setAddError("");
+                              }
+                            }}
+                            className="w-10 border border-gray-300 rounded-lg p-1.5 text-sm text-gray-600 focus:outline-none focus:ring-2 focus:ring-school-navy cursor-pointer bg-white"
+                            title="Pick from calendar"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setAddDoeEditing(false)}
+                            className="text-xs font-semibold px-3 py-2 bg-school-navy text-white rounded-lg hover:bg-blue-900 transition-colors"
+                          >
+                            Done
+                          </button>
+                        </div>
+                        <span className="text-[11px] text-gray-500">
+                          Format: DD/MM/YYYY. Defaults to today&apos;s date, but can be changed if back-dating or entering prior date.
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -2824,7 +3022,7 @@ export default function GovernmentEntryPage() {
                   <div className="grid grid-cols-2 gap-2 text-xs bg-gray-50 border border-gray-200 rounded-lg p-3">
                     <div><span className="text-gray-400">DOB</span><div className="font-semibold text-gray-700">{addReview?.dobSlash || "-"}</div></div>
                     <div><span className="text-gray-400">DOA</span><div className="font-semibold text-gray-700">{addReview?.doaSlash || "-"}</div></div>
-                    <div><span className="text-gray-400">DOE</span><div className="font-semibold text-gray-700">{addReview?.doeSlash || "-"}</div></div>
+                    <div><span className="text-gray-400">DOE</span><div className="font-semibold text-gray-700">{addDoeSlash || addReview?.doeSlash || getTodaySlash()}</div></div>
                     <div><span className="text-gray-400">AADHAR</span><div className="font-semibold text-gray-700">{addSelectedStudent?.aadharNo || "-"}</div></div>
                     <div><span className="text-gray-400">UID</span><div className="font-semibold text-gray-700">{addSelectedStudent?.udise || "-"}</div></div>
                     <div><span className="text-gray-400">PEN</span><div className="font-semibold text-gray-700">{addSelectedStudent?.pen || "-"}</div></div>

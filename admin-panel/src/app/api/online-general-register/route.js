@@ -56,6 +56,14 @@ const FIELD_MAP = [
   ["documentsPending", "documents_pending"],
 ];
 
+function getTodaySlash() {
+  const now = new Date();
+  const d = String(now.getDate()).padStart(2, "0");
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const y = now.getFullYear();
+  return `${d}/${m}/${y}`;
+}
+
 function toDbRow(record, section) {
   const row = {
     id: String(record.id),
@@ -341,7 +349,7 @@ export async function POST(request) {
         mobile2: "-",
         dobSlash: "-",
         doaSlash: "-",
-        doeSlash: "-",
+        doeSlash: getTodaySlash(),
         aadharNo: "-",
         udise: "-",
         pen: "-",
