@@ -670,21 +670,70 @@ export default function GovernmentEntryPage() {
     return () => window.removeEventListener("resize", measure);
   }, [frozenCount, rows, columns]);
 
-  // ── Auto-scroll to end of table by default ──────────────────────────────
+  // ── Auto-scroll dynamically to end of table by default ──────────────────
   const tableContainerRef = useRef(null);
+  const tableEndRef = useRef(null);
+  const userScrolledUpRef = useRef(false);
 
+  const scrollToEnd = useCallback(() => {
+    const el = tableContainerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight + 10000;
+    if (tableEndRef.current) {
+      tableEndRef.current.scrollIntoView({ block: "end", inline: "nearest" });
+    }
+  }, []);
+
+  // Reset userScrolledUpRef on tab/subtab/filter changes so it always scrolls to bottom
+  useEffect(() => {
+    userScrolledUpRef.current = false;
+  }, [mainTab, grSubTab, filters]);
+
+  // Dynamic ResizeObserver ensures as table rows layout, it follows dynamically to the end
   useEffect(() => {
     const el = tableContainerRef.current;
     if (!el) return;
-    const scrollToEnd = () => {
-      if (tableContainerRef.current) {
-        tableContainerRef.current.scrollTop = tableContainerRef.current.scrollHeight;
-      }
+
+    scrollToEnd();
+
+    // ResizeObserver tracks dynamic table expansion as rows are rendered
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => {
+        if (!userScrolledUpRef.current) {
+          scrollToEnd();
+        }
+      });
+      ro.observe(el);
+      const tableEl = el.querySelector("table");
+      if (tableEl) ro.observe(tableEl);
+    }
+
+    // Multi-frame backup ticks to guarantee 100% layout completion across all browsers
+    const t1 = setTimeout(scrollToEnd, 60);
+    const t2 = setTimeout(scrollToEnd, 160);
+    const t3 = setTimeout(scrollToEnd, 350);
+    const t4 = setTimeout(scrollToEnd, 650);
+
+    return () => {
+      if (ro) ro.disconnect();
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
     };
-    requestAnimationFrame(scrollToEnd);
-    const timer = setTimeout(scrollToEnd, 60);
-    return () => clearTimeout(timer);
-  }, [rows, mainTab, grSubTab, filters]);
+  }, [rows, mainTab, grSubTab, filters, scrollToEnd]);
+
+  const handleTableScroll = useCallback(() => {
+    const el = tableContainerRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 60;
+    if (!isNearBottom) {
+      userScrolledUpRef.current = true;
+    } else {
+      userScrolledUpRef.current = false;
+    }
+  }, []);
 
   // ── Entry Done modal ────────────────────────────────────────────────────
   const [modalRow, setModalRow] = useState(null);
@@ -2307,6 +2356,7 @@ export default function GovernmentEntryPage() {
           {/* Table */}
           <div
             ref={tableContainerRef}
+            onScroll={handleTableScroll}
             className={`overflow-auto rounded-xl border border-gray-200 shadow-sm ${fullscreen ? "max-h-[calc(100vh-220px)]" : "max-h-[70vh]"}`}
           >
               <table className="text-xs w-full">
@@ -2460,6 +2510,11 @@ export default function GovernmentEntryPage() {
                     </tr>
                   );
                 })}
+                {rows.length > 0 && (
+                  <tr ref={tableEndRef} className="h-8 select-none pointer-events-none">
+                    <td colSpan={columns.length + 3} className="p-0 border-0 h-8 bg-transparent"></td>
+                  </tr>
+                )}
                 {rows.length === 0 && (
                   <tr><td colSpan={columns.length + 3} className="px-4 py-10 text-center text-gray-400 text-sm">No students match the selected filters</td></tr>
                 )}
