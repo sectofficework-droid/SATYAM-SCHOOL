@@ -1990,13 +1990,6 @@ export default function GovernmentEntryPage() {
               Resume {inProgressSession.grNo || "Progress"}
             </button>
           )}
-          {mainTab === "onlineGr" && (
-            <button onClick={openAddModal}
-              title="Add a new student into this register"
-              className="flex items-center gap-1.5 text-xs border border-school-navy/30 bg-school-navy/5 px-3 py-1.5 rounded-lg text-school-navy hover:bg-school-navy/10 transition-colors">
-              <UserPlus className="w-3.5 h-3.5"/> Add New Student
-            </button>
-          )}
           <button onClick={exportExcel}
             title="Download Excel export"
             className="flex items-center gap-1.5 text-xs border border-emerald-300 bg-emerald-50 px-3 py-1.5 rounded-lg text-emerald-800 hover:bg-emerald-100 transition-colors">
@@ -2246,43 +2239,62 @@ export default function GovernmentEntryPage() {
         </div>
       ) : (
         <>
-          {/* Filters */}
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-2">
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5 items-center">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
-                <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="Name, Reg No, Mobile, Aadhar, UID"
-                  className="border border-gray-200 rounded-lg pl-8 pr-2.5 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-48"/>
+          {/* Filters & Actions directly above table */}
+          <div className="bg-gray-50 border border-gray-200 rounded-xl p-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 items-center">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
+                  <input type="text" value={search} onChange={e => setSearch(e.target.value)}
+                    placeholder="Name, Reg No, Mobile, Aadhar, UID"
+                    className="border border-gray-200 rounded-lg pl-8 pr-2.5 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-48"/>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Class</label>
+                  <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
+                    value={filters.cls} onChange={e => setFilters(prev => ({ ...prev, cls: e.target.value }))}>
+                    {["All", ...classOptions].map(o => <option key={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Year</label>
+                  <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
+                    value={filters.session} onChange={e => setFilters(prev => ({ ...prev, session: e.target.value }))}>
+                    {(mainTab === "onlineGr" ? ONLINE_GR_YEARS : ["All", ...dbSessions]).map(o => <option key={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Batch</label>
+                  <select disabled={mainTab === "onlineGr" || mainTab === "mismatch" || (mainTab !== "onlineGr" && eligTab === "ineligible")}
+                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24 disabled:opacity-50 disabled:cursor-not-allowed"
+                    value={filters.batch} onChange={e => setFilters(prev => ({ ...prev, batch: e.target.value }))}>
+                    {["All", ...batchOptions].map(o => <option key={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Status</label>
+                  <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
+                    value={filters.status} onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}>
+                    {(effectiveTab === "pen" ? ["All", "Done", "Not Defined", "Pending"] : ["All", "Done", "Pending"]).map(o => <option key={o}>{o}</option>)}
+                  </select>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Class</label>
-                <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
-                  value={filters.cls} onChange={e => setFilters(prev => ({ ...prev, cls: e.target.value }))}>
-                  {["All", ...classOptions].map(o => <option key={o}>{o}</option>)}
-                </select>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Year</label>
-                <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
-                  value={filters.session} onChange={e => setFilters(prev => ({ ...prev, session: e.target.value }))}>
-                  {(mainTab === "onlineGr" ? ONLINE_GR_YEARS : ["All", ...dbSessions]).map(o => <option key={o}>{o}</option>)}
-                </select>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Batch</label>
-                <select disabled={mainTab === "onlineGr" || mainTab === "mismatch" || (mainTab !== "onlineGr" && eligTab === "ineligible")}
-                  className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24 disabled:opacity-50 disabled:cursor-not-allowed"
-                  value={filters.batch} onChange={e => setFilters(prev => ({ ...prev, batch: e.target.value }))}>
-                  {["All", ...batchOptions].map(o => <option key={o}>{o}</option>)}
-                </select>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Status</label>
-                <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
-                  value={filters.status} onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}>
-                  {(effectiveTab === "pen" ? ["All", "Done", "Not Defined", "Pending"] : ["All", "Done", "Pending"]).map(o => <option key={o}>{o}</option>)}
-                </select>
+
+              {/* Action buttons directly above the table */}
+              <div className="flex items-center gap-2.5 flex-shrink-0">
+                <span className="text-xs text-gray-500 font-medium">
+                  {rows.length} {rows.length === 1 ? "student" : "students"}
+                </span>
+                {mainTab === "onlineGr" && (
+                  <button
+                    type="button"
+                    onClick={openAddModal}
+                    title="Add a new student into this register"
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 shadow-sm transition-all"
+                  >
+                    <UserPlus className="w-3.5 h-3.5"/> Add New Student
+                  </button>
+                )}
               </div>
             </div>
           </div>
