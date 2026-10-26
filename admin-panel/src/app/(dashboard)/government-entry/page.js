@@ -5,13 +5,16 @@ import { useRouter } from "next/navigation";
 import {
   Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X,
   Loader2, HelpCircle, Search, Maximize2, Minimize2, Download, BookOpen,
-  ChevronUp, ChevronDown, Trash2, UserPlus
+  ChevronUp, ChevronDown, Trash2, UserPlus, Upload, FileText
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import supabase from "@/lib/supabase";
 import { getStudentsForReport, getAcademicYearLabels } from "@/lib/reportService";
 import { getPhases, getAllPhaseEntryEnrollments } from "@/lib/studentPhaseService";
 import { updateStudentGovId } from "@/lib/studentService";
 import { getOnlineGrData, updateOnlineGrRow, deleteOnlineGrRow } from "@/lib/onlineGrService";
+import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, fileExt } from "@/lib/s3Upload";
+import { compressFile } from "@/lib/fileCompression";
 
 // Government Entry — Complete center for government portal filing and state registers:
 // 1. Online General Register (State Online GR / Primary & General — kept in separate records)
@@ -755,6 +758,260 @@ export default function GovernmentEntryPage() {
     setFormGrNo(addGrNo);
   }
 
+  // ── Birth Certificate Upload / Download (UDISE Entry Flow) ─────────────
+  const [bcUploading, setBcUploading] = useState(false);
+  const [bcDownloading, setBcDownloading] = useState(false);
+  const [bcMessage, setBcMessage] = useState(null);
+  const bcFileInputRef = useRef(null);
+  const [bcUploadTarget, setBcUploadTarget] = useState(null);
+
+  function getBcDoc(st) {
+    if (!st) return null;
+    return (st.studentDocuments || []).find(
+      d => d.document_types?.name === "Birth Certificate" && d.status === "Uploaded"
+    ) || null;
+  }
+
+  function triggerBcUpload(st) {
+    setBcUploadTarget(st);
+    setBcMessage(null);
+    if (bcFileInputRef.current) {
+      bcFileInputRef.current.value = "";
+      bcFileInputRef.current.click();
+    }
+  }
+
+  async function handleDownloadBirthCert(st) {
+    if (!st) return;
+    setBcDownloading(true);
+    setBcMessage(null);
+    try {
+      const studentId = st.studentId || st.id;
+      let bcDoc = getBcDoc(st);
+      let fileKey = bcDoc?.file_url;
+
+      if (!fileKey && studentId) {
+        const { data } = await supabase
+          .from("student_documents")
+          .select("file_url, status, document_types!inner(name)")
+          .eq("student_id", studentId)
+          .eq("document_types.name", "Birth Certificate")
+          .maybeSingle();
+
+        if (data?.status === "Uploaded" && data?.file_url) {
+          fileKey = data.file_url;
+        }
+      }
+
+      if (!fileKey) {
+        setBcMessage({ type: "error", text: "No Birth Certificate document file found to download. Please upload one." });
+        return;
+      }
+
+      const win = typeof window !== "undefined" ? window.open("", "_blank") : null;
+      const downloadName = buildDocDownloadName(st.enrollNo, st.name, "Birth_Certificate", fileKey);
+      const url = await getS3ViewUrl(fileKey, downloadName);
+
+      if (url) {
+        if (win) {
+          win.location.href = url;
+        } else {
+          const a = document.createElement("a");
+          a.href = url;
+          a.target = "_blank";
+          a.download = downloadName || "Birth_Certificate";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+      } else {
+        if (win) win.close();
+        setBcMessage({ type: "error", text: "Failed to generate download URL from storage." });
+      }
+    } catch (err) {
+      console.error("Download Birth Certificate error:", err);
+      setBcMessage({ type: "error", text: err.message || "Failed to download Birth Certificate." });
+    } finally {
+      setBcDownloading(false);
+    }
+  }
+
+  async function handleBcFileSelected(e) {
+    const file = e.target?.files?.[0];
+    const target = bcUploadTarget;
+    if (!file || !target) return;
+
+    e.target.value = "";
+
+    const allowed = [".pdf", ".jpg", ".jpeg", ".png"];
+    const ext = "." + (file.name.split(".").pop() || "").toLowerCase();
+    if (!allowed.includes(ext) || file.size > 5 * 1024 * 1024) {
+      setBcMessage({ type: "error", text: "Invalid file. Only JPG, PNG, or PDF up to 5MB allowed." });
+      return;
+    }
+
+    const studentId = target.studentId || target.id;
+    if (!studentId) {
+      setBcMessage({ type: "error", text: "Could not find student ID to associate document." });
+      return;
+    }
+
+    setBcUploading(true);
+    setBcMessage(null);
+
+    try {
+      let typeId = "9a440da1-3e42-4d3f-a2c2-6ae4e5c0f12b";
+      const { data: dt } = await supabase
+        .from("document_types")
+        .select("id")
+        .eq("name", "Birth Certificate")
+        .maybeSingle();
+      if (dt?.id) typeId = dt.id;
+
+      const compressed = await compressFile(file);
+      const key = `students/${studentId}/documents/birth-certificate.${fileExt(compressed)}`;
+      await uploadFileToS3(compressed, key);
+
+      const { data: upsertedDoc, error: docErr } = await supabase
+        .from("student_documents")
+        .upsert({
+          student_id: studentId,
+          document_type_id: typeId,
+          status: "Uploaded",
+          file_url: key,
+          uploaded_at: new Date().toISOString(),
+          reason: null,
+        }, { onConflict: "student_id,document_type_id" })
+        .select("id, status, file_url, uploaded_at")
+        .single();
+
+      if (docErr) throw docErr;
+
+      const updatedDocItem = {
+        id: upsertedDoc?.id || Date.now().toString(),
+        status: "Uploaded",
+        file_url: key,
+        document_types: { id: typeId, name: "Birth Certificate" },
+      };
+
+      const updateStudentDocs = (prevStudent) => {
+        if (!prevStudent) return prevStudent;
+        const existingDocs = prevStudent.studentDocuments || [];
+        const hasIdx = existingDocs.findIndex(d => d.document_types?.name === "Birth Certificate");
+        let nextDocs;
+        if (hasIdx >= 0) {
+          nextDocs = existingDocs.map((d, i) => i === hasIdx ? { ...d, ...updatedDocItem } : d);
+        } else {
+          nextDocs = [...existingDocs, updatedDocItem];
+        }
+        return {
+          ...prevStudent,
+          studentDocuments: nextDocs,
+        };
+      };
+
+      setDbStudents(prev => prev.map(s => (s.studentId === studentId || s.enrollNo === target.enrollNo) ? updateStudentDocs(s) : s));
+
+      if (addSelectedStudent && (addSelectedStudent.studentId === studentId || addSelectedStudent.enrollNo === target.enrollNo)) {
+        setAddSelectedStudent(prev => updateStudentDocs(prev));
+      }
+
+      if (modalRow && (modalRow.studentId === studentId || modalRow.enrollNo === target.enrollNo)) {
+        setModalRow(prev => updateStudentDocs(prev));
+      }
+
+      setBcMessage({ type: "success", text: "Birth Certificate uploaded successfully!" });
+    } catch (err) {
+      console.error("Upload Birth Certificate error:", err);
+      setBcMessage({ type: "error", text: err.message || "Failed to upload Birth Certificate." });
+    } finally {
+      setBcUploading(false);
+    }
+  }
+
+  function renderBirthCertCard(student) {
+    if (!student) return null;
+    const bcDoc = getBcDoc(student);
+    const isUploaded = !!bcDoc;
+    const hasFile = !!bcDoc?.file_url;
+
+    return (
+      <div className={`rounded-xl border transition-all ${
+        isUploaded
+          ? "bg-emerald-50/70 border-emerald-200"
+          : "bg-amber-50/80 border-amber-300"
+      } p-3.5`}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={`p-2.5 rounded-lg flex-shrink-0 ${
+              isUploaded ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+            }`}>
+              <FileText className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-gray-800">Birth Certificate</span>
+                {isUploaded ? (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Uploaded
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-300">
+                    <AlertTriangle className="w-3 h-3 text-amber-600" /> Not Uploaded
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-gray-600 truncate mt-0.5">
+                {isUploaded
+                  ? (hasFile ? `File: ${bcDoc.file_url.split("/").pop()}` : "Document verified in database")
+                  : "No certificate uploaded — required for Gujarat state UDISE portal filing"}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {isUploaded && (
+              <button
+                type="button"
+                onClick={() => handleDownloadBirthCert(student)}
+                disabled={bcDownloading}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-emerald-300 hover:border-emerald-500 text-emerald-800 shadow-sm transition-all hover:bg-emerald-50 disabled:opacity-50"
+              >
+                {bcDownloading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-700" /> : <Download className="w-3.5 h-3.5 text-emerald-700" />}
+                Download BC
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => triggerBcUpload(student)}
+              disabled={bcUploading}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold shadow-sm transition-all disabled:opacity-50 ${
+                isUploaded
+                  ? "bg-white border border-gray-300 hover:border-gray-400 text-gray-700 hover:bg-gray-50"
+                  : "bg-school-navy hover:bg-school-navy/90 text-white"
+              }`}
+            >
+              {bcUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+              {isUploaded ? "Re-upload" : "Upload Birth Certificate"}
+            </button>
+          </div>
+        </div>
+
+        {bcMessage && (
+          <div className={`mt-2.5 text-xs px-2.5 py-1.5 rounded-md flex items-center gap-1.5 ${
+            bcMessage.type === "success"
+              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+              : "bg-red-100 text-red-800 border border-red-200"
+          }`}>
+            {bcMessage.type === "success" ? <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-emerald-600" /> : <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 text-red-600" />}
+            <span>{bcMessage.text}</span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   function getSavedGrNo(st) {
     if (!st) return "";
     if (st.grNo && st.grNo !== "-") return String(st.grNo).trim();
@@ -1421,6 +1678,13 @@ export default function GovernmentEntryPage() {
               {addSelectedStudent?.cls} · Reg No {addGrNo || "-"} · Click any field below to copy its value
             </p>
           </div>
+
+          {/* Birth Certificate Action Section (UDISE Entry Flow) */}
+          {mainTab === "udise" && (
+            <div className="mb-4">
+              {renderBirthCertCard(addSelectedStudent)}
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {columns.map(c => {
               const rawValue = formatCellValue(c, addSelectedStudent?.[c.key]);
@@ -1553,6 +1817,23 @@ export default function GovernmentEntryPage() {
                                 }`}>
                                 <CheckCircle2 className="w-3 h-3"/> Entry Done
                               </button>
+                              {isUdise && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (getBcDoc(row)) handleDownloadBirthCert(row);
+                                    else triggerBcUpload(row);
+                                  }}
+                                  title={getBcDoc(row) ? "Download / View Birth Certificate" : "Upload Birth Certificate (Missing)"}
+                                  className={`inline-flex items-center justify-center p-1.5 rounded-lg border transition-colors ${
+                                    getBcDoc(row)
+                                      ? "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100"
+                                      : "text-amber-700 bg-amber-50 border-amber-300 hover:bg-amber-100"
+                                  }`}
+                                >
+                                  {getBcDoc(row) ? <Download className="w-3 h-3" /> : <Upload className="w-3 h-3" />}
+                                </button>
+                              )}
                               {isOnlineGr && (
                                 <button onClick={() => openDeleteConfirm(row)}
                                   title="Delete this record"
@@ -1666,6 +1947,9 @@ export default function GovernmentEntryPage() {
                 </>
               ) : effectiveTab === "udise" ? (
                 <>
+                  {/* Birth Certificate Action Section (UDISE Entry Modal) */}
+                  {renderBirthCertCard(modalRow)}
+
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">GR No</label>
                     <input type="text" value={formGrNo} readOnly={isWizardEntry} onChange={e => !isWizardEntry && setFormGrNo(e.target.value)}
@@ -2154,6 +2438,15 @@ export default function GovernmentEntryPage() {
           </div>
         </div>
       )}
+
+      {/* Hidden file input for Birth Certificate upload / re-upload */}
+      <input
+        type="file"
+        ref={bcFileInputRef}
+        onChange={handleBcFileSelected}
+        accept=".pdf,.jpg,.jpeg,.png"
+        className="hidden"
+      />
     </div>
   );
 }

@@ -34,7 +34,7 @@ export async function getStudentsForReport() {
         udise, pen, apaar,
         birth_cert_reg_no, birth_cert_reg_date,
         student_previous_school(school_name, grno, attendance_days, last_exam_given, percentage),
-        student_documents(status, document_types(name)),
+        student_documents(id, status, file_url, document_types(id, name)),
         transfer_certificates(id, tc_number, issue_date, leaving_date)
       ),
       class:classes!student_enrollments_class_id_fkey(name),
