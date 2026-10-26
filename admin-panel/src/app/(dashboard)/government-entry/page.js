@@ -339,10 +339,38 @@ export default function GovernmentEntryPage() {
       String(x.birthCity || "").trim()
     );
     const aadharAvailable = x => !!String(x.aadharNo || "").trim();
-    const udiseEligible = x => x.udiseStatus === "Done" || (inAnyBatch(x) && birthDetailsFilled(x));
-    const penEligible = x => x.penStatus === "Done" || x.penStatus === "Not Defined" ||
-      (inAnyBatch(x) && birthDetailsFilled(x) && aadharAvailable(x));
-    return { udiseEligible, penEligible };
+
+    const getUdiseEligibility = x => {
+      if (!x) return { eligible: false, reason: "No student record" };
+      if (x.udiseStatus === "Done") return { eligible: true, reason: "" };
+      if (!inAnyBatch(x)) return { eligible: false, reason: "Not in any Entry Batch" };
+      const missing = [];
+      if (!String(x.birthCertRegNo || "").trim()) missing.push("Birth Cert Reg No");
+      if (!String(x.birthState || "").trim()) missing.push("Birth State");
+      if (!String(x.birthDistrict || "").trim()) missing.push("Birth District");
+      if (!String(x.birthCity || "").trim()) missing.push("Birth City");
+      if (missing.length > 0) return { eligible: false, reason: `Missing ${missing.join(", ")}` };
+      return { eligible: true, reason: "" };
+    };
+
+    const getPenEligibility = x => {
+      if (!x) return { eligible: false, reason: "No student record" };
+      if (x.penStatus === "Done" || x.penStatus === "Not Defined") return { eligible: true, reason: "" };
+      if (!inAnyBatch(x)) return { eligible: false, reason: "Not in any Entry Batch" };
+      const missing = [];
+      if (!String(x.birthCertRegNo || "").trim()) missing.push("Birth Cert Reg No");
+      if (!String(x.birthState || "").trim()) missing.push("Birth State");
+      if (!String(x.birthDistrict || "").trim()) missing.push("Birth District");
+      if (!String(x.birthCity || "").trim()) missing.push("Birth City");
+      if (!aadharAvailable(x)) missing.push("Aadhar Card No");
+      if (missing.length > 0) return { eligible: false, reason: `Missing ${missing.join(", ")}` };
+      return { eligible: true, reason: "" };
+    };
+
+    const udiseEligible = x => getUdiseEligibility(x).eligible;
+    const penEligible = x => getPenEligibility(x).eligible;
+
+    return { udiseEligible, penEligible, getUdiseEligibility, getPenEligibility };
   }, [enrollToBatches]);
 
   const classOptions = useMemo(() => {
@@ -531,40 +559,45 @@ export default function GovernmentEntryPage() {
   const addableStudents = useMemo(() => {
     return dbStudents
       .map(decorate)
-      .filter(x => classSection(x.cls))
-      .filter(x => eligibilityFns.udiseEligible(x) || eligibilityFns.penEligible(x));
-  }, [dbStudents, eligibilityFns]);
+      .filter(x => classSection(x.cls));
+  }, [dbStudents]);
 
   // REQ-VIEW-001: eligibility status badge for the Add New Student picker.
-  // Shows a compact colored badge indicating what the admin still needs to
-  // enter for this student before their Online GR row can be finalized.
+  // Shows a compact colored badge indicating whether the student is Done,
+  // Eligible, or Ineligible with reason for both UDISE and PEN.
   const eligibilityBadge = (st) => {
     const udiseDone  = st.udiseStatus  === "Done";
     const penDone    = st.penStatus    === "Done";
     const penDefined = st.penStatus    === "Not Defined"; // allowed to skip PEN
 
-    // Both done
-    if (udiseDone && penDone) {
-      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-green-100 text-green-800">✅ UDISE Done · PEN Done</span>;
+    const udiseInfo = eligibilityFns.getUdiseEligibility(st);
+    const penInfo   = eligibilityFns.getPenEligibility(st);
+
+    if (udiseDone && (penDone || penDefined)) {
+      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-green-100 text-green-800">✅ UDISE Done · PEN {penDefined ? "Not Defined" : "Done"}</span>;
     }
-    // UDISE done, PEN pending
-    if (udiseDone && st.penStatus === "Pending") {
-      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-800">⏳ UDISE Done · PEN Pending</span>;
+    if (udiseDone && !penInfo.eligible) {
+      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-800" title={`PEN Ineligible: ${penInfo.reason}`}>⏳ UDISE Done · ❌ PEN Ineligible</span>;
     }
-    // UDISE done, PEN not defined (allowed to skip)
-    if (udiseDone && penDefined) {
-      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-100 text-blue-800">✅ UDISE Done · PEN Not Defined</span>;
+    if (udiseDone && penInfo.eligible) {
+      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-100 text-blue-800">⏳ UDISE Done · 📝 PEN Eligible</span>;
     }
-    // UDISE pending, PEN done
-    if (!udiseDone && penDone) {
-      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-800">⏳ UDISE Pending · PEN Done</span>;
+    if (!udiseInfo.eligible && (penDone || penDefined)) {
+      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-800" title={`UDISE Ineligible: ${udiseInfo.reason}`}>❌ UDISE Ineligible · PEN Done</span>;
     }
-    // UDISE pending, PEN not defined
-    if (!udiseDone && penDefined) {
-      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-gray-100 text-gray-600">⏳ UDISE Pending · PEN Not Defined</span>;
+    if (udiseInfo.eligible && (penDone || penDefined)) {
+      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-100 text-blue-800">📝 UDISE Eligible · PEN Done</span>;
     }
-    // Both pending
-    return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-100 text-red-800">⏳ UDISE Pending · PEN Pending</span>;
+    if (!udiseInfo.eligible && !penInfo.eligible) {
+      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-red-100 text-red-800" title={`UDISE: ${udiseInfo.reason}; PEN: ${penInfo.reason}`}>❌ Ineligible (UDISE &amp; PEN)</span>;
+    }
+    if (!udiseInfo.eligible && penInfo.eligible) {
+      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-800" title={`UDISE Ineligible: ${udiseInfo.reason}`}>❌ UDISE Inelig · 📝 PEN Elig</span>;
+    }
+    if (udiseInfo.eligible && !penInfo.eligible) {
+      return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-100 text-amber-800" title={`PEN Ineligible: ${penInfo.reason}`}>📝 UDISE Elig · ❌ PEN Inelig</span>;
+    }
+    return <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold bg-blue-100 text-blue-800">📝 UDISE Elig · 📝 PEN Elig</span>;
   };
 
   // Frozen count:
@@ -745,6 +778,19 @@ export default function GovernmentEntryPage() {
           ? crypto.randomUUID()
           : `gr_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`
       );
+
+      const udiseInfo = eligibilityFns.getUdiseEligibility(addSelectedStudent);
+      const penInfo = eligibilityFns.getPenEligibility(addSelectedStudent);
+
+      const ineligParts = [];
+      if (!udiseInfo.eligible) ineligParts.push(`Ineligible for UDISE: ${udiseInfo.reason}`);
+      if (!penInfo.eligible) ineligParts.push(`Ineligible for PEN: ${penInfo.reason}`);
+      const ineligRemark = ineligParts.join(" | ");
+
+      const remarksToSave = ineligRemark
+        ? (dec.remarks && dec.remarks !== "-" ? `${dec.remarks} | ${ineligRemark}` : ineligRemark)
+        : dec.remarks;
+
       const created = await updateOnlineGrRow(id, addSection, {
         enrollNo:         addSelectedStudent.enrollNo,
         session:          addSelectedStudent.session || "",
@@ -761,34 +807,121 @@ export default function GovernmentEntryPage() {
         udise:            addSelectedStudent.udise || "-",
         pen:              addSelectedStudent.pen || "-",
         apaar:            addSelectedStudent.apaar || "-",
-        remarks:          dec.remarks,
+        remarks:          remarksToSave,
         documentsPending: dec.documentsPending,
       });
       setAddCreatedRowId(id);
+      setAddSelectedStudent(prev => prev ? { ...prev, remarks: remarksToSave } : prev);
       setOnlineGrDataset(prev => {
         const list = prev[addSection] || [];
         const idx = list.findIndex(r => r.id === id);
         const nextList = idx >= 0 ? list.map(r => r.id === id ? created : r) : [...list, created];
         return { ...prev, [addSection]: nextList };
       });
-      // Hand off: close this modal, jump to the UDISE Entry tab filtered down
-      // to just this student so their details are visible to copy — the
-      // entry modal opens only once the admin clicks "Next" on that banner.
-      setAddModalOpen(false);
-      setAddWizardActive(true);
-      setAddStep(2);
-      setAddSubPhase("details");
-      setMainTab("udise");
-      setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
-      setEligTab(eligibilityFns.udiseEligible(addSelectedStudent) ? "eligible" : "ineligible");
-      setSearch("");
-      setAddPinnedEnrollNo(addSelectedStudent.enrollNo);
+
+      // Hand off depending on eligibility:
+      if (udiseInfo.eligible) {
+        setAddModalOpen(false);
+        setAddWizardActive(true);
+        setAddStep(2);
+        setAddSubPhase("details");
+        setMainTab("udise");
+        setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
+        setEligTab("eligible");
+        setSearch("");
+        setAddPinnedEnrollNo(addSelectedStudent.enrollNo);
+      } else if (penInfo.eligible) {
+        // UDISE ineligible — skip UDISE step and go to PEN
+        setAddModalOpen(false);
+        setAddWizardActive(true);
+        setAddStep(3);
+        setAddSubPhase("details");
+        setMainTab("pen");
+        setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
+        setEligTab("eligible");
+        setSearch("");
+        setAddPinnedEnrollNo(addSelectedStudent.enrollNo);
+      } else {
+        // Both ineligible — next steps are disabled, saved directly to register with remarks
+        setAddModalOpen(false);
+        setAddWizardActive(false);
+        setAddPinnedEnrollNo(null);
+      }
     } catch (e) {
       setAddSaving(false);
       setAddError(e.message || "Failed to save.");
       return;
     }
     setAddSaving(false);
+  }
+
+  // Skip UDISE entry when student is not eligible — updates remarks with reason and moves to PEN or finalize
+  async function skipUdiseStep() {
+    if (!addCreatedRowId || !addSection || !addSelectedStudent) return;
+    const udiseInfo = eligibilityFns.getUdiseEligibility(addSelectedStudent);
+    const penInfo = eligibilityFns.getPenEligibility(addSelectedStudent);
+    const remarkToAdd = `Ineligible for UDISE: ${udiseInfo.reason}`;
+    const currRemarks = addSelectedStudent.remarks && addSelectedStudent.remarks !== "-" ? addSelectedStudent.remarks : "";
+    const nextRemarks = currRemarks.includes("Ineligible for UDISE") ? currRemarks : (currRemarks ? `${currRemarks} | ${remarkToAdd}` : remarkToAdd);
+
+    try {
+      const created = await updateOnlineGrRow(addCreatedRowId, addSection, {
+        remarks: nextRemarks,
+      });
+      setAddSelectedStudent(prev => prev ? { ...prev, remarks: nextRemarks } : prev);
+      setOnlineGrDataset(prev => ({
+        ...prev,
+        [addSection]: (prev[addSection] || []).map(r => r.id === created.id ? created : r),
+      }));
+
+      if (penInfo.eligible) {
+        setAddStep(3);
+        setAddSubPhase("details");
+        setMainTab("pen");
+        setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
+        setEligTab("eligible");
+        setSearch("");
+        setAddPinnedEnrollNo(addSelectedStudent.enrollNo);
+      } else {
+        setAddStep(4);
+        setAddSubPhase("details");
+        setMainTab("onlineGr");
+        if (addSection) setGrSubTab(addSection);
+        setAddPinnedEnrollNo(null);
+        setAddModalOpen(true);
+      }
+    } catch (e) {
+      alert("Failed to update remarks: " + e.message);
+    }
+  }
+
+  // Skip PEN entry when student is not eligible — updates remarks with reason and moves to finalize
+  async function skipPenStep() {
+    if (!addCreatedRowId || !addSection || !addSelectedStudent) return;
+    const penInfo = eligibilityFns.getPenEligibility(addSelectedStudent);
+    const remarkToAdd = `Ineligible for PEN: ${penInfo.reason}`;
+    const currRemarks = addSelectedStudent.remarks && addSelectedStudent.remarks !== "-" ? addSelectedStudent.remarks : "";
+    const nextRemarks = currRemarks.includes("Ineligible for PEN") ? currRemarks : (currRemarks ? `${currRemarks} | ${remarkToAdd}` : remarkToAdd);
+
+    try {
+      const created = await updateOnlineGrRow(addCreatedRowId, addSection, {
+        remarks: nextRemarks,
+      });
+      setAddSelectedStudent(prev => prev ? { ...prev, remarks: nextRemarks } : prev);
+      setOnlineGrDataset(prev => ({
+        ...prev,
+        [addSection]: (prev[addSection] || []).map(r => r.id === created.id ? created : r),
+      }));
+
+      setAddStep(4);
+      setAddSubPhase("details");
+      setMainTab("onlineGr");
+      if (addSection) setGrSubTab(addSection);
+      setAddPinnedEnrollNo(null);
+      setAddModalOpen(true);
+    } catch (e) {
+      alert("Failed to update remarks: " + e.message);
+    }
   }
 
   // Stage 4 — final confirmation: push the (now-filled) UDISE/PEN values and
@@ -802,6 +935,7 @@ export default function GovernmentEntryPage() {
       const created = await updateOnlineGrRow(addCreatedRowId, addSection, {
         udise:            addSelectedStudent.udise || "-",
         pen:              addSelectedStudent.pen || "-",
+        remarks:          addSelectedStudent.remarks || dec.remarks || "-",
         documentsPending: dec.documentsPending,
       });
       setOnlineGrDataset(prev => ({
@@ -841,7 +975,12 @@ export default function GovernmentEntryPage() {
       list = list.filter(x =>
         String(x.name || "").toLowerCase().includes(q) ||
         String(x.enrollNo || "").toLowerCase().includes(q) ||
-        String(x.cls || "").toLowerCase().includes(q)
+        String(x.grNo || "").toLowerCase().includes(q) ||
+        String(x.cls || "").toLowerCase().includes(q) ||
+        String(x.mobile1 || "").toLowerCase().includes(q) ||
+        String(x.aadharNo || "").toLowerCase().includes(q) ||
+        String(x.udise || "").toLowerCase().includes(q) ||
+        String(x.pen || "").toLowerCase().includes(q)
       );
     }
     return list;
@@ -1146,25 +1285,50 @@ export default function GovernmentEntryPage() {
 
       {/* Add New Student wizard — details-review phase (table stays click-to-copy-able, no modal) */}
       {addWizardActive && addSubPhase === "details" && (mainTab === "udise" || mainTab === "pen") && (
-        <div className="flex items-center justify-between gap-3 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800">
-          <div className="flex items-center gap-2">
-            <UserPlus className="w-4 h-4 flex-shrink-0 text-school-navy"/>
-            <span>
-              <span className="font-semibold">Add New Student — Step {mainTab === "udise" ? 2 : 3} of 4: {mainTab === "udise" ? "UDISE" : "PEN"} Entry.</span>
-              {" "}Copy {addSelectedStudent?.name || "this student"}&apos;s details below (click any cell to copy), then continue to enter the {mainTab === "udise" ? "UDISE" : "PEN"} No.
-            </span>
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <button onClick={cancelAddWizard}
-              className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 hover:bg-blue-100 transition-colors">
-              Cancel
-            </button>
-            <button onClick={mainTab === "udise" ? proceedToUdiseEntryForm : proceedToPenEntryForm}
-              className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors">
-              Next: Enter {mainTab === "udise" ? "UDISE" : "PEN"} No →
-            </button>
-          </div>
-        </div>
+        (() => {
+          const isUdiseStep = mainTab === "udise";
+          const eligInfo = isUdiseStep
+            ? eligibilityFns.getUdiseEligibility(addSelectedStudent)
+            : eligibilityFns.getPenEligibility(addSelectedStudent);
+
+          return (
+            <div className={`flex items-center justify-between gap-3 border rounded-lg px-3 py-2 text-xs ${
+              eligInfo.eligible ? "bg-blue-50 border-blue-200 text-blue-800" : "bg-amber-50 border-amber-300 text-amber-900"
+            }`}>
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-4 h-4 flex-shrink-0 text-school-navy"/>
+                <span>
+                  <span className="font-semibold">Add New Student — Step {isUdiseStep ? 2 : 3} of 4: {isUdiseStep ? "UDISE" : "PEN"} Entry.</span>
+                  {" "}
+                  {eligInfo.eligible ? (
+                    <>Copy {addSelectedStudent?.name || "this student"}&apos;s details below (click any cell to copy), then continue to enter the {isUdiseStep ? "UDISE" : "PEN"} No.</>
+                  ) : (
+                    <span className="font-semibold text-red-700">
+                      ⚠️ Student is NOT ELIGIBLE for {isUdiseStep ? "UDISE" : "PEN"} Entry ({eligInfo.reason}). Next step is disabled.
+                    </span>
+                  )}
+                </span>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button onClick={cancelAddWizard}
+                  className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors">
+                  Cancel
+                </button>
+                {eligInfo.eligible ? (
+                  <button onClick={isUdiseStep ? proceedToUdiseEntryForm : proceedToPenEntryForm}
+                    className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors">
+                    Next: Enter {isUdiseStep ? "UDISE" : "PEN"} No →
+                  </button>
+                ) : (
+                  <button onClick={isUdiseStep ? skipUdiseStep : skipPenStep}
+                    className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors">
+                    Mark Ineligible &amp; {isUdiseStep ? "Skip to PEN Entry →" : "Finalize →"}
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()
       )}
 
       {mainTab === "mismatch" && (
@@ -1315,19 +1479,37 @@ export default function GovernmentEntryPage() {
                       title={mainTab === "onlineGr" ? "Online General Register entry" : "Double-click to edit this student"}
                       className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${rowBg}`}>
                       <td style={{ position: "sticky", left: stickyLeft[0], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2 text-center whitespace-nowrap`}>
-                        <div className="inline-flex items-center gap-1">
-                          <button onClick={() => openEntryModal(row)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-school-navy text-white hover:bg-school-navy/90 transition-colors">
-                            <CheckCircle2 className="w-3 h-3"/> Entry Done
-                          </button>
-                          {mainTab === "onlineGr" && (
-                            <button onClick={() => openDeleteConfirm(row)}
-                              title="Delete this record"
-                              className="inline-flex items-center justify-center p-1.5 rounded-lg text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors">
-                              <Trash2 className="w-3 h-3"/>
-                            </button>
-                          )}
-                        </div>
+                        {(() => {
+                          const isOnlineGr = mainTab === "onlineGr";
+                          const isUdise = effectiveTab === "udise";
+                          const eligInfo = isOnlineGr
+                            ? { eligible: true }
+                            : (isUdise ? eligibilityFns.getUdiseEligibility(row) : eligibilityFns.getPenEligibility(row));
+                          const isElig = eligInfo.eligible;
+
+                          return (
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                onClick={() => isElig && openEntryModal(row)}
+                                disabled={!isElig}
+                                title={!isElig ? `Not eligible for ${isUdise ? "UDISE" : "PEN"} Entry: ${eligInfo.reason}` : "Entry Done"}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                                  isElig
+                                    ? "bg-school-navy text-white hover:bg-school-navy/90"
+                                    : "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-60"
+                                }`}>
+                                <CheckCircle2 className="w-3 h-3"/> Entry Done
+                              </button>
+                              {isOnlineGr && (
+                                <button onClick={() => openDeleteConfirm(row)}
+                                  title="Delete this record"
+                                  className="inline-flex items-center justify-center p-1.5 rounded-lg text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors">
+                                  <Trash2 className="w-3 h-3"/>
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td style={{ position: "sticky", left: stickyLeft[1], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2 text-gray-400 font-medium`}>{idx + 1}</td>
                       <td style={{ position: "sticky", left: stickyLeft[2], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2`}><StatusPill status={status}/></td>
@@ -1477,7 +1659,7 @@ export default function GovernmentEntryPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-100 flex-shrink-0">
               <button onClick={closeModal} disabled={saving}
                 className="text-xs font-semibold px-3.5 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors disabled:opacity-50">
                 Cancel
@@ -1495,8 +1677,8 @@ export default function GovernmentEntryPage() {
       {/* Add New Student modal (Online GR only) — 4-step wizard */}
       {addModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[95vh] flex flex-col">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl h-[85vh] max-h-[850px] min-h-[550px] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
               <div>
                 <h3 className="text-base font-bold text-gray-800">
                   Add New Student
@@ -1515,14 +1697,14 @@ export default function GovernmentEntryPage() {
               </button>
             </div>
 
-            <div className="px-5 py-4 space-y-3 overflow-y-auto">
+            <div className="px-6 py-4 space-y-3 overflow-y-auto flex-1 flex flex-col min-h-0">
               {addStep === 1 && !addSelectedStudent && (
-                <div className="space-y-3">
-                  <div className="flex gap-2">
+                <div className="space-y-3 flex-1 flex flex-col min-h-0">
+                  <div className="flex gap-2 flex-shrink-0">
                     <div className="relative flex-1">
                       <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
                       <input type="text" value={addSearch} onChange={e => setAddSearch(e.target.value)}
-                        placeholder="Search eligible students by name, class, enroll no"
+                        placeholder="Search by name, class, enroll no, GR no, mobile, aadhar..."
                         className="w-full border border-gray-200 rounded-lg pl-8 pr-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"/>
                     </div>
                     <select value={addClassFilter} onChange={e => setAddClassFilter(e.target.value)}
@@ -1541,7 +1723,7 @@ export default function GovernmentEntryPage() {
                     </select>
                   </div>
 
-                  <div className="border border-gray-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
+                  <div className="border border-gray-200 rounded-lg flex-1 min-h-[320px] overflow-y-auto divide-y divide-gray-100">
                     {filteredAddableStudents.length === 0 ? (
                       <div className="px-3 py-6 text-center text-xs text-gray-400">
                         No eligible students found matching your filters.<br/>
@@ -1590,6 +1772,48 @@ export default function GovernmentEntryPage() {
                     <div><span className="text-gray-400">MOBILE 2</span><div className="font-semibold text-gray-700">{addSelectedStudent.mobile2 || "-"}</div></div>
                     <div className="col-span-2 pt-1">{eligibilityBadge(addReview)}</div>
                   </div>
+
+                  {/* UDISE & PEN Eligibility Breakdown */}
+                  {(() => {
+                    const udiseInfo = eligibilityFns.getUdiseEligibility(addSelectedStudent);
+                    const penInfo = eligibilityFns.getPenEligibility(addSelectedStudent);
+                    return (
+                      <div className="rounded-lg border border-gray-200 bg-white p-2.5 text-xs space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-gray-700">UDISE Eligibility:</span>
+                          {udiseInfo.eligible ? (
+                            <span className="text-green-700 font-semibold flex items-center gap-1">✅ Eligible</span>
+                          ) : (
+                            <span className="text-red-600 font-semibold flex items-center gap-1" title={udiseInfo.reason}>
+                              ❌ Ineligible ({udiseInfo.reason})
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-gray-700">PEN Eligibility:</span>
+                          {penInfo.eligible ? (
+                            <span className="text-green-700 font-semibold flex items-center gap-1">✅ Eligible</span>
+                          ) : (
+                            <span className="text-red-600 font-semibold flex items-center gap-1" title={penInfo.reason}>
+                              ❌ Ineligible ({penInfo.reason})
+                            </span>
+                          )}
+                        </div>
+                        {(!udiseInfo.eligible || !penInfo.eligible) && (
+                          <p className="text-[11px] text-amber-700 bg-amber-50 rounded px-2 py-1 mt-1 border border-amber-200">
+                            ℹ️ Ineligible next steps will be disabled. The Online GR row will be marked with remark:{" "}
+                            <span className="font-medium">
+                              {[
+                                !udiseInfo.eligible ? `UDISE (${udiseInfo.reason})` : null,
+                                !penInfo.eligible ? `PEN (${penInfo.reason})` : null,
+                              ].filter(Boolean).join("; ")}
+                            </span>
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   <div className="flex flex-col gap-1 pt-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                       {addSection === "primary" ? "PR No (Primary Register No)" : "GR No (General Register No)"}
@@ -1627,17 +1851,37 @@ export default function GovernmentEntryPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-100 flex-shrink-0">
               <button onClick={closeAddModal} disabled={addSaving}
                 className="text-xs font-semibold px-3.5 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors disabled:opacity-50">
                 Cancel
               </button>
               {addStep === 1 && (
-                <button onClick={saveStep1AndContinue} disabled={addSaving || !addSelectedStudent}
-                  className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors disabled:opacity-60">
-                  {addSaving && <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
-                  {addSaving ? "Saving..." : "Save & Continue to UDISE Entry"}
-                </button>
+                (() => {
+                  const udiseInfo = addSelectedStudent ? eligibilityFns.getUdiseEligibility(addSelectedStudent) : { eligible: false };
+                  const penInfo = addSelectedStudent ? eligibilityFns.getPenEligibility(addSelectedStudent) : { eligible: false };
+                  const bothIneligible = addSelectedStudent && !udiseInfo.eligible && !penInfo.eligible;
+
+                  return (
+                    <button onClick={saveStep1AndContinue} disabled={addSaving || !addSelectedStudent}
+                      className={`flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg transition-colors disabled:opacity-60 ${
+                        bothIneligible
+                          ? "bg-amber-600 text-white hover:bg-amber-700"
+                          : !udiseInfo.eligible
+                          ? "bg-blue-600 text-white hover:bg-blue-700"
+                          : "bg-school-navy text-white hover:bg-school-navy/90"
+                      }`}>
+                      {addSaving && <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
+                      {addSaving
+                        ? "Saving..."
+                        : bothIneligible
+                        ? "Save & Mark Ineligible (Next Steps Disabled)"
+                        : !udiseInfo.eligible
+                        ? "Save & Skip to PEN Entry (UDISE Ineligible) →"
+                        : "Save & Continue to UDISE Entry"}
+                    </button>
+                  );
+                })()
               )}
               {addStep === 4 && (
                 <button onClick={finalizeAdd} disabled={addSaving}
@@ -1675,7 +1919,7 @@ export default function GovernmentEntryPage() {
               )}
             </div>
 
-            <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">
+            <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-100 flex-shrink-0">
               <button onClick={closeDeleteConfirm} disabled={deleting}
                 className="text-xs font-semibold px-3.5 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors disabled:opacity-50">
                 Cancel
