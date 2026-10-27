@@ -124,6 +124,9 @@ const OTHER_SCHOOL_TAG_REGEX = /<!--OTHER_SCHOOL:({[\s\S]*?})-->/;
 function serializeOtherSchoolData(data) {
   if (!data) return "";
   const payload = {
+    portal: data.portal || "",
+    udiseActive: data.udiseActive || false,
+    penActive: data.penActive || false,
     schoolName: data.schoolName || "",
     schoolUdise: data.schoolUdise || "",
     state: data.state || "",
@@ -135,6 +138,24 @@ function serializeOtherSchoolData(data) {
     remark: data.remark || "",
   };
   return `<!--OTHER_SCHOOL:${JSON.stringify(payload)}-->`;
+}
+
+function parsePortalAlertText(text) {
+  if (!text || typeof text !== "string") return null;
+  const res = {};
+  const districtMatch = text.match(/DISTRICT:\s*([^\r\n]+)/i);
+  if (districtMatch) res.district = districtMatch[1].trim();
+  const blockMatch = text.match(/BLOCK:\s*([^\r\n]+)/i);
+  if (blockMatch) res.block = blockMatch[1].trim();
+  const schoolMatch = text.match(/SCHOOL:\s*([^માં\r\n]+)/i);
+  if (schoolMatch) res.schoolName = schoolMatch[1].trim();
+  const principleMatch = text.match(/PRINCIP(?:LE|AL)\s+NAME:\s*([^\r\n]+)/i);
+  if (principleMatch) res.headmaster = principleMatch[1].trim();
+  const mobileMatch = text.match(/PRINCIP(?:LE|AL)\s+(?:MOBILE|CONTACT)\s*(?:NO)?:?\s*([0-9]{10})/i);
+  if (mobileMatch) res.contactNo = mobileMatch[1].trim();
+  const uidMatch = text.match(/(?:UID\s*(?:આ\s*છે\s*:?)?\s*|\b)([0-9]{18})\b/i);
+  if (uidMatch) res.uid = uidMatch[1].trim();
+  return res;
 }
 
 function parseOtherSchoolRemarks(remarksStr) {
@@ -188,9 +209,23 @@ function decorate(st) {
   const dobP = dobParts(effectiveDob || st.dob || st.dobSlash || st.dob_slash);
 
   const otherSchoolData = parseOtherSchoolRemarks(st.remarks);
+  const isUdiseOtherSchool = Boolean(
+    (st.udise && String(st.udise).trim().toLowerCase().includes("active in other school")) ||
+    (otherSchoolData && (otherSchoolData.portal === "udise" || otherSchoolData.portal === "both" || otherSchoolData.udiseActive))
+  );
+
+  let udiseStatus = "Pending";
+  if (isUdiseOtherSchool) {
+    udiseStatus = "Active in other school";
+  } else if (st.udise && String(st.udise).trim() && String(st.udise).trim() !== "Not Defined") {
+    udiseStatus = "Done";
+  } else if (st.udise && String(st.udise).trim() === "Not Defined") {
+    udiseStatus = "Not Defined";
+  }
+
   const isPenOtherSchool = Boolean(
     (st.pen && String(st.pen).trim().toLowerCase().includes("active in other school")) ||
-    otherSchoolData
+    (otherSchoolData && (otherSchoolData.portal === "pen" || otherSchoolData.portal === "both" || otherSchoolData.penActive || (!otherSchoolData.portal && (!st.pen || st.pen === "-"))))
   );
 
   let penStatus = "Pending";
@@ -216,7 +251,7 @@ function decorate(st) {
     motherName:           nameWithSurname(motherNameOnly, st.surname),
     studentFatherSurname: `${st.firstName || ""} ${fatherNameOnly} ${st.surname || ""}`.trim(),
     fullAddress:          [st.plotNo, st.society, st.landmark, st.area, "Surat", "Gujarat", st.pinCode].filter(Boolean).join(", "),
-    udiseStatus:          st.udise && String(st.udise).trim() ? "Done" : "Pending",
+    udiseStatus,
     penStatus,
     otherSchoolData,
     grStatus,
@@ -238,8 +273,13 @@ function matchesGovStatusFilter(row, filterVal) {
   if (!filterVal || filterVal === "All") return true;
 
   const u = String(row.udise || "").trim();
-  const udiseDone = row.udiseStatus === "Done" || (Boolean(u) && u !== "-");
-  const udisePending = !udiseDone;
+  const udiseStatus = row.udiseStatus || (
+    u.toLowerCase().includes("active in other school") ? "Active in other school" :
+    u === "Not Defined" ? "Not Defined" :
+    (Boolean(u) && u !== "-") ? "Done" : "Pending"
+  );
+  const udiseDone = udiseStatus === "Done" || udiseStatus === "Not Defined" || udiseStatus === "Active in other school";
+  const udisePending = udiseStatus === "Pending";
 
   const p = String(row.pen || "").trim();
   const penStatus = row.penStatus || (
@@ -577,7 +617,7 @@ export default function GovernmentEntryPage() {
 
     const getUdiseEligibility = x => {
       if (!x) return { eligible: false, reason: "No student record" };
-      if (x.udiseStatus === "Done") return { eligible: true, reason: "" };
+      if (x.udiseStatus === "Done" || x.udiseStatus === "Not Defined" || x.udiseStatus === "Active in other school") return { eligible: true, reason: "" };
       if (!inAnyBatch(x)) return { eligible: false, reason: "Not in any Entry Batch" };
       const missing = [];
       if (!String(x.birthCertRegNo || "").trim()) missing.push("Birth Cert Reg No");
@@ -726,6 +766,14 @@ export default function GovernmentEntryPage() {
     [dbStudents]
   );
   const activeOtherSchoolCount = useMemo(
+    () => dbStudents.map(decorate).filter(x => x.penStatus === "Active in other school" || x.udiseStatus === "Active in other school").length,
+    [dbStudents]
+  );
+  const udiseActiveOtherSchoolCount = useMemo(
+    () => dbStudents.map(decorate).filter(x => x.udiseStatus === "Active in other school").length,
+    [dbStudents]
+  );
+  const penActiveOtherSchoolCount = useMemo(
     () => dbStudents.map(decorate).filter(x => x.penStatus === "Active in other school").length,
     [dbStudents]
   );
@@ -930,7 +978,12 @@ export default function GovernmentEntryPage() {
       return modalRow.status === "Done" || Boolean(modalRow.grNo && modalRow.grNo !== "-");
     }
     if (effectiveTab === "udise") {
-      return modalRow.udiseStatus === "Done" || Boolean(modalRow.udise && String(modalRow.udise).trim() && String(modalRow.udise).trim() !== "-");
+      return (
+        modalRow.udiseStatus === "Done" ||
+        modalRow.udiseStatus === "Not Defined" ||
+        modalRow.udiseStatus === "Active in other school" ||
+        Boolean(modalRow.udise && String(modalRow.udise).trim() && String(modalRow.udise).trim() !== "-")
+      );
     }
     return (
       modalRow.penStatus === "Done" ||
@@ -944,7 +997,10 @@ export default function GovernmentEntryPage() {
   const [formUdise, setFormUdise] = useState("");
   const [formPen, setFormPen] = useState("");
   const [formPenNotDefined, setFormPenNotDefined] = useState(false);
+  const [formUdiseNotDefined, setFormUdiseNotDefined] = useState(false);
   const [formActiveOtherSchool, setFormActiveOtherSchool] = useState(false);
+  const [showPasteAlert, setShowPasteAlert] = useState(false);
+  const [pasteAlertInput, setPasteAlertInput] = useState("");
   const [formOtherSchoolName, setFormOtherSchoolName] = useState("");
   const [formOtherSchoolUdise, setFormOtherSchoolUdise] = useState("");
   const [formOtherSchoolState, setFormOtherSchoolState] = useState("");
@@ -1654,10 +1710,57 @@ export default function GovernmentEntryPage() {
               Active in Other School Details
             </span>
           </div>
-          <span className="text-[10px] font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200">
-            Portal Information
-          </span>
+          <button
+            type="button"
+            onClick={() => setShowPasteAlert(v => !v)}
+            className="text-[10px] font-semibold text-purple-700 hover:text-purple-900 bg-purple-100 hover:bg-purple-200 px-2.5 py-0.5 rounded-md border border-purple-200 transition-colors"
+          >
+            📋 {showPasteAlert ? "Hide Quick Paste" : "Paste Portal Alert"}
+          </button>
         </div>
+
+        {showPasteAlert && (
+          <div className="bg-white border border-purple-200 rounded-lg p-2.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                Paste portal alert message (from ssgujarat.org / UDISE / PEN):
+              </label>
+              <span className="text-[9px] text-gray-400">Auto-extracts school, HM, contact, district, UID</span>
+            </div>
+            <textarea
+              rows={3}
+              value={pasteAlertInput}
+              onChange={e => setPasteAlertInput(e.target.value)}
+              placeholder="Paste entire alert message here (e.g. 'DISTRICT: SURAT, BLOCK: SURAT CORPO., SCHOOL: SUNFLOWER ENGLISH SCHOOL, PRINCIPLE NAME: ...')"
+              className="w-full text-xs border border-purple-200 rounded-md p-2 font-mono focus:outline-none focus:ring-1 focus:ring-purple-500"
+            />
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const parsed = parsePortalAlertText(pasteAlertInput);
+                  if (parsed) {
+                    if (parsed.schoolName) setFormOtherSchoolName(parsed.schoolName);
+                    if (parsed.district) setFormOtherSchoolDistrict(parsed.district);
+                    if (parsed.block) setFormOtherSchoolBlock(parsed.block);
+                    if (parsed.headmaster) setFormOtherSchoolHeadmaster(parsed.headmaster);
+                    if (parsed.contactNo) setFormOtherSchoolContactNo(parsed.contactNo);
+                    if (parsed.uid && (effectiveTab === "udise" || mainTab === "onlineGr")) {
+                      setFormUdise(parsed.uid);
+                    }
+                    if (!formOtherSchoolState) setFormOtherSchoolState("Gujarat");
+                    setShowPasteAlert(false);
+                    setPasteAlertInput("");
+                  }
+                }}
+                disabled={!pasteAlertInput.trim()}
+                className="text-xs font-semibold px-3 py-1 bg-purple-700 hover:bg-purple-800 text-white rounded-md transition-colors disabled:opacity-50"
+              >
+                Auto-fill Fields
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {/* 1. SCHOOL NAME */}
@@ -2223,14 +2326,22 @@ export default function GovernmentEntryPage() {
     setModalRow(fullRow);
     setFormGrNo(fullRow.grNo && fullRow.grNo !== "-" ? fullRow.grNo : "");
     setFormDoeSlash(fullRow.doeSlash && fullRow.doeSlash !== "-" ? fullRow.doeSlash : getTodaySlash());
-    setFormUdise(fullRow.udise && fullRow.udise !== "-" ? fullRow.udise : "");
+
+    const isUdiseOtherSchool = fullRow.udise === "Active in other school" || fullRow.udiseStatus === "Active in other school";
+    setFormUdise(
+      fullRow.udise && fullRow.udise !== "-" && fullRow.udise !== "Not Defined" && fullRow.udise !== "Active in other school"
+        ? fullRow.udise
+        : ""
+    );
+    setFormUdiseNotDefined(fullRow.udise === "Not Defined" || fullRow.udiseStatus === "Not Defined");
+
     const isPenOtherSchool = fullRow.pen === "Active in other school" || fullRow.penStatus === "Active in other school";
     setFormPen(
       fullRow.pen && fullRow.pen !== "-" && fullRow.pen !== "Not Defined" && fullRow.pen !== "Active in other school"
         ? fullRow.pen
         : ""
     );
-    setFormPenNotDefined(fullRow.pen === "Not Defined");
+    setFormPenNotDefined(fullRow.pen === "Not Defined" || fullRow.penStatus === "Not Defined");
     setFormApaar(fullRow.apaar && fullRow.apaar !== "-" ? fullRow.apaar : "");
 
     const rawRemarks = (fullRow.remarks && fullRow.remarks !== "-")
@@ -2238,9 +2349,17 @@ export default function GovernmentEntryPage() {
       : (addRemarks && addRemarks !== "-" ? addRemarks : "");
     const otherSchoolData = parseOtherSchoolRemarks(rawRemarks) || fullRow.otherSchoolData;
 
-    if (otherSchoolData || isPenOtherSchool) {
+    const shouldOpenOtherSchool = Boolean(
+      otherSchoolData ||
+      (effectiveTab === "udise" && isUdiseOtherSchool) ||
+      (effectiveTab === "pen" && isPenOtherSchool) ||
+      (mainTab === "onlineGr" && (isUdiseOtherSchool || isPenOtherSchool))
+    );
+
+    if (shouldOpenOtherSchool) {
       setFormActiveOtherSchool(true);
-      setFormPenNotDefined(false);
+      if (effectiveTab === "udise") setFormUdiseNotDefined(false);
+      if (effectiveTab === "pen") setFormPenNotDefined(false);
       setFormOtherSchoolName(otherSchoolData?.schoolName || "");
       setFormOtherSchoolUdise(otherSchoolData?.schoolUdise || "");
       setFormOtherSchoolState(otherSchoolData?.state || "");
@@ -2270,7 +2389,11 @@ export default function GovernmentEntryPage() {
   function closeModal() {
     if (saving) return;
     setModalRow(null);
+    setFormUdiseNotDefined(false);
+    setFormPenNotDefined(false);
     setFormActiveOtherSchool(false);
+    setShowPasteAlert(false);
+    setPasteAlertInput("");
     setFormOtherSchoolName("");
     setFormOtherSchoolUdise("");
     setFormOtherSchoolState("");
@@ -2301,6 +2424,13 @@ export default function GovernmentEntryPage() {
     }
 
     const otherSchoolObj = formActiveOtherSchool ? {
+      portal: effectiveTab === "udise"
+        ? (modalRow?.penStatus === "Active in other school" ? "both" : "udise")
+        : effectiveTab === "pen"
+        ? (modalRow?.udiseStatus === "Active in other school" ? "both" : "pen")
+        : "both",
+      udiseActive: effectiveTab === "udise" || effectiveTab === "both" || modalRow?.udiseStatus === "Active in other school",
+      penActive: effectiveTab === "pen" || effectiveTab === "both" || modalRow?.penStatus === "Active in other school",
       schoolName: formOtherSchoolName.trim(),
       schoolUdise: formOtherSchoolUdise.trim(),
       state: formOtherSchoolState.trim(),
@@ -2313,6 +2443,15 @@ export default function GovernmentEntryPage() {
     } : null;
 
     const combinedRemarks = buildCombinedRemarks(formRemarks, otherSchoolObj);
+
+    let udiseValue = "-";
+    if (formActiveOtherSchool) {
+      udiseValue = formUdise.trim() || "Active in other school";
+    } else if (formUdiseNotDefined) {
+      udiseValue = "Not Defined";
+    } else {
+      udiseValue = formUdise.trim() || "-";
+    }
 
     let penValue = "-";
     if (formActiveOtherSchool) {
@@ -2335,7 +2474,7 @@ export default function GovernmentEntryPage() {
         const updated = await updateOnlineGrRow(modalRow.id, grSubTab, {
           grNo: formGrNo.trim(),
           doeSlash: normSlashDate(formDoeSlash) || getTodaySlash(),
-          udise: formUdise.trim() || "-",
+          udise: udiseValue,
           pen: penValue,
           apaar: formApaar.trim() || "-",
           remarks: combinedRemarks || "-",
@@ -2356,8 +2495,14 @@ export default function GovernmentEntryPage() {
     // 2. Database students: UDISE Entry
     if (effectiveTab === "udise") {
       const digits = formUdise.trim();
-      if (!/^\d{18}$/.test(digits)) {
-        setFormError("UDISE No must be exactly 18 digits.");
+      if (!formActiveOtherSchool && !formUdiseNotDefined) {
+        if (!/^\d{18}$/.test(digits)) {
+          setFormError("UDISE No must be exactly 18 digits.");
+          return;
+        }
+      }
+      if (formActiveOtherSchool && digits && !/^\d{18}$/.test(digits)) {
+        setFormError("If entering a UDISE No, it must be exactly 18 digits.");
         return;
       }
       if (!formGrNo.trim()) {
@@ -2371,7 +2516,7 @@ export default function GovernmentEntryPage() {
         const updatePromises = [
           updateStudentGovId(modalRow.studentId, {
             grNo: formGrNo.trim(),
-            udise: digits,
+            udise: udiseValue,
             apaar: formApaar.trim() || null,
             remarks: combinedRemarks || null,
             enrollmentId: modalRow.enrollmentId,
@@ -2385,7 +2530,7 @@ export default function GovernmentEntryPage() {
           targetOnlineGrSec = addSection;
           updatePromises.push(
             updateOnlineGrRow(addCreatedRowId, addSection, {
-              udise: digits,
+              udise: udiseValue,
               remarks: chosenRemarks || "-",
             }).catch(e => console.warn("Could not sync UDISE to online register row:", e))
           );
@@ -2397,7 +2542,7 @@ export default function GovernmentEntryPage() {
             targetOnlineGrSec = sec;
             updatePromises.push(
               updateOnlineGrRow(existingRow.id, sec, {
-                udise: digits,
+                udise: udiseValue,
                 ...(combinedRemarks ? { remarks: combinedRemarks } : {}),
               }).catch(e => console.warn("Could not sync UDISE to online register row:", e))
             );
@@ -2414,7 +2559,7 @@ export default function GovernmentEntryPage() {
               student: {
                 ...s.student,
                 grno: formGrNo.trim() || s.student?.grno,
-                udise: digits,
+                udise: udiseValue,
                 apaar: formApaar.trim() || s.student?.apaar,
               },
               deactivate_reason: chosenRemarks || s.deactivate_reason,
@@ -2427,7 +2572,7 @@ export default function GovernmentEntryPage() {
           setOnlineGrDataset(prev => ({
             ...prev,
             [targetOnlineGrSec]: (prev[targetOnlineGrSec] || []).map(r =>
-              r.id === targetOnlineGrId ? { ...r, udise: digits, remarks: chosenRemarks || r.remarks } : r
+              r.id === targetOnlineGrId ? { ...r, udise: udiseValue, remarks: chosenRemarks || r.remarks } : r
             ),
           }));
         }
@@ -2438,7 +2583,7 @@ export default function GovernmentEntryPage() {
         // Entry tab, filtered down to this student's details again, before
         // its own Entry Done modal opens.
         if (addWizardActive && addStep === 2) {
-          const nextRow = { ...modalRow, udise: digits, remarks: chosenRemarks };
+          const nextRow = { ...modalRow, udise: udiseValue, remarks: chosenRemarks };
           saveProgressToStorage({
             enrollNo: nextRow.enrollNo,
             studentId: modalRow.studentId,
@@ -2857,6 +3002,26 @@ export default function GovernmentEntryPage() {
         </div>
       )}
 
+      {/* UDISE "Active in other school" reminder */}
+      {mainTab === "udise" && udiseActiveOtherSchoolCount > 0 && (
+        <div className="flex items-center justify-between gap-3 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 text-xs text-purple-900">
+          <div className="flex items-center gap-2">
+            <School className="w-4 h-4 text-purple-700 flex-shrink-0"/>
+            <span><span className="font-semibold">{udiseActiveOtherSchoolCount} student{udiseActiveOtherSchoolCount === 1 ? "" : "s"}</span> marked as <span className="font-semibold text-purple-800">Active in other school</span> in UDISE. Track or request transfer from previous school once available.</span>
+          </div>
+        </div>
+      )}
+
+      {/* PEN "Active in other school" reminder */}
+      {mainTab === "pen" && penActiveOtherSchoolCount > 0 && (
+        <div className="flex items-center justify-between gap-3 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 text-xs text-purple-900">
+          <div className="flex items-center gap-2">
+            <School className="w-4 h-4 text-purple-700 flex-shrink-0"/>
+            <span><span className="font-semibold">{penActiveOtherSchoolCount} student{penActiveOtherSchoolCount === 1 ? "" : "s"}</span> marked as <span className="font-semibold text-purple-800">Active in other school</span> on the PEN portal.</span>
+          </div>
+        </div>
+      )}
+
       {addWizardActive && addSubPhase === "details" && (mainTab === "udise" || mainTab === "pen") ? (
         /* Add New Student wizard — full details page for this one student, not a table row */
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
@@ -3024,8 +3189,8 @@ export default function GovernmentEntryPage() {
                           const isDone = isOnlineGr
                             ? (row.status === "Done" || Boolean(row.grNo && row.grNo !== "-"))
                             : isUdise
-                            ? (row.udiseStatus === "Done" || Boolean(row.udise && String(row.udise).trim() && String(row.udise).trim() !== "-"))
-                            : (row.penStatus === "Done" || row.penStatus === "Not Defined" || Boolean(row.pen && String(row.pen).trim() && String(row.pen).trim() !== "-"));
+                            ? (row.udiseStatus === "Done" || row.udiseStatus === "Not Defined" || row.udiseStatus === "Active in other school" || Boolean(row.udise && String(row.udise).trim() && String(row.udise).trim() !== "-"))
+                            : (row.penStatus === "Done" || row.penStatus === "Not Defined" || row.penStatus === "Active in other school" || Boolean(row.pen && String(row.pen).trim() && String(row.pen).trim() !== "-"));
 
                           return (
                             <div className="inline-flex items-center gap-1">
@@ -3271,10 +3436,32 @@ export default function GovernmentEntryPage() {
 
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">UID (UDISE No)</label>
-                    <input type="text" value={formUdise} onChange={e => setFormUdise(e.target.value.replace(/[^\d]/g, ""))}
+                    <input type="text" value={formUdise} disabled={formUdiseNotDefined}
+                      onChange={e => setFormUdise(e.target.value.replace(/[^\d]/g, ""))}
                       maxLength={18}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy"
-                      placeholder="18-digit state UID"/>
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy disabled:bg-gray-100 disabled:text-gray-400"
+                      placeholder={formActiveOtherSchool ? "e.g. 242215313052520157 (optional if known)" : "18-digit state UID"}/>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-1 pt-1 border-t border-gray-100">
+                      <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+                        <input type="checkbox" checked={formUdiseNotDefined}
+                          onChange={e => {
+                            const checked = e.target.checked;
+                            setFormUdiseNotDefined(checked);
+                            if (checked) setFormUdise("");
+                          }}
+                          className="w-3.5 h-3.5 accent-school-navy"/>
+                        UID not generated yet (mark &quot;Not Defined&quot;)
+                      </label>
+                      <label className="flex items-center gap-2 text-xs font-semibold text-purple-700 cursor-pointer select-none">
+                        <input type="checkbox" checked={formActiveOtherSchool}
+                          onChange={e => {
+                            const checked = e.target.checked;
+                            setFormActiveOtherSchool(checked);
+                          }}
+                          className="w-3.5 h-3.5 accent-purple-600"/>
+                        Active in other school
+                      </label>
+                    </div>
                   </div>
 
                   <div className="flex flex-col gap-1">
@@ -3350,12 +3537,48 @@ export default function GovernmentEntryPage() {
                     )}
                   </div>
                   <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">UDISE No (18 digits)</label>
-                    <input type="text" value={formUdise} onChange={e => setFormUdise(e.target.value.replace(/[^\d]/g, ""))}
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                      UDISE No {formActiveOtherSchool ? "(Optional if known, e.g. from portal alert)" : "(18 digits)"}
+                    </label>
+                    <input type="text" value={formUdise} disabled={formUdiseNotDefined}
+                      onChange={e => setFormUdise(e.target.value.replace(/[^\d]/g, ""))}
                       maxLength={18}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy"
-                      placeholder="e.g. 242215044262310036"/>
-                    <span className="text-[10px] text-gray-400">{formUdise.length}/18 digits</span>
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy disabled:bg-gray-100 disabled:text-gray-400"
+                      placeholder={formActiveOtherSchool ? "e.g. 242215313052520157 (optional if known)" : "e.g. 242215044262310036"}/>
+                    <div className="flex items-center justify-between text-[10px] text-gray-400">
+                      <span>{formUdise.length}/18 digits</span>
+                      {formActiveOtherSchool && formUdise.length === 18 && (
+                        <span className="text-green-600 font-semibold">✓ 18-digit State UID entered</span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-1 pt-1 border-t border-gray-100">
+                      <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+                        <input type="checkbox" checked={formUdiseNotDefined}
+                          onChange={e => {
+                            const checked = e.target.checked;
+                            setFormUdiseNotDefined(checked);
+                            if (checked) {
+                              setFormActiveOtherSchool(false);
+                              setFormUdise("");
+                            }
+                          }}
+                          className="w-3.5 h-3.5 accent-school-navy"/>
+                        UDISE not generated yet by portal (mark &quot;Not Defined&quot;)
+                      </label>
+                      <label className="flex items-center gap-2 text-xs font-semibold text-purple-700 cursor-pointer select-none">
+                        <input type="checkbox" checked={formActiveOtherSchool}
+                          onChange={e => {
+                            const checked = e.target.checked;
+                            setFormActiveOtherSchool(checked);
+                            if (checked) {
+                              setFormUdiseNotDefined(false);
+                            }
+                          }}
+                          className="w-3.5 h-3.5 accent-purple-600"/>
+                        Active in other school
+                      </label>
+                    </div>
+                    {renderActiveOtherSchoolFields()}
                   </div>
 
                   <div className="flex flex-col gap-1">
