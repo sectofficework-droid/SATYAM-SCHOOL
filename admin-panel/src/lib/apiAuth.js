@@ -25,6 +25,11 @@ export function getAdminClient() {
   return createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
 }
 
+// Short-lived in-memory cache for verified admin tokens (60s TTL)
+// Avoids 2 sequential round trips to Supabase Auth & admin_users on every rapid API call.
+const sessionCache = new Map();
+const SESSION_CACHE_TTL_MS = 60_000;
+
 // Re-derives the caller's identity from their own session token (never
 // trusts a client-asserted role/id) and checks real admin_users membership.
 // No tier restriction here, matching how these routes' own UI call sites
@@ -34,6 +39,16 @@ export async function requireAdminSession(request, supabaseAdmin, allowedTiers) 
   const token = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
   if (!token) return { errorResponse: errJson("Not authenticated", 401) };
 
+  const now = Date.now();
+  const cached = sessionCache.get(token);
+  if (cached && (now - cached.timestamp < SESSION_CACHE_TTL_MS)) {
+    const caller = cached.caller;
+    if (allowedTiers && !allowedTiers.includes(caller.role)) {
+      return { errorResponse: errJson("Not authorized", 403) };
+    }
+    return { caller };
+  }
+
   const { data: { user }, error: userErr } = await supabaseAdmin.auth.getUser(token);
   if (userErr || !user) return { errorResponse: errJson("Not authenticated", 401) };
 
@@ -42,6 +57,14 @@ export async function requireAdminSession(request, supabaseAdmin, allowedTiers) 
   if (allowedTiers && !allowedTiers.includes(caller.role)) {
     return { errorResponse: errJson("Not authorized", 403) };
   }
+
+  sessionCache.set(token, { caller, timestamp: now });
+  if (sessionCache.size > 500) {
+    for (const [k, v] of sessionCache.entries()) {
+      if (now - v.timestamp >= SESSION_CACHE_TTL_MS) sessionCache.delete(k);
+    }
+  }
+
   return { caller };
 }
 

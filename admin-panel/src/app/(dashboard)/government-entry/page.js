@@ -1959,6 +1959,9 @@ export default function GovernmentEntryPage() {
         setAddPinnedEnrollNo(null);
         setAddModalOpen(true);
       }
+
+      // Silent background sync
+      loadAll();
     } catch (e) {
       alert("Failed to update remarks: " + e.message);
     }
@@ -2023,34 +2026,41 @@ export default function GovernmentEntryPage() {
         ? buildCombinedRemarks(cleanRemarks, otherSchoolData)
         : (cleanRemarks || addSelectedStudent.remarks || dec.remarks || "-");
 
-      const created = await updateOnlineGrRow(addCreatedRowId, addSection, {
-        doeSlash:         chosenDoe,
-        udise:            addSelectedStudent.udise || "-",
-        pen:              addSelectedStudent.pen || "-",
-        remarks:          finalRemarks,
-        documentsPending: dec.documentsPending,
-      });
-      setOnlineGrDataset(prev => ({
-        ...prev,
-        [addSection]: (prev[addSection] || []).map(r => r.id === created.id ? created : r),
-      }));
+      const updatePromises = [
+        updateOnlineGrRow(addCreatedRowId, addSection, {
+          doeSlash:         chosenDoe,
+          udise:            addSelectedStudent.udise || "-",
+          pen:              addSelectedStudent.pen || "-",
+          remarks:          finalRemarks,
+          documentsPending: dec.documentsPending,
+        })
+      ];
 
-      // Also persist remark to student record if studentId is present
       const studentId = addSelectedStudent.studentId || addSelectedStudent.id;
       if (studentId) {
-        try {
-          await updateStudentGovId(studentId, {
+        updatePromises.push(
+          updateStudentGovId(studentId, {
             remarks: finalRemarks !== "-" ? finalRemarks : null,
             enrollmentId: addSelectedStudent.enrollmentId,
-          });
-        } catch (govErr) {
-          console.warn("Could not sync remark to student table:", govErr);
-        }
+          }).catch(govErr => console.warn("Could not sync remark to student table:", govErr))
+        );
+      }
+
+      const [created] = await Promise.all(updatePromises);
+
+      if (created) {
+        setOnlineGrDataset(prev => ({
+          ...prev,
+          [addSection]: (prev[addSection] || []).map(r => r.id === created.id ? created : r),
+        }));
       }
 
       clearProgressFromStorage();
       setAddModalOpen(false);
       setAddWizardActive(false);
+
+      // Background sync without blocking the UI
+      loadAll();
     } catch (e) {
       setAddError(e.message || "Failed to finalize entry.");
     } finally {
@@ -2270,41 +2280,73 @@ export default function GovernmentEntryPage() {
       }
       setSaving(true);
       try {
-        await updateStudentGovId(modalRow.studentId, {
-          grNo: formGrNo.trim(),
-          udise: digits,
-          apaar: formApaar.trim() || null,
-          remarks: combinedRemarks || null,
-          enrollmentId: modalRow.enrollmentId,
-        });
-
         const chosenRemarks = combinedRemarks || modalRow.remarks || "";
 
+        const updatePromises = [
+          updateStudentGovId(modalRow.studentId, {
+            grNo: formGrNo.trim(),
+            udise: digits,
+            apaar: formApaar.trim() || null,
+            remarks: combinedRemarks || null,
+            enrollmentId: modalRow.enrollmentId,
+          })
+        ];
+
+        let targetOnlineGrId = null;
+        let targetOnlineGrSec = null;
         if (addWizardActive && addCreatedRowId && addSection) {
-          try {
-            await updateOnlineGrRow(addCreatedRowId, addSection, {
+          targetOnlineGrId = addCreatedRowId;
+          targetOnlineGrSec = addSection;
+          updatePromises.push(
+            updateOnlineGrRow(addCreatedRowId, addSection, {
               udise: digits,
               remarks: chosenRemarks || "-",
-            });
-          } catch (e) {
-            console.warn("Could not sync UDISE to online register row:", e);
-          }
+            }).catch(e => console.warn("Could not sync UDISE to online register row:", e))
+          );
         } else {
           const sec = classSection(modalRow.cls);
           const existingRow = findExistingOnlineGrRow(modalRow, sec);
           if (existingRow && sec) {
-            try {
-              await updateOnlineGrRow(existingRow.id, sec, {
+            targetOnlineGrId = existingRow.id;
+            targetOnlineGrSec = sec;
+            updatePromises.push(
+              updateOnlineGrRow(existingRow.id, sec, {
                 udise: digits,
                 ...(combinedRemarks ? { remarks: combinedRemarks } : {}),
-              });
-            } catch (e) {
-              console.warn("Could not sync UDISE to online register row:", e);
-            }
+              }).catch(e => console.warn("Could not sync UDISE to online register row:", e))
+            );
           }
         }
 
-        await loadAll();
+        await Promise.all(updatePromises);
+
+        // Optimistically update dbStudents in memory so UI reflects changes instantly
+        setDbStudents(prev => prev.map(s => {
+          if (s.student?.id === modalRow.studentId || s.enrollment_no === modalRow.enrollNo) {
+            return {
+              ...s,
+              student: {
+                ...s.student,
+                grno: formGrNo.trim() || s.student?.grno,
+                udise: digits,
+                apaar: formApaar.trim() || s.student?.apaar,
+              },
+              deactivate_reason: chosenRemarks || s.deactivate_reason,
+            };
+          }
+          return s;
+        }));
+
+        if (targetOnlineGrId && targetOnlineGrSec) {
+          setOnlineGrDataset(prev => ({
+            ...prev,
+            [targetOnlineGrSec]: (prev[targetOnlineGrSec] || []).map(r =>
+              r.id === targetOnlineGrId ? { ...r, udise: digits, remarks: chosenRemarks || r.remarks } : r
+            ),
+          }));
+        }
+
+        // Close modal immediately without waiting for full database reload
         setModalRow(null);
         // Add-New-Student wizard, stage 2 done — hand off to the real PEN
         // Entry tab, filtered down to this student's details again, before
@@ -2336,6 +2378,9 @@ export default function GovernmentEntryPage() {
           setSearch("");
           setAddPinnedEnrollNo(nextRow.enrollNo);
         }
+
+        // Silent background sync
+        loadAll();
       } catch (e) {
         setFormError(e.message || "Failed to save.");
       } finally {
@@ -2355,41 +2400,73 @@ export default function GovernmentEntryPage() {
     }
     setSaving(true);
     try {
-      await updateStudentGovId(modalRow.studentId, {
-        grNo: formGrNo.trim(),
-        pen: penValue,
-        apaar: formApaar.trim() || null,
-        remarks: combinedRemarks || null,
-        enrollmentId: modalRow.enrollmentId,
-      });
-
       const chosenRemarks = combinedRemarks || modalRow.remarks || "";
 
+      const updatePromises = [
+        updateStudentGovId(modalRow.studentId, {
+          grNo: formGrNo.trim(),
+          pen: penValue,
+          apaar: formApaar.trim() || null,
+          remarks: combinedRemarks || null,
+          enrollmentId: modalRow.enrollmentId,
+        })
+      ];
+
+      let targetOnlineGrId = null;
+      let targetOnlineGrSec = null;
       if (addWizardActive && addCreatedRowId && addSection) {
-        try {
-          await updateOnlineGrRow(addCreatedRowId, addSection, {
+        targetOnlineGrId = addCreatedRowId;
+        targetOnlineGrSec = addSection;
+        updatePromises.push(
+          updateOnlineGrRow(addCreatedRowId, addSection, {
             pen: penValue,
             remarks: chosenRemarks || "-",
-          });
-        } catch (e) {
-          console.warn("Could not sync PEN to online register row:", e);
-        }
+          }).catch(e => console.warn("Could not sync PEN to online register row:", e))
+        );
       } else {
         const sec = classSection(modalRow.cls);
         const existingRow = findExistingOnlineGrRow(modalRow, sec);
         if (existingRow && sec) {
-          try {
-            await updateOnlineGrRow(existingRow.id, sec, {
+          targetOnlineGrId = existingRow.id;
+          targetOnlineGrSec = sec;
+          updatePromises.push(
+            updateOnlineGrRow(existingRow.id, sec, {
               pen: penValue,
               ...(combinedRemarks ? { remarks: combinedRemarks } : {}),
-            });
-          } catch (e) {
-            console.warn("Could not sync PEN to online register row:", e);
-          }
+            }).catch(e => console.warn("Could not sync PEN to online register row:", e))
+          );
         }
       }
 
-      await loadAll();
+      await Promise.all(updatePromises);
+
+      // Optimistically update dbStudents in memory so UI reflects changes instantly
+      setDbStudents(prev => prev.map(s => {
+        if (s.student?.id === modalRow.studentId || s.enrollment_no === modalRow.enrollNo) {
+          return {
+            ...s,
+            student: {
+              ...s.student,
+              grno: formGrNo.trim() || s.student?.grno,
+              pen: penValue,
+              apaar: formApaar.trim() || s.student?.apaar,
+            },
+            deactivate_reason: chosenRemarks || s.deactivate_reason,
+          };
+        }
+        return s;
+      }));
+
+      if (targetOnlineGrId && targetOnlineGrSec) {
+        setOnlineGrDataset(prev => ({
+          ...prev,
+          [targetOnlineGrSec]: (prev[targetOnlineGrSec] || []).map(r =>
+            r.id === targetOnlineGrId ? { ...r, pen: penValue, remarks: chosenRemarks || r.remarks } : r
+          ),
+        }));
+      }
+
+      // Close modal immediately without waiting for full database reload
       setModalRow(null);
       // Add-New-Student wizard, stage 3 done — back to Online GR for the
       // final confirmation review (stage 4).

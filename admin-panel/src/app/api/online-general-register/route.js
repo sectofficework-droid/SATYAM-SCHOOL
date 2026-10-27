@@ -237,8 +237,11 @@ export async function POST(request) {
     const regLabel = section === "primary" ? "PR No" : "GR No";
 
     if (existing) {
-      // Validate that grNo is not already taken by another student in this section
-      if (safeUpdates.grNo && safeUpdates.grNo !== "-") {
+      // Validate that grNo is not already taken by another student in this section only if grNo changed
+      const grNoChanged = safeUpdates.grNo && safeUpdates.grNo !== "-" &&
+        safeUpdates.grNo.trim().toLowerCase() !== String(existing.gr_no || "").trim().toLowerCase();
+
+      if (grNoChanged) {
         const { data: dupGr } = await supabaseAdmin
           .from(TABLE)
           .select("id, name, cls, gr_no")
