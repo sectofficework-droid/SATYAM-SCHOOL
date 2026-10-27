@@ -32,6 +32,12 @@ const GENERAL_CLASSES_OPTIONS = ["1st","2nd","3rd","4th","5th","6th","7th","8th"
 const ONLINE_GR_YEARS = ["All", "2026-27", "2025-26", "2024-25"];
 const SESSIONS_FALLBACK = ["2026-27","2025-26","2024-25","2023-24"];
 
+function classSection(cls) {
+  if (PRIMARY_CLASSES_OPTIONS.includes(cls)) return "primary";
+  if (GENERAL_CLASSES_OPTIONS.includes(cls)) return "general";
+  return null;
+}
+
 function parseDateParts(dateStr) {
   if (!dateStr || dateStr === "-") return null;
   const str = String(dateStr).trim();
@@ -258,6 +264,63 @@ function matchesGovStatusFilter(row, filterVal) {
     return udiseDone && penDone;
   }
   return true;
+}
+
+function getNextGrNo(grNo) {
+  if (!grNo || typeof grNo !== "string") return "";
+  const trimmed = grNo.trim();
+  const match = trimmed.match(/^(.*?)(\d+)$/);
+  if (!match) return trimmed;
+  const prefix = match[1];
+  const digits = match[2];
+  const nextNum = parseInt(digits, 10) + 1;
+  const padded = String(nextNum).padStart(digits.length, "0");
+  return `${prefix}${padded}`;
+}
+
+function getLastSavedGrInfo(section, dataset, dbStudents = []) {
+  // 1. Check dataset for section
+  const rows = Array.isArray(dataset?.[section]) ? dataset[section] : [];
+  for (let i = rows.length - 1; i >= 0; i--) {
+    const row = rows[i];
+    const gr = row?.grNo ? String(row.grNo).trim() : "";
+    const name = row?.name ? String(row.name).trim() : "";
+    if (gr && gr !== "-" && name && name !== "-") {
+      return {
+        grNo: gr,
+        name: name,
+        cls: row.cls || "",
+        source: "register",
+      };
+    }
+  }
+
+  // 2. Fallback to dbStudents matching section
+  const sectionStudents = (dbStudents || []).filter(st => {
+    const s = classSection(st.cls || st.class || "");
+    const gr = st.grNo ? String(st.grNo).trim() : "";
+    return s === section && gr && gr !== "-";
+  });
+
+  if (sectionStudents.length > 0) {
+    const sorted = [...sectionStudents].sort((a, b) => {
+      const matchA = String(a.grNo || "").match(/\d+/);
+      const matchB = String(b.grNo || "").match(/\d+/);
+      const numA = matchA ? parseInt(matchA[0], 10) : 0;
+      const numB = matchB ? parseInt(matchB[0], 10) : 0;
+      return numB - numA;
+    });
+    const last = sorted[0];
+    const fullName = `${last.firstName || ""} ${last.surname || ""}`.trim() || last.name || "";
+    return {
+      grNo: String(last.grNo).trim(),
+      name: fullName,
+      cls: last.cls || last.class || "",
+      source: "database",
+    };
+  }
+
+  return null;
 }
 
 // 16 columns matching official D:\Project\SSIS SCHOOL\ONLINE GENERAL REGISTER.xlsx exactly:
@@ -693,11 +756,6 @@ export default function GovernmentEntryPage() {
   // BASANTA DAKUA" for a student whose real record is "AYUSHMATI DAKUA"
   // (no middle name) — same mobile, different name string.
   const normKey = v => String(v || "").trim().toUpperCase();
-  function classSection(cls) {
-    if (PRIMARY_CLASSES_OPTIONS.includes(cls)) return "primary";
-    if (GENERAL_CLASSES_OPTIONS.includes(cls)) return "general";
-    return null;
-  }
   function dobLooselyMatches(a, b) {
     if (!a || a === "-" || !b || b === "-") return true; // missing data can't contradict a match
     if (a === b) return true;
@@ -1770,10 +1828,13 @@ export default function GovernmentEntryPage() {
       ? String(existingRow.remarks).trim()
       : (st.remarks && st.remarks !== "-" ? String(st.remarks).trim() : "");
 
+    const lastInfo = getLastSavedGrInfo(sec, onlineGrDataset, dbStudents);
+    const nextGr = lastInfo ? getNextGrNo(lastInfo.grNo) : "";
+
     setAddSelectedStudent(st);
     setAddCreatedRowId(existingRow ? existingRow.id : null);
-    setAddGrNo(existingGr);
-    setAddGrEditing(!existingGr);
+    setAddGrNo(existingGr || nextGr || "");
+    setAddGrEditing(!existingGr && !nextGr);
     setAddDoeSlash(existingDoe);
     setAddDoeEditing(false);
     setAddRemarks(existingRemarks);
@@ -3412,7 +3473,11 @@ export default function GovernmentEntryPage() {
               <div>
                 <h3 className="text-base font-bold text-gray-800">
                   Add New Student
-                  {addSection && <span className="text-gray-400 font-semibold"> — {addSection === "primary" ? "Primary Register (PR)" : "General Register (GR)"}</span>}
+                  {(addSection || grSubTab) && (
+                    <span className="text-gray-400 font-semibold">
+                      {" "}— {(addSection || grSubTab) === "primary" ? "Primary Register (PR)" : "General Register (GR)"}
+                    </span>
+                  )}
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
                   Step {addStep} of 4 — {
@@ -3452,6 +3517,51 @@ export default function GovernmentEntryPage() {
                       {addEligFilter === "all" && "All enrolled students in database"}
                     </div>
                   </div>
+
+                  {/* Last Saved Register Assist Banner */}
+                  {(() => {
+                    const activeSec = (addClassFilter && addClassFilter !== "All")
+                      ? classSection(addClassFilter) || grSubTab || "general"
+                      : grSubTab || "general";
+                    const isPrimary = activeSec === "primary";
+                    const lastInfo = getLastSavedGrInfo(activeSec, onlineGrDataset, dbStudents);
+                    const nextGr = lastInfo ? getNextGrNo(lastInfo.grNo) : "";
+                    if (!lastInfo) return null;
+                    return (
+                      <div className="bg-gradient-to-r from-blue-50/80 via-indigo-50/40 to-blue-50/80 border border-blue-200 rounded-xl px-3.5 py-2.5 flex-shrink-0 shadow-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="flex h-2 w-2 relative">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600"></span>
+                            </span>
+                            <span className="text-[11px] font-bold text-blue-900 uppercase tracking-wide">
+                              Last Saved in {isPrimary ? "Primary Register (PR)" : "General Register (GR)"}:
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white border border-blue-300 font-mono font-bold text-xs text-blue-950 shadow-2xs">
+                              {lastInfo.grNo}
+                            </span>
+                            <span className="text-xs font-semibold text-gray-800">
+                              — {lastInfo.name}
+                            </span>
+                            {lastInfo.cls && (
+                              <span className="text-[11px] px-1.5 py-0.2 bg-white text-gray-600 rounded border border-gray-200">
+                                {lastInfo.cls}
+                              </span>
+                            )}
+                          </div>
+                          {nextGr && (
+                            <div className="flex items-center gap-1.5 text-xs">
+                              <span className="text-gray-500 font-medium">Next Suggested:</span>
+                              <span className="px-2 py-0.5 rounded bg-blue-600 text-white font-mono font-bold text-xs shadow-xs">
+                                {nextGr}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   <div className="flex gap-2 flex-shrink-0">
                     <div className="relative flex-1">
@@ -3579,10 +3689,52 @@ export default function GovernmentEntryPage() {
                     const existingGr = getSavedGrNo(addSelectedStudent);
                     const isPrimary = addSection === "primary";
                     const labelTitle = isPrimary ? "PR No (Primary Register No)" : "GR No (General Register No)";
+                    const lastInfo = getLastSavedGrInfo(addSection, onlineGrDataset, dbStudents);
+                    const nextGr = lastInfo ? getNextGrNo(lastInfo.grNo) : "";
+
+                    const lastSavedBanner = lastInfo ? (
+                      <div className="flex items-center justify-between p-2.5 bg-gradient-to-r from-blue-50/80 via-indigo-50/40 to-blue-50/80 border border-blue-200 rounded-lg text-xs">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-blue-900 uppercase tracking-wide text-[10px]">
+                            Last Saved in {isPrimary ? "Primary Register (PR)" : "General Register (GR)"}:
+                          </span>
+                          <span className="font-mono font-bold text-blue-950 bg-white border border-blue-300 px-2 py-0.5 rounded shadow-2xs">
+                            {lastInfo.grNo}
+                          </span>
+                          <span className="font-semibold text-gray-800">
+                            — {lastInfo.name}
+                          </span>
+                          {lastInfo.cls && (
+                            <span className="text-[10px] px-1.5 py-0.2 bg-white text-gray-600 rounded border border-gray-200">
+                              {lastInfo.cls}
+                            </span>
+                          )}
+                        </div>
+                        {nextGr && (
+                          <div className="flex items-center gap-1.5 flex-shrink-0">
+                            <span className="text-[11px] text-gray-500 font-medium">Suggested Next:</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAddGrNo(nextGr);
+                                setAddGrEditing(true);
+                                if (addError) setAddError("");
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-blue-600 hover:bg-blue-700 text-white font-mono font-bold text-xs shadow-xs transition-colors"
+                              title={`Click to fill ${nextGr}`}
+                            >
+                              {nextGr}
+                              <span className="text-[10px] font-normal opacity-90">(Use)</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ) : null;
 
                     if (existingGr && !addGrEditing) {
                       return (
                         <div className="flex flex-col gap-2">
+                          {lastSavedBanner}
                           {addExistingRow && (
                             <div className="flex items-center gap-2 p-2 bg-blue-50/80 border border-blue-200 rounded-lg text-xs text-blue-900">
                               <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-blue-600" />
@@ -3635,69 +3787,76 @@ export default function GovernmentEntryPage() {
                     }
 
                     return (
-                      <div className="flex flex-col gap-1.5 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                        {addExistingRow && (
-                          <div className="flex items-center gap-1.5 p-2 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-900">
-                            <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-blue-600" />
-                            <span>Already in {isPrimary ? "Primary Register" : "Online General Register"} · Saving updates existing record in-place</span>
+                      <div className="flex flex-col gap-2">
+                        {lastSavedBanner}
+                        <div className="flex flex-col gap-1.5 p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                          {addExistingRow && (
+                            <div className="flex items-center gap-1.5 p-2 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-900">
+                              <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-blue-600" />
+                              <span>Already in {isPrimary ? "Primary Register" : "Online General Register"} · Saving updates existing record in-place</span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wider">
+                              {existingGr ? `Edit ${labelTitle}` : `${labelTitle} *`}
+                            </label>
+                            {existingGr && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAddGrNo(existingGr);
+                                  setAddGrEditing(false);
+                                  if (addError) setAddError("");
+                                }}
+                                className="text-[11px] font-medium text-gray-500 hover:text-gray-700 underline"
+                              >
+                                Cancel edit (keep {existingGr})
+                              </button>
+                            )}
                           </div>
-                        )}
-                        <div className="flex items-center justify-between">
-                          <label className="text-[10px] font-bold text-gray-600 uppercase tracking-wider">
-                            {existingGr ? `Edit ${labelTitle}` : `${labelTitle} *`}
-                          </label>
-                          {existingGr && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAddGrNo(existingGr);
-                                setAddGrEditing(false);
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              value={addGrNo}
+                              onChange={e => {
+                                setAddGrNo(e.target.value);
                                 if (addError) setAddError("");
                               }}
-                              className="text-[11px] font-medium text-gray-500 hover:text-gray-700 underline"
-                            >
-                              Cancel edit (keep {existingGr})
-                            </button>
-                          )}
-                        </div>
-                        <div className="flex gap-2">
-                          <input
-                            type="text"
-                            value={addGrNo}
-                            onChange={e => {
-                              setAddGrNo(e.target.value);
-                              if (addError) setAddError("");
-                            }}
-                            placeholder={isPrimary ? "e.g. P101" : "e.g. 201"}
-                            className={`flex-1 border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 bg-white ${
-                              addGrConflict
-                                ? "border-red-400 focus:ring-red-400 bg-red-50/30"
-                                : "border-gray-300 focus:ring-school-navy"
-                            }`}
-                            autoFocus={addGrEditing}
-                          />
-                          {existingGr && (
-                            <button
-                              type="button"
-                              onClick={() => setAddGrEditing(false)}
-                              disabled={!addGrNo.trim() || !!addGrConflict}
-                              className="text-xs font-semibold px-3 py-2 bg-school-navy text-white rounded-lg hover:bg-blue-900 transition-colors disabled:opacity-50"
-                            >
-                              Done
-                            </button>
-                          )}
-                        </div>
-                        {addGrConflict && (
-                          <div className="flex items-start gap-1.5 p-2 bg-red-50 border border-red-200 rounded-md text-xs text-red-800">
-                            <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-600 mt-0.5" />
-                            <span className="font-medium">{getConflictWarning(addGrConflict, addSection)}</span>
+                              placeholder={isPrimary ? "e.g. P101" : "e.g. 201"}
+                              className={`flex-1 border rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 bg-white ${
+                                addGrConflict
+                                  ? "border-red-400 focus:ring-red-400 bg-red-50/30"
+                                  : "border-gray-300 focus:ring-school-navy"
+                              }`}
+                              autoFocus={addGrEditing}
+                            />
+                            {existingGr && (
+                              <button
+                                type="button"
+                                onClick={() => setAddGrEditing(false)}
+                                disabled={!addGrNo.trim() || !!addGrConflict}
+                                className="text-xs font-semibold px-3 py-2 bg-school-navy text-white rounded-lg hover:bg-blue-900 transition-colors disabled:opacity-50"
+                              >
+                                Done
+                              </button>
+                            )}
                           </div>
-                        )}
-                        {!existingGr && !addGrConflict && (
-                          <span className="text-[11px] text-amber-700">
-                            ℹ️ Student currently does not have a {isPrimary ? "PR No" : "GR No"} assigned. Enter it here to save.
-                          </span>
-                        )}
+                          {addGrConflict && (
+                            <div className="flex items-start gap-1.5 p-2 bg-red-50 border border-red-200 rounded-md text-xs text-red-800">
+                              <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-600 mt-0.5" />
+                              <span className="font-medium">{getConflictWarning(addGrConflict, addSection)}</span>
+                            </div>
+                          )}
+                          {!existingGr && !addGrConflict && (
+                            <span className="text-[11px] text-gray-600 flex items-center gap-1">
+                              {addGrNo && nextGr && addGrNo.trim() === nextGr.trim() ? (
+                                <span className="text-green-700 font-medium">✓ Pre-filled with next sequential {isPrimary ? "PR" : "GR"} number.</span>
+                              ) : (
+                                <span className="text-amber-700">ℹ️ Student currently does not have a {isPrimary ? "PR No" : "GR No"} assigned. Enter or adjust it here to save.</span>
+                              )}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     );
                   })()}
