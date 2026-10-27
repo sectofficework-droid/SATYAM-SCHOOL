@@ -843,8 +843,16 @@ export default function GovernmentEntryPage() {
   const [addCreatedRowId, setAddCreatedRowId] = useState(null);
   const [addError, setAddError] = useState("");
   const [addSaving, setAddSaving] = useState(false);
+  const [addRemarks, setAddRemarks] = useState("");
   const addSection = addSelectedStudent ? classSection(addSelectedStudent.cls) : null;
   const addReview = addSelectedStudent ? decorate(addSelectedStudent) : null;
+
+  // Keep addRemarks synced when entering final confirmation (Step 4)
+  useEffect(() => {
+    if (addStep === 4 && !addRemarks && addReview?.remarks && addReview.remarks !== "-") {
+      setAddRemarks(addReview.remarks);
+    }
+  }, [addStep, addReview?.remarks, addRemarks]);
   // GR/PR No was already asked in stage 1 — lock it during the UDISE/PEN
   // entry modals so it can't drift from what was just registered.
   const isWizardEntry = addWizardActive && addSubPhase === "entry";
@@ -908,6 +916,8 @@ export default function GovernmentEntryPage() {
     setAddSelectedStudent(student);
     setAddGrNo(grNo);
     if (saved.doeSlash) setAddDoeSlash(saved.doeSlash);
+    const savedRemarks = saved.remarks || student.remarks || "";
+    setAddRemarks(savedRemarks && savedRemarks !== "-" ? savedRemarks : "");
     setAddCreatedRowId(createdRowId);
     setAddStep(step);
     setAddSubPhase(subPhase);
@@ -1159,6 +1169,7 @@ export default function GovernmentEntryPage() {
     setAddDoeEditing(false);
     setAddCreatedRowId(null);
     setAddPinnedEnrollNo(null);
+    setAddRemarks("");
     setAddError("");
   }
 
@@ -1471,6 +1482,9 @@ export default function GovernmentEntryPage() {
     const existingDoe = existingRow?.doeSlash && existingRow.doeSlash !== "-"
       ? String(existingRow.doeSlash).trim()
       : getTodaySlash();
+    const existingRemarks = existingRow?.remarks && existingRow.remarks !== "-"
+      ? String(existingRow.remarks).trim()
+      : (st.remarks && st.remarks !== "-" ? String(st.remarks).trim() : "");
 
     setAddSelectedStudent(st);
     setAddCreatedRowId(existingRow ? existingRow.id : null);
@@ -1478,6 +1492,7 @@ export default function GovernmentEntryPage() {
     setAddGrEditing(!existingGr);
     setAddDoeSlash(existingDoe);
     setAddDoeEditing(false);
+    setAddRemarks(existingRemarks);
     setAddError("");
   }
 
@@ -1489,6 +1504,7 @@ export default function GovernmentEntryPage() {
     setAddGrEditing(false);
     setAddDoeSlash(getTodaySlash());
     setAddDoeEditing(false);
+    setAddRemarks("");
     setAddError("");
   }
 
@@ -1532,9 +1548,10 @@ export default function GovernmentEntryPage() {
       if (!penInfo.eligible) ineligParts.push(`Ineligible for PEN: ${penInfo.reason}`);
       const ineligRemark = ineligParts.join(" | ");
 
+      const baseRemarks = addRemarks.trim() || (dec.remarks && dec.remarks !== "-" ? dec.remarks : "");
       const remarksToSave = ineligRemark
-        ? (dec.remarks && dec.remarks !== "-" ? `${dec.remarks} | ${ineligRemark}` : ineligRemark)
-        : dec.remarks;
+        ? (baseRemarks && baseRemarks !== "-" ? `${baseRemarks} | ${ineligRemark}` : ineligRemark)
+        : (baseRemarks || "-");
 
       const created = await updateOnlineGrRow(id, addSection, {
         enrollNo:         addSelectedStudent.enrollNo,
@@ -1558,6 +1575,7 @@ export default function GovernmentEntryPage() {
 
       const finalId = created.id || id;
       setAddCreatedRowId(finalId);
+      setAddRemarks(remarksToSave !== "-" ? remarksToSave : "");
       setAddSelectedStudent(prev => prev ? { ...prev, ...dec, grNo: addGrNo.trim(), remarks: remarksToSave } : prev);
       setOnlineGrDataset(prev => {
         const list = prev[addSection] || [];
@@ -1573,6 +1591,7 @@ export default function GovernmentEntryPage() {
           studentId: addSelectedStudent.studentId || addSelectedStudent.id,
           grNo: addGrNo.trim(),
           doeSlash: normSlashDate(addDoeSlash) || getTodaySlash(),
+          remarks: remarksToSave !== "-" ? remarksToSave : "",
           step: 2,
           subPhase: "details",
           createdRowId: finalId,
@@ -1598,6 +1617,7 @@ export default function GovernmentEntryPage() {
           studentId: addSelectedStudent.studentId || addSelectedStudent.id,
           grNo: addGrNo.trim(),
           doeSlash: normSlashDate(addDoeSlash) || getTodaySlash(),
+          remarks: remarksToSave !== "-" ? remarksToSave : "",
           step: 3,
           subPhase: "details",
           createdRowId: finalId,
@@ -1637,13 +1657,14 @@ export default function GovernmentEntryPage() {
     const udiseInfo = eligibilityFns.getUdiseEligibility(addSelectedStudent);
     const penInfo = eligibilityFns.getPenEligibility(addSelectedStudent);
     const remarkToAdd = `Ineligible for UDISE: ${udiseInfo.reason}`;
-    const currRemarks = addSelectedStudent.remarks && addSelectedStudent.remarks !== "-" ? addSelectedStudent.remarks : "";
+    const currRemarks = addRemarks.trim() || (addSelectedStudent.remarks && addSelectedStudent.remarks !== "-" ? addSelectedStudent.remarks : "");
     const nextRemarks = currRemarks.includes("Ineligible for UDISE") ? currRemarks : (currRemarks ? `${currRemarks} | ${remarkToAdd}` : remarkToAdd);
 
     try {
       const created = await updateOnlineGrRow(addCreatedRowId, addSection, {
         remarks: nextRemarks,
       });
+      setAddRemarks(nextRemarks);
       setAddSelectedStudent(prev => prev ? { ...prev, remarks: nextRemarks } : prev);
       setOnlineGrDataset(prev => ({
         ...prev,
@@ -1655,6 +1676,7 @@ export default function GovernmentEntryPage() {
           enrollNo: addSelectedStudent.enrollNo,
           studentId: addSelectedStudent.studentId || addSelectedStudent.id,
           grNo: addGrNo,
+          remarks: nextRemarks,
           step: 3,
           subPhase: "details",
           createdRowId: addCreatedRowId,
@@ -1676,6 +1698,7 @@ export default function GovernmentEntryPage() {
           enrollNo: addSelectedStudent.enrollNo,
           studentId: addSelectedStudent.studentId || addSelectedStudent.id,
           grNo: addGrNo,
+          remarks: nextRemarks,
           step: 4,
           subPhase: "details",
           createdRowId: addCreatedRowId,
@@ -1702,13 +1725,14 @@ export default function GovernmentEntryPage() {
     if (!addCreatedRowId || !addSection || !addSelectedStudent) return;
     const penInfo = eligibilityFns.getPenEligibility(addSelectedStudent);
     const remarkToAdd = `Ineligible for PEN: ${penInfo.reason}`;
-    const currRemarks = addSelectedStudent.remarks && addSelectedStudent.remarks !== "-" ? addSelectedStudent.remarks : "";
+    const currRemarks = addRemarks.trim() || (addSelectedStudent.remarks && addSelectedStudent.remarks !== "-" ? addSelectedStudent.remarks : "");
     const nextRemarks = currRemarks.includes("Ineligible for PEN") ? currRemarks : (currRemarks ? `${currRemarks} | ${remarkToAdd}` : remarkToAdd);
 
     try {
       const created = await updateOnlineGrRow(addCreatedRowId, addSection, {
         remarks: nextRemarks,
       });
+      setAddRemarks(nextRemarks);
       setAddSelectedStudent(prev => prev ? { ...prev, remarks: nextRemarks } : prev);
       setOnlineGrDataset(prev => ({
         ...prev,
@@ -1719,6 +1743,7 @@ export default function GovernmentEntryPage() {
         enrollNo: addSelectedStudent.enrollNo,
         studentId: addSelectedStudent.studentId || addSelectedStudent.id,
         grNo: addGrNo,
+        remarks: nextRemarks,
         step: 4,
         subPhase: "details",
         createdRowId: addCreatedRowId,
@@ -1739,8 +1764,8 @@ export default function GovernmentEntryPage() {
     }
   }
 
-  // Stage 4 — final confirmation: push the (now-filled) UDISE/PEN values and
-  // recomputed Documents Pending back onto the Online GR row.
+  // Stage 4 — final confirmation: push the (now-filled) UDISE/PEN values,
+  // editable remarks, and recomputed Documents Pending back onto the Online GR row.
   async function finalizeAdd() {
     if (!addCreatedRowId || !addSection) { setAddModalOpen(false); setAddWizardActive(false); return; }
     setAddSaving(true);
@@ -1748,17 +1773,32 @@ export default function GovernmentEntryPage() {
     try {
       const dec = decorate(addSelectedStudent);
       const chosenDoe = normSlashDate(addDoeSlash) || getTodaySlash();
+      const finalRemarks = addRemarks.trim() || addSelectedStudent.remarks || dec.remarks || "-";
       const created = await updateOnlineGrRow(addCreatedRowId, addSection, {
         doeSlash:         chosenDoe,
         udise:            addSelectedStudent.udise || "-",
         pen:              addSelectedStudent.pen || "-",
-        remarks:          addSelectedStudent.remarks || dec.remarks || "-",
+        remarks:          finalRemarks,
         documentsPending: dec.documentsPending,
       });
       setOnlineGrDataset(prev => ({
         ...prev,
         [addSection]: (prev[addSection] || []).map(r => r.id === created.id ? created : r),
       }));
+
+      // Also persist remark to student record if studentId is present
+      const studentId = addSelectedStudent.studentId || addSelectedStudent.id;
+      if (studentId) {
+        try {
+          await updateStudentGovId(studentId, {
+            remarks: finalRemarks !== "-" ? finalRemarks : null,
+            enrollmentId: addSelectedStudent.enrollmentId,
+          });
+        } catch (govErr) {
+          console.warn("Could not sync remark to student table:", govErr);
+        }
+      }
+
       clearProgressFromStorage();
       setAddModalOpen(false);
       setAddWizardActive(false);
@@ -1842,7 +1882,11 @@ export default function GovernmentEntryPage() {
     setFormPen(fullRow.pen && fullRow.pen !== "-" && fullRow.pen !== "Not Defined" ? fullRow.pen : "");
     setFormPenNotDefined(fullRow.pen === "Not Defined");
     setFormApaar(fullRow.apaar && fullRow.apaar !== "-" ? fullRow.apaar : "");
-    setFormRemarks(fullRow.remarks && fullRow.remarks !== "-" ? fullRow.remarks : "");
+    setFormRemarks(
+      (fullRow.remarks && fullRow.remarks !== "-")
+        ? fullRow.remarks
+        : (addRemarks && addRemarks !== "-" ? addRemarks : "")
+    );
     setFormError("");
   }
 
@@ -1911,14 +1955,43 @@ export default function GovernmentEntryPage() {
           grNo: formGrNo.trim(),
           udise: digits,
           apaar: formApaar.trim() || null,
+          remarks: formRemarks.trim() || null,
+          enrollmentId: modalRow.enrollmentId,
         });
+
+        const chosenRemarks = formRemarks.trim() || modalRow.remarks || "";
+
+        if (addWizardActive && addCreatedRowId && addSection) {
+          try {
+            await updateOnlineGrRow(addCreatedRowId, addSection, {
+              udise: digits,
+              remarks: chosenRemarks || "-",
+            });
+          } catch (e) {
+            console.warn("Could not sync UDISE to online register row:", e);
+          }
+        } else {
+          const sec = classSection(modalRow.cls);
+          const existingRow = findExistingOnlineGrRow(modalRow, sec);
+          if (existingRow && sec) {
+            try {
+              await updateOnlineGrRow(existingRow.id, sec, {
+                udise: digits,
+                ...(formRemarks.trim() ? { remarks: formRemarks.trim() } : {}),
+              });
+            } catch (e) {
+              console.warn("Could not sync UDISE to online register row:", e);
+            }
+          }
+        }
+
         await loadAll();
         setModalRow(null);
         // Add-New-Student wizard, stage 2 done — hand off to the real PEN
         // Entry tab, filtered down to this student's details again, before
         // its own Entry Done modal opens.
         if (addWizardActive && addStep === 2) {
-          const nextRow = { ...modalRow, udise: digits };
+          const nextRow = { ...modalRow, udise: digits, remarks: chosenRemarks };
           saveProgressToStorage({
             enrollNo: nextRow.enrollNo,
             studentId: modalRow.studentId,
@@ -1930,9 +2003,11 @@ export default function GovernmentEntryPage() {
             studentName: nextRow.name,
             cls: nextRow.cls,
             session: nextRow.session,
+            remarks: chosenRemarks,
             timestamp: Date.now(),
           });
           setAddSelectedStudent(nextRow);
+          setAddRemarks(chosenRemarks);
           setAddStep(3);
           setAddSubPhase("details");
           setMainTab("pen");
@@ -1965,12 +2040,42 @@ export default function GovernmentEntryPage() {
         grNo: formGrNo.trim(),
         pen: penValue,
         apaar: formApaar.trim() || null,
+        remarks: formRemarks.trim() || null,
+        enrollmentId: modalRow.enrollmentId,
       });
+
+      const chosenRemarks = formRemarks.trim() || modalRow.remarks || "";
+
+      if (addWizardActive && addCreatedRowId && addSection) {
+        try {
+          await updateOnlineGrRow(addCreatedRowId, addSection, {
+            pen: penValue,
+            remarks: chosenRemarks || "-",
+          });
+        } catch (e) {
+          console.warn("Could not sync PEN to online register row:", e);
+        }
+      } else {
+        const sec = classSection(modalRow.cls);
+        const existingRow = findExistingOnlineGrRow(modalRow, sec);
+        if (existingRow && sec) {
+          try {
+            await updateOnlineGrRow(existingRow.id, sec, {
+              pen: penValue,
+              ...(formRemarks.trim() ? { remarks: formRemarks.trim() } : {}),
+            });
+          } catch (e) {
+            console.warn("Could not sync PEN to online register row:", e);
+          }
+        }
+      }
+
       await loadAll();
       setModalRow(null);
       // Add-New-Student wizard, stage 3 done — back to Online GR for the
       // final confirmation review (stage 4).
       if (addWizardActive && addStep === 3) {
+        const nextRemarks = chosenRemarks || addSelectedStudent?.remarks || "";
         saveProgressToStorage({
           enrollNo: addSelectedStudent.enrollNo,
           studentId: modalRow.studentId,
@@ -1982,9 +2087,11 @@ export default function GovernmentEntryPage() {
           studentName: addSelectedStudent.name,
           cls: addSelectedStudent.cls,
           session: addSelectedStudent.session,
+          remarks: nextRemarks,
           timestamp: Date.now(),
         });
-        setAddSelectedStudent(prev => prev ? { ...prev, pen: penValue } : prev);
+        setAddSelectedStudent(prev => prev ? { ...prev, pen: penValue, remarks: nextRemarks } : prev);
+        setAddRemarks(nextRemarks);
         setAddStep(4);
         setAddSubPhase("details");
         setMainTab("onlineGr");
@@ -2752,6 +2859,13 @@ export default function GovernmentEntryPage() {
                       className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy"
                       placeholder="APAAR ID"/>
                   </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Remark (Optional)</label>
+                    <input type="text" value={formRemarks} onChange={e => setFormRemarks(e.target.value)}
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"
+                      placeholder="Optional remarks"/>
+                  </div>
                 </>
               ) : (
                 <>
@@ -2791,6 +2905,13 @@ export default function GovernmentEntryPage() {
                     <input type="text" value={formApaar} onChange={e => setFormApaar(e.target.value)}
                       className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy"
                       placeholder="APAAR ID"/>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Remark (Optional)</label>
+                    <input type="text" value={formRemarks} onChange={e => setFormRemarks(e.target.value)}
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"
+                      placeholder="Optional remarks"/>
                   </div>
                 </>
               )}
@@ -3226,9 +3347,9 @@ export default function GovernmentEntryPage() {
               )}
 
               {addStep === 4 && (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <p className="text-xs text-gray-500">
-                    Auto-filled from {addSelectedStudent?.name}&apos;s student record — nothing to type here, just confirm and save.
+                    Review and confirm {addSelectedStudent?.name}&apos;s details before finalizing entry. You can enter or update the Remark below.
                   </p>
                   <div className="grid grid-cols-2 gap-2 text-xs bg-gray-50 border border-gray-200 rounded-lg p-3">
                     <div><span className="text-gray-400">DOB</span><div className="font-semibold text-gray-700">{addReview?.dobSlash || "-"}</div></div>
@@ -3238,8 +3359,18 @@ export default function GovernmentEntryPage() {
                     <div><span className="text-gray-400">UID</span><div className="font-semibold text-gray-700">{addSelectedStudent?.udise || "-"}</div></div>
                     <div><span className="text-gray-400">PEN</span><div className="font-semibold text-gray-700">{addSelectedStudent?.pen || "-"}</div></div>
                     <div><span className="text-gray-400">APAAR</span><div className="font-semibold text-gray-700">{addSelectedStudent?.apaar || "-"}</div></div>
-                    <div><span className="text-gray-400">REMARK</span><div className="font-semibold text-gray-700">{addReview?.remarks || "-"}</div></div>
-                    <div className="col-span-2"><span className="text-gray-400">DOCUMENTS PENDING</span><div className="font-semibold text-gray-700">{addReview?.documentsPending || "-"}</div></div>
+                    <div><span className="text-gray-400">DOCUMENTS PENDING</span><div className="font-semibold text-gray-700 truncate">{addReview?.documentsPending || "-"}</div></div>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Remark</label>
+                    <input
+                      type="text"
+                      value={addRemarks}
+                      onChange={e => setAddRemarks(e.target.value)}
+                      placeholder="Optional remarks"
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"
+                    />
                   </div>
                 </div>
               )}
