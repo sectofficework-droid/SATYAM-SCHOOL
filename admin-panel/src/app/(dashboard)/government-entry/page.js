@@ -220,6 +220,46 @@ function decorate(st) {
   };
 }
 
+const STATUS_FILTER_OPTIONS = [
+  "All",
+  "UDISE & PEN Pending",
+  "UDISE Pending",
+  "PEN Pending",
+  "UDISE & PEN Done",
+];
+
+function matchesGovStatusFilter(row, filterVal) {
+  if (!filterVal || filterVal === "All") return true;
+
+  const u = String(row.udise || "").trim();
+  const udiseDone = row.udiseStatus === "Done" || (Boolean(u) && u !== "-");
+  const udisePending = !udiseDone;
+
+  const p = String(row.pen || "").trim();
+  const penStatus = row.penStatus || (
+    p.toLowerCase().includes("active in other school") ? "Active in other school" :
+    p === "Not Defined" ? "Not Defined" :
+    (Boolean(p) && p !== "-") ? "Done" : "Pending"
+  );
+  const penDone = penStatus === "Done" || penStatus === "Not Defined" || penStatus === "Active in other school";
+  const penPending = penStatus === "Pending";
+
+  const norm = filterVal.toLowerCase().trim();
+  if (norm === "udise & pen pending" || norm === "both pending") {
+    return udisePending && penPending;
+  }
+  if (norm === "udise pending") {
+    return udisePending;
+  }
+  if (norm === "pen pending") {
+    return penPending;
+  }
+  if (norm === "udise & pen done" || norm === "both done") {
+    return udiseDone && penDone;
+  }
+  return true;
+}
+
 // 16 columns matching official D:\Project\SSIS SCHOOL\ONLINE GENERAL REGISTER.xlsx exactly:
 // Sheet 1: PRIMARY (JR,SR,BALVATIKA) with PR column
 const ONLINE_GR_PRIMARY_COLUMNS = [
@@ -541,7 +581,7 @@ export default function GovernmentEntryPage() {
         );
       }
 
-      if (filters.status !== "All") list = list.filter(x => x.status === filters.status);
+      if (filters.status !== "All") list = list.filter(x => matchesGovStatusFilter(x, filters.status));
 
       if (onlineGrSort.key) {
         const { key, dir } = onlineGrSort;
@@ -608,7 +648,7 @@ export default function GovernmentEntryPage() {
     if (mainTab === "pen" && showNotDefinedOnly) d = d.filter(x => x.penStatus === "Not Defined");
 
     const statusKey = effectiveTab === "udise" ? "udiseStatus" : "penStatus";
-    if (filters.status !== "All") d = d.filter(x => x[statusKey] === filters.status);
+    if (filters.status !== "All") d = d.filter(x => matchesGovStatusFilter(x, filters.status));
 
     const rank = { Done: 0, "Not Defined": 1, "Active in other school": 2, Pending: 3 };
     return d.slice().sort((a, b) => {
@@ -2090,22 +2130,7 @@ export default function GovernmentEntryPage() {
     }
     if (addClassFilter !== "All") list = list.filter(x => x.cls === addClassFilter);
     if (addStatusFilter !== "All") {
-      list = list.filter(x => {
-        const udiseDone = x.udiseStatus === "Done";
-        const penDone = x.penStatus === "Done";
-        const penDefined = x.penStatus === "Not Defined";
-        switch (addStatusFilter) {
-          case "UDISE Eligible":   return eligibilityFns.udiseEligible(x);
-          case "PEN Eligible":     return eligibilityFns.penEligible(x);
-          case "Both Pending":     return !udiseDone && x.penStatus === "Pending";
-          case "UDISE Pending":    return !udiseDone;
-          case "PEN Pending":      return x.penStatus === "Pending";
-          case "Both Done":        return udiseDone && penDone;
-          case "UDISE Done":       return udiseDone;
-          case "PEN Done":         return penDone || penDefined;
-          default:                 return true;
-        }
-      });
+      list = list.filter(x => matchesGovStatusFilter(x, addStatusFilter));
     }
     const q = addSearch.trim().toLowerCase();
     if (q) {
@@ -2841,9 +2866,9 @@ export default function GovernmentEntryPage() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Status</label>
-                  <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
+                  <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-44"
                     value={filters.status} onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}>
-                    {(effectiveTab === "pen" ? ["All", "Done", "Not Defined", "Active in other school", "Pending"] : ["All", "Done", "Pending"]).map(o => <option key={o}>{o}</option>)}
+                    {STATUS_FILTER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
               </div>
@@ -3441,15 +3466,9 @@ export default function GovernmentEntryPage() {
                     </select>
                     <select value={addStatusFilter} onChange={e => setAddStatusFilter(e.target.value)}
                       className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-school-navy">
-                      <option value="All">All Statuses</option>
-                      <option value="UDISE Eligible">UDISE Eligible</option>
-                      <option value="PEN Eligible">PEN Eligible</option>
-                      <option value="Both Pending">UDISE &amp; PEN Both Pending</option>
-                      <option value="UDISE Pending">UDISE Pending</option>
-                      <option value="PEN Pending">PEN Pending</option>
-                      <option value="UDISE Done">UDISE Done</option>
-                      <option value="PEN Done">PEN Done</option>
-                      <option value="Both Done">UDISE &amp; PEN Both Done</option>
+                      {STATUS_FILTER_OPTIONS.map(o => (
+                        <option key={o} value={o}>{o === "All" ? "All Statuses" : o}</option>
+                      ))}
                     </select>
                   </div>
 
