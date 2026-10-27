@@ -127,15 +127,38 @@ function serializeOtherSchoolData(data) {
     portal: data.portal || "",
     udiseActive: data.udiseActive || false,
     penActive: data.penActive || false,
-    schoolName: data.schoolName || "",
-    schoolUdise: data.schoolUdise || "",
-    state: data.state || "",
-    district: data.district || "",
-    block: data.block || "",
-    headmaster: data.headmaster || "",
-    contactNo: data.contactNo || "",
-    status: data.status || "",
-    remark: data.remark || "",
+
+    // UDISE Import specific (State Portal: ssgujarat.org)
+    udiseSchoolName: data.udiseSchoolName || (data.udiseActive ? data.schoolName : "") || "",
+    udisePrincipalName: data.udisePrincipalName || (data.udiseActive ? data.headmaster : "") || "",
+    udisePrincipalMobile: data.udisePrincipalMobile || (data.udiseActive ? data.contactNo : "") || "",
+    udiseUid: data.udiseUid || data.uid || "",
+    udiseRequestSentDate: data.udiseRequestSentDate || data.requestSentDate || "",
+    udiseTcUploaded: data.udiseTcUploaded || data.tcUploaded || "",
+    udiseStatus: data.udiseStatus || (data.udiseActive ? data.status : "") || "",
+    udiseRemark: data.udiseRemark || (data.udiseActive ? data.remark : "") || "",
+
+    // PEN Import specific (National Portal: udiseplus.gov.in)
+    penSchoolName: data.penSchoolName || (data.penActive ? data.schoolName : "") || "",
+    penSchoolUdise: data.penSchoolUdise || data.schoolUdise || "",
+    penState: data.penState || data.state || "",
+    penDistrict: data.penDistrict || data.district || "",
+    penBlock: data.penBlock || data.block || "",
+    penHeadmaster: data.penHeadmaster || (data.penActive ? data.headmaster : "") || "",
+    penContactNo: data.penContactNo || (data.penActive ? data.contactNo : "") || "",
+    penStatus: data.penStatus || (data.penActive ? data.status : "") || "",
+    penRemark: data.penRemark || (data.penActive ? data.remark : "") || "",
+
+    // Fallbacks for backward compatibility
+    schoolName: data.schoolName || data.udiseSchoolName || data.penSchoolName || "",
+    schoolUdise: data.schoolUdise || data.penSchoolUdise || "",
+    state: data.state || data.penState || "",
+    district: data.district || data.penDistrict || "",
+    block: data.block || data.penBlock || "",
+    headmaster: data.headmaster || data.udisePrincipalName || data.penHeadmaster || "",
+    contactNo: data.contactNo || data.udisePrincipalMobile || data.penContactNo || "",
+    status: data.status || data.udiseStatus || data.penStatus || "",
+    remark: data.remark || data.udiseRemark || data.penRemark || "",
   };
   return `<!--OTHER_SCHOOL:${JSON.stringify(payload)}-->`;
 }
@@ -237,6 +260,40 @@ function decorate(st) {
     penStatus = "Not Defined";
   }
 
+  const hasTcDoc = (st.studentDocuments || []).some(
+    d => d.document_types?.name === "Leaving Certificate" && d.status === "Uploaded"
+  );
+  const defaultTcStatus = hasTcDoc ? "Uploaded" : (st.lastSchoolName ? "Pending" : "Not Required");
+
+  // UDISE Import specific (State Portal: ssgujarat.org)
+  const udiseImportSchoolName = otherSchoolData?.udiseSchoolName || (isUdiseOtherSchool ? otherSchoolData?.schoolName : "") || (isUdiseOtherSchool ? st.lastSchoolName : "") || "-";
+  const udiseImportPrincipalName = otherSchoolData?.udisePrincipalName || (isUdiseOtherSchool ? otherSchoolData?.headmaster : "") || "-";
+  const udiseImportPrincipalMobile = otherSchoolData?.udisePrincipalMobile || (isUdiseOtherSchool ? otherSchoolData?.contactNo : "") || "-";
+  const udiseImportStudentUid = otherSchoolData?.udiseUid || (st.udise && st.udise !== "Active in other school" && st.udise !== "Not Defined" && st.udise !== "-" ? st.udise : "") || "-";
+  const udiseImportRequestSentDate = otherSchoolData?.udiseRequestSentDate || "-";
+  const udiseImportTcUploaded = otherSchoolData?.udiseTcUploaded || defaultTcStatus;
+  const udiseImportStatus = otherSchoolData?.udiseStatus || (isUdiseOtherSchool ? "Active in other school" : "-");
+  const udiseImportRemark = otherSchoolData?.udiseRemark || (isUdiseOtherSchool ? otherSchoolData?.remark : "") || "-";
+
+  // PEN Import specific (National Portal: udiseplus.gov.in)
+  const penImportSchoolName = otherSchoolData?.penSchoolName || (isPenOtherSchool ? otherSchoolData?.schoolName : "") || (isPenOtherSchool ? st.lastSchoolName : "") || "-";
+  const penImportSchoolUdise = otherSchoolData?.penSchoolUdise || otherSchoolData?.schoolUdise || "-";
+  const penImportState = otherSchoolData?.penState || otherSchoolData?.state || "-";
+  const penImportDistrict = otherSchoolData?.penDistrict || otherSchoolData?.district || "-";
+  const penImportBlock = otherSchoolData?.penBlock || otherSchoolData?.block || "-";
+  const penImportHeadmaster = otherSchoolData?.penHeadmaster || (isPenOtherSchool ? otherSchoolData?.headmaster : "") || "-";
+  const penImportContactNo = otherSchoolData?.penContactNo || (isPenOtherSchool ? otherSchoolData?.contactNo : "") || "-";
+  const penImportStatus = otherSchoolData?.penStatus || (isPenOtherSchool ? "Active in other school" : "-");
+  const penImportRemark = otherSchoolData?.penRemark || (isPenOtherSchool ? otherSchoolData?.remark : "") || "-";
+
+  // Combined import fields for "All" view
+  const importIdentifier = udiseImportStudentUid !== "-" ? udiseImportStudentUid : (st.pen && st.pen !== "-" ? st.pen : "-");
+  const importSchoolName = udiseImportSchoolName !== "-" ? udiseImportSchoolName : penImportSchoolName;
+  const importContactPerson = udiseImportPrincipalName !== "-" ? udiseImportPrincipalName : penImportHeadmaster;
+  const importContactNo = udiseImportPrincipalMobile !== "-" ? udiseImportPrincipalMobile : penImportContactNo;
+  const importStatus = (isUdiseOtherSchool && isPenOtherSchool) ? "Active in both portals" : (isUdiseOtherSchool ? udiseImportStatus : (isPenOtherSchool ? penImportStatus : "-"));
+  const importRemark = udiseImportRemark !== "-" ? udiseImportRemark : penImportRemark;
+
   return {
     ...st,
     dob:                  effectiveDob || st.dob || "",
@@ -254,6 +311,36 @@ function decorate(st) {
     udiseStatus,
     penStatus,
     otherSchoolData,
+
+    // UDISE Import fields
+    udiseImportSchoolName,
+    udiseImportPrincipalName,
+    udiseImportPrincipalMobile,
+    udiseImportStudentUid,
+    udiseImportRequestSentDate,
+    udiseImportTcUploaded,
+    udiseImportStatus,
+    udiseImportRemark,
+
+    // PEN Import fields
+    penImportSchoolName,
+    penImportSchoolUdise,
+    penImportState,
+    penImportDistrict,
+    penImportBlock,
+    penImportHeadmaster,
+    penImportContactNo,
+    penImportStatus,
+    penImportRemark,
+
+    // Combined fields
+    importIdentifier,
+    importSchoolName,
+    importContactPerson,
+    importContactNo,
+    importStatus,
+    importRemark,
+
     otherSchoolName:      otherSchoolData?.schoolName || st.lastSchoolName || "-",
     otherSchoolUdise:     otherSchoolData?.schoolUdise || "-",
     otherSchoolLocation:  [otherSchoolData?.district, otherSchoolData?.block].filter(Boolean).join(" - ") || otherSchoolData?.state || "-",
@@ -371,23 +458,59 @@ function getLastSavedGrInfo(section, dataset, dbStudents = []) {
   return null;
 }
 
-// Columns for Import tab (tracking students active in another school)
-const IMPORT_COLUMNS = [
-  { key: "cls",                 label: "STD" },
-  { key: "grNo",                label: "GR / PR" },
-  { key: "name",                label: "STUDENT NAME" },
-  { key: "mobile1",             label: "STUDENT MOBILE" },
-  { key: "udise",               label: "UID (UDISE)" },
-  { key: "pen",                 label: "PEN NO" },
-  { key: "otherSchoolName",     label: "PREVIOUS SCHOOL" },
-  { key: "otherSchoolUdise",    label: "SCHOOL UDISE" },
-  { key: "otherSchoolLocation", label: "DISTRICT / BLOCK" },
-  { key: "otherSchoolHm",       label: "PRINCIPAL / HM" },
-  { key: "otherSchoolContact",  label: "HM CONTACT" },
-  { key: "otherSchoolStatus",   label: "STATUS IN SCHOOL" },
-  { key: "importPortal",        label: "PORTAL" },
-  { key: "otherSchoolRemark",   label: "REMARK" },
+// UDISE Import columns (Gujarat State Portal: ssgujarat.org)
+// Distinct required details: School Name, Principal Name, Principal Mobile No, Student UID, Request Sent Date, TC Uploaded or Not, Status, Remark
+const UDISE_IMPORT_COLUMNS = [
+  { key: "cls",                         label: "STD" },
+  { key: "grNo",                        label: "GR / PR" },
+  { key: "name",                        label: "STUDENT NAME" },
+  { key: "mobile1",                     label: "STUDENT MOBILE" },
+  { key: "udiseImportSchoolName",       label: "SCHOOL NAME" },
+  { key: "udiseImportPrincipalName",    label: "PRINCIPAL NAME" },
+  { key: "udiseImportPrincipalMobile",  label: "PRINCIPAL MOBILE NO" },
+  { key: "udiseImportStudentUid",       label: "STUDENT UID" },
+  { key: "udiseImportRequestSentDate",  label: "REQUEST SENT DATE" },
+  { key: "udiseImportTcUploaded",       label: "TC UPLOADED OR NOT" },
+  { key: "udiseImportStatus",           label: "STATUS" },
+  { key: "udiseImportRemark",           label: "REMARK" },
 ];
+
+// PEN Import columns (National Portal: udiseplus.gov.in)
+// Distinct required details: School Name, School UDISE, State, District, Block, Headmaster, Contact No, Status, Remark
+const PEN_IMPORT_COLUMNS = [
+  { key: "cls",                   label: "STD" },
+  { key: "grNo",                  label: "GR / PR" },
+  { key: "name",                  label: "STUDENT NAME" },
+  { key: "mobile1",               label: "STUDENT MOBILE" },
+  { key: "pen",                   label: "PEN NO" },
+  { key: "penImportSchoolName",   label: "SCHOOL NAME" },
+  { key: "penImportSchoolUdise",  label: "SCHOOL UDISE" },
+  { key: "penImportState",        label: "STATE" },
+  { key: "penImportDistrict",     label: "DISTRICT" },
+  { key: "penImportBlock",        label: "BLOCK" },
+  { key: "penImportHeadmaster",   label: "HEADMASTER" },
+  { key: "penImportContactNo",    label: "CONTACT NO" },
+  { key: "penImportStatus",       label: "STATUS" },
+  { key: "penImportRemark",       label: "REMARK" },
+];
+
+// All Imports combined columns
+const ALL_IMPORT_COLUMNS = [
+  { key: "cls",                         label: "STD" },
+  { key: "grNo",                        label: "GR / PR" },
+  { key: "name",                        label: "STUDENT NAME" },
+  { key: "importPortal",                label: "PORTAL" },
+  { key: "importIdentifier",            label: "UID / PEN NO" },
+  { key: "importSchoolName",            label: "SCHOOL NAME" },
+  { key: "importContactPerson",         label: "PRINCIPAL / HM" },
+  { key: "importContactNo",             label: "CONTACT NO" },
+  { key: "udiseImportRequestSentDate",  label: "REQ SENT DATE" },
+  { key: "udiseImportTcUploaded",       label: "TC UPLOADED" },
+  { key: "importStatus",                label: "STATUS" },
+  { key: "importRemark",                label: "REMARK" },
+];
+
+const IMPORT_COLUMNS = UDISE_IMPORT_COLUMNS;
 
 // 16 columns matching official D:\Project\SSIS SCHOOL\ONLINE GENERAL REGISTER.xlsx exactly:
 // Sheet 1: PRIMARY (JR,SR,BALVATIKA) with PR column
@@ -692,10 +815,12 @@ export default function GovernmentEntryPage() {
       return grSubTab === "primary" ? ONLINE_GR_PRIMARY_COLUMNS : ONLINE_GR_GENERAL_COLUMNS;
     }
     if (mainTab === "import") {
-      return IMPORT_COLUMNS;
+      return importSubTab === "udise"
+        ? UDISE_IMPORT_COLUMNS
+        : (importSubTab === "pen" ? PEN_IMPORT_COLUMNS : ALL_IMPORT_COLUMNS);
     }
     return effectiveTab === "udise" ? UDISE_ENTRY_COLUMNS : PEN_ENTRY_COLUMNS;
-  }, [mainTab, grSubTab, effectiveTab]);
+  }, [mainTab, grSubTab, importSubTab, effectiveTab]);
 
   const rows = useMemo(() => {
     // ── Online General Register (separate record, not touching student DB) ──
@@ -1140,6 +1265,27 @@ export default function GovernmentEntryPage() {
   const [formActiveOtherSchool, setFormActiveOtherSchool] = useState(false);
   const [showPasteAlert, setShowPasteAlert] = useState(false);
   const [pasteAlertInput, setPasteAlertInput] = useState("");
+  // UDISE Import specific fields (Gujarat State Portal: ssgujarat.org)
+  const [formUdiseSchoolName, setFormUdiseSchoolName] = useState("");
+  const [formUdisePrincipalName, setFormUdisePrincipalName] = useState("");
+  const [formUdisePrincipalMobile, setFormUdisePrincipalMobile] = useState("");
+  const [formUdiseRequestSentDate, setFormUdiseRequestSentDate] = useState("");
+  const [formUdiseTcUploaded, setFormUdiseTcUploaded] = useState("Pending"); // "Uploaded" | "Pending" | "Not Required"
+  const [formUdiseStatus, setFormUdiseStatus] = useState("Active in other school");
+  const [formUdiseRemark, setFormUdiseRemark] = useState("");
+
+  // PEN Import specific fields (National Portal: udiseplus.gov.in)
+  const [formPenSchoolName, setFormPenSchoolName] = useState("");
+  const [formPenSchoolUdise, setFormPenSchoolUdise] = useState("");
+  const [formPenState, setFormPenState] = useState("");
+  const [formPenDistrict, setFormPenDistrict] = useState("");
+  const [formPenBlock, setFormPenBlock] = useState("");
+  const [formPenHeadmaster, setFormPenHeadmaster] = useState("");
+  const [formPenContactNo, setFormPenContactNo] = useState("");
+  const [formPenStatus, setFormPenStatus] = useState("Active in other school");
+  const [formPenRemark, setFormPenRemark] = useState("");
+
+  // Backward compatibility common fields
   const [formOtherSchoolName, setFormOtherSchoolName] = useState("");
   const [formOtherSchoolUdise, setFormOtherSchoolUdise] = useState("");
   const [formOtherSchoolState, setFormOtherSchoolState] = useState("");
@@ -1840,77 +1986,230 @@ export default function GovernmentEntryPage() {
 
   function renderActiveOtherSchoolFields() {
     if (!formActiveOtherSchool) return null;
+    const isUdiseView = (effectiveTab === "udise");
+
+    if (isUdiseView) {
+      return (
+        <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3.5 space-y-3 mt-2 animate-fadeIn">
+          <div className="flex items-center justify-between border-b border-purple-200/70 pb-2">
+            <div className="flex items-center gap-1.5">
+              <Landmark className="w-4 h-4 text-purple-700" />
+              <span className="text-xs font-bold text-purple-900 uppercase tracking-wide">
+                UDISE Import Details (State Portal)
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPasteAlert(v => !v)}
+              className="text-[10px] font-semibold text-purple-700 hover:text-purple-900 bg-purple-100 hover:bg-purple-200 px-2.5 py-0.5 rounded-md border border-purple-200 transition-colors"
+            >
+              📋 {showPasteAlert ? "Hide Quick Paste" : "Paste Portal Alert"}
+            </button>
+          </div>
+
+          {showPasteAlert && (
+            <div className="bg-white border border-purple-200 rounded-lg p-2.5 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                  Paste portal alert message (from ssgujarat.org):
+                </label>
+                <span className="text-[9px] text-gray-400">Auto-extracts school, HM, contact, UID</span>
+              </div>
+              <textarea
+                rows={3}
+                value={pasteAlertInput}
+                onChange={e => setPasteAlertInput(e.target.value)}
+                placeholder="Paste alert text (e.g. 'DISTRICT: SURAT, BLOCK: SURAT CORPO., SCHOOL: SUNFLOWER ENGLISH SCHOOL, PRINCIPLE NAME: ...')"
+                className="w-full text-xs border border-purple-200 rounded-md p-2 font-mono focus:outline-none focus:ring-1 focus:ring-purple-500"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const parsed = parsePortalAlertText(pasteAlertInput);
+                    if (parsed) {
+                      if (parsed.schoolName) setFormUdiseSchoolName(parsed.schoolName);
+                      if (parsed.headmaster) setFormUdisePrincipalName(parsed.headmaster);
+                      if (parsed.contactNo) setFormUdisePrincipalMobile(parsed.contactNo);
+                      if (parsed.uid) setFormUdise(parsed.uid);
+                      if (!formUdiseRequestSentDate) setFormUdiseRequestSentDate(getTodaySlash());
+                      setShowPasteAlert(false);
+                      setPasteAlertInput("");
+                    }
+                  }}
+                  disabled={!pasteAlertInput.trim()}
+                  className="text-xs font-semibold px-3 py-1 bg-purple-700 hover:bg-purple-800 text-white rounded-md transition-colors disabled:opacity-50"
+                >
+                  Auto-fill UDISE Fields
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {/* 1. SCHOOL NAME */}
+            <div className="flex flex-col gap-1 sm:col-span-2">
+              <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                School Name (Active In) *
+              </label>
+              <input
+                type="text"
+                value={formUdiseSchoolName}
+                onChange={e => { setFormUdiseSchoolName(e.target.value); if (formError) setFormError(""); }}
+                placeholder="e.g. SUNFLOWER ENGLISH SCHOOL"
+                className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+              />
+            </div>
+
+            {/* 2. PRINCIPAL NAME */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                Principal Name
+              </label>
+              <input
+                type="text"
+                value={formUdisePrincipalName}
+                onChange={e => setFormUdisePrincipalName(e.target.value)}
+                placeholder="e.g. Singh Brijesh Deviprasad"
+                className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+              />
+            </div>
+
+            {/* 3. PRINCIPAL MOBILE NO */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                Principal Mobile No
+              </label>
+              <input
+                type="text"
+                value={formUdisePrincipalMobile}
+                onChange={e => setFormUdisePrincipalMobile(e.target.value.replace(/[^\d]/g, ""))}
+                maxLength={10}
+                placeholder="e.g. 9913010277"
+                className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+              />
+            </div>
+
+            {/* 4. STUDENT UID */}
+            <div className="flex flex-col gap-1 sm:col-span-2">
+              <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider flex items-center justify-between">
+                <span>Student UID (18 Digits)</span>
+                <span className="text-[9px] text-gray-500 font-normal">State portal UID from alert</span>
+              </label>
+              <input
+                type="text"
+                value={formUdise}
+                onChange={e => setFormUdise(e.target.value.replace(/[^\d]/g, ""))}
+                maxLength={18}
+                placeholder="e.g. 242215313052520157"
+                className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+              />
+            </div>
+
+            {/* 5. REQUEST SENT DATE */}
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                  Request Sent Date
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setFormUdiseRequestSentDate(getTodaySlash())}
+                  className="text-[9px] font-semibold text-purple-700 hover:underline"
+                >
+                  Today ({getTodaySlash()})
+                </button>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={formUdiseRequestSentDate}
+                  onChange={e => setFormUdiseRequestSentDate(e.target.value)}
+                  placeholder="DD/MM/YYYY"
+                  className="flex-1 border border-purple-200 rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+                />
+                <input
+                  type="date"
+                  value={slashToIso(formUdiseRequestSentDate)}
+                  onChange={e => {
+                    if (e.target.value) setFormUdiseRequestSentDate(isoToSlash(e.target.value));
+                  }}
+                  className="w-8 border border-purple-200 rounded-lg p-1 text-xs text-gray-600 focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white cursor-pointer"
+                  title="Pick date"
+                />
+              </div>
+            </div>
+
+            {/* 6. TC UPLOADED OR NOT */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                TC Uploaded or Not
+              </label>
+              <select
+                value={formUdiseTcUploaded}
+                onChange={e => setFormUdiseTcUploaded(e.target.value)}
+                className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white font-medium"
+              >
+                <option value="Uploaded">✓ Uploaded</option>
+                <option value="Pending">⏳ Pending</option>
+                <option value="Not Required">Not Required</option>
+              </select>
+            </div>
+
+            {/* 7. STATUS */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                Status
+              </label>
+              <input
+                type="text"
+                value={formUdiseStatus}
+                onChange={e => setFormUdiseStatus(e.target.value)}
+                placeholder="e.g. Active in other school / Request Sent"
+                className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+              />
+            </div>
+
+            {/* 8. REMARK */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                Remark
+              </label>
+              <input
+                type="text"
+                value={formUdiseRemark}
+                onChange={e => setFormUdiseRemark(e.target.value)}
+                placeholder="e.g. Spoke with HM, will release tomorrow"
+                className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+              />
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // PEN Import View (National Portal: udiseplus.gov.in)
     return (
       <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3.5 space-y-3 mt-2 animate-fadeIn">
         <div className="flex items-center justify-between border-b border-purple-200/70 pb-2">
           <div className="flex items-center gap-1.5">
-            <School className="w-4 h-4 text-purple-700" />
+            <IdCard className="w-4 h-4 text-purple-700" />
             <span className="text-xs font-bold text-purple-900 uppercase tracking-wide">
-              Active in Other School Details
+              PEN Import Details (National Portal)
             </span>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowPasteAlert(v => !v)}
-            className="text-[10px] font-semibold text-purple-700 hover:text-purple-900 bg-purple-100 hover:bg-purple-200 px-2.5 py-0.5 rounded-md border border-purple-200 transition-colors"
-          >
-            📋 {showPasteAlert ? "Hide Quick Paste" : "Paste Portal Alert"}
-          </button>
         </div>
-
-        {showPasteAlert && (
-          <div className="bg-white border border-purple-200 rounded-lg p-2.5 space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
-                Paste portal alert message (from ssgujarat.org / UDISE / PEN):
-              </label>
-              <span className="text-[9px] text-gray-400">Auto-extracts school, HM, contact, district, UID</span>
-            </div>
-            <textarea
-              rows={3}
-              value={pasteAlertInput}
-              onChange={e => setPasteAlertInput(e.target.value)}
-              placeholder="Paste entire alert message here (e.g. 'DISTRICT: SURAT, BLOCK: SURAT CORPO., SCHOOL: SUNFLOWER ENGLISH SCHOOL, PRINCIPLE NAME: ...')"
-              className="w-full text-xs border border-purple-200 rounded-md p-2 font-mono focus:outline-none focus:ring-1 focus:ring-purple-500"
-            />
-            <div className="flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  const parsed = parsePortalAlertText(pasteAlertInput);
-                  if (parsed) {
-                    if (parsed.schoolName) setFormOtherSchoolName(parsed.schoolName);
-                    if (parsed.district) setFormOtherSchoolDistrict(parsed.district);
-                    if (parsed.block) setFormOtherSchoolBlock(parsed.block);
-                    if (parsed.headmaster) setFormOtherSchoolHeadmaster(parsed.headmaster);
-                    if (parsed.contactNo) setFormOtherSchoolContactNo(parsed.contactNo);
-                    if (parsed.uid && (effectiveTab === "udise" || mainTab === "onlineGr")) {
-                      setFormUdise(parsed.uid);
-                    }
-                    if (!formOtherSchoolState) setFormOtherSchoolState("Gujarat");
-                    setShowPasteAlert(false);
-                    setPasteAlertInput("");
-                  }
-                }}
-                disabled={!pasteAlertInput.trim()}
-                className="text-xs font-semibold px-3 py-1 bg-purple-700 hover:bg-purple-800 text-white rounded-md transition-colors disabled:opacity-50"
-              >
-                Auto-fill Fields
-              </button>
-            </div>
-          </div>
-        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {/* 1. SCHOOL NAME */}
           <div className="flex flex-col gap-1 sm:col-span-2">
             <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
-              School Name
+              School Name *
             </label>
             <input
               type="text"
-              value={formOtherSchoolName}
-              onChange={e => { setFormOtherSchoolName(e.target.value); if (formError) setFormError(""); }}
+              value={formPenSchoolName}
+              onChange={e => { setFormPenSchoolName(e.target.value); if (formError) setFormError(""); }}
               placeholder="e.g. Shree Swaminarayan Gurukul"
               className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
             />
@@ -1923,8 +2222,8 @@ export default function GovernmentEntryPage() {
             </label>
             <input
               type="text"
-              value={formOtherSchoolUdise}
-              onChange={e => { setFormOtherSchoolUdise(e.target.value.replace(/[^\d]/g, "")); if (formError) setFormError(""); }}
+              value={formPenSchoolUdise}
+              onChange={e => { setFormPenSchoolUdise(e.target.value.replace(/[^\d]/g, "")); if (formError) setFormError(""); }}
               maxLength={18}
               placeholder="e.g. 24221504426"
               className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
@@ -1938,8 +2237,8 @@ export default function GovernmentEntryPage() {
             </label>
             <input
               type="text"
-              value={formOtherSchoolState}
-              onChange={e => setFormOtherSchoolState(e.target.value)}
+              value={formPenState}
+              onChange={e => setFormPenState(e.target.value)}
               placeholder="e.g. Gujarat"
               className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
             />
@@ -1952,8 +2251,8 @@ export default function GovernmentEntryPage() {
             </label>
             <input
               type="text"
-              value={formOtherSchoolDistrict}
-              onChange={e => setFormOtherSchoolDistrict(e.target.value)}
+              value={formPenDistrict}
+              onChange={e => setFormPenDistrict(e.target.value)}
               placeholder="e.g. Surat"
               className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
             />
@@ -1966,8 +2265,8 @@ export default function GovernmentEntryPage() {
             </label>
             <input
               type="text"
-              value={formOtherSchoolBlock}
-              onChange={e => setFormOtherSchoolBlock(e.target.value)}
+              value={formPenBlock}
+              onChange={e => setFormPenBlock(e.target.value)}
               placeholder="e.g. Choryasi"
               className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
             />
@@ -1980,8 +2279,8 @@ export default function GovernmentEntryPage() {
             </label>
             <input
               type="text"
-              value={formOtherSchoolHeadmaster}
-              onChange={e => setFormOtherSchoolHeadmaster(e.target.value)}
+              value={formPenHeadmaster}
+              onChange={e => setFormPenHeadmaster(e.target.value)}
               placeholder="Principal / HM Name"
               className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
             />
@@ -1994,9 +2293,10 @@ export default function GovernmentEntryPage() {
             </label>
             <input
               type="text"
-              value={formOtherSchoolContactNo}
-              onChange={e => setFormOtherSchoolContactNo(e.target.value)}
-              placeholder="e.g. 9876543210"
+              value={formPenContactNo}
+              onChange={e => setFormPenContactNo(e.target.value.replace(/[^\d]/g, ""))}
+              maxLength={10}
+              placeholder="e.g. 9825100000"
               className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
             />
           </div>
@@ -2009,8 +2309,8 @@ export default function GovernmentEntryPage() {
             <input
               type="text"
               list="otherSchoolStatusOptions"
-              value={formOtherSchoolStatus}
-              onChange={e => setFormOtherSchoolStatus(e.target.value)}
+              value={formPenStatus}
+              onChange={e => setFormPenStatus(e.target.value)}
               placeholder="e.g. Active in School"
               className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
             />
@@ -2031,8 +2331,8 @@ export default function GovernmentEntryPage() {
             </label>
             <input
               type="text"
-              value={formOtherSchoolRemark}
-              onChange={e => setFormOtherSchoolRemark(e.target.value)}
+              value={formPenRemark}
+              onChange={e => setFormPenRemark(e.target.value)}
               placeholder="Remark regarding other school record"
               className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
             />
@@ -2498,13 +2798,44 @@ export default function GovernmentEntryPage() {
       otherSchoolData ||
       (effectiveTab === "udise" && isUdiseOtherSchool) ||
       (effectiveTab === "pen" && isPenOtherSchool) ||
-      (mainTab === "onlineGr" && (isUdiseOtherSchool || isPenOtherSchool))
+      (mainTab === "onlineGr" && (isUdiseOtherSchool || isPenOtherSchool)) ||
+      (mainTab === "import")
     );
+
+    const hasTcDoc = (fullRow.studentDocuments || []).some(
+      d => d.document_types?.name === "Leaving Certificate" && d.status === "Uploaded"
+    );
+    const defaultTcStatus = hasTcDoc ? "Uploaded" : (fullRow.lastSchoolName ? "Pending" : "Not Required");
 
     if (shouldOpenOtherSchool) {
       setFormActiveOtherSchool(true);
       if (effectiveTab === "udise") setFormUdiseNotDefined(false);
       if (effectiveTab === "pen") setFormPenNotDefined(false);
+
+      // UDISE Import specific fields (Gujarat State Portal: ssgujarat.org)
+      setFormUdiseSchoolName(otherSchoolData?.udiseSchoolName || (otherSchoolData?.udiseActive ? otherSchoolData?.schoolName : "") || fullRow.lastSchoolName || "");
+      setFormUdisePrincipalName(otherSchoolData?.udisePrincipalName || (otherSchoolData?.udiseActive ? otherSchoolData?.headmaster : "") || "");
+      setFormUdisePrincipalMobile(otherSchoolData?.udisePrincipalMobile || (otherSchoolData?.udiseActive ? otherSchoolData?.contactNo : "") || "");
+      if (otherSchoolData?.udiseUid && !fullRow.udise) {
+        setFormUdise(otherSchoolData.udiseUid);
+      }
+      setFormUdiseRequestSentDate(otherSchoolData?.udiseRequestSentDate || "");
+      setFormUdiseTcUploaded(otherSchoolData?.udiseTcUploaded || defaultTcStatus);
+      setFormUdiseStatus(otherSchoolData?.udiseStatus || (otherSchoolData?.udiseActive ? otherSchoolData?.status : "") || "Active in other school");
+      setFormUdiseRemark(otherSchoolData?.udiseRemark || (otherSchoolData?.udiseActive ? otherSchoolData?.remark : "") || "");
+
+      // PEN Import specific fields (National Portal: udiseplus.gov.in)
+      setFormPenSchoolName(otherSchoolData?.penSchoolName || (otherSchoolData?.penActive ? otherSchoolData?.schoolName : "") || fullRow.lastSchoolName || "");
+      setFormPenSchoolUdise(otherSchoolData?.penSchoolUdise || otherSchoolData?.schoolUdise || "");
+      setFormPenState(otherSchoolData?.penState || otherSchoolData?.state || "");
+      setFormPenDistrict(otherSchoolData?.penDistrict || otherSchoolData?.district || "");
+      setFormPenBlock(otherSchoolData?.penBlock || otherSchoolData?.block || "");
+      setFormPenHeadmaster(otherSchoolData?.penHeadmaster || (otherSchoolData?.penActive ? otherSchoolData?.headmaster : "") || "");
+      setFormPenContactNo(otherSchoolData?.penContactNo || (otherSchoolData?.penActive ? otherSchoolData?.contactNo : "") || "");
+      setFormPenStatus(otherSchoolData?.penStatus || (otherSchoolData?.penActive ? otherSchoolData?.status : "") || "Active in other school");
+      setFormPenRemark(otherSchoolData?.penRemark || (otherSchoolData?.penActive ? otherSchoolData?.remark : "") || "");
+
+      // Common / backward compatibility fields
       setFormOtherSchoolName(otherSchoolData?.schoolName || fullRow.lastSchoolName || "");
       setFormOtherSchoolUdise(otherSchoolData?.schoolUdise || "");
       setFormOtherSchoolState(otherSchoolData?.state || "");
@@ -2516,6 +2847,24 @@ export default function GovernmentEntryPage() {
       setFormOtherSchoolRemark(otherSchoolData?.remark || "");
     } else {
       setFormActiveOtherSchool(false);
+      setFormUdiseSchoolName("");
+      setFormUdisePrincipalName("");
+      setFormUdisePrincipalMobile("");
+      setFormUdiseRequestSentDate("");
+      setFormUdiseTcUploaded(defaultTcStatus);
+      setFormUdiseStatus("Active in other school");
+      setFormUdiseRemark("");
+
+      setFormPenSchoolName("");
+      setFormPenSchoolUdise("");
+      setFormPenState("");
+      setFormPenDistrict("");
+      setFormPenBlock("");
+      setFormPenHeadmaster("");
+      setFormPenContactNo("");
+      setFormPenStatus("Active in other school");
+      setFormPenRemark("");
+
       setFormOtherSchoolName("");
       setFormOtherSchoolUdise("");
       setFormOtherSchoolState("");
@@ -2539,6 +2888,25 @@ export default function GovernmentEntryPage() {
     setFormActiveOtherSchool(false);
     setShowPasteAlert(false);
     setPasteAlertInput("");
+
+    setFormUdiseSchoolName("");
+    setFormUdisePrincipalName("");
+    setFormUdisePrincipalMobile("");
+    setFormUdiseRequestSentDate("");
+    setFormUdiseTcUploaded("Pending");
+    setFormUdiseStatus("Active in other school");
+    setFormUdiseRemark("");
+
+    setFormPenSchoolName("");
+    setFormPenSchoolUdise("");
+    setFormPenState("");
+    setFormPenDistrict("");
+    setFormPenBlock("");
+    setFormPenHeadmaster("");
+    setFormPenContactNo("");
+    setFormPenStatus("Active in other school");
+    setFormPenRemark("");
+
     setFormOtherSchoolName("");
     setFormOtherSchoolUdise("");
     setFormOtherSchoolState("");
@@ -2563,34 +2931,85 @@ export default function GovernmentEntryPage() {
       return;
     }
 
-    if (formActiveOtherSchool && !formOtherSchoolName.trim() && !formOtherSchoolUdise.trim()) {
-      setFormError("Please enter the School Name or School UDISE for Active in other school.");
-      return;
+    if (formActiveOtherSchool) {
+      if (effectiveTab === "udise" && !formUdiseSchoolName.trim() && !formOtherSchoolName.trim()) {
+        setFormError("Please enter the School Name for UDISE Active in other school.");
+        return;
+      }
+      if (effectiveTab === "pen" && !formPenSchoolName.trim() && !formPenSchoolUdise.trim() && !formOtherSchoolName.trim() && !formOtherSchoolUdise.trim()) {
+        setFormError("Please enter the School Name or School UDISE for PEN Active in other school.");
+        return;
+      }
     }
 
-    const otherSchoolObj = formActiveOtherSchool ? {
-      portal: effectiveTab === "udise"
-        ? (modalRow?.penStatus === "Active in other school" ? "both" : "udise")
-        : effectiveTab === "pen"
-        ? (modalRow?.udiseStatus === "Active in other school" ? "both" : "pen")
-        : "both",
-      udiseActive: effectiveTab === "udise" || effectiveTab === "both" || modalRow?.udiseStatus === "Active in other school",
-      penActive: effectiveTab === "pen" || effectiveTab === "both" || modalRow?.penStatus === "Active in other school",
-      schoolName: formOtherSchoolName.trim(),
-      schoolUdise: formOtherSchoolUdise.trim(),
-      state: formOtherSchoolState.trim(),
-      district: formOtherSchoolDistrict.trim(),
-      block: formOtherSchoolBlock.trim(),
-      headmaster: formOtherSchoolHeadmaster.trim(),
-      contactNo: formOtherSchoolContactNo.trim(),
-      status: formOtherSchoolStatus.trim() || "Active in School",
-      remark: formOtherSchoolRemark.trim(),
-    } : null;
+    const prevOtherSchool = parseOtherSchoolRemarks(modalRow.remarks) || modalRow.otherSchoolData || {};
+
+    let otherSchoolObj = null;
+    if (formActiveOtherSchool) {
+      const isUdise = (effectiveTab === "udise");
+      const isPen = (effectiveTab === "pen");
+
+      const udiseActive = isUdise || prevOtherSchool.udiseActive || modalRow?.udiseStatus === "Active in other school";
+      const penActive = isPen || prevOtherSchool.penActive || modalRow?.penStatus === "Active in other school";
+      const portal = (udiseActive && penActive) ? "both" : (udiseActive ? "udise" : (penActive ? "pen" : ""));
+
+      otherSchoolObj = {
+        ...prevOtherSchool,
+        portal,
+        udiseActive,
+        penActive,
+
+        // UDISE specific (State Portal: ssgujarat.org)
+        udiseSchoolName: isUdise ? formUdiseSchoolName.trim() : (prevOtherSchool.udiseSchoolName || formUdiseSchoolName.trim() || ""),
+        udisePrincipalName: isUdise ? formUdisePrincipalName.trim() : (prevOtherSchool.udisePrincipalName || formUdisePrincipalName.trim() || ""),
+        udisePrincipalMobile: isUdise ? formUdisePrincipalMobile.trim() : (prevOtherSchool.udisePrincipalMobile || formUdisePrincipalMobile.trim() || ""),
+        udiseUid: formUdise.trim() || prevOtherSchool.udiseUid || "",
+        udiseRequestSentDate: isUdise ? formUdiseRequestSentDate.trim() : (prevOtherSchool.udiseRequestSentDate || formUdiseRequestSentDate.trim() || ""),
+        udiseTcUploaded: isUdise ? formUdiseTcUploaded : (prevOtherSchool.udiseTcUploaded || formUdiseTcUploaded || "Pending"),
+        udiseStatus: isUdise ? formUdiseStatus.trim() : (prevOtherSchool.udiseStatus || formUdiseStatus.trim() || "Active in other school"),
+        udiseRemark: isUdise ? formUdiseRemark.trim() : (prevOtherSchool.udiseRemark || formUdiseRemark.trim() || ""),
+
+        // PEN specific (National Portal: udiseplus.gov.in)
+        penSchoolName: isPen ? formPenSchoolName.trim() : (prevOtherSchool.penSchoolName || formPenSchoolName.trim() || ""),
+        penSchoolUdise: isPen ? formPenSchoolUdise.trim() : (prevOtherSchool.penSchoolUdise || formPenSchoolUdise.trim() || ""),
+        penState: isPen ? formPenState.trim() : (prevOtherSchool.penState || formPenState.trim() || ""),
+        penDistrict: isPen ? formPenDistrict.trim() : (prevOtherSchool.penDistrict || formPenDistrict.trim() || ""),
+        penBlock: isPen ? formPenBlock.trim() : (prevOtherSchool.penBlock || formPenBlock.trim() || ""),
+        penHeadmaster: isPen ? formPenHeadmaster.trim() : (prevOtherSchool.penHeadmaster || formPenHeadmaster.trim() || ""),
+        penContactNo: isPen ? formPenContactNo.trim() : (prevOtherSchool.penContactNo || formPenContactNo.trim() || ""),
+        penStatus: isPen ? formPenStatus.trim() : (prevOtherSchool.penStatus || formPenStatus.trim() || "Active in other school"),
+        penRemark: isPen ? formPenRemark.trim() : (prevOtherSchool.penRemark || formPenRemark.trim() || ""),
+
+        // Common / fallback for backward compatibility
+        schoolName: isUdise ? (formUdiseSchoolName.trim() || formOtherSchoolName.trim()) : (formPenSchoolName.trim() || formOtherSchoolName.trim()),
+        schoolUdise: formPenSchoolUdise.trim() || formOtherSchoolUdise.trim(),
+        state: formPenState.trim() || formOtherSchoolState.trim(),
+        district: formPenDistrict.trim() || formOtherSchoolDistrict.trim(),
+        block: formPenBlock.trim() || formOtherSchoolBlock.trim(),
+        headmaster: isUdise ? (formUdisePrincipalName.trim() || formOtherSchoolHeadmaster.trim()) : (formPenHeadmaster.trim() || formOtherSchoolHeadmaster.trim()),
+        contactNo: isUdise ? (formUdisePrincipalMobile.trim() || formOtherSchoolContactNo.trim()) : (formPenContactNo.trim() || formOtherSchoolContactNo.trim()),
+        status: isUdise ? (formUdiseStatus.trim() || formOtherSchoolStatus.trim()) : (formPenStatus.trim() || formOtherSchoolStatus.trim()),
+        remark: isUdise ? (formUdiseRemark.trim() || formOtherSchoolRemark.trim()) : (formPenRemark.trim() || formOtherSchoolRemark.trim()),
+      };
+    } else if (prevOtherSchool && (prevOtherSchool.udiseActive || prevOtherSchool.penActive)) {
+      const isUdise = (effectiveTab === "udise");
+      const isPen = (effectiveTab === "pen");
+      const udiseActive = isUdise ? false : prevOtherSchool.udiseActive;
+      const penActive = isPen ? false : prevOtherSchool.penActive;
+      if (udiseActive || penActive) {
+        otherSchoolObj = {
+          ...prevOtherSchool,
+          udiseActive,
+          penActive,
+          portal: (udiseActive && penActive) ? "both" : (udiseActive ? "udise" : "pen"),
+        };
+      }
+    }
 
     const combinedRemarks = buildCombinedRemarks(formRemarks, otherSchoolObj);
 
     let udiseValue = "-";
-    if (formActiveOtherSchool) {
+    if (formActiveOtherSchool && (effectiveTab === "udise" || otherSchoolObj?.udiseActive)) {
       udiseValue = formUdise.trim() || "Active in other school";
     } else if (formUdiseNotDefined) {
       udiseValue = "Not Defined";
@@ -2599,12 +3018,37 @@ export default function GovernmentEntryPage() {
     }
 
     let penValue = "-";
-    if (formActiveOtherSchool) {
+    if (formActiveOtherSchool && (effectiveTab === "pen" || otherSchoolObj?.penActive)) {
       penValue = formPen.trim() || "Active in other school";
     } else if (formPenNotDefined) {
       penValue = "Not Defined";
     } else {
       penValue = formPen.trim() || "-";
+    }
+
+    // Save for onlineGr row without db studentId (e.g. from Online GR or Import list)
+    if (!modalRow.studentId && modalRow.id) {
+      const sec = modalRow.section || classSection(modalRow.cls) || "general";
+      const patch = {
+        udise: udiseValue,
+        pen: penValue,
+        remarks: combinedRemarks || modalRow.remarks || "-",
+      };
+      if (formGrNo.trim()) patch.grNo = formGrNo.trim();
+      setSaving(true);
+      try {
+        await updateOnlineGrRow(modalRow.id, sec, patch);
+        setOnlineGrDataset(prev => ({
+          ...prev,
+          [sec]: (prev[sec] || []).map(r => r.id === modalRow.id ? { ...r, ...patch } : r),
+        }));
+        setModalRow(null);
+      } catch (e) {
+        setFormError(e.message || "Failed to update record.");
+      } finally {
+        setSaving(false);
+      }
+      return;
     }
 
     // 1. Online General Register — update SEPARATE record, do NOT insert into students table!
@@ -2884,10 +3328,14 @@ export default function GovernmentEntryPage() {
     const today = new Date().toISOString().slice(0, 10);
 
     if (mainTab === "import") {
+      const activeExportCols = importSubTab === "udise"
+        ? UDISE_IMPORT_COLUMNS
+        : (importSubTab === "pen" ? PEN_IMPORT_COLUMNS : ALL_IMPORT_COLUMNS);
+
       const aoa = [
-        IMPORT_COLUMNS.map(c => c.label),
-        ...rows.map(r => IMPORT_COLUMNS.map(c => {
-          const val = r[c.key];
+        activeExportCols.map(c => c.label),
+        ...rows.map(r => activeExportCols.map(c => {
+          const val = formatCellValue(c, r[c.key], r);
           return val !== undefined && val !== null && val !== "" ? val : "-";
         }))
       ];
@@ -3543,7 +3991,18 @@ export default function GovernmentEntryPage() {
                               }`}>
                                 {String(rawValue)}
                               </span>
-                            ) : c.key === "otherSchoolContact" && rawValue && rawValue !== "-" ? (
+                            ) : c.key === "udiseImportTcUploaded" && rawValue && rawValue !== "-" ? (
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                rawValue === "Uploaded"
+                                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                  : rawValue === "Pending"
+                                  ? "bg-amber-100 text-amber-800 border-amber-300"
+                                  : "bg-gray-100 text-gray-700 border-gray-300"
+                              }`}>
+                                {rawValue === "Uploaded" ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : rawValue === "Pending" ? <AlertTriangle className="w-3 h-3 text-amber-600" /> : null}
+                                {String(rawValue)}
+                              </span>
+                            ) : (c.key === "udiseImportPrincipalMobile" || c.key === "penImportContactNo" || c.key === "importContactNo" || c.key === "otherSchoolContact") && rawValue && rawValue !== "-" ? (
                               <span className="inline-flex items-center gap-1.5 font-mono">
                                 <span>{String(rawValue)}</span>
                                 <a href={`tel:${rawValue}`} title={`Call ${rawValue}`} onClick={e => e.stopPropagation()} className="text-purple-600 hover:text-purple-900 font-sans text-xs">
@@ -3828,8 +4287,14 @@ export default function GovernmentEntryPage() {
                           onChange={e => {
                             const checked = e.target.checked;
                             setFormActiveOtherSchool(checked);
-                            if (checked && !formOtherSchoolName && modalRow?.lastSchoolName) {
-                              setFormOtherSchoolName(modalRow.lastSchoolName);
+                            if (checked) {
+                              setFormUdiseNotDefined(false);
+                              if (!formUdiseSchoolName && modalRow?.lastSchoolName) {
+                                setFormUdiseSchoolName(modalRow.lastSchoolName);
+                              }
+                              if (!formOtherSchoolName && modalRow?.lastSchoolName) {
+                                setFormOtherSchoolName(modalRow.lastSchoolName);
+                              }
                             }
                           }}
                           className="w-3.5 h-3.5 accent-purple-600"/>
@@ -3865,6 +4330,9 @@ export default function GovernmentEntryPage() {
                             setFormActiveOtherSchool(checked);
                             if (checked) {
                               setFormPenNotDefined(false);
+                              if (!formPenSchoolName && modalRow?.lastSchoolName) {
+                                setFormPenSchoolName(modalRow.lastSchoolName);
+                              }
                               if (!formOtherSchoolName && modalRow?.lastSchoolName) {
                                 setFormOtherSchoolName(modalRow.lastSchoolName);
                               }
@@ -3949,6 +4417,9 @@ export default function GovernmentEntryPage() {
                             setFormActiveOtherSchool(checked);
                             if (checked) {
                               setFormUdiseNotDefined(false);
+                              if (!formUdiseSchoolName && modalRow?.lastSchoolName) {
+                                setFormUdiseSchoolName(modalRow.lastSchoolName);
+                              }
                               if (!formOtherSchoolName && modalRow?.lastSchoolName) {
                                 setFormOtherSchoolName(modalRow.lastSchoolName);
                               }
@@ -4021,6 +4492,9 @@ export default function GovernmentEntryPage() {
                             setFormActiveOtherSchool(checked);
                             if (checked) {
                               setFormPenNotDefined(false);
+                              if (!formPenSchoolName && modalRow?.lastSchoolName) {
+                                setFormPenSchoolName(modalRow.lastSchoolName);
+                              }
                               if (!formOtherSchoolName && modalRow?.lastSchoolName) {
                                 setFormOtherSchoolName(modalRow.lastSchoolName);
                               }
