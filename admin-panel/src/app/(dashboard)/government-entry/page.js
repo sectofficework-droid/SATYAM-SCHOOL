@@ -254,7 +254,7 @@ function decorate(st) {
     udiseStatus,
     penStatus,
     otherSchoolData,
-    otherSchoolName:      otherSchoolData?.schoolName || "-",
+    otherSchoolName:      otherSchoolData?.schoolName || st.lastSchoolName || "-",
     otherSchoolUdise:     otherSchoolData?.schoolUdise || "-",
     otherSchoolLocation:  [otherSchoolData?.district, otherSchoolData?.block].filter(Boolean).join(" - ") || otherSchoolData?.state || "-",
     otherSchoolHm:        otherSchoolData?.headmaster || "-",
@@ -2451,7 +2451,7 @@ export default function GovernmentEntryPage() {
       setFormActiveOtherSchool(true);
       if (effectiveTab === "udise") setFormUdiseNotDefined(false);
       if (effectiveTab === "pen") setFormPenNotDefined(false);
-      setFormOtherSchoolName(otherSchoolData?.schoolName || "");
+      setFormOtherSchoolName(otherSchoolData?.schoolName || fullRow.lastSchoolName || "");
       setFormOtherSchoolUdise(otherSchoolData?.schoolUdise || "");
       setFormOtherSchoolState(otherSchoolData?.state || "");
       setFormOtherSchoolDistrict(otherSchoolData?.district || "");
@@ -3624,6 +3624,9 @@ export default function GovernmentEntryPage() {
                           onChange={e => {
                             const checked = e.target.checked;
                             setFormActiveOtherSchool(checked);
+                            if (checked && !formOtherSchoolName && modalRow?.lastSchoolName) {
+                              setFormOtherSchoolName(modalRow.lastSchoolName);
+                            }
                           }}
                           className="w-3.5 h-3.5 accent-purple-600"/>
                         Active in other school
@@ -3658,6 +3661,9 @@ export default function GovernmentEntryPage() {
                             setFormActiveOtherSchool(checked);
                             if (checked) {
                               setFormPenNotDefined(false);
+                              if (!formOtherSchoolName && modalRow?.lastSchoolName) {
+                                setFormOtherSchoolName(modalRow.lastSchoolName);
+                              }
                             }
                           }}
                           className="w-3.5 h-3.5 accent-purple-600"/>
@@ -3739,6 +3745,9 @@ export default function GovernmentEntryPage() {
                             setFormActiveOtherSchool(checked);
                             if (checked) {
                               setFormUdiseNotDefined(false);
+                              if (!formOtherSchoolName && modalRow?.lastSchoolName) {
+                                setFormOtherSchoolName(modalRow.lastSchoolName);
+                              }
                             }
                           }}
                           className="w-3.5 h-3.5 accent-purple-600"/>
@@ -3808,6 +3817,9 @@ export default function GovernmentEntryPage() {
                             setFormActiveOtherSchool(checked);
                             if (checked) {
                               setFormPenNotDefined(false);
+                              if (!formOtherSchoolName && modalRow?.lastSchoolName) {
+                                setFormOtherSchoolName(modalRow.lastSchoolName);
+                              }
                             }
                           }}
                           className="w-3.5 h-3.5 accent-purple-600"/>
