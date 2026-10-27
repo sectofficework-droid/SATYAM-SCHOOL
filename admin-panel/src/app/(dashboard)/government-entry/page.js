@@ -261,7 +261,8 @@ function decorate(st) {
   }
 
   const hasTcDoc = (st.studentDocuments || []).some(
-    d => d.document_types?.name === "Leaving Certificate" && d.status === "Uploaded"
+    d => (d.document_types?.name === "Leaving Certificate" || d.document_types?.name === "Transfer Certificate") &&
+         (d.status === "Uploaded" || Boolean(d.file_url))
   );
   const defaultTcStatus = hasTcDoc ? "Uploaded" : (st.lastSchoolName ? "Pending" : "Not Required");
 
@@ -271,7 +272,8 @@ function decorate(st) {
   const udiseImportPrincipalMobile = otherSchoolData?.udisePrincipalMobile || (isUdiseOtherSchool ? otherSchoolData?.contactNo : "") || "-";
   const udiseImportStudentUid = otherSchoolData?.udiseUid || (st.udise && st.udise !== "Active in other school" && st.udise !== "Not Defined" && st.udise !== "-" ? st.udise : "") || "-";
   const udiseImportRequestSentDate = otherSchoolData?.udiseRequestSentDate || "-";
-  const udiseImportTcUploaded = otherSchoolData?.udiseTcUploaded || defaultTcStatus;
+  // If physically uploaded in student_documents, it is confirmed "Uploaded"
+  const udiseImportTcUploaded = hasTcDoc ? "Uploaded" : (otherSchoolData?.udiseTcUploaded || defaultTcStatus);
   const udiseImportStatus = otherSchoolData?.udiseStatus || (isUdiseOtherSchool ? "Active in other school" : "-");
   const udiseImportRemark = otherSchoolData?.udiseRemark || (isUdiseOtherSchool ? otherSchoolData?.remark : "") || "-";
 
@@ -1744,6 +1746,65 @@ export default function GovernmentEntryPage() {
     ) || null;
   }
 
+  function getTcDoc(st) {
+    if (!st) return null;
+    return (st.studentDocuments || []).find(
+      d => (d.document_types?.name === "Leaving Certificate" || d.document_types?.name === "Transfer Certificate") &&
+           (d.status === "Uploaded" || Boolean(d.file_url))
+    ) || null;
+  }
+
+  async function handleDownloadTcDoc(st) {
+    if (!st) return;
+    try {
+      const studentId = st.studentId || st.id;
+      let tcDoc = getTcDoc(st);
+      let fileKey = tcDoc?.file_url;
+
+      if (!fileKey && studentId) {
+        const { data } = await supabase
+          .from("student_documents")
+          .select("file_url, status, document_types!inner(name)")
+          .eq("student_id", studentId)
+          .eq("document_types.name", "Leaving Certificate")
+          .maybeSingle();
+
+        if (data?.status === "Uploaded" && data?.file_url) {
+          fileKey = data.file_url;
+        }
+      }
+
+      if (!fileKey) {
+        alert("No Leaving Certificate / TC file found to download. Please upload it in Documents.");
+        return;
+      }
+
+      const win = typeof window !== "undefined" ? window.open("", "_blank") : null;
+      const downloadName = buildDocDownloadName(st.enrollNo, st.name, "Leaving_Certificate", fileKey);
+      const url = await getS3ViewUrl(fileKey, downloadName);
+
+      if (url) {
+        if (win) {
+          win.location.href = url;
+        } else {
+          const a = document.createElement("a");
+          a.href = url;
+          a.target = "_blank";
+          a.download = downloadName || "Leaving_Certificate";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+      } else {
+        if (win) win.close();
+        alert("Failed to generate download URL for Leaving Certificate.");
+      }
+    } catch (err) {
+      console.error("Download Leaving Certificate error:", err);
+      alert(err.message || "Failed to download Leaving Certificate.");
+    }
+  }
+
   function triggerBcUpload(st) {
     setBcUploadTarget(st);
     setBcMessage(null);
@@ -2142,18 +2203,42 @@ export default function GovernmentEntryPage() {
 
             {/* 6. TC UPLOADED OR NOT */}
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
-                TC Uploaded or Not
-              </label>
-              <select
-                value={formUdiseTcUploaded}
-                onChange={e => setFormUdiseTcUploaded(e.target.value)}
-                className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white font-medium"
-              >
-                <option value="Uploaded">✓ Uploaded</option>
-                <option value="Pending">⏳ Pending</option>
-                <option value="Not Required">Not Required</option>
-              </select>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                  TC Uploaded or Not
+                </label>
+                {getTcDoc(modalRow) ? (
+                  <span className="text-[9px] text-emerald-700 font-bold flex items-center gap-1">
+                    ✓ Verified in Documents
+                  </span>
+                ) : (
+                  <span className="text-[9px] text-amber-700 font-medium">
+                    (No file in Documents)
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={formUdiseTcUploaded}
+                  onChange={e => setFormUdiseTcUploaded(e.target.value)}
+                  className="flex-1 border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white font-medium"
+                >
+                  <option value="Uploaded">✓ Uploaded</option>
+                  <option value="Pending">⏳ Pending</option>
+                  <option value="Not Required">Not Required</option>
+                </select>
+                {getTcDoc(modalRow) && (
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadTcDoc(modalRow)}
+                    className="px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 flex items-center gap-1 transition-colors flex-shrink-0"
+                    title="View uploaded Leaving Certificate"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>View TC</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* 7. STATUS */}
@@ -2803,7 +2888,8 @@ export default function GovernmentEntryPage() {
     );
 
     const hasTcDoc = (fullRow.studentDocuments || []).some(
-      d => d.document_types?.name === "Leaving Certificate" && d.status === "Uploaded"
+      d => (d.document_types?.name === "Leaving Certificate" || d.document_types?.name === "Transfer Certificate") &&
+           (d.status === "Uploaded" || Boolean(d.file_url))
     );
     const defaultTcStatus = hasTcDoc ? "Uploaded" : (fullRow.lastSchoolName ? "Pending" : "Not Required");
 
@@ -2820,7 +2906,7 @@ export default function GovernmentEntryPage() {
         setFormUdise(otherSchoolData.udiseUid);
       }
       setFormUdiseRequestSentDate(otherSchoolData?.udiseRequestSentDate || "");
-      setFormUdiseTcUploaded(otherSchoolData?.udiseTcUploaded || defaultTcStatus);
+      setFormUdiseTcUploaded(hasTcDoc ? "Uploaded" : (otherSchoolData?.udiseTcUploaded || defaultTcStatus));
       setFormUdiseStatus(otherSchoolData?.udiseStatus || (otherSchoolData?.udiseActive ? otherSchoolData?.status : "") || "Active in other school");
       setFormUdiseRemark(otherSchoolData?.udiseRemark || (otherSchoolData?.udiseActive ? otherSchoolData?.remark : "") || "");
 
@@ -3992,15 +4078,37 @@ export default function GovernmentEntryPage() {
                                 {String(rawValue)}
                               </span>
                             ) : c.key === "udiseImportTcUploaded" && rawValue && rawValue !== "-" ? (
-                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                              <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                                 rawValue === "Uploaded"
                                   ? "bg-emerald-100 text-emerald-800 border-emerald-300"
                                   : rawValue === "Pending"
                                   ? "bg-amber-100 text-amber-800 border-amber-300"
                                   : "bg-gray-100 text-gray-700 border-gray-300"
                               }`}>
-                                {rawValue === "Uploaded" ? <CheckCircle2 className="w-3 h-3 text-emerald-600" /> : rawValue === "Pending" ? <AlertTriangle className="w-3 h-3 text-amber-600" /> : null}
-                                {String(rawValue)}
+                                {rawValue === "Uploaded" ? (
+                                  <>
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-600 flex-shrink-0" />
+                                    <span>Uploaded</span>
+                                    {getTcDoc(row)?.file_url && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); handleDownloadTcDoc(row); }}
+                                        title="View / Download Leaving Certificate (TC)"
+                                        className="ml-1 text-emerald-700 hover:text-emerald-950 underline font-semibold flex items-center gap-0.5"
+                                      >
+                                        <Download className="w-2.5 h-2.5 inline" />
+                                        <span className="text-[9px]">View</span>
+                                      </button>
+                                    )}
+                                  </>
+                                ) : rawValue === "Pending" ? (
+                                  <>
+                                    <AlertTriangle className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                                    <span>Pending</span>
+                                  </>
+                                ) : (
+                                  <span>{String(rawValue)}</span>
+                                )}
                               </span>
                             ) : (c.key === "udiseImportPrincipalMobile" || c.key === "penImportContactNo" || c.key === "importContactNo" || c.key === "otherSchoolContact") && rawValue && rawValue !== "-" ? (
                               <span className="inline-flex items-center gap-1.5 font-mono">
