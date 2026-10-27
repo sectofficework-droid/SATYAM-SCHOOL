@@ -6,7 +6,7 @@ import {
   Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X,
   Loader2, HelpCircle, Search, Maximize2, Minimize2, Download, BookOpen,
   ChevronUp, ChevronDown, Trash2, UserPlus, Upload, FileText, Calendar, Pencil,
-  School
+  School, Clock
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import supabase from "@/lib/supabase";
@@ -364,6 +364,17 @@ const STATUS_FILTER_OPTIONS = [
   "UDISE Pending",
   "PEN Pending",
   "UDISE & PEN Done",
+];
+
+const IMPORT_STATUS_OPTIONS = [
+  "Active in other school",
+  "Request sent to other school",
+  "Request approved by other school",
+];
+
+const IMPORT_STATUS_FILTER_OPTIONS = [
+  "All",
+  ...IMPORT_STATUS_OPTIONS,
 ];
 
 function matchesGovStatusFilter(row, filterVal) {
@@ -912,6 +923,12 @@ export default function GovernmentEntryPage() {
 
       if (filters.cls !== "All") list = list.filter(x => x.cls === filters.cls);
       if (filters.session !== "All") list = list.filter(x => x.session === filters.session);
+      if (filters.status !== "All") {
+        list = list.filter(x => {
+          const st = importSubTab === "pen" ? x.penImportStatus : (importSubTab === "udise" ? x.udiseImportStatus : x.importStatus);
+          return String(st || "").trim().toLowerCase() === filters.status.trim().toLowerCase();
+        });
+      }
 
       const q = search.trim().toLowerCase();
       if (q) {
@@ -2244,13 +2261,18 @@ export default function GovernmentEntryPage() {
               <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
                 Status
               </label>
-              <input
-                type="text"
-                value={formUdiseStatus}
+              <select
+                value={formUdiseStatus || "Active in other school"}
                 onChange={e => setFormUdiseStatus(e.target.value)}
-                placeholder="e.g. Active in other school / Request Sent"
-                className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
-              />
+                className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white font-medium"
+              >
+                {IMPORT_STATUS_OPTIONS.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+                {formUdiseStatus && !IMPORT_STATUS_OPTIONS.includes(formUdiseStatus) && (
+                  <option value={formUdiseStatus}>{formUdiseStatus}</option>
+                )}
+              </select>
             </div>
 
             {/* 8. REMARK */}
@@ -2389,22 +2411,18 @@ export default function GovernmentEntryPage() {
             <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
               Status
             </label>
-            <input
-              type="text"
-              list="otherSchoolStatusOptions"
-              value={formPenStatus}
+            <select
+              value={formPenStatus || "Active in other school"}
               onChange={e => setFormPenStatus(e.target.value)}
-              placeholder="e.g. Active in School"
-              className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
-            />
-            <datalist id="otherSchoolStatusOptions">
-              <option value="Active in School" />
-              <option value="Studying" />
-              <option value="TC Pending" />
-              <option value="TC Required" />
-              <option value="Admitted" />
-              <option value="Drop Out" />
-            </datalist>
+              className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white font-medium"
+            >
+              {IMPORT_STATUS_OPTIONS.map(opt => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+              {formPenStatus && !IMPORT_STATUS_OPTIONS.includes(formPenStatus) && (
+                <option value={formPenStatus}>{formPenStatus}</option>
+              )}
+            </select>
           </div>
 
           {/* 9. REMARK */}
@@ -3868,9 +3886,11 @@ export default function GovernmentEntryPage() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Status</label>
-                  <select disabled={mainTab === "import"} className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-44 disabled:opacity-50 disabled:cursor-not-allowed"
+                  <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-44"
                     value={filters.status} onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}>
-                    {STATUS_FILTER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                    {(mainTab === "import" ? IMPORT_STATUS_FILTER_OPTIONS : STATUS_FILTER_OPTIONS).map(o => (
+                      <option key={o} value={o}>{o}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -4099,6 +4119,23 @@ export default function GovernmentEntryPage() {
                                     <span>Not Uploaded</span>
                                   </>
                                 )}
+                              </span>
+                            ) : (c.key === "udiseImportStatus" || c.key === "penImportStatus" || c.key === "importStatus") && rawValue && rawValue !== "-" ? (
+                              <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                String(rawValue).toLowerCase().includes("approved")
+                                  ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                                  : String(rawValue).toLowerCase().includes("sent")
+                                  ? "bg-blue-100 text-blue-800 border-blue-300"
+                                  : "bg-purple-100 text-purple-800 border-purple-300"
+                              }`}>
+                                {String(rawValue).toLowerCase().includes("approved") ? (
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600 flex-shrink-0" />
+                                ) : String(rawValue).toLowerCase().includes("sent") ? (
+                                  <Clock className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                                ) : (
+                                  <AlertTriangle className="w-3 h-3 text-purple-600 flex-shrink-0" />
+                                )}
+                                <span>{String(rawValue)}</span>
                               </span>
                             ) : (c.key === "udiseImportPrincipalMobile" || c.key === "penImportContactNo" || c.key === "importContactNo" || c.key === "otherSchoolContact") && rawValue && rawValue !== "-" ? (
                               <span className="inline-flex items-center gap-1.5 font-mono">
