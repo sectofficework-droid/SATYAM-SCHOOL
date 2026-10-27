@@ -534,9 +534,15 @@ export default function GovernmentEntryPage() {
   const router = useRouter();
   const [mainTab, setMainTab] = useState("onlineGr"); // "onlineGr" | "udise" | "pen" | "import" | "mismatch"
   const [grSubTab, setGrSubTab] = useState("primary"); // "primary" | "general"
+  const [importSubTab, setImportSubTab] = useState("udise"); // "udise" | "pen" | "all"
+  const [importModalMode, setImportModalMode] = useState("udise"); // "udise" | "pen"
   const [onlineGrSort, setOnlineGrSort] = useState({ key: null, dir: "asc" }); // Excel-like click-to-sort, Online GR only
   const [mismatchDir, setMismatchDir] = useState("udiseOnly"); // "udiseOnly" | "penOnly"
-  const effectiveTab = mainTab === "onlineGr" ? "onlineGr" : mainTab === "import" ? "import" : (mainTab === "mismatch" ? (mismatchDir === "udiseOnly" ? "udise" : "pen") : mainTab);
+  const effectiveTab = mainTab === "onlineGr"
+    ? "onlineGr"
+    : mainTab === "import"
+    ? importModalMode
+    : (mainTab === "mismatch" ? (mismatchDir === "udiseOnly" ? "udise" : "pen") : mainTab);
 
   // Online GR separate dataset (seeded from ONLINE GENERAL REGISTER.xlsx, saved separately)
   const [onlineGrDataset, setOnlineGrDataset] = useState({ primary: [], general: [] });
@@ -759,6 +765,24 @@ export default function GovernmentEntryPage() {
 
       let list = [...dbImports, ...grImports];
 
+      if (importSubTab === "udise") {
+        list = list.filter(x =>
+          x.udiseStatus === "Active in other school" ||
+          String(x.udise || "").toLowerCase().includes("active in other school") ||
+          (x.otherSchoolData && (x.otherSchoolData.portal === "udise" || x.otherSchoolData.portal === "both" || x.otherSchoolData.udiseActive)) ||
+          x.importPortal === "UDISE (State)" ||
+          x.importPortal === "UDISE & PEN"
+        );
+      } else if (importSubTab === "pen") {
+        list = list.filter(x =>
+          x.penStatus === "Active in other school" ||
+          String(x.pen || "").toLowerCase().includes("active in other school") ||
+          (x.otherSchoolData && (x.otherSchoolData.portal === "pen" || x.otherSchoolData.portal === "both" || x.otherSchoolData.penActive)) ||
+          x.importPortal === "PEN (National)" ||
+          x.importPortal === "UDISE & PEN"
+        );
+      }
+
       if (filters.cls !== "All") list = list.filter(x => x.cls === filters.cls);
       if (filters.session !== "All") list = list.filter(x => x.session === filters.session);
 
@@ -831,30 +855,54 @@ export default function GovernmentEntryPage() {
       if (diff !== 0) return diff;
       return String(a.grNo || "").localeCompare(String(b.grNo || ""), undefined, { numeric: true });
     });
-  }, [mainTab, grSubTab, onlineGrDataset, dbStudents, filters, search, enrollToBatches, eligibilityFns, mismatchDir, effectiveTab, showNotDefinedOnly, eligTab, onlineGrSort, addPinnedEnrollNo]);
+  }, [mainTab, grSubTab, importSubTab, onlineGrDataset, dbStudents, filters, search, enrollToBatches, eligibilityFns, mismatchDir, effectiveTab, showNotDefinedOnly, eligTab, onlineGrSort, addPinnedEnrollNo]);
 
   const pendingNotDefinedCount = useMemo(
     () => dbStudents.map(decorate).filter(x => x.penStatus === "Not Defined").length,
     [dbStudents]
   );
-  const importCount = useMemo(() => {
-    const dbCount = dbStudents.map(decorate).filter(x =>
+  const allImportList = useMemo(() => {
+    const dbImports = dbStudents.map(decorate).filter(x =>
       x.udiseStatus === "Active in other school" ||
       x.penStatus === "Active in other school" ||
       Boolean(x.otherSchoolData) ||
       String(x.udise || "").toLowerCase().includes("active in other school") ||
       String(x.pen || "").toLowerCase().includes("active in other school")
-    ).length;
+    );
 
-    const grCount = [...(onlineGrDataset.primary || []), ...(onlineGrDataset.general || [])].filter(r => {
+    const grImports = [...(onlineGrDataset.primary || []), ...(onlineGrDataset.general || [])].filter(r => {
       const os = parseOtherSchoolRemarks(r.remarks);
-      return Boolean(os) ||
+      const isOther = Boolean(os) ||
         String(r.udise || "").toLowerCase().includes("active in other school") ||
         String(r.pen || "").toLowerCase().includes("active in other school");
-    }).length;
+      return isOther && !dbImports.some(d => (r.enrollNo && d.enrollNo === r.enrollNo) || (r.grNo && d.grNo === r.grNo));
+    }).map(r => decorate(r));
 
-    return dbCount + grCount;
+    return [...dbImports, ...grImports];
   }, [dbStudents, onlineGrDataset]);
+
+  const importAllCount = allImportList.length;
+  const importCount = importAllCount;
+
+  const importUdiseCount = useMemo(() => {
+    return allImportList.filter(x =>
+      x.udiseStatus === "Active in other school" ||
+      String(x.udise || "").toLowerCase().includes("active in other school") ||
+      (x.otherSchoolData && (x.otherSchoolData.portal === "udise" || x.otherSchoolData.portal === "both" || x.otherSchoolData.udiseActive)) ||
+      x.importPortal === "UDISE (State)" ||
+      x.importPortal === "UDISE & PEN"
+    ).length;
+  }, [allImportList]);
+
+  const importPenCount = useMemo(() => {
+    return allImportList.filter(x =>
+      x.penStatus === "Active in other school" ||
+      String(x.pen || "").toLowerCase().includes("active in other school") ||
+      (x.otherSchoolData && (x.otherSchoolData.portal === "pen" || x.otherSchoolData.portal === "both" || x.otherSchoolData.penActive)) ||
+      x.importPortal === "PEN (National)" ||
+      x.importPortal === "UDISE & PEN"
+    ).length;
+  }, [allImportList]);
 
   const activeOtherSchoolCount = useMemo(
     () => dbStudents.map(decorate).filter(x => x.penStatus === "Active in other school" || x.udiseStatus === "Active in other school").length,
@@ -2415,6 +2463,12 @@ export default function GovernmentEntryPage() {
     if (!row) return;
     const fullRow = row.birthYear !== undefined ? row : (decorate(row) || row);
     setModalRow(fullRow);
+    if (mainTab === "import") {
+      const mode = importSubTab === "pen"
+        ? "pen"
+        : (importSubTab === "udise" ? "udise" : (fullRow.importPortal === "PEN (National)" ? "pen" : "udise"));
+      setImportModalMode(mode);
+    }
     setFormGrNo(fullRow.grNo && fullRow.grNo !== "-" ? fullRow.grNo : "");
     setFormDoeSlash(fullRow.doeSlash && fullRow.doeSlash !== "-" ? fullRow.doeSlash : getTodaySlash());
 
@@ -2839,8 +2893,9 @@ export default function GovernmentEntryPage() {
       ];
       const ws = XLSX.utils.aoa_to_sheet(aoa);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Import_Students");
-      XLSX.writeFile(wb, `Import_Students_${today}.xlsx`);
+      const sheetName = importSubTab === "udise" ? "UDISE_Import" : (importSubTab === "pen" ? "PEN_Import" : "All_Imports");
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      XLSX.writeFile(wb, `${sheetName}_${today}.xlsx`);
       return;
     }
 
@@ -2975,7 +3030,52 @@ export default function GovernmentEntryPage() {
             </button>
           </div>
 
-          {mainTab === "mismatch" ? (
+          {mainTab === "import" ? (
+            <>
+              <span className="hidden sm:block w-px h-6 bg-gray-200"/>
+              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+                <button
+                  type="button"
+                  onClick={() => setImportSubTab("udise")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    importSubTab === "udise" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  <Landmark className="w-3.5 h-3.5"/>
+                  <span>UDISE Import (State)</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    importSubTab === "udise" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700 border border-purple-200"
+                  }`}>
+                    {importUdiseCount}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportSubTab("pen")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    importSubTab === "pen" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  <IdCard className="w-3.5 h-3.5"/>
+                  <span>PEN Import (National)</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    importSubTab === "pen" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700 border border-purple-200"
+                  }`}>
+                    {importPenCount}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportSubTab("all")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    importSubTab === "all" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  <span>All ({importAllCount})</span>
+                </button>
+              </div>
+            </>
+          ) : mainTab === "mismatch" ? (
             <>
               <span className="hidden sm:block w-px h-6 bg-gray-200"/>
               <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
@@ -3317,7 +3417,11 @@ export default function GovernmentEntryPage() {
               </thead>
               <tbody>
                 {rows.map((row, idx) => {
-                  const status = mainTab === "onlineGr" ? row.status : (effectiveTab === "udise" ? row.udiseStatus : row.penStatus);
+                  const status = mainTab === "onlineGr"
+                    ? row.status
+                    : mainTab === "import"
+                    ? (importSubTab === "pen" ? row.penStatus : (importSubTab === "udise" ? row.udiseStatus : "Active in other school"))
+                    : (effectiveTab === "udise" ? row.udiseStatus : row.penStatus);
                   const rowBg = idx % 2 === 0 ? "bg-white" : "bg-gray-50/40";
                   const rowBgSolid = idx % 2 === 0 ? "bg-white" : "bg-gray-100";
                   return (
@@ -3429,7 +3533,17 @@ export default function GovernmentEntryPage() {
                             onFocus={() => copyCellToClipboard(rawValue)}
                             style={isFrozen ? { position: "sticky", left: stickyLeft[frozenIdx], zIndex: 10 } : undefined}
                             className={`${isFrozen ? rowBgSolid : ""} px-3 py-2 text-gray-700 whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-school-navy focus:bg-blue-50`}>
-                            {c.key === "otherSchoolContact" && rawValue && rawValue !== "-" ? (
+                            {c.key === "importPortal" && rawValue && rawValue !== "-" ? (
+                              <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                rawValue.includes("Both") || rawValue.includes("&")
+                                  ? "bg-purple-100 text-purple-800 border border-purple-200"
+                                  : rawValue.includes("UDISE") || rawValue.includes("State")
+                                  ? "bg-blue-100 text-blue-800 border border-blue-200"
+                                  : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              }`}>
+                                {String(rawValue)}
+                              </span>
+                            ) : c.key === "otherSchoolContact" && rawValue && rawValue !== "-" ? (
                               <span className="inline-flex items-center gap-1.5 font-mono">
                                 <span>{String(rawValue)}</span>
                                 <a href={`tel:${rawValue}`} title={`Call ${rawValue}`} onClick={e => e.stopPropagation()} className="text-purple-600 hover:text-purple-900 font-sans text-xs">
@@ -3507,6 +3621,66 @@ export default function GovernmentEntryPage() {
               </div>
             </div>
           )}
+
+          {/* Sub-tabs frozen below table for Import (UDISE vs PEN vs All) */}
+          {mainTab === "import" && (
+            <div className="sticky bottom-0 z-30 bg-white/95 backdrop-blur-md border border-purple-200 rounded-xl px-3.5 py-2 shadow-md flex flex-wrap items-center justify-between gap-3 mt-1.5">
+              <div className="flex gap-1 bg-purple-50/70 p-1 rounded-xl border border-purple-200 w-fit">
+                <button
+                  type="button"
+                  onClick={() => setImportSubTab("udise")}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    importSubTab === "udise"
+                      ? "bg-school-navy text-white shadow-sm"
+                      : "text-purple-900 hover:text-purple-950 hover:bg-white/60"
+                  }`}
+                >
+                  <Landmark className="w-3.5 h-3.5"/>
+                  <span>UDISE Import (State Portal)</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    importSubTab === "udise" ? "bg-white/20 text-white" : "bg-purple-200 text-purple-900"
+                  }`}>
+                    {importUdiseCount}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportSubTab("pen")}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    importSubTab === "pen"
+                      ? "bg-school-navy text-white shadow-sm"
+                      : "text-purple-900 hover:text-purple-950 hover:bg-white/60"
+                  }`}
+                >
+                  <IdCard className="w-3.5 h-3.5"/>
+                  <span>PEN Import (National Portal)</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                    importSubTab === "pen" ? "bg-white/20 text-white" : "bg-purple-200 text-purple-900"
+                  }`}>
+                    {importPenCount}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportSubTab("all")}
+                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    importSubTab === "all"
+                      ? "bg-school-navy text-white shadow-sm"
+                      : "text-purple-900 hover:text-purple-950 hover:bg-white/60"
+                  }`}
+                >
+                  <span>All ({importAllCount})</span>
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2 text-xs text-purple-800 font-medium">
+                <span className="hidden sm:inline">Active Import View:</span>
+                <span className="font-bold text-purple-900 bg-purple-100 px-2.5 py-1 rounded-lg border border-purple-200">
+                  {importSubTab === "udise" ? "UDISE State Portal" : importSubTab === "pen" ? "PEN National Portal" : "All Portals"}
+                </span>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -3517,7 +3691,9 @@ export default function GovernmentEntryPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
               <div>
                 <h3 className="text-base font-bold text-gray-800">
-                  {modalIsDone ? (
+                  {mainTab === "import" ? (
+                    `Update Import Tracking — ${effectiveTab === "pen" ? "PEN (National Portal)" : "UDISE (State Portal)"}`
+                  ) : modalIsDone ? (
                     mainTab === "onlineGr"
                       ? (grSubTab === "primary" ? "Edit Primary Register Entry (PR)" : "Edit General Register Entry (GR)")
                       : (effectiveTab === "udise" ? "Edit UDISE Entry" : "Edit PEN Entry")
@@ -3535,6 +3711,34 @@ export default function GovernmentEntryPage() {
             </div>
 
             <div className="px-5 py-4 space-y-3 overflow-y-auto flex-1 min-h-0">
+              {mainTab === "import" && (
+                <div className="flex gap-1 bg-purple-50 p-1 rounded-xl border border-purple-200">
+                  <button
+                    type="button"
+                    onClick={() => setImportModalMode("udise")}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                      importModalMode === "udise"
+                        ? "bg-school-navy text-white shadow-xs"
+                        : "text-purple-900 hover:bg-white/60"
+                    }`}
+                  >
+                    <Landmark className="w-3.5 h-3.5"/>
+                    UDISE (State Portal)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setImportModalMode("pen")}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-lg transition-colors ${
+                      importModalMode === "pen"
+                        ? "bg-school-navy text-white shadow-xs"
+                        : "text-purple-900 hover:bg-white/60"
+                    }`}
+                  >
+                    <IdCard className="w-3.5 h-3.5"/>
+                    PEN (National Portal)
+                  </button>
+                </div>
+              )}
               {addWizardActive && addSubPhase === "entry" && (addStep === 2 || addStep === 3) ? (
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold text-school-navy bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1.5">
                   <UserPlus className="w-3.5 h-3.5 flex-shrink-0"/>
