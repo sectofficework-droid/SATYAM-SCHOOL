@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X,
   Loader2, HelpCircle, Search, Maximize2, Minimize2, Download, BookOpen,
-  ChevronUp, ChevronDown, Trash2, UserPlus, Upload, FileText, Calendar, Pencil
+  ChevronUp, ChevronDown, Trash2, UserPlus, Upload, FileText, Calendar, Pencil,
+  School
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import supabase from "@/lib/supabase";
@@ -112,6 +113,47 @@ function nameWithSurname(name, surname) {
   return [name, surname].filter(Boolean).join(" ").trim();
 }
 
+const OTHER_SCHOOL_TAG_REGEX = /<!--OTHER_SCHOOL:({[\s\S]*?})-->/;
+
+function serializeOtherSchoolData(data) {
+  if (!data) return "";
+  const payload = {
+    schoolName: data.schoolName || "",
+    schoolUdise: data.schoolUdise || "",
+    state: data.state || "",
+    district: data.district || "",
+    block: data.block || "",
+    headmaster: data.headmaster || "",
+    contactNo: data.contactNo || "",
+    status: data.status || "",
+    remark: data.remark || "",
+  };
+  return `<!--OTHER_SCHOOL:${JSON.stringify(payload)}-->`;
+}
+
+function parseOtherSchoolRemarks(remarksStr) {
+  if (!remarksStr || typeof remarksStr !== "string") return null;
+  const match = remarksStr.match(OTHER_SCHOOL_TAG_REGEX);
+  if (!match) return null;
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+function stripOtherSchoolTag(remarksStr) {
+  if (!remarksStr || typeof remarksStr !== "string") return "";
+  return remarksStr.replace(OTHER_SCHOOL_TAG_REGEX, "").trim();
+}
+
+function buildCombinedRemarks(baseRemarks, otherSchoolObj) {
+  const cleanBase = stripOtherSchoolTag(baseRemarks);
+  if (!otherSchoolObj) return cleanBase;
+  const tag = serializeOtherSchoolData(otherSchoolObj);
+  return cleanBase ? `${cleanBase} ${tag}` : tag;
+}
+
 function decorate(st) {
   if (!st) return null;
   const fatherNameOnly = st.fatherNameOnly || st.fatherName || "";
@@ -139,6 +181,21 @@ function decorate(st) {
   const effectiveDob = st.dob || (st.dobSlash && st.dobSlash !== "-" ? slashToIso(st.dobSlash) : "") || (st.dob_slash && st.dob_slash !== "-" ? slashToIso(st.dob_slash) : "");
   const dobP = dobParts(effectiveDob || st.dob || st.dobSlash || st.dob_slash);
 
+  const otherSchoolData = parseOtherSchoolRemarks(st.remarks);
+  const isPenOtherSchool = Boolean(
+    (st.pen && String(st.pen).trim().toLowerCase().includes("active in other school")) ||
+    otherSchoolData
+  );
+
+  let penStatus = "Pending";
+  if (isPenOtherSchool) {
+    penStatus = "Active in other school";
+  } else if (st.pen && String(st.pen).trim() && String(st.pen).trim() !== "Not Defined") {
+    penStatus = "Done";
+  } else if (st.pen && String(st.pen).trim() === "Not Defined") {
+    penStatus = "Not Defined";
+  }
+
   return {
     ...st,
     dob:                  effectiveDob || st.dob || "",
@@ -154,7 +211,8 @@ function decorate(st) {
     studentFatherSurname: `${st.firstName || ""} ${fatherNameOnly} ${st.surname || ""}`.trim(),
     fullAddress:          [st.plotNo, st.society, st.landmark, st.area, "Surat", "Gujarat", st.pinCode].filter(Boolean).join(", "),
     udiseStatus:          st.udise && String(st.udise).trim() ? "Done" : "Pending",
-    penStatus:            st.pen && String(st.pen).trim() && String(st.pen).trim() !== "Not Defined" ? "Done" : (st.pen && String(st.pen).trim() === "Not Defined" ? "Not Defined" : "Pending"),
+    penStatus,
+    otherSchoolData,
     grStatus,
     tcStatus,
     documentsPending,
@@ -273,6 +331,15 @@ function formatCellValue(col, value, row) {
     else if (col.key === "dob") v = dobSrc;
   }
   if (v === undefined || v === null || v === "") return "";
+  if (col.key === "remarks" && typeof v === "string") {
+    const os = parseOtherSchoolRemarks(v);
+    const clean = stripOtherSchoolTag(v);
+    if (os) {
+      const summary = `[Active: ${os.schoolName || "Other School"}${os.status ? ` - ${os.status}` : ""}]`;
+      return clean ? `${summary} ${clean}` : summary;
+    }
+    return clean || "-";
+  }
   return col.isDate ? fmtDate(v) : v;
 }
 
@@ -287,9 +354,10 @@ async function copyCellToClipboard(value) {
 
 function StatusPill({ status }) {
   const cls =
-    status === "Done"        ? "bg-green-100 text-green-700" :
-    status === "Not Defined" ? "bg-amber-100 text-amber-700" :
-                                "bg-red-100 text-red-700";
+    status === "Done"                   ? "bg-green-100 text-green-700" :
+    status === "Not Defined"            ? "bg-amber-100 text-amber-700" :
+    status === "Active in other school" ? "bg-purple-100 text-purple-700 border border-purple-200" :
+                                          "bg-red-100 text-red-700";
   return <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${cls}`}>{status}</span>;
 }
 
@@ -419,7 +487,7 @@ export default function GovernmentEntryPage() {
 
     const getPenEligibility = x => {
       if (!x) return { eligible: false, reason: "No student record" };
-      if (x.penStatus === "Done" || x.penStatus === "Not Defined") return { eligible: true, reason: "" };
+      if (x.penStatus === "Done" || x.penStatus === "Not Defined" || x.penStatus === "Active in other school") return { eligible: true, reason: "" };
       if (!inAnyBatch(x)) return { eligible: false, reason: "Not in any Entry Batch" };
       const missing = [];
       if (!String(x.birthCertRegNo || "").trim()) missing.push("Birth Cert Reg No");
@@ -542,7 +610,7 @@ export default function GovernmentEntryPage() {
     const statusKey = effectiveTab === "udise" ? "udiseStatus" : "penStatus";
     if (filters.status !== "All") d = d.filter(x => x[statusKey] === filters.status);
 
-    const rank = { Done: 0, "Not Defined": 1, Pending: 2 };
+    const rank = { Done: 0, "Not Defined": 1, "Active in other school": 2, Pending: 3 };
     return d.slice().sort((a, b) => {
       const diff = rank[a[statusKey]] - rank[b[statusKey]];
       if (diff !== 0) return diff;
@@ -552,6 +620,10 @@ export default function GovernmentEntryPage() {
 
   const pendingNotDefinedCount = useMemo(
     () => dbStudents.map(decorate).filter(x => x.penStatus === "Not Defined").length,
+    [dbStudents]
+  );
+  const activeOtherSchoolCount = useMemo(
+    () => dbStudents.map(decorate).filter(x => x.penStatus === "Active in other school").length,
     [dbStudents]
   );
 
@@ -762,13 +834,28 @@ export default function GovernmentEntryPage() {
     if (effectiveTab === "udise") {
       return modalRow.udiseStatus === "Done" || Boolean(modalRow.udise && String(modalRow.udise).trim() && String(modalRow.udise).trim() !== "-");
     }
-    return modalRow.penStatus === "Done" || modalRow.penStatus === "Not Defined" || Boolean(modalRow.pen && String(modalRow.pen).trim() && String(modalRow.pen).trim() !== "-");
+    return (
+      modalRow.penStatus === "Done" ||
+      modalRow.penStatus === "Not Defined" ||
+      modalRow.penStatus === "Active in other school" ||
+      Boolean(modalRow.pen && String(modalRow.pen).trim() && String(modalRow.pen).trim() !== "-")
+    );
   }, [modalRow, mainTab, effectiveTab]);
   const [formGrNo, setFormGrNo] = useState("");
   const [formDoeSlash, setFormDoeSlash] = useState("");
   const [formUdise, setFormUdise] = useState("");
   const [formPen, setFormPen] = useState("");
   const [formPenNotDefined, setFormPenNotDefined] = useState(false);
+  const [formActiveOtherSchool, setFormActiveOtherSchool] = useState(false);
+  const [formOtherSchoolName, setFormOtherSchoolName] = useState("");
+  const [formOtherSchoolUdise, setFormOtherSchoolUdise] = useState("");
+  const [formOtherSchoolState, setFormOtherSchoolState] = useState("");
+  const [formOtherSchoolDistrict, setFormOtherSchoolDistrict] = useState("");
+  const [formOtherSchoolBlock, setFormOtherSchoolBlock] = useState("");
+  const [formOtherSchoolHeadmaster, setFormOtherSchoolHeadmaster] = useState("");
+  const [formOtherSchoolContactNo, setFormOtherSchoolContactNo] = useState("");
+  const [formOtherSchoolStatus, setFormOtherSchoolStatus] = useState("");
+  const [formOtherSchoolRemark, setFormOtherSchoolRemark] = useState("");
   const [formApaar, setFormApaar] = useState("");
   const [formRemarks, setFormRemarks] = useState("");
   const [formError, setFormError] = useState("");
@@ -1458,6 +1545,163 @@ export default function GovernmentEntryPage() {
     );
   }
 
+  function renderActiveOtherSchoolFields() {
+    if (!formActiveOtherSchool) return null;
+    return (
+      <div className="bg-purple-50/70 border border-purple-200 rounded-xl p-3.5 space-y-3 mt-2 animate-fadeIn">
+        <div className="flex items-center justify-between border-b border-purple-200/70 pb-2">
+          <div className="flex items-center gap-1.5">
+            <School className="w-4 h-4 text-purple-700" />
+            <span className="text-xs font-bold text-purple-900 uppercase tracking-wide">
+              Active in Other School Details
+            </span>
+          </div>
+          <span className="text-[10px] font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full border border-purple-200">
+            Portal Information
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          {/* 1. SCHOOL NAME */}
+          <div className="flex flex-col gap-1 sm:col-span-2">
+            <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+              School Name
+            </label>
+            <input
+              type="text"
+              value={formOtherSchoolName}
+              onChange={e => { setFormOtherSchoolName(e.target.value); if (formError) setFormError(""); }}
+              placeholder="e.g. Shree Swaminarayan Gurukul"
+              className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+            />
+          </div>
+
+          {/* 2. SCHOOL UDISE */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+              School UDISE
+            </label>
+            <input
+              type="text"
+              value={formOtherSchoolUdise}
+              onChange={e => { setFormOtherSchoolUdise(e.target.value.replace(/[^\d]/g, "")); if (formError) setFormError(""); }}
+              maxLength={18}
+              placeholder="e.g. 24221504426"
+              className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+            />
+          </div>
+
+          {/* 3. STATE */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+              State
+            </label>
+            <input
+              type="text"
+              value={formOtherSchoolState}
+              onChange={e => setFormOtherSchoolState(e.target.value)}
+              placeholder="e.g. Gujarat"
+              className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+            />
+          </div>
+
+          {/* 4. DISTRICT */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+              District
+            </label>
+            <input
+              type="text"
+              value={formOtherSchoolDistrict}
+              onChange={e => setFormOtherSchoolDistrict(e.target.value)}
+              placeholder="e.g. Surat"
+              className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+            />
+          </div>
+
+          {/* 5. BLOCK */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+              Block
+            </label>
+            <input
+              type="text"
+              value={formOtherSchoolBlock}
+              onChange={e => setFormOtherSchoolBlock(e.target.value)}
+              placeholder="e.g. Choryasi"
+              className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+            />
+          </div>
+
+          {/* 6. HEADMASTER */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+              Headmaster
+            </label>
+            <input
+              type="text"
+              value={formOtherSchoolHeadmaster}
+              onChange={e => setFormOtherSchoolHeadmaster(e.target.value)}
+              placeholder="Principal / HM Name"
+              className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+            />
+          </div>
+
+          {/* 7. CONTACT NO */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+              Contact No
+            </label>
+            <input
+              type="text"
+              value={formOtherSchoolContactNo}
+              onChange={e => setFormOtherSchoolContactNo(e.target.value)}
+              placeholder="e.g. 9876543210"
+              className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+            />
+          </div>
+
+          {/* 8. STATUS */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+              Status
+            </label>
+            <input
+              type="text"
+              list="otherSchoolStatusOptions"
+              value={formOtherSchoolStatus}
+              onChange={e => setFormOtherSchoolStatus(e.target.value)}
+              placeholder="e.g. Active in School"
+              className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+            />
+            <datalist id="otherSchoolStatusOptions">
+              <option value="Active in School" />
+              <option value="Studying" />
+              <option value="TC Pending" />
+              <option value="TC Required" />
+              <option value="Admitted" />
+              <option value="Drop Out" />
+            </datalist>
+          </div>
+
+          {/* 9. REMARK */}
+          <div className="flex flex-col gap-1 sm:col-span-2">
+            <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+              Remark
+            </label>
+            <input
+              type="text"
+              value={formOtherSchoolRemark}
+              onChange={e => setFormOtherSchoolRemark(e.target.value)}
+              placeholder="Remark regarding other school record"
+              className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   function getSavedGrNo(st) {
     if (!st) return "";
     if (st.grNo && st.grNo !== "-") return String(st.grNo).trim();
@@ -1773,7 +2017,12 @@ export default function GovernmentEntryPage() {
     try {
       const dec = decorate(addSelectedStudent);
       const chosenDoe = normSlashDate(addDoeSlash) || getTodaySlash();
-      const finalRemarks = addRemarks.trim() || addSelectedStudent.remarks || dec.remarks || "-";
+      const cleanRemarks = stripOtherSchoolTag(addRemarks);
+      const otherSchoolData = parseOtherSchoolRemarks(addSelectedStudent?.remarks || dec.remarks) || addReview?.otherSchoolData;
+      const finalRemarks = otherSchoolData
+        ? buildCombinedRemarks(cleanRemarks, otherSchoolData)
+        : (cleanRemarks || addSelectedStudent.remarks || dec.remarks || "-");
+
       const created = await updateOnlineGrRow(addCreatedRowId, addSection, {
         doeSlash:         chosenDoe,
         udise:            addSelectedStudent.udise || "-",
@@ -1879,20 +2128,62 @@ export default function GovernmentEntryPage() {
     setFormGrNo(fullRow.grNo && fullRow.grNo !== "-" ? fullRow.grNo : "");
     setFormDoeSlash(fullRow.doeSlash && fullRow.doeSlash !== "-" ? fullRow.doeSlash : getTodaySlash());
     setFormUdise(fullRow.udise && fullRow.udise !== "-" ? fullRow.udise : "");
-    setFormPen(fullRow.pen && fullRow.pen !== "-" && fullRow.pen !== "Not Defined" ? fullRow.pen : "");
+    const isPenOtherSchool = fullRow.pen === "Active in other school" || fullRow.penStatus === "Active in other school";
+    setFormPen(
+      fullRow.pen && fullRow.pen !== "-" && fullRow.pen !== "Not Defined" && fullRow.pen !== "Active in other school"
+        ? fullRow.pen
+        : ""
+    );
     setFormPenNotDefined(fullRow.pen === "Not Defined");
     setFormApaar(fullRow.apaar && fullRow.apaar !== "-" ? fullRow.apaar : "");
-    setFormRemarks(
-      (fullRow.remarks && fullRow.remarks !== "-")
-        ? fullRow.remarks
-        : (addRemarks && addRemarks !== "-" ? addRemarks : "")
-    );
+
+    const rawRemarks = (fullRow.remarks && fullRow.remarks !== "-")
+      ? fullRow.remarks
+      : (addRemarks && addRemarks !== "-" ? addRemarks : "");
+    const otherSchoolData = parseOtherSchoolRemarks(rawRemarks) || fullRow.otherSchoolData;
+
+    if (otherSchoolData || isPenOtherSchool) {
+      setFormActiveOtherSchool(true);
+      setFormPenNotDefined(false);
+      setFormOtherSchoolName(otherSchoolData?.schoolName || "");
+      setFormOtherSchoolUdise(otherSchoolData?.schoolUdise || "");
+      setFormOtherSchoolState(otherSchoolData?.state || "");
+      setFormOtherSchoolDistrict(otherSchoolData?.district || "");
+      setFormOtherSchoolBlock(otherSchoolData?.block || "");
+      setFormOtherSchoolHeadmaster(otherSchoolData?.headmaster || "");
+      setFormOtherSchoolContactNo(otherSchoolData?.contactNo || "");
+      setFormOtherSchoolStatus(otherSchoolData?.status || "Active in School");
+      setFormOtherSchoolRemark(otherSchoolData?.remark || "");
+    } else {
+      setFormActiveOtherSchool(false);
+      setFormOtherSchoolName("");
+      setFormOtherSchoolUdise("");
+      setFormOtherSchoolState("");
+      setFormOtherSchoolDistrict("");
+      setFormOtherSchoolBlock("");
+      setFormOtherSchoolHeadmaster("");
+      setFormOtherSchoolContactNo("");
+      setFormOtherSchoolStatus("");
+      setFormOtherSchoolRemark("");
+    }
+
+    setFormRemarks(stripOtherSchoolTag(rawRemarks));
     setFormError("");
   }
 
   function closeModal() {
     if (saving) return;
     setModalRow(null);
+    setFormActiveOtherSchool(false);
+    setFormOtherSchoolName("");
+    setFormOtherSchoolUdise("");
+    setFormOtherSchoolState("");
+    setFormOtherSchoolDistrict("");
+    setFormOtherSchoolBlock("");
+    setFormOtherSchoolHeadmaster("");
+    setFormOtherSchoolContactNo("");
+    setFormOtherSchoolStatus("");
+    setFormOtherSchoolRemark("");
     // Cancelling mid Add-New-Student wizard just ends the wizard here —
     // whatever was already saved (the GR row, and UDISE if this was the PEN
     // step) stays saved; only the remaining hand-off stops.
@@ -1908,6 +2199,34 @@ export default function GovernmentEntryPage() {
       return;
     }
 
+    if (formActiveOtherSchool && !formOtherSchoolName.trim() && !formOtherSchoolUdise.trim()) {
+      setFormError("Please enter the School Name or School UDISE for Active in other school.");
+      return;
+    }
+
+    const otherSchoolObj = formActiveOtherSchool ? {
+      schoolName: formOtherSchoolName.trim(),
+      schoolUdise: formOtherSchoolUdise.trim(),
+      state: formOtherSchoolState.trim(),
+      district: formOtherSchoolDistrict.trim(),
+      block: formOtherSchoolBlock.trim(),
+      headmaster: formOtherSchoolHeadmaster.trim(),
+      contactNo: formOtherSchoolContactNo.trim(),
+      status: formOtherSchoolStatus.trim() || "Active in School",
+      remark: formOtherSchoolRemark.trim(),
+    } : null;
+
+    const combinedRemarks = buildCombinedRemarks(formRemarks, otherSchoolObj);
+
+    let penValue = "-";
+    if (formActiveOtherSchool) {
+      penValue = formPen.trim() || "Active in other school";
+    } else if (formPenNotDefined) {
+      penValue = "Not Defined";
+    } else {
+      penValue = formPen.trim() || "-";
+    }
+
     // 1. Online General Register — update SEPARATE record, do NOT insert into students table!
     if (mainTab === "onlineGr") {
       const regLabel = grSubTab === "primary" ? "PR No" : "GR No";
@@ -1921,9 +2240,9 @@ export default function GovernmentEntryPage() {
           grNo: formGrNo.trim(),
           doeSlash: normSlashDate(formDoeSlash) || getTodaySlash(),
           udise: formUdise.trim() || "-",
-          pen: formPenNotDefined ? "Not Defined" : (formPen.trim() || "-"),
+          pen: penValue,
           apaar: formApaar.trim() || "-",
-          remarks: formRemarks.trim() || "-",
+          remarks: combinedRemarks || "-",
         });
         setOnlineGrDataset(prev => ({
           ...prev,
@@ -1955,11 +2274,11 @@ export default function GovernmentEntryPage() {
           grNo: formGrNo.trim(),
           udise: digits,
           apaar: formApaar.trim() || null,
-          remarks: formRemarks.trim() || null,
+          remarks: combinedRemarks || null,
           enrollmentId: modalRow.enrollmentId,
         });
 
-        const chosenRemarks = formRemarks.trim() || modalRow.remarks || "";
+        const chosenRemarks = combinedRemarks || modalRow.remarks || "";
 
         if (addWizardActive && addCreatedRowId && addSection) {
           try {
@@ -1977,7 +2296,7 @@ export default function GovernmentEntryPage() {
             try {
               await updateOnlineGrRow(existingRow.id, sec, {
                 udise: digits,
-                ...(formRemarks.trim() ? { remarks: formRemarks.trim() } : {}),
+                ...(combinedRemarks ? { remarks: combinedRemarks } : {}),
               });
             } catch (e) {
               console.warn("Could not sync UDISE to online register row:", e);
@@ -2004,6 +2323,7 @@ export default function GovernmentEntryPage() {
             cls: nextRow.cls,
             session: nextRow.session,
             remarks: chosenRemarks,
+            otherSchool: otherSchoolObj,
             timestamp: Date.now(),
           });
           setAddSelectedStudent(nextRow);
@@ -2029,22 +2349,21 @@ export default function GovernmentEntryPage() {
       setFormError("GR No is required.");
       return;
     }
-    if (!formPenNotDefined && !formPen.trim()) {
-      setFormError("Enter the PEN No, or mark it as not generated yet.");
+    if (!formActiveOtherSchool && !formPenNotDefined && !formPen.trim()) {
+      setFormError("Enter the PEN No, mark it as not generated yet, or select Active in other school.");
       return;
     }
     setSaving(true);
     try {
-      const penValue = formPenNotDefined ? "Not Defined" : formPen.trim();
       await updateStudentGovId(modalRow.studentId, {
         grNo: formGrNo.trim(),
         pen: penValue,
         apaar: formApaar.trim() || null,
-        remarks: formRemarks.trim() || null,
+        remarks: combinedRemarks || null,
         enrollmentId: modalRow.enrollmentId,
       });
 
-      const chosenRemarks = formRemarks.trim() || modalRow.remarks || "";
+      const chosenRemarks = combinedRemarks || modalRow.remarks || "";
 
       if (addWizardActive && addCreatedRowId && addSection) {
         try {
@@ -2062,7 +2381,7 @@ export default function GovernmentEntryPage() {
           try {
             await updateOnlineGrRow(existingRow.id, sec, {
               pen: penValue,
-              ...(formRemarks.trim() ? { remarks: formRemarks.trim() } : {}),
+              ...(combinedRemarks ? { remarks: combinedRemarks } : {}),
             });
           } catch (e) {
             console.warn("Could not sync PEN to online register row:", e);
@@ -2088,6 +2407,7 @@ export default function GovernmentEntryPage() {
           cls: addSelectedStudent.cls,
           session: addSelectedStudent.session,
           remarks: nextRemarks,
+          otherSchool: otherSchoolObj,
           timestamp: Date.now(),
         });
         setAddSelectedStudent(prev => prev ? { ...prev, pen: penValue, remarks: nextRemarks } : prev);
@@ -2446,7 +2766,7 @@ export default function GovernmentEntryPage() {
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Status</label>
                   <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
                     value={filters.status} onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}>
-                    {(effectiveTab === "pen" ? ["All", "Done", "Not Defined", "Pending"] : ["All", "Done", "Pending"]).map(o => <option key={o}>{o}</option>)}
+                    {(effectiveTab === "pen" ? ["All", "Done", "Not Defined", "Active in other school", "Pending"] : ["All", "Done", "Pending"]).map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
               </div>
@@ -2698,8 +3018,8 @@ export default function GovernmentEntryPage() {
       {/* Entry Done modal */}
       {modalRow && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className={`bg-white rounded-2xl shadow-2xl w-full transition-all duration-200 ${formActiveOtherSchool ? "max-w-xl" : "max-w-md"} max-h-[92vh] flex flex-col`}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
               <div>
                 <h3 className="text-base font-bold text-gray-800">
                   {modalIsDone ? (
@@ -2719,7 +3039,7 @@ export default function GovernmentEntryPage() {
               </button>
             </div>
 
-            <div className="px-5 py-4 space-y-3">
+            <div className="px-5 py-4 space-y-3 overflow-y-auto flex-1 min-h-0">
               {addWizardActive && addSubPhase === "entry" && (addStep === 2 || addStep === 3) ? (
                 <div className="flex items-center gap-1.5 text-[11px] font-semibold text-school-navy bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-1.5">
                   <UserPlus className="w-3.5 h-3.5 flex-shrink-0"/>
@@ -2799,13 +3119,35 @@ export default function GovernmentEntryPage() {
                     <input type="text" value={formPen} disabled={formPenNotDefined}
                       onChange={e => setFormPen(e.target.value)}
                       className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy disabled:bg-gray-100 disabled:text-gray-400"
-                      placeholder="Permanent Education Number"/>
-                    <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer mt-1">
-                      <input type="checkbox" checked={formPenNotDefined}
-                        onChange={e => { setFormPenNotDefined(e.target.checked); if (e.target.checked) setFormPen(""); }}
-                        className="w-3.5 h-3.5 accent-school-navy"/>
-                      PEN not generated yet by portal (mark "Not Defined")
-                    </label>
+                      placeholder={formActiveOtherSchool ? "e.g. 20400713830 (optional if known)" : "Permanent Education Number"}/>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-1 pt-1 border-t border-gray-100">
+                      <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+                        <input type="checkbox" checked={formPenNotDefined}
+                          onChange={e => {
+                            const checked = e.target.checked;
+                            setFormPenNotDefined(checked);
+                            if (checked) {
+                              setFormActiveOtherSchool(false);
+                              setFormPen("");
+                            }
+                          }}
+                          className="w-3.5 h-3.5 accent-school-navy"/>
+                        PEN not generated yet by portal (mark &quot;Not Defined&quot;)
+                      </label>
+                      <label className="flex items-center gap-2 text-xs font-semibold text-purple-700 cursor-pointer select-none">
+                        <input type="checkbox" checked={formActiveOtherSchool}
+                          onChange={e => {
+                            const checked = e.target.checked;
+                            setFormActiveOtherSchool(checked);
+                            if (checked) {
+                              setFormPenNotDefined(false);
+                            }
+                          }}
+                          className="w-3.5 h-3.5 accent-purple-600"/>
+                        Active in other school
+                      </label>
+                    </div>
+                    {renderActiveOtherSchoolFields()}
                   </div>
 
                   <div className="flex flex-col gap-1">
@@ -2891,14 +3233,36 @@ export default function GovernmentEntryPage() {
                     <input type="text" value={formPen} disabled={formPenNotDefined}
                       onChange={e => setFormPen(e.target.value)}
                       className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy disabled:bg-gray-100 disabled:text-gray-400"
-                      placeholder="e.g. 20400713830"/>
+                      placeholder={formActiveOtherSchool ? "e.g. 20400713830 (optional if known)" : "e.g. 20400713830"}/>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-1 pt-1 border-t border-gray-100">
+                      <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+                        <input type="checkbox" checked={formPenNotDefined}
+                          onChange={e => {
+                            const checked = e.target.checked;
+                            setFormPenNotDefined(checked);
+                            if (checked) {
+                              setFormActiveOtherSchool(false);
+                              setFormPen("");
+                            }
+                          }}
+                          className="w-3.5 h-3.5 accent-school-navy"/>
+                        PEN not generated yet by the portal - mark as &quot;Not Defined&quot; for now
+                      </label>
+                      <label className="flex items-center gap-2 text-xs font-semibold text-purple-700 cursor-pointer select-none">
+                        <input type="checkbox" checked={formActiveOtherSchool}
+                          onChange={e => {
+                            const checked = e.target.checked;
+                            setFormActiveOtherSchool(checked);
+                            if (checked) {
+                              setFormPenNotDefined(false);
+                            }
+                          }}
+                          className="w-3.5 h-3.5 accent-purple-600"/>
+                        Active in other school
+                      </label>
+                    </div>
+                    {renderActiveOtherSchoolFields()}
                   </div>
-                  <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
-                    <input type="checkbox" checked={formPenNotDefined}
-                      onChange={e => { setFormPenNotDefined(e.target.checked); if (e.target.checked) setFormPen(""); }}
-                      className="w-3.5 h-3.5 accent-school-navy"/>
-                    PEN not generated yet by the portal - mark as &quot;Not Defined&quot; for now
-                  </label>
 
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">APAAR ID (Optional)</label>
@@ -3362,12 +3726,36 @@ export default function GovernmentEntryPage() {
                     <div><span className="text-gray-400">DOCUMENTS PENDING</span><div className="font-semibold text-gray-700 truncate">{addReview?.documentsPending || "-"}</div></div>
                   </div>
 
+                  {(() => {
+                    const os = parseOtherSchoolRemarks(addRemarks) || parseOtherSchoolRemarks(addSelectedStudent?.remarks) || addReview?.otherSchoolData;
+                    if (!os) return null;
+                    return (
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3 text-xs space-y-1">
+                        <div className="flex items-center gap-1.5 font-bold text-purple-900">
+                          <School className="w-3.5 h-3.5 text-purple-700 flex-shrink-0" />
+                          <span>Active in Other School</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-gray-700 mt-1">
+                          <div><span className="text-gray-400">School: </span><span className="font-medium">{os.schoolName || "-"}</span></div>
+                          <div><span className="text-gray-400">UDISE: </span><span className="font-mono font-medium">{os.schoolUdise || "-"}</span></div>
+                          <div><span className="text-gray-400">Location: </span><span>{[os.block, os.district, os.state].filter(Boolean).join(", ") || "-"}</span></div>
+                          <div><span className="text-gray-400">HM / Contact: </span><span>{[os.headmaster, os.contactNo].filter(Boolean).join(" - ") || "-"}</span></div>
+                          <div><span className="text-gray-400">Status: </span><span className="font-semibold text-purple-800">{os.status || "Active in School"}</span></div>
+                          {os.remark && <div className="col-span-2"><span className="text-gray-400">Other School Remark: </span><span>{os.remark}</span></div>}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Remark</label>
                     <input
                       type="text"
-                      value={addRemarks}
-                      onChange={e => setAddRemarks(e.target.value)}
+                      value={stripOtherSchoolTag(addRemarks)}
+                      onChange={e => {
+                        const os = parseOtherSchoolRemarks(addRemarks) || parseOtherSchoolRemarks(addSelectedStudent?.remarks) || addReview?.otherSchoolData;
+                        setAddRemarks(buildCombinedRemarks(e.target.value, os));
+                      }}
                       placeholder="Optional remarks"
                       className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-school-navy"
                     />
