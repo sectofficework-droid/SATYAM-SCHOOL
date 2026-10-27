@@ -254,6 +254,14 @@ function decorate(st) {
     udiseStatus,
     penStatus,
     otherSchoolData,
+    otherSchoolName:      otherSchoolData?.schoolName || "-",
+    otherSchoolUdise:     otherSchoolData?.schoolUdise || "-",
+    otherSchoolLocation:  [otherSchoolData?.district, otherSchoolData?.block].filter(Boolean).join(" - ") || otherSchoolData?.state || "-",
+    otherSchoolHm:        otherSchoolData?.headmaster || "-",
+    otherSchoolContact:   otherSchoolData?.contactNo || "-",
+    otherSchoolStatus:    otherSchoolData?.status || (isUdiseOtherSchool || isPenOtherSchool ? "Active in School" : "-"),
+    importPortal:         (isUdiseOtherSchool && isPenOtherSchool) ? "UDISE & PEN" : (isUdiseOtherSchool ? "UDISE (State)" : (isPenOtherSchool ? "PEN (National)" : (otherSchoolData?.portal || "-"))),
+    otherSchoolRemark:    otherSchoolData?.remark || "-",
     grStatus,
     tcStatus,
     documentsPending,
@@ -362,6 +370,24 @@ function getLastSavedGrInfo(section, dataset, dbStudents = []) {
 
   return null;
 }
+
+// Columns for Import tab (tracking students active in another school)
+const IMPORT_COLUMNS = [
+  { key: "cls",                 label: "STD" },
+  { key: "grNo",                label: "GR / PR" },
+  { key: "name",                label: "STUDENT NAME" },
+  { key: "mobile1",             label: "STUDENT MOBILE" },
+  { key: "udise",               label: "UID (UDISE)" },
+  { key: "pen",                 label: "PEN NO" },
+  { key: "otherSchoolName",     label: "PREVIOUS SCHOOL" },
+  { key: "otherSchoolUdise",    label: "SCHOOL UDISE" },
+  { key: "otherSchoolLocation", label: "DISTRICT / BLOCK" },
+  { key: "otherSchoolHm",       label: "PRINCIPAL / HM" },
+  { key: "otherSchoolContact",  label: "HM CONTACT" },
+  { key: "otherSchoolStatus",   label: "STATUS IN SCHOOL" },
+  { key: "importPortal",        label: "PORTAL" },
+  { key: "otherSchoolRemark",   label: "REMARK" },
+];
 
 // 16 columns matching official D:\Project\SSIS SCHOOL\ONLINE GENERAL REGISTER.xlsx exactly:
 // Sheet 1: PRIMARY (JR,SR,BALVATIKA) with PR column
@@ -506,11 +532,11 @@ function StatusPill({ status }) {
 
 export default function GovernmentEntryPage() {
   const router = useRouter();
-  const [mainTab, setMainTab] = useState("onlineGr"); // "onlineGr" | "udise" | "pen" | "mismatch"
+  const [mainTab, setMainTab] = useState("onlineGr"); // "onlineGr" | "udise" | "pen" | "import" | "mismatch"
   const [grSubTab, setGrSubTab] = useState("primary"); // "primary" | "general"
   const [onlineGrSort, setOnlineGrSort] = useState({ key: null, dir: "asc" }); // Excel-like click-to-sort, Online GR only
   const [mismatchDir, setMismatchDir] = useState("udiseOnly"); // "udiseOnly" | "penOnly"
-  const effectiveTab = mainTab === "onlineGr" ? "onlineGr" : (mainTab === "mismatch" ? (mismatchDir === "udiseOnly" ? "udise" : "pen") : mainTab);
+  const effectiveTab = mainTab === "onlineGr" ? "onlineGr" : mainTab === "import" ? "import" : (mainTab === "mismatch" ? (mismatchDir === "udiseOnly" ? "udise" : "pen") : mainTab);
 
   // Online GR separate dataset (seeded from ONLINE GENERAL REGISTER.xlsx, saved separately)
   const [onlineGrDataset, setOnlineGrDataset] = useState({ primary: [], general: [] });
@@ -659,6 +685,9 @@ export default function GovernmentEntryPage() {
     if (mainTab === "onlineGr") {
       return grSubTab === "primary" ? ONLINE_GR_PRIMARY_COLUMNS : ONLINE_GR_GENERAL_COLUMNS;
     }
+    if (mainTab === "import") {
+      return IMPORT_COLUMNS;
+    }
     return effectiveTab === "udise" ? UDISE_ENTRY_COLUMNS : PEN_ENTRY_COLUMNS;
   }, [mainTab, grSubTab, effectiveTab]);
 
@@ -706,6 +735,49 @@ export default function GovernmentEntryPage() {
         if (diff !== 0) return diff;
         return String(a.grNo || "").localeCompare(String(b.grNo || ""), undefined, { numeric: true });
       });
+    }
+
+    // ── Import tab (students active in other school / previous school tracking) ──
+    if (mainTab === "import") {
+      const dbImports = dbStudents.map(decorate).filter(x =>
+        x.udiseStatus === "Active in other school" ||
+        x.penStatus === "Active in other school" ||
+        Boolean(x.otherSchoolData) ||
+        String(x.udise || "").toLowerCase().includes("active in other school") ||
+        String(x.pen || "").toLowerCase().includes("active in other school")
+      );
+
+      const grImports = [...(onlineGrDataset.primary || []), ...(onlineGrDataset.general || [])]
+        .filter(r => {
+          const os = parseOtherSchoolRemarks(r.remarks);
+          const isOther = Boolean(os) ||
+            String(r.udise || "").toLowerCase().includes("active in other school") ||
+            String(r.pen || "").toLowerCase().includes("active in other school");
+          return isOther && !dbImports.some(d => (r.enrollNo && d.enrollNo === r.enrollNo) || (r.grNo && d.grNo === r.grNo));
+        })
+        .map(r => decorate(r));
+
+      let list = [...dbImports, ...grImports];
+
+      if (filters.cls !== "All") list = list.filter(x => x.cls === filters.cls);
+      if (filters.session !== "All") list = list.filter(x => x.session === filters.session);
+
+      const q = search.trim().toLowerCase();
+      if (q) {
+        list = list.filter(x =>
+          String(x.name || "").toLowerCase().includes(q) ||
+          String(x.grNo || "").toLowerCase().includes(q) ||
+          String(x.mobile1 || "").toLowerCase().includes(q) ||
+          String(x.udise || "").toLowerCase().includes(q) ||
+          String(x.pen || "").toLowerCase().includes(q) ||
+          String(x.otherSchoolName || "").toLowerCase().includes(q) ||
+          String(x.otherSchoolHm || "").toLowerCase().includes(q) ||
+          String(x.otherSchoolContact || "").toLowerCase().includes(q) ||
+          String(x.otherSchoolLocation || "").toLowerCase().includes(q)
+        );
+      }
+
+      return list;
     }
 
     // ── Database Students (UDISE / PEN / Mismatch portal filings) ────────────
@@ -765,6 +837,25 @@ export default function GovernmentEntryPage() {
     () => dbStudents.map(decorate).filter(x => x.penStatus === "Not Defined").length,
     [dbStudents]
   );
+  const importCount = useMemo(() => {
+    const dbCount = dbStudents.map(decorate).filter(x =>
+      x.udiseStatus === "Active in other school" ||
+      x.penStatus === "Active in other school" ||
+      Boolean(x.otherSchoolData) ||
+      String(x.udise || "").toLowerCase().includes("active in other school") ||
+      String(x.pen || "").toLowerCase().includes("active in other school")
+    ).length;
+
+    const grCount = [...(onlineGrDataset.primary || []), ...(onlineGrDataset.general || [])].filter(r => {
+      const os = parseOtherSchoolRemarks(r.remarks);
+      return Boolean(os) ||
+        String(r.udise || "").toLowerCase().includes("active in other school") ||
+        String(r.pen || "").toLowerCase().includes("active in other school");
+    }).length;
+
+    return dbCount + grCount;
+  }, [dbStudents, onlineGrDataset]);
+
   const activeOtherSchoolCount = useMemo(
     () => dbStudents.map(decorate).filter(x => x.penStatus === "Active in other school" || x.udiseStatus === "Active in other school").length,
     [dbStudents]
@@ -886,7 +977,7 @@ export default function GovernmentEntryPage() {
   // For onlineGr: Action(0), #(1), Status(2), AY(3), TC(4), STD(5), PR/GR(6), NAME(7) -> 8 columns
   // For UDISE: Action, #, Status, Class -> 4 columns
   // For PEN: Action, #, Status, Class, Student Father Surname -> 5 columns
-  const frozenCount = mainTab === "onlineGr" ? 8 : (effectiveTab === "udise" ? 4 : 5);
+  const frozenCount = mainTab === "onlineGr" ? 8 : (mainTab === "import" ? 5 : (effectiveTab === "udise" ? 4 : 5));
   const frozenHeaderRefs = useRef([]);
   const [stickyLeft, setStickyLeft] = useState([0, 0, 0, 0, 0, 0, 0, 0]);
 
@@ -2738,6 +2829,21 @@ export default function GovernmentEntryPage() {
   function exportExcel() {
     const today = new Date().toISOString().slice(0, 10);
 
+    if (mainTab === "import") {
+      const aoa = [
+        IMPORT_COLUMNS.map(c => c.label),
+        ...rows.map(r => IMPORT_COLUMNS.map(c => {
+          const val = r[c.key];
+          return val !== undefined && val !== null && val !== "" ? val : "-";
+        }))
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Import_Students");
+      XLSX.writeFile(wb, `Import_Students_${today}.xlsx`);
+      return;
+    }
+
     if (mainTab === "onlineGr") {
       const primaryList = (onlineGrDataset.primary || []).slice()
         .sort((a, b) => String(a.grNo || "").localeCompare(String(b.grNo || ""), undefined, { numeric: true }));
@@ -2854,6 +2960,15 @@ export default function GovernmentEntryPage() {
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "pen" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
               <IdCard className="w-3.5 h-3.5"/> PEN Entry (National)
             </button>
+            <button onClick={() => setMainTab("import")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "import" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              <School className="w-3.5 h-3.5"/> Import
+              {importCount > 0 && (
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${mainTab === "import" ? "bg-purple-500 text-white" : "bg-purple-100 text-purple-700 border border-purple-200"}`}>
+                  {importCount}
+                </span>
+              )}
+            </button>
             <button onClick={() => setMainTab("mismatch")}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "mismatch" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
               <AlertTriangle className="w-3.5 h-3.5"/> Mismatch
@@ -2874,7 +2989,7 @@ export default function GovernmentEntryPage() {
                 </button>
               </div>
             </>
-          ) : mainTab !== "onlineGr" ? (
+          ) : mainTab !== "onlineGr" && mainTab !== "import" ? (
             <>
               <span className="hidden sm:block w-px h-6 bg-gray-200"/>
               <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
@@ -3022,6 +3137,39 @@ export default function GovernmentEntryPage() {
         </div>
       )}
 
+      {/* Import tab top summary banner */}
+      {mainTab === "import" && (
+        <div className="bg-gradient-to-r from-purple-50 via-indigo-50/40 to-purple-50 border border-purple-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+              <School className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-xs font-bold text-purple-950 uppercase tracking-wide">
+                  Student Import &amp; Previous School Tracking
+                </h4>
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-200 text-purple-800 border border-purple-300">
+                  {rows.length} {rows.length === 1 ? "student" : "students"} listed
+                </span>
+              </div>
+              <p className="text-[11px] text-purple-800 mt-0.5">
+                Students actively enrolled in other schools on UDISE (ssgujarat.org) or National PEN portal. Use principal contact details below for tracking and TC release.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={exportExcel}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border border-purple-300 text-purple-800 hover:bg-purple-100 transition-colors shadow-2xs"
+            >
+              <Download className="w-3.5 h-3.5 text-purple-700" /> Export Import List
+            </button>
+          </div>
+        </div>
+      )}
+
       {addWizardActive && addSubPhase === "details" && (mainTab === "udise" || mainTab === "pen") ? (
         /* Add New Student wizard — full details page for this one student, not a table row */
         <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-5">
@@ -3084,7 +3232,7 @@ export default function GovernmentEntryPage() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Batch</label>
-                  <select disabled={mainTab === "onlineGr" || mainTab === "mismatch" || (mainTab !== "onlineGr" && eligTab === "ineligible")}
+                  <select disabled={mainTab === "onlineGr" || mainTab === "import" || mainTab === "mismatch" || (mainTab !== "onlineGr" && eligTab === "ineligible")}
                     className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24 disabled:opacity-50 disabled:cursor-not-allowed"
                     value={filters.batch} onChange={e => setFilters(prev => ({ ...prev, batch: e.target.value }))}>
                     {["All", ...batchOptions].map(o => <option key={o}>{o}</option>)}
@@ -3092,7 +3240,7 @@ export default function GovernmentEntryPage() {
                 </div>
                 <div className="flex items-center gap-1.5">
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Status</label>
-                  <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-44"
+                  <select disabled={mainTab === "import"} className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-44 disabled:opacity-50 disabled:cursor-not-allowed"
                     value={filters.status} onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}>
                     {STATUS_FILTER_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
                   </select>
@@ -3194,7 +3342,15 @@ export default function GovernmentEntryPage() {
 
                           return (
                             <div className="inline-flex items-center gap-1">
-                              {isDone ? (
+                              {mainTab === "import" ? (
+                                <button
+                                  onClick={() => openEntryModal(row)}
+                                  title="Edit details or update tracking status"
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-purple-50 text-purple-800 border border-purple-300 hover:bg-purple-700 hover:text-white transition-colors shadow-xs"
+                                >
+                                  <Pencil className="w-3 h-3"/> Update
+                                </button>
+                              ) : isDone ? (
                                 <button
                                   onClick={() => isElig && openEntryModal(row)}
                                   disabled={!isElig}
@@ -3273,7 +3429,18 @@ export default function GovernmentEntryPage() {
                             onFocus={() => copyCellToClipboard(rawValue)}
                             style={isFrozen ? { position: "sticky", left: stickyLeft[frozenIdx], zIndex: 10 } : undefined}
                             className={`${isFrozen ? rowBgSolid : ""} px-3 py-2 text-gray-700 whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-school-navy focus:bg-blue-50`}>
-                            {rawValue !== "" && rawValue !== "-" ? String(rawValue) : <span className="text-gray-300">-</span>}
+                            {c.key === "otherSchoolContact" && rawValue && rawValue !== "-" ? (
+                              <span className="inline-flex items-center gap-1.5 font-mono">
+                                <span>{String(rawValue)}</span>
+                                <a href={`tel:${rawValue}`} title={`Call ${rawValue}`} onClick={e => e.stopPropagation()} className="text-purple-600 hover:text-purple-900 font-sans text-xs">
+                                  📞
+                                </a>
+                              </span>
+                            ) : rawValue !== "" && rawValue !== "-" ? (
+                              String(rawValue)
+                            ) : (
+                              <span className="text-gray-300">-</span>
+                            )}
                           </td>
                         );
                       })}
