@@ -6,7 +6,7 @@ import {
   Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X,
   Loader2, HelpCircle, Search, Maximize2, Minimize2, Download, BookOpen,
   ChevronUp, ChevronDown, Trash2, UserPlus, Upload, FileText, Calendar, Pencil,
-  School, Clock, RotateCcw
+  School, Clock, RotateCcw, ArrowLeft
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import supabase from "@/lib/supabase";
@@ -1941,6 +1941,108 @@ export default function GovernmentEntryPage() {
     setAddPinnedEnrollNo(null);
   }
 
+  // Navigate back to Step 1 (Select Student & Reg No) from Step 2 (UDISE) or anytime
+  function goBackToAddStep1() {
+    setAddStep(1);
+    setAddSubPhase("details");
+    setMainTab("onlineGr");
+    const sec = addSection || (addSelectedStudent ? classSection(addSelectedStudent.cls) : grSubTab) || "general";
+    if (sec) {
+      setGrSubTab(sec);
+      setAddSection(sec);
+    }
+    setAddPinnedEnrollNo(null);
+    setAddModalOpen(true);
+    setAddGrEditing(false);
+    setAddDoeEditing(false);
+    setAddError("");
+    if (addSelectedStudent) {
+      saveProgressToStorage({
+        enrollNo: addSelectedStudent.enrollNo,
+        studentId: addSelectedStudent.studentId || addSelectedStudent.id,
+        grNo: addGrNo ? addGrNo.trim() : "",
+        doeSlash: addDoeSlash,
+        remarks: addRemarks,
+        step: 1,
+        subPhase: "details",
+        createdRowId: addCreatedRowId,
+        section: sec,
+        studentName: addSelectedStudent.name,
+        cls: addSelectedStudent.cls,
+        session: addSelectedStudent.session || "",
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  // Navigate back to Step 2 (UDISE Entry) from Step 3 (PEN Entry)
+  function goBackToAddStep2() {
+    setAddStep(2);
+    setAddSubPhase("details");
+    setMainTab("udise");
+    setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
+    if (addSelectedStudent) {
+      setEligTab(eligibilityFns.udiseEligible(addSelectedStudent) ? "eligible" : "ineligible");
+      setAddPinnedEnrollNo(addSelectedStudent.enrollNo);
+    }
+    setSearch("");
+    setAddModalOpen(false);
+    setAddWizardActive(true);
+    const sec = addSection || (addSelectedStudent ? classSection(addSelectedStudent.cls) : grSubTab) || "general";
+    if (sec) setAddSection(sec);
+    if (addSelectedStudent) {
+      saveProgressToStorage({
+        enrollNo: addSelectedStudent.enrollNo,
+        studentId: addSelectedStudent.studentId || addSelectedStudent.id,
+        grNo: addGrNo ? addGrNo.trim() : "",
+        doeSlash: addDoeSlash,
+        remarks: addRemarks,
+        step: 2,
+        subPhase: "details",
+        createdRowId: addCreatedRowId,
+        section: sec,
+        studentName: addSelectedStudent.name,
+        cls: addSelectedStudent.cls,
+        session: addSelectedStudent.session || "",
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  // Navigate back to Step 3 (PEN Entry) from Step 4 (Final Confirmation)
+  function goBackToAddStep3() {
+    setAddStep(3);
+    setAddSubPhase("details");
+    setMainTab("pen");
+    setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
+    if (addSelectedStudent) {
+      setEligTab(eligibilityFns.penEligible(addSelectedStudent) ? "eligible" : "ineligible");
+      setAddPinnedEnrollNo(addSelectedStudent.enrollNo);
+    }
+    setSearch("");
+    setAddModalOpen(false);
+    setAddWizardActive(true);
+    const sec = addSection || (addSelectedStudent ? classSection(addSelectedStudent.cls) : grSubTab) || "general";
+    if (sec) setAddSection(sec);
+    if (addSelectedStudent) {
+      saveProgressToStorage({
+        enrollNo: addSelectedStudent.enrollNo,
+        studentId: addSelectedStudent.studentId || addSelectedStudent.id,
+        grNo: addGrNo ? addGrNo.trim() : "",
+        doeSlash: addDoeSlash,
+        remarks: addRemarks,
+        step: 3,
+        subPhase: "details",
+        createdRowId: addCreatedRowId,
+        section: sec,
+        studentName: addSelectedStudent.name,
+        cls: addSelectedStudent.cls,
+        session: addSelectedStudent.session || "",
+        timestamp: Date.now(),
+      });
+    }
+  }
+
   // Stage 2/3, phase "details" → "entry": the admin has copied what they need
   // from the (now filtered-to-just-this-student) table, open the real tab's
   // own Entry Done modal to type in the number.
@@ -2836,7 +2938,6 @@ export default function GovernmentEntryPage() {
   }
 
   function changeAddStudent() {
-    if (addWizardActive) return; // already proceeded past stage 1 in wizard — can't swap
     setAddSelectedStudent(null);
     setAddCreatedRowId(null);
     setAddGrNo("");
@@ -2845,6 +2946,8 @@ export default function GovernmentEntryPage() {
     setAddDoeEditing(false);
     setAddRemarks("");
     setAddError("");
+    setAddWizardActive(false);
+    clearProgressFromStorage();
   }
 
   // Stage 1 — create/update the Online GR row right away, then hand off to
@@ -3362,10 +3465,10 @@ export default function GovernmentEntryPage() {
     setFormOtherSchoolContactNo("");
     setFormOtherSchoolStatus("");
     setFormOtherSchoolRemark("");
-    // Cancelling mid Add-New-Student wizard just ends the wizard here —
-    // whatever was already saved (the GR row, and UDISE if this was the PEN
-    // step) stays saved; only the remaining hand-off stops.
-    if (addWizardActive) { setAddWizardActive(false); setAddPinnedEnrollNo(null); }
+    // If inside the Add-New-Student wizard entry modal, closing returns to details review phase
+    if (addWizardActive && addSubPhase === "entry") {
+      setAddSubPhase("details");
+    }
   }
 
   async function handleSave() {
@@ -4081,18 +4184,27 @@ export default function GovernmentEntryPage() {
                 </span>
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={isUdiseStep ? goBackToAddStep1 : goBackToAddStep2}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 hover:text-gray-900 transition-colors cursor-pointer shadow-xs"
+                  title={isUdiseStep ? "Go back to Step 1: Select Student & Reg No" : "Go back to Step 2: UDISE Entry"}
+                >
+                  <ArrowLeft className="w-3.5 h-3.5"/>
+                  <span>{isUdiseStep ? "Back to Step 1 (Reg No)" : "Back to Step 2 (UDISE)"}</span>
+                </button>
                 <button onClick={cancelAddWizard}
-                  className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors">
+                  className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer">
                   Cancel
                 </button>
                 {eligInfo.eligible ? (
                   <button onClick={isUdiseStep ? proceedToUdiseEntryForm : proceedToPenEntryForm}
-                    className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors">
+                    className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors cursor-pointer shadow-xs">
                     Next: Enter {isUdiseStep ? "UDISE" : "PEN"} No →
                   </button>
                 ) : (
                   <button onClick={isUdiseStep ? skipUdiseStep : skipPenStep}
-                    className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors">
+                    className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors cursor-pointer shadow-xs">
                     Mark Ineligible &amp; {isUdiseStep ? "Skip to PEN Entry →" : "Finalize →"}
                   </button>
                 )}
@@ -4977,6 +5089,21 @@ export default function GovernmentEntryPage() {
             </div>
 
             <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-100 flex-shrink-0">
+              {isWizardEntry && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModalRow(null);
+                    setAddSubPhase("details");
+                    if (addStep === 2) goBackToAddStep1();
+                    else if (addStep === 3) goBackToAddStep2();
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer mr-auto shadow-xs"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5"/>
+                  <span>{addStep === 2 ? "Back to Step 1 (Reg No)" : "Back to Step 2 (UDISE)"}</span>
+                </button>
+              )}
               <button onClick={closeModal} disabled={saving}
                 className="text-xs font-semibold px-3.5 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors disabled:opacity-50">
                 Cancel
@@ -5191,11 +5318,9 @@ export default function GovernmentEntryPage() {
                 <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Selected Student</span>
-                    {!addCreatedRowId && (
-                      <button type="button" onClick={changeAddStudent} className="text-[10px] font-semibold text-school-navy hover:underline">
-                        Change student
-                      </button>
-                    )}
+                    <button type="button" onClick={changeAddStudent} className="text-[10px] font-semibold text-school-navy hover:underline cursor-pointer">
+                      Change student
+                    </button>
                   </div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div><span className="text-gray-400">AY</span><div className="font-semibold text-gray-700">{addSelectedStudent.session || "-"}</div></div>
@@ -5593,6 +5718,34 @@ export default function GovernmentEntryPage() {
             </div>
 
             <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-gray-100 flex-shrink-0">
+              {addStep === 4 && (() => {
+                const udiseInfo = addSelectedStudent ? eligibilityFns.getUdiseEligibility(addSelectedStudent) : { eligible: false };
+                const penInfo = addSelectedStudent ? eligibilityFns.getPenEligibility(addSelectedStudent) : { eligible: false };
+
+                let backFn = goBackToAddStep3;
+                let backLabel = "Back to Step 3 (PEN Entry)";
+
+                if (!penInfo.eligible) {
+                  if (!udiseInfo.eligible) {
+                    backFn = goBackToAddStep1;
+                    backLabel = "Back to Step 1 (Reg No)";
+                  } else {
+                    backFn = goBackToAddStep2;
+                    backLabel = "Back to Step 2 (UDISE)";
+                  }
+                }
+
+                return (
+                  <button
+                    type="button"
+                    onClick={backFn}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer mr-auto shadow-xs"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5"/>
+                    <span>{backLabel}</span>
+                  </button>
+                );
+              })()}
               <button onClick={closeAddModal} disabled={addSaving}
                 className="text-xs font-semibold px-3.5 py-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors disabled:opacity-50">
                 Cancel
