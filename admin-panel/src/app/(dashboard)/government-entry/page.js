@@ -163,21 +163,109 @@ function serializeOtherSchoolData(data) {
   return `<!--OTHER_SCHOOL:${JSON.stringify(payload)}-->`;
 }
 
+function cleanPortalAlertText(text) {
+  if (!text || typeof text !== "string") return "";
+  return text
+    .replace(/[\u200B-\u200D\uFEFF]/g, "") // strip zero-width chars
+    .replace(/[\u00A0\u1680\u180E\u2000-\u200A\u202F\u205F\u3000]/g, " ") // normalize whitespace
+    .replace(/\r\n|\r/g, "\n");
+}
+
 function parsePortalAlertText(text) {
   if (!text || typeof text !== "string") return null;
+  const clean = cleanPortalAlertText(text);
   const res = {};
-  const districtMatch = text.match(/DISTRICT:\s*([^\r\n]+)/i);
-  if (districtMatch) res.district = districtMatch[1].trim();
-  const blockMatch = text.match(/BLOCK:\s*([^\r\n]+)/i);
-  if (blockMatch) res.block = blockMatch[1].trim();
-  const schoolMatch = text.match(/SCHOOL:\s*([^માં\r\n]+)/i);
-  if (schoolMatch) res.schoolName = schoolMatch[1].trim();
-  const principleMatch = text.match(/PRINCIP(?:LE|AL)\s+NAME:\s*([^\r\n]+)/i);
-  if (principleMatch) res.headmaster = principleMatch[1].trim();
-  const mobileMatch = text.match(/PRINCIP(?:LE|AL)\s+(?:MOBILE|CONTACT)\s*(?:NO)?:?\s*([0-9]{10})/i);
-  if (mobileMatch) res.contactNo = mobileMatch[1].trim();
-  const uidMatch = text.match(/(?:UID\s*(?:આ\s*છે\s*:?)?\s*|\b)([0-9]{18})\b/i);
-  if (uidMatch) res.uid = uidMatch[1].trim();
+
+  // 1. DISTRICT
+  const districtMatch = clean.match(
+    /(?:DISTRICT|જીલ્લો)\s*[:：\-]\s*(.+?)(?=\s*[,;]\s*(?:BLOCK|SCHOOL|PRINCIP|UID|તાલુકો|શાળા)|[\r\n]|\s+(?:BLOCK|SCHOOL|PRINCIP|UID|તાલુકો|શાળા)\b|$)/i
+  );
+  if (districtMatch) {
+    const d = districtMatch[1].trim().replace(/^["'`]|["'`]$/g, "").replace(/[,;:\-]+$/, "").trim();
+    if (d) res.district = d;
+  }
+
+  // 2. BLOCK
+  const blockMatch = clean.match(
+    /(?:BLOCK|તાલુકો)\s*[:：\-]\s*(.+?)(?=\s*[,;]\s*(?:DISTRICT|SCHOOL|PRINCIP|UID|જીલ્લો|શાળા)|[\r\n]|\s+(?:SCHOOL|PRINCIP|UID|શાળા)\b|$)/i
+  );
+  if (blockMatch) {
+    const b = blockMatch[1].trim().replace(/^["'`]|["'`]$/g, "").replace(/[,;:\-]+$/, "").trim();
+    if (b) res.block = b;
+  }
+
+  // 3. SCHOOL NAME
+  // Strategy A: Match explicit SCHOOL / SCHOOL NAME / શાળા label (handles colons, full-width colons, hyphens, and whitespace)
+  const schoolLabelMatch = clean.match(
+    /(?:SCHOOL(?:\s*NAME)?|શાળા(?:\s*નું\s*નામ)?)\s*[:：\-]\s*(.+?)(?=\s+માં(?:\s*છે)?|\s*[,;]\s*(?:PRINCIP|HEADMASTER|HM|MOBILE|CONTACT|UID|DISTRICT|BLOCK|આચાર્ય|મોબાઈલ|\d{10})|\s+(?:PRINCIP(?:LE|AL)|HEADMASTER|HM|MOBILE|CONTACT|UID|આચાર્ય)\b|[\r\n]|$)/i
+  );
+  if (schoolLabelMatch) {
+    let sc = schoolLabelMatch[1].trim();
+    sc = sc.replace(/\s*માં(?:\s*છે)?\s*$/i, "").replace(/\s*મા(?:\s*છે)?\s*$/i, "");
+    sc = sc.replace(/^["'`]|["'`]$/g, "").replace(/[,;:\-]+$/, "").trim();
+    if (sc) res.schoolName = sc;
+  }
+
+  // Strategy B: If no explicit label, look for Gujarati alert line "... માં છે" / "... મા છે"
+  if (!res.schoolName) {
+    const trailingMaMatch = clean.match(/(?:^|[\r\n])\s*(?:તે\s*રેકોર્ડ\s*)?([^\r\n]+?)\s+માં(?:\s*છે)?(?:\s*[\r\n]|$)/i);
+    if (trailingMaMatch) {
+      let sc = trailingMaMatch[1].trim();
+      sc = sc.replace(/^(?:SCHOOL(?:\s*NAME)?|શાળા(?:\s*નું\s*નામ)?)\s*[:：\-]\s*/i, "");
+      sc = sc.replace(/^["'`]|["'`]$/g, "").replace(/[,;:\-]+$/, "").trim();
+      if (sc && sc.length > 2 && !/^(?:DISTRICT|BLOCK|UID|જીલ્લો|તાલુકો)/i.test(sc)) {
+        res.schoolName = sc;
+      }
+    }
+  }
+
+  // Strategy C: Check if line starts with "SCHOOL" without colon or separated by space
+  if (!res.schoolName) {
+    const bareSchoolMatch = clean.match(/(?:^|[\r\n])\s*SCHOOL\s+([^\r\n]+?)(?=\s+માં|\s+(?:PRINCIP|HM|HEADMASTER)|[\r\n]|$)/i);
+    if (bareSchoolMatch) {
+      let sc = bareSchoolMatch[1].trim();
+      sc = sc.replace(/\s*માં(?:\s*છે)?\s*$/i, "").replace(/[,;:\-]+$/, "").trim();
+      if (sc) res.schoolName = sc;
+    }
+  }
+
+  // Extract School 11-digit UDISE code if present (e.g. 24221504426)
+  const schoolUdiseMatch = clean.match(/\b(24\d{9})\b/);
+  if (schoolUdiseMatch) {
+    res.schoolUdise = schoolUdiseMatch[1].trim();
+  }
+
+  // 4. PRINCIPAL NAME
+  const principleMatch = clean.match(
+    /(?:PRINCIP(?:LE|AL)(?:\s*NAME)?|HEADMASTER(?:\s*NAME)?|HM(?:\s*NAME)?|આચાર્ય(?:\s*નું\s*નામ)?)\s*[:：\-]\s*(.+?)(?=\s*[,;]\s*(?:PRINCIP|HEADMASTER|HM|MOBILE|CONTACT|UID|\d{10}|તમારી|મોબાઈલ)|[\r\n]|\s+(?:PRINCIP(?:LE|AL)|HEADMASTER|HM|MOBILE|CONTACT|UID)\b|$)/i
+  );
+  if (principleMatch) {
+    let hm = principleMatch[1].trim();
+    hm = hm.replace(/^["'`]|["'`]$/g, "").replace(/[,;:\-]+$/, "").trim();
+    if (hm) res.headmaster = hm;
+  }
+
+  // 5. PRINCIPAL MOBILE NO (10 digits starting with 6,7,8,9, with optional +91 prefix)
+  const mobileLabelMatch = clean.match(
+    /(?:PRINCIP(?:LE|AL)\s+(?:MOBILE|CONTACT)(?:\s*NO)?|MOBILE(?:\s*NO)?|CONTACT(?:\s*NO)?|ફોન(?:\s*નંબર)?|મોબાઈલ(?:\s*નંબર)?)\s*[:：\-]?\s*(?:\+?91[\s\-]*)?([6-9]\d{9})\b/i
+  );
+  if (mobileLabelMatch) {
+    res.contactNo = mobileLabelMatch[1].trim();
+  } else {
+    // Fallback: search for 10 digit Indian mobile
+    const anyMobile = clean.match(/(?:(?:\+?91[\s\-]*)|\b)([6-9]\d{9})\b/);
+    if (anyMobile) res.contactNo = anyMobile[1].trim();
+  }
+
+  // 6. STUDENT UID (18 digits, in Gujarat typically starts with 24)
+  const uidGujaratMatch = clean.match(/\b(24\d{16})\b/);
+  if (uidGujaratMatch) {
+    res.uid = uidGujaratMatch[1].trim();
+  } else {
+    const any18Digits = clean.match(/\b(\d{18})\b/);
+    if (any18Digits) res.uid = any18Digits[1].trim();
+  }
+
   return res;
 }
 
@@ -2063,6 +2151,56 @@ export default function GovernmentEntryPage() {
     );
   }
 
+  function applyParsedAlert(parsed, targetMode = "udise") {
+    if (!parsed) return false;
+    let filledCount = 0;
+    if (parsed.schoolName) {
+      if (targetMode === "udise") setFormUdiseSchoolName(parsed.schoolName);
+      if (targetMode === "pen") setFormPenSchoolName(parsed.schoolName);
+      setFormOtherSchoolName(parsed.schoolName);
+      filledCount++;
+    }
+    if (parsed.headmaster) {
+      if (targetMode === "udise") setFormUdisePrincipalName(parsed.headmaster);
+      if (targetMode === "pen") setFormPenHeadmaster(parsed.headmaster);
+      setFormOtherSchoolHeadmaster(parsed.headmaster);
+      filledCount++;
+    }
+    if (parsed.contactNo) {
+      if (targetMode === "udise") setFormUdisePrincipalMobile(parsed.contactNo);
+      if (targetMode === "pen") setFormPenContactNo(parsed.contactNo);
+      setFormOtherSchoolContactNo(parsed.contactNo);
+      filledCount++;
+    }
+    if (parsed.uid) {
+      if (targetMode === "udise") {
+        setFormUdise(parsed.uid);
+        setFormUdiseNotDefined(false);
+      } else {
+        setFormPen(parsed.uid);
+        setFormPenNotDefined(false);
+      }
+      filledCount++;
+    }
+    if (parsed.district) {
+      setFormPenDistrict(parsed.district);
+      setFormOtherSchoolDistrict(parsed.district);
+    }
+    if (parsed.block) {
+      setFormPenBlock(parsed.block);
+      setFormOtherSchoolBlock(parsed.block);
+    }
+    if (parsed.schoolUdise) {
+      setFormPenSchoolUdise(parsed.schoolUdise);
+      setFormOtherSchoolUdise(parsed.schoolUdise);
+    }
+    if (targetMode === "udise" && !formUdiseRequestSentDate) {
+      setFormUdiseRequestSentDate(getTodaySlash());
+    }
+    if (formError) setFormError("");
+    return filledCount > 0;
+  }
+
   function renderActiveOtherSchoolFields() {
     if (!formActiveOtherSchool) return null;
     const isUdiseView = (effectiveTab === "udise");
@@ -2101,19 +2239,20 @@ export default function GovernmentEntryPage() {
                 placeholder="Paste alert text (e.g. 'DISTRICT: SURAT, BLOCK: SURAT CORPO., SCHOOL: SUNFLOWER ENGLISH SCHOOL, PRINCIPLE NAME: ...')"
                 className="w-full text-xs border border-purple-200 rounded-md p-2 font-mono focus:outline-none focus:ring-1 focus:ring-purple-500"
               />
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] text-gray-500">
+                  Tip: Supports Gujarati/English alert text, single-line or multi-line
+                </span>
                 <button
                   type="button"
                   onClick={() => {
                     const parsed = parsePortalAlertText(pasteAlertInput);
-                    if (parsed) {
-                      if (parsed.schoolName) setFormUdiseSchoolName(parsed.schoolName);
-                      if (parsed.headmaster) setFormUdisePrincipalName(parsed.headmaster);
-                      if (parsed.contactNo) setFormUdisePrincipalMobile(parsed.contactNo);
-                      if (parsed.uid) setFormUdise(parsed.uid);
-                      if (!formUdiseRequestSentDate) setFormUdiseRequestSentDate(getTodaySlash());
+                    const success = applyParsedAlert(parsed, "udise");
+                    if (success) {
                       setShowPasteAlert(false);
                       setPasteAlertInput("");
+                    } else {
+                      setFormError("Could not detect School Name or details from the pasted alert. Please verify format.");
                     }
                   }}
                   disabled={!pasteAlertInput.trim()}
@@ -2134,7 +2273,29 @@ export default function GovernmentEntryPage() {
               <input
                 type="text"
                 value={formUdiseSchoolName}
-                onChange={e => { setFormUdiseSchoolName(e.target.value); if (formError) setFormError(""); }}
+                onPaste={e => {
+                  const pasteText = e.clipboardData?.getData("text") || "";
+                  if (/DISTRICT|BLOCK|PRINCIP|ssgujarat|UID|માં\s*છે|SCHOOL\s*[:：\-]/i.test(pasteText)) {
+                    const parsed = parsePortalAlertText(pasteText);
+                    if (parsed && (parsed.schoolName || parsed.headmaster || parsed.contactNo || parsed.uid)) {
+                      e.preventDefault();
+                      applyParsedAlert(parsed, "udise");
+                    }
+                  }
+                }}
+                onChange={e => {
+                  const val = e.target.value;
+                  if (/DISTRICT:|BLOCK:|PRINCIP|ssgujarat|UID:|માં\s*છે/i.test(val)) {
+                    const parsed = parsePortalAlertText(val);
+                    if (parsed && (parsed.schoolName || parsed.headmaster || parsed.contactNo || parsed.uid)) {
+                      applyParsedAlert(parsed, "udise");
+                      return;
+                    }
+                  }
+                  setFormUdiseSchoolName(val);
+                  setFormOtherSchoolName(val);
+                  if (formError) setFormError("");
+                }}
                 placeholder="e.g. SUNFLOWER ENGLISH SCHOOL"
                 className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
               />
@@ -2303,7 +2464,54 @@ export default function GovernmentEntryPage() {
               PEN Import Details (National Portal)
             </span>
           </div>
+          <button
+            type="button"
+            onClick={() => setShowPasteAlert(v => !v)}
+            className="text-[10px] font-semibold text-purple-700 hover:text-purple-900 bg-purple-100 hover:bg-purple-200 px-2.5 py-0.5 rounded-md border border-purple-200 transition-colors"
+          >
+            📋 {showPasteAlert ? "Hide Quick Paste" : "Paste Portal Alert"}
+          </button>
         </div>
+
+        {showPasteAlert && (
+          <div className="bg-white border border-purple-200 rounded-lg p-2.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                Paste portal alert or details text:
+              </label>
+              <span className="text-[9px] text-gray-400">Auto-extracts school, UDISE code, HM, contact</span>
+            </div>
+            <textarea
+              rows={3}
+              value={pasteAlertInput}
+              onChange={e => setPasteAlertInput(e.target.value)}
+              placeholder="Paste alert or school details (e.g. 'DISTRICT: SURAT, SCHOOL: SUNFLOWER ENGLISH SCHOOL (24221504426)...')"
+              className="w-full text-xs border border-purple-200 rounded-md p-2 font-mono focus:outline-none focus:ring-1 focus:ring-purple-500"
+            />
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] text-gray-500">
+                Tip: Supports Gujarati/English text with school name, UDISE code, HM, mobile
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const parsed = parsePortalAlertText(pasteAlertInput);
+                  const success = applyParsedAlert(parsed, "pen");
+                  if (success) {
+                    setShowPasteAlert(false);
+                    setPasteAlertInput("");
+                  } else {
+                    setFormError("Could not detect School Name or details from the pasted text. Please verify format.");
+                  }
+                }}
+                disabled={!pasteAlertInput.trim()}
+                className="text-xs font-semibold px-3 py-1 bg-purple-700 hover:bg-purple-800 text-white rounded-md transition-colors disabled:opacity-50"
+              >
+                Auto-fill PEN Fields
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {/* 1. SCHOOL NAME */}
@@ -2314,7 +2522,29 @@ export default function GovernmentEntryPage() {
             <input
               type="text"
               value={formPenSchoolName}
-              onChange={e => { setFormPenSchoolName(e.target.value); if (formError) setFormError(""); }}
+              onPaste={e => {
+                const pasteText = e.clipboardData?.getData("text") || "";
+                if (/DISTRICT|BLOCK|PRINCIP|ssgujarat|UID|udiseplus|SCHOOL\s*[:：\-]/i.test(pasteText)) {
+                  const parsed = parsePortalAlertText(pasteText);
+                  if (parsed && (parsed.schoolName || parsed.headmaster || parsed.contactNo || parsed.schoolUdise)) {
+                    e.preventDefault();
+                    applyParsedAlert(parsed, "pen");
+                  }
+                }
+              }}
+              onChange={e => {
+                const val = e.target.value;
+                if (/DISTRICT:|BLOCK:|PRINCIP|ssgujarat|udiseplus/i.test(val)) {
+                  const parsed = parsePortalAlertText(val);
+                  if (parsed && (parsed.schoolName || parsed.headmaster || parsed.contactNo || parsed.schoolUdise)) {
+                    applyParsedAlert(parsed, "pen");
+                    return;
+                  }
+                }
+                setFormPenSchoolName(val);
+                setFormOtherSchoolName(val);
+                if (formError) setFormError("");
+              }}
               placeholder="e.g. Shree Swaminarayan Gurukul"
               className="border border-purple-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white"
             />
