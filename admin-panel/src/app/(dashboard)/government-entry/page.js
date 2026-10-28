@@ -3845,52 +3845,48 @@ export default function GovernmentEntryPage() {
   );
 
   return (
-    <div className={fullscreen ? "fixed inset-0 z-[100] bg-white overflow-y-auto p-5 space-y-3" : "space-y-3"}>
+    <div className={fullscreen ? "fixed inset-0 z-[100] bg-white overflow-y-auto p-4 space-y-2" : "space-y-2"}>
       {/* REQ-BUG-078 (3): failed data loads used to render as a silent
           empty table - show an explicit banner with what failed. */}
       {loadError && (
-        <div className="flex items-start gap-2 border border-red-200 bg-red-50 text-red-800 px-3 py-2 rounded-lg text-sm">
+        <div className="flex items-start gap-2 border border-red-200 bg-red-50 text-red-800 px-3 py-1.5 rounded-lg text-xs">
           <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-red-600"/>
           <span>{loadError}</span>
         </div>
       )}
-      {/* In Progress Resume Banner */}
+      {/* In Progress Resume Banner - Slim single-line strip */}
       {inProgressSession && !addWizardActive && (
-        <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-300 rounded-xl p-3 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fadeIn">
-          <div className="flex items-center gap-3">
-            <span className="relative flex h-3 w-3 flex-shrink-0">
+        <div className="bg-amber-50/90 border border-amber-300/80 rounded-lg px-2.5 py-1 shadow-xs flex flex-wrap items-center justify-between gap-2 text-xs animate-fadeIn">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="relative flex h-2 w-2 flex-shrink-0">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
             </span>
-            <div>
-              <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5 flex-wrap">
-                <span>Entry in Progress:</span>
-                <span className="font-mono bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-bold">{inProgressSession.grNo || "Student"}</span>
-                <span>· {inProgressSession.studentName} ({inProgressSession.cls})</span>
-              </div>
-              <p className="text-[11px] text-amber-700 mt-0.5">
-                You left off at <b>Step {inProgressSession.step} of 4: {
-                  inProgressSession.step === 2 ? "UDISE Entry" :
-                  inProgressSession.step === 3 ? "PEN Entry" :
-                  inProgressSession.step === 4 ? "Final Confirmation" : "Select Student"
-                }</b>. Click Resume to continue right where you left off.
-              </p>
+            <div className="flex items-center gap-1.5 truncate text-[11px] text-amber-900">
+              <span className="font-semibold text-amber-800">In Progress:</span>
+              <span className="font-mono bg-amber-200 text-amber-950 px-1.5 py-0.2 rounded font-bold text-[10px]">{inProgressSession.grNo || "Student"}</span>
+              <span className="font-medium truncate">{inProgressSession.studentName} ({inProgressSession.cls})</span>
+              <span className="text-amber-700 hidden md:inline">· Step {inProgressSession.step}/4 ({
+                inProgressSession.step === 2 ? "UDISE" :
+                inProgressSession.step === 3 ? "PEN" :
+                inProgressSession.step === 4 ? "Confirm" : "Select"
+              })</span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex items-center gap-1.5 flex-shrink-0">
             <button
               type="button"
               onClick={() => resumeProgress(inProgressSession)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs rounded-lg shadow-sm transition-all"
+              className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-[11px] rounded-md shadow-xs transition-all cursor-pointer"
             >
-              ▶ Resume {inProgressSession.grNo ? `${inProgressSession.grNo} ` : ""}Progress
+              ▶ Resume
             </button>
             <button
               type="button"
               onClick={dismissInProgress}
               title="Discard this in-progress entry"
-              className="text-xs font-semibold px-2.5 py-1.5 text-gray-500 hover:text-gray-700 hover:bg-amber-100 rounded-lg transition-colors"
+              className="text-[11px] font-medium px-2 py-1 text-gray-500 hover:text-gray-800 hover:bg-amber-100/60 rounded-md transition-colors cursor-pointer"
             >
               Dismiss
             </button>
@@ -3901,21 +3897,21 @@ export default function GovernmentEntryPage() {
       {/* Tabs & Top Controls */}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+          <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit shadow-xs">
             <button onClick={() => setMainTab("onlineGr")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "onlineGr" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${mainTab === "onlineGr" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
               <BookOpen className="w-3.5 h-3.5"/> Online General Register
             </button>
             <button onClick={() => setMainTab("udise")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "udise" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${mainTab === "udise" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
               <Landmark className="w-3.5 h-3.5"/> UDISE Entry (State)
             </button>
             <button onClick={() => setMainTab("pen")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "pen" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${mainTab === "pen" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
               <IdCard className="w-3.5 h-3.5"/> PEN Entry (National)
             </button>
             <button onClick={() => setMainTab("import")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "import" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${mainTab === "import" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
               <School className="w-3.5 h-3.5"/> Import
               {importCount > 0 && (
                 <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${mainTab === "import" ? "bg-purple-500 text-white" : "bg-purple-100 text-purple-700 border border-purple-200"}`}>
@@ -3924,19 +3920,55 @@ export default function GovernmentEntryPage() {
               )}
             </button>
             <button onClick={() => setMainTab("mismatch")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mainTab === "mismatch" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${mainTab === "mismatch" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
               <AlertTriangle className="w-3.5 h-3.5"/> Mismatch
             </button>
           </div>
 
-          {mainTab === "import" ? (
+          {mainTab === "onlineGr" ? (
             <>
               <span className="hidden sm:block w-px h-6 bg-gray-200"/>
-              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setGrSubTab("primary")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    grSubTab === "primary" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5"/>
+                  <span>Primary (JR, SR, Balvatika)</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    grSubTab === "primary" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700 border border-purple-200"
+                  }`}>
+                    {(onlineGrDataset.primary || []).length}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGrSubTab("general")}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                    grSubTab === "general" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5"/>
+                  <span>General (1st+)</span>
+                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                    grSubTab === "general" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700 border border-purple-200"
+                  }`}>
+                    {(onlineGrDataset.general || []).length}
+                  </span>
+                </button>
+              </div>
+            </>
+          ) : mainTab === "import" ? (
+            <>
+              <span className="hidden sm:block w-px h-6 bg-gray-200"/>
+              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit shadow-xs">
                 <button
                   type="button"
                   onClick={() => setImportSubTab("udise")}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                     importSubTab === "udise" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
                   }`}
                 >
@@ -3951,7 +3983,7 @@ export default function GovernmentEntryPage() {
                 <button
                   type="button"
                   onClick={() => setImportSubTab("pen")}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                     importSubTab === "pen" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
                   }`}
                 >
@@ -3966,7 +3998,7 @@ export default function GovernmentEntryPage() {
                 <button
                   type="button"
                   onClick={() => setImportSubTab("all")}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                     importSubTab === "all" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
                   }`}
                 >
@@ -3977,13 +4009,13 @@ export default function GovernmentEntryPage() {
           ) : mainTab === "mismatch" ? (
             <>
               <span className="hidden sm:block w-px h-6 bg-gray-200"/>
-              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit shadow-xs">
                 <button onClick={() => setMismatchDir("udiseOnly")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "udiseOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${mismatchDir === "udiseOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
                   UDISE Eligible, PEN Not
                 </button>
                 <button onClick={() => setMismatchDir("penOnly")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${mismatchDir === "penOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${mismatchDir === "penOnly" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
                   PEN Eligible, UDISE Not
                 </button>
               </div>
@@ -3991,13 +4023,13 @@ export default function GovernmentEntryPage() {
           ) : mainTab !== "onlineGr" && mainTab !== "import" ? (
             <>
               <span className="hidden sm:block w-px h-6 bg-gray-200"/>
-              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit">
+              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit shadow-xs">
                 <button onClick={() => setEligTab("eligible")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "eligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${eligTab === "eligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
                   Eligible for Entry
                 </button>
                 <button onClick={() => setEligTab("ineligible")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${eligTab === "ineligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${eligTab === "ineligible" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"}`}>
                   Not Eligible for Entry
                 </button>
               </div>
@@ -4005,35 +4037,24 @@ export default function GovernmentEntryPage() {
           ) : null}
         </div>
 
-        <div className="flex items-center gap-2">
-          {inProgressSession && !addWizardActive && (
-            <button
-              type="button"
-              onClick={() => resumeProgress(inProgressSession)}
-              title={`Resume entry for ${inProgressSession.grNo || inProgressSession.studentName}`}
-              className="flex items-center gap-1.5 text-xs border border-amber-400 bg-amber-100 px-3 py-1.5 rounded-lg text-amber-900 hover:bg-amber-200 transition-all shadow-sm font-semibold animate-pulse"
-            >
-              <span className="w-2 h-2 rounded-full bg-amber-600"></span>
-              Resume {inProgressSession.grNo || "Progress"}
-            </button>
-          )}
+        <div className="flex items-center gap-1.5">
           <button onClick={exportExcel}
             title="Download Excel export"
-            className="flex items-center gap-1.5 text-xs border border-emerald-300 bg-emerald-50 px-3 py-1.5 rounded-lg text-emerald-800 hover:bg-emerald-100 transition-colors">
+            className="flex items-center gap-1.5 text-xs border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 rounded-lg text-emerald-800 hover:bg-emerald-100 transition-colors cursor-pointer shadow-xs font-medium">
             <Download className="w-3.5 h-3.5 text-emerald-700"/> Export Excel
           </button>
           <button onClick={() => setShowRules(true)}
-            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
+            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-2.5 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors cursor-pointer shadow-xs font-medium">
             <HelpCircle className="w-3.5 h-3.5"/> Rules
           </button>
           <button onClick={loadAll} disabled={refreshing}
-            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors disabled:opacity-60">
+            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-2.5 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors disabled:opacity-60 cursor-pointer shadow-xs font-medium">
             <RefreshCw className={`w-3 h-3 ${refreshing ? "animate-spin text-school-navy" : ""}`}/>
             {refreshing ? "Refreshing..." : "Refresh"}
           </button>
           <button onClick={() => setFullscreen(v => !v)}
             title={fullscreen ? "Exit fullscreen (Esc)" : "Fullscreen"}
-            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-3 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors">
+            className="flex items-center gap-1.5 text-xs border border-gray-200 bg-white px-2.5 py-1.5 rounded-lg text-gray-500 hover:border-school-navy hover:text-school-navy transition-colors cursor-pointer shadow-xs font-medium">
             {fullscreen ? <Minimize2 className="w-3.5 h-3.5"/> : <Maximize2 className="w-3.5 h-3.5"/>}
             {fullscreen ? "Exit Fullscreen" : "Fullscreen"}
           </button>
@@ -4206,40 +4227,42 @@ export default function GovernmentEntryPage() {
       ) : (
         <>
           {/* Filters & Actions directly above table */}
-          <div className="bg-gray-50 border border-gray-200 rounded-xl p-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5 items-center">
+          <div className="bg-gray-50/80 border border-gray-200 rounded-lg px-2.5 py-1.5 shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <div className="flex flex-wrap gap-2 items-center">
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2"/>
                   <input type="text" value={search} onChange={e => setSearch(e.target.value)}
-                    placeholder="Name, Reg No, Mobile, Aadhar, UID"
-                    className="border border-gray-200 rounded-lg pl-8 pr-2.5 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-48"/>
+                    placeholder={mainTab === "onlineGr" ? "Search name, PR/GR, mobile, aadhar, UID…" : "Name, Reg No, Mobile, Aadhar, UID"}
+                    className="border border-gray-200 rounded-lg pl-8 pr-2.5 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy w-44 sm:w-56"/>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1">
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Class</label>
-                  <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
+                  <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-20 cursor-pointer"
                     value={filters.cls} onChange={e => setFilters(prev => ({ ...prev, cls: e.target.value }))}>
                     {["All", ...classOptions].map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1">
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Year</label>
-                  <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24"
+                  <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-20 cursor-pointer"
                     value={filters.session} onChange={e => setFilters(prev => ({ ...prev, session: e.target.value }))}>
                     {(mainTab === "onlineGr" ? ONLINE_GR_YEARS : ["All", ...dbSessions]).map(o => <option key={o}>{o}</option>)}
                   </select>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Batch</label>
-                  <select disabled={mainTab === "onlineGr" || mainTab === "import" || mainTab === "mismatch" || (mainTab !== "onlineGr" && eligTab === "ineligible")}
-                    className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-24 disabled:opacity-50 disabled:cursor-not-allowed"
-                    value={filters.batch} onChange={e => setFilters(prev => ({ ...prev, batch: e.target.value }))}>
-                    {["All", ...batchOptions].map(o => <option key={o}>{o}</option>)}
-                  </select>
-                </div>
-                <div className="flex items-center gap-1.5">
+                {mainTab !== "onlineGr" && mainTab !== "import" && mainTab !== "mismatch" && (
+                  <div className="flex items-center gap-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Batch</label>
+                    <select disabled={eligTab === "ineligible"}
+                      className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-20 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                      value={filters.batch} onChange={e => setFilters(prev => ({ ...prev, batch: e.target.value }))}>
+                      {["All", ...batchOptions].map(o => <option key={o}>{o}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div className="flex items-center gap-1">
                   <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider whitespace-nowrap">Status</label>
-                  <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-44"
+                  <select className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-school-navy min-w-32 cursor-pointer"
                     value={filters.status} onChange={e => setFilters(prev => ({ ...prev, status: e.target.value }))}>
                     {(mainTab === "import" ? IMPORT_STATUS_FILTER_OPTIONS : STATUS_FILTER_OPTIONS).map(o => (
                       <option key={o} value={o}>{o}</option>
@@ -4249,9 +4272,9 @@ export default function GovernmentEntryPage() {
               </div>
 
               {/* Action buttons directly above the table */}
-              <div className="flex items-center gap-2.5 flex-shrink-0">
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <span className="text-xs text-gray-500 font-medium">
-                  {rows.length} {rows.length === 1 ? "student" : "students"}
+                  <span className="font-semibold text-gray-800">{rows.length}</span> {rows.length === 1 ? "student" : "students"}
                 </span>
 
                 {mainTab === "onlineGr" && (
@@ -4259,7 +4282,7 @@ export default function GovernmentEntryPage() {
                     type="button"
                     onClick={openAddModal}
                     title="Add a new student into this register"
-                    className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 shadow-sm transition-all cursor-pointer"
+                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 shadow-sm transition-all cursor-pointer"
                   >
                     <UserPlus className="w-3.5 h-3.5"/> Add New Student
                   </button>
@@ -4274,8 +4297,8 @@ export default function GovernmentEntryPage() {
             onScroll={handleTableScroll}
             className={`overflow-auto rounded-xl border border-gray-200 shadow-sm ${
               fullscreen
-                ? "max-h-[calc(100vh-250px)]"
-                : "max-h-[calc(100vh-280px)] min-h-[350px]"
+                ? "max-h-[calc(100vh-130px)]"
+                : "max-h-[calc(100vh-195px)] min-h-[400px]"
             }`}
           >
               <table className="text-xs w-full">
@@ -4283,14 +4306,14 @@ export default function GovernmentEntryPage() {
                 <tr className="bg-school-navy text-white">
                   <th ref={el => { frozenHeaderRefs.current[0] = el; }}
                     style={{ position: "sticky", top: 0, left: stickyLeft[0], zIndex: 30 }}
-                    className="bg-school-navy px-3 py-2.5 text-center font-semibold whitespace-nowrap">Action</th>
+                    className="bg-school-navy px-2 py-1.5 text-center font-semibold whitespace-nowrap text-xs">Action</th>
                   <th ref={el => { frozenHeaderRefs.current[1] = el; }}
                     style={{ position: "sticky", top: 0, left: stickyLeft[1], zIndex: 30 }}
-                    className="bg-school-navy px-3 py-2.5 text-left font-semibold whitespace-nowrap w-8">#</th>
+                    className="bg-school-navy px-1.5 py-1.5 text-center font-semibold whitespace-nowrap w-7 text-xs">#</th>
                   <th ref={el => { frozenHeaderRefs.current[2] = el; }}
                     onClick={mainTab === "onlineGr" ? () => toggleOnlineGrSort("status") : undefined}
                     style={{ position: "sticky", top: 0, left: stickyLeft[2], zIndex: 30 }}
-                    className={`bg-school-navy px-3 py-2.5 text-left font-semibold whitespace-nowrap ${mainTab === "onlineGr" ? "cursor-pointer hover:bg-school-navy/80 select-none" : ""}`}>
+                    className={`bg-school-navy px-2 py-1.5 text-left font-semibold whitespace-nowrap text-xs ${mainTab === "onlineGr" ? "cursor-pointer hover:bg-school-navy/80 select-none" : ""}`}>
                     <span className="inline-flex items-center gap-0.5">
                       Status
                       {mainTab === "onlineGr" && onlineGrSort.key === "status" && (onlineGrSort.dir === "asc" ? <ChevronUp className="w-3 h-3"/> : <ChevronDown className="w-3 h-3"/>)}
@@ -4306,7 +4329,7 @@ export default function GovernmentEntryPage() {
                         ref={isFrozen ? (el => { frozenHeaderRefs.current[frozenIdx] = el; }) : undefined}
                         onClick={sortable ? () => toggleOnlineGrSort(c.key) : undefined}
                         style={isFrozen ? { position: "sticky", top: 0, left: stickyLeft[frozenIdx], zIndex: 30 } : { position: "sticky", top: 0, zIndex: 20 }}
-                        className={`bg-school-navy px-3 py-2.5 text-left font-semibold whitespace-nowrap ${sortable ? "cursor-pointer hover:bg-school-navy/80 select-none" : ""}`}>
+                        className={`bg-school-navy px-2 py-1.5 text-left font-semibold whitespace-nowrap text-xs ${sortable ? "cursor-pointer hover:bg-school-navy/80 select-none" : ""}`}>
                         <span className="inline-flex items-center gap-0.5">
                           {c.label}
                           {isSorted && (onlineGrSort.dir === "asc" ? <ChevronUp className="w-3 h-3"/> : <ChevronDown className="w-3 h-3"/>)}
@@ -4330,7 +4353,7 @@ export default function GovernmentEntryPage() {
                       onDoubleClick={() => openStudentProfile(row)}
                       title={mainTab === "onlineGr" ? "Double-click to edit this entry" : "Double-click to edit this student"}
                       className={`border-b border-gray-100 hover:bg-blue-50/20 transition-colors ${rowBg}`}>
-                      <td style={{ position: "sticky", left: stickyLeft[0], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2 text-center whitespace-nowrap`}>
+                      <td style={{ position: "sticky", left: stickyLeft[0], zIndex: 10 }} className={`${rowBgSolid} px-2 py-1 text-center whitespace-nowrap`}>
                         {(() => {
                           const isOnlineGr = mainTab === "onlineGr";
                           const isUdise = effectiveTab === "udise";
@@ -4351,9 +4374,9 @@ export default function GovernmentEntryPage() {
                                 <button
                                   onClick={() => openEntryModal(row)}
                                   title="Edit details or update tracking status"
-                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-purple-50 text-purple-800 border border-purple-300 hover:bg-purple-700 hover:text-white transition-colors shadow-xs"
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-50 text-purple-800 border border-purple-300 hover:bg-purple-700 hover:text-white transition-colors shadow-xs cursor-pointer"
                                 >
-                                  <Pencil className="w-3 h-3"/> Update
+                                  <Pencil className="w-2.5 h-2.5"/> Update
                                 </button>
                               ) : isDone ? (
                                 <button
@@ -4364,24 +4387,24 @@ export default function GovernmentEntryPage() {
                                       ? `Not eligible for ${isUdise ? "UDISE" : "PEN"} Entry: ${eligInfo.reason}`
                                       : (isOnlineGr ? "Edit General Register entry" : `Edit ${isUdise ? "UDISE" : "PEN"} details`)
                                   }
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
                                     isElig
                                       ? "bg-blue-50 text-school-navy border border-blue-300 hover:bg-school-navy hover:text-white shadow-xs"
                                       : "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-60"
                                   }`}>
-                                  <Pencil className="w-3 h-3"/> Edit
+                                  <Pencil className="w-2.5 h-2.5"/> Edit
                                 </button>
                               ) : (
                                 <button
                                   onClick={() => isElig && openEntryModal(row)}
                                   disabled={!isElig}
                                   title={!isElig ? `Not eligible for ${isUdise ? "UDISE" : "PEN"} Entry: ${eligInfo.reason}` : "Entry Done"}
-                                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
                                     isElig
                                       ? "bg-school-navy text-white hover:bg-school-navy/90 shadow-xs"
                                       : "bg-gray-100 text-gray-400 border border-gray-200 cursor-not-allowed opacity-60"
                                   }`}>
-                                  <CheckCircle2 className="w-3 h-3"/> Entry Done
+                                  <CheckCircle2 className="w-2.5 h-2.5"/> Done
                                 </button>
                               )}
                               {isUdise && (
@@ -4392,13 +4415,13 @@ export default function GovernmentEntryPage() {
                                     else triggerBcUpload(row);
                                   }}
                                   title={getBcDoc(row) ? "Download / View Birth Certificate" : "Upload Birth Certificate (Missing)"}
-                                  className={`inline-flex items-center justify-center p-1.5 rounded-lg border transition-colors ${
+                                  className={`inline-flex items-center justify-center p-1 rounded border transition-colors cursor-pointer ${
                                     getBcDoc(row)
                                       ? "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100"
                                       : "text-amber-700 bg-amber-50 border-amber-300 hover:bg-amber-100"
                                   }`}
                                 >
-                                  {getBcDoc(row) ? <Download className="w-3 h-3" /> : <Upload className="w-3 h-3" />}
+                                  {getBcDoc(row) ? <Download className="w-2.5 h-2.5" /> : <Upload className="w-2.5 h-2.5" />}
                                 </button>
                               )}
                               {isOnlineGr && status === "Pending" && (
@@ -4406,7 +4429,7 @@ export default function GovernmentEntryPage() {
                                   type="button"
                                   onClick={() => resumeFromOnlineGrRow(row)}
                                   title={`Resume progress for ${row.grNo || row.name}`}
-                                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-100 transition-colors shadow-xs"
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 border border-amber-300 text-amber-800 hover:bg-amber-100 transition-colors shadow-xs cursor-pointer"
                                 >
                                   ▶ Resume
                                 </button>
@@ -4414,16 +4437,16 @@ export default function GovernmentEntryPage() {
                               {isOnlineGr && (
                                 <button onClick={() => openDeleteConfirm(row)}
                                   title="Delete this record"
-                                  className="inline-flex items-center justify-center p-1.5 rounded-lg text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors">
-                                  <Trash2 className="w-3 h-3"/>
+                                  className="inline-flex items-center justify-center p-1 rounded text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors cursor-pointer">
+                                  <Trash2 className="w-2.5 h-2.5"/>
                                 </button>
                               )}
                             </div>
                           );
                         })()}
                       </td>
-                      <td style={{ position: "sticky", left: stickyLeft[1], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2 text-gray-400 font-medium`}>{idx + 1}</td>
-                      <td style={{ position: "sticky", left: stickyLeft[2], zIndex: 10 }} className={`${rowBgSolid} px-3 py-2`}><StatusPill status={status}/></td>
+                      <td style={{ position: "sticky", left: stickyLeft[1], zIndex: 10 }} className={`${rowBgSolid} px-1.5 py-1 text-gray-400 font-mono text-[11px] text-center w-7`}>{idx + 1}</td>
+                      <td style={{ position: "sticky", left: stickyLeft[2], zIndex: 10 }} className={`${rowBgSolid} px-2 py-1`}><StatusPill status={status}/></td>
                       {columns.map((c, i) => {
                         const rawValue = formatCellValue(c, row[c.key], row);
                         const frozenIdx = i + 3;
@@ -4433,7 +4456,7 @@ export default function GovernmentEntryPage() {
                             tabIndex={0}
                             onFocus={() => copyCellToClipboard(rawValue)}
                             style={isFrozen ? { position: "sticky", left: stickyLeft[frozenIdx], zIndex: 10 } : undefined}
-                            className={`${isFrozen ? rowBgSolid : ""} px-3 py-2 text-gray-700 whitespace-nowrap cursor-pointer focus:outline-none focus:ring-2 focus:ring-school-navy focus:bg-blue-50`}>
+                            className={`${isFrozen ? rowBgSolid : ""} px-2 py-1 text-gray-700 whitespace-nowrap cursor-pointer text-xs focus:outline-none focus:ring-2 focus:ring-school-navy focus:bg-blue-50`}>
                             {c.key === "importPortal" && rawValue && rawValue !== "-" ? (
                               <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
                                 rawValue.includes("Both") || rawValue.includes("&")
@@ -4445,36 +4468,36 @@ export default function GovernmentEntryPage() {
                                 {String(rawValue)}
                               </span>
                             ) : c.key === "udiseImportTcUploaded" && rawValue && rawValue !== "-" ? (
-                              <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                              <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                                 rawValue === "Uploaded"
                                   ? "bg-emerald-100 text-emerald-800 border-emerald-300"
                                   : "bg-red-50 text-red-700 border-red-200"
                               }`}>
                                 {rawValue === "Uploaded" ? (
                                   <>
-                                    <CheckCircle2 className="w-3 h-3 text-emerald-600 flex-shrink-0" />
+                                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600 flex-shrink-0" />
                                     <span>Uploaded</span>
                                     {getTcDoc(row)?.file_url && (
                                       <button
                                         type="button"
                                         onClick={(e) => { e.stopPropagation(); handleDownloadTcDoc(row); }}
                                         title="View / Download Leaving Certificate (TC)"
-                                        className="ml-1 text-emerald-800 hover:text-emerald-950 font-bold flex items-center gap-0.5 bg-emerald-200/80 hover:bg-emerald-300 px-1.5 py-0.5 rounded transition-colors"
+                                        className="ml-1 text-emerald-800 hover:text-emerald-950 font-bold flex items-center gap-0.5 bg-emerald-200/80 hover:bg-emerald-300 px-1 py-0.2 rounded transition-colors"
                                       >
                                         <Download className="w-2.5 h-2.5 inline" />
-                                        <span className="text-[9px]">View / Download</span>
+                                        <span className="text-[9px]">View</span>
                                       </button>
                                     )}
                                   </>
                                 ) : (
                                   <>
-                                    <AlertTriangle className="w-3 h-3 text-red-600 flex-shrink-0" />
+                                    <AlertTriangle className="w-2.5 h-2.5 text-red-600 flex-shrink-0" />
                                     <span>Not Uploaded</span>
                                   </>
                                 )}
                               </span>
                             ) : (c.key === "udiseImportStatus" || c.key === "penImportStatus" || c.key === "importStatus") && rawValue && rawValue !== "-" ? (
-                              <span className={`inline-flex items-center gap-1.5 text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full border ${
                                 String(rawValue).toLowerCase().includes("approved")
                                   ? "bg-emerald-100 text-emerald-800 border-emerald-300"
                                   : String(rawValue).toLowerCase().includes("sent")
@@ -4482,11 +4505,11 @@ export default function GovernmentEntryPage() {
                                   : "bg-purple-100 text-purple-800 border-purple-300"
                               }`}>
                                 {String(rawValue).toLowerCase().includes("approved") ? (
-                                  <CheckCircle2 className="w-3 h-3 text-emerald-600 flex-shrink-0" />
+                                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600 flex-shrink-0" />
                                 ) : String(rawValue).toLowerCase().includes("sent") ? (
-                                  <Clock className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                                  <Clock className="w-2.5 h-2.5 text-blue-600 flex-shrink-0" />
                                 ) : (
-                                  <AlertTriangle className="w-3 h-3 text-purple-600 flex-shrink-0" />
+                                  <AlertTriangle className="w-2.5 h-2.5 text-purple-600 flex-shrink-0" />
                                 )}
                                 <span>{String(rawValue)}</span>
                               </span>
@@ -4496,6 +4519,22 @@ export default function GovernmentEntryPage() {
                                 <a href={`tel:${rawValue}`} title={`Call ${rawValue}`} onClick={e => e.stopPropagation()} className="text-purple-600 hover:text-purple-900 font-sans text-xs">
                                   📞
                                 </a>
+                              </span>
+                            ) : c.key === "remarks" || c.key === "documentsPending" ? (
+                              <span className="block max-w-[160px] truncate" title={rawValue && rawValue !== "-" ? String(rawValue) : ""}>
+                                {rawValue !== "" && rawValue !== "-" ? String(rawValue) : <span className="text-gray-300">-</span>}
+                              </span>
+                            ) : c.key === "name" ? (
+                              <span className="font-medium text-gray-900 block max-w-[160px] truncate" title={String(rawValue)}>
+                                {String(rawValue)}
+                              </span>
+                            ) : c.key === "grNo" ? (
+                              <span className="font-mono font-bold text-school-navy">
+                                {String(rawValue)}
+                              </span>
+                            ) : c.key === "session" ? (
+                              <span className="font-mono text-gray-600">
+                                {String(rawValue)}
                               </span>
                             ) : rawValue !== "" && rawValue !== "-" ? (
                               String(rawValue)
@@ -4509,65 +4548,16 @@ export default function GovernmentEntryPage() {
                   );
                 })}
                 {rows.length > 0 && (
-                  <tr ref={tableEndRef} className="h-8 select-none pointer-events-none">
-                    <td colSpan={columns.length + 3} className="p-0 border-0 h-8 bg-transparent"></td>
+                  <tr ref={tableEndRef} className="h-6 select-none pointer-events-none">
+                    <td colSpan={columns.length + 3} className="p-0 border-0 h-6 bg-transparent"></td>
                   </tr>
                 )}
                 {rows.length === 0 && (
-                  <tr><td colSpan={columns.length + 3} className="px-4 py-10 text-center text-gray-400 text-sm">No students match the selected filters</td></tr>
+                  <tr><td colSpan={columns.length + 3} className="px-4 py-8 text-center text-gray-400 text-sm">No students match the selected filters</td></tr>
                 )}
               </tbody>
             </table>
           </div>
-
-          {/* Sub-tabs frozen below table for Online General Register (Primary vs General) */}
-          {mainTab === "onlineGr" && (
-            <div className="sticky bottom-0 z-30 bg-white/95 backdrop-blur-md border border-gray-200 rounded-xl px-3.5 py-2 shadow-md flex flex-wrap items-center justify-between gap-3 mt-1.5">
-              <div className="flex gap-1 bg-gray-100 p-1 rounded-xl border border-gray-200 w-fit">
-                <button
-                  type="button"
-                  onClick={() => setGrSubTab("primary")}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    grSubTab === "primary"
-                      ? "bg-school-navy text-white shadow-sm"
-                      : "text-gray-600 hover:text-gray-900 hover:bg-white/60"
-                  }`}
-                >
-                  <BookOpen className="w-3.5 h-3.5"/>
-                  <span>Primary (JR, SR, Balvatika)</span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                    grSubTab === "primary" ? "bg-white/20 text-white" : "bg-gray-200 text-gray-700"
-                  }`}>
-                    {(onlineGrDataset.primary || []).length}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGrSubTab("general")}
-                  className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    grSubTab === "general"
-                      ? "bg-school-navy text-white shadow-sm"
-                      : "text-gray-600 hover:text-gray-900 hover:bg-white/60"
-                  }`}
-                >
-                  <BookOpen className="w-3.5 h-3.5"/>
-                  <span>General (1st+)</span>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                    grSubTab === "general" ? "bg-white/20 text-white" : "bg-gray-200 text-gray-700"
-                  }`}>
-                    {(onlineGrDataset.general || []).length}
-                  </span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2 text-xs text-gray-500 font-medium">
-                <span className="hidden sm:inline">Active Register:</span>
-                <span className="font-bold text-gray-800 bg-gray-100 px-2.5 py-1 rounded-lg border border-gray-200">
-                  {grSubTab === "primary" ? "Primary Register (PR)" : "General Register (GR)"}
-                </span>
-              </div>
-            </div>
-          )}
 
           {/* Sub-tabs frozen below table for Import (UDISE vs PEN vs All) */}
           {mainTab === "import" && (
