@@ -95,11 +95,27 @@ function fromDbRow(row) {
   return item;
 }
 
+function parseGrNum(gr) {
+  if (!gr) return 0;
+  const m = String(gr).match(/\d+/);
+  return m ? parseInt(m[0], 10) : 0;
+}
+
+function sortRegisterRows(rows) {
+  return rows.sort((a, b) => {
+    const na = parseGrNum(a.grNo);
+    const nb = parseGrNum(b.grNo);
+    if (na !== nb) return na - nb;
+    return String(a.grNo || "").localeCompare(String(b.grNo || ""), undefined, { numeric: true });
+  });
+}
+
 function bundledDataset() {
-  return {
-    primary: initialData.primary.map((r) => ({ ...r })),
-    general: initialData.general.map((r) => ({ ...r })),
-  };
+  const primary = initialData.primary.map((r) => ({ ...r }));
+  const general = initialData.general.map((r) => ({ ...r }));
+  sortRegisterRows(primary);
+  sortRegisterRows(general);
+  return { primary, general };
 }
 
 function isTableMissing(error) {
@@ -159,6 +175,8 @@ async function readDataset(supabaseAdmin) {
     if (item.section === "primary") primary.push(item);
     else general.push(item);
   }
+  sortRegisterRows(primary);
+  sortRegisterRows(general);
   return { primary, general };
 }
 

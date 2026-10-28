@@ -530,8 +530,15 @@ function getLastSavedGrInfo(section, dataset, dbStudents = []) {
 
   if (validRows.length > 0) {
     // REQ: "last saved should always show last row"
-    // The physical last row of the register table is the actual last record entered
-    const lastRow = validRows[validRows.length - 1];
+    // The register is ordered sequentially by GR/PR number.
+    // Sort valid rows sequentially so the last row is ALWAYS the highest/last sequential row in this register.
+    const sorted = [...validRows].sort((a, b) => {
+      const numA = parseGrNum(a?.grNo);
+      const numB = parseGrNum(b?.grNo);
+      if (numA !== numB) return numA - numB;
+      return String(a?.grNo || "").localeCompare(String(b?.grNo || ""), undefined, { numeric: true });
+    });
+    const lastRow = sorted[sorted.length - 1];
     return {
       grNo: String(lastRow.grNo).trim(),
       name: String(lastRow.name).trim(),
@@ -836,7 +843,16 @@ export default function GovernmentEntryPage() {
       if (phases.status === "fulfilled") setDbPhases(phases.value || []);
       if (entries.status === "fulfilled") setDbPhaseEntryEnrollments(entries.value || []);
       if (grData.status === "fulfilled" && grData.value) {
-        setOnlineGrDataset(grData.value);
+        const sortGrList = (list) => [...(list || [])].sort((a, b) => {
+          const na = parseGrNum(a?.grNo);
+          const nb = parseGrNum(b?.grNo);
+          if (na !== nb) return na - nb;
+          return String(a?.grNo || "").localeCompare(String(b?.grNo || ""), undefined, { numeric: true });
+        });
+        setOnlineGrDataset({
+          primary: sortGrList(grData.value.primary),
+          general: sortGrList(grData.value.general),
+        });
       }
       // REQ-BUG-078 (3): surface any failed load instead of showing an
       // empty table that looks like "no data". First failure's own error
