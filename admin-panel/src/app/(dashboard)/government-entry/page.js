@@ -1535,7 +1535,9 @@ export default function GovernmentEntryPage() {
       const raw = typeof window !== "undefined" ? localStorage.getItem("ssis_gov_entry_wizard_progress") : null;
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed?.enrollNo || parsed?.grNo) {
+        if (parsed?.completed) {
+          clearProgressFromStorage();
+        } else if (parsed?.enrollNo || parsed?.grNo || parsed?.studentName) {
           setInProgressSession(parsed);
         }
       }
@@ -1696,121 +1698,6 @@ export default function GovernmentEntryPage() {
 
     saveProgressToStorage(sessionData);
     resumeProgress(sessionData);
-  }
-
-  function openLastSavedAsAddStudent(lastInfo, targetStep = null) {
-    if (!lastInfo) return;
-    const enrollNo = lastInfo.enrollNo || lastInfo.row?.enrollNo || lastInfo.student?.enrollNo;
-    const grNo = lastInfo.grNo || lastInfo.row?.grNo || lastInfo.student?.grNo;
-    const studentId = lastInfo.studentId || lastInfo.row?.studentId || lastInfo.student?.studentId || lastInfo.row?.id || lastInfo.student?.id;
-
-    let rawStudent = (dbStudents || []).find(s =>
-      (enrollNo && s.enrollNo === enrollNo) ||
-      (studentId && (s.studentId === studentId || s.id === studentId)) ||
-      (grNo && s.grNo === grNo) ||
-      (lastInfo.name && s.name && s.name.toUpperCase() === lastInfo.name.toUpperCase())
-    );
-
-    if (!rawStudent && lastInfo.row) rawStudent = lastInfo.row;
-    else if (!rawStudent && lastInfo.student) rawStudent = lastInfo.student;
-
-    if (!rawStudent) {
-      alert(`Could not find student record for GR #${grNo || lastInfo.name}`);
-      return;
-    }
-
-    const student = decorate(rawStudent);
-
-    // If targetStep is 1, open directly in Add New Student modal with this student selected
-    if (targetStep === 1) {
-      openLastSavedInAddModal(lastInfo);
-      return;
-    }
-
-    if (lastInfo.row && !targetStep) {
-      resumeFromOnlineGrRow(lastInfo.row);
-      return;
-    }
-
-    const hasUdise = (student.udise && student.udise !== "-" && student.udise !== "Not Defined");
-    const hasPen = (student.pen && student.pen !== "-" && student.pen !== "Not Defined");
-    const penNotDefined = student.pen === "Not Defined";
-
-    let step = targetStep || 2;
-    if (!targetStep) {
-      if (hasUdise && !(hasPen || penNotDefined)) {
-        step = 3;
-      } else if (hasUdise && (hasPen || penNotDefined)) {
-        step = 4;
-      } else {
-        step = 2;
-      }
-    }
-
-    const createdRowId = lastInfo.row?.id || null;
-    const section = lastInfo.row?.section || classSection(student.cls) || grSubTab || "general";
-
-    const sessionData = {
-      enrollNo: student.enrollNo,
-      studentId: student.studentId || student.id,
-      grNo: String(grNo || "").trim(),
-      doeSlash: student.doeSlash || getTodaySlash(),
-      remarks: student.remarks && student.remarks !== "-" ? student.remarks : "",
-      step,
-      subPhase: "details",
-      createdRowId,
-      section,
-      studentName: student.name,
-      cls: student.cls,
-      session: student.session || "",
-      timestamp: Date.now(),
-    };
-
-    saveProgressToStorage(sessionData);
-    resumeProgress(sessionData);
-  }
-
-  function openLastSavedInAddModal(lastInfo) {
-    if (!lastInfo) return;
-    const enrollNo = lastInfo.enrollNo || lastInfo.row?.enrollNo || lastInfo.student?.enrollNo;
-    const grNo = lastInfo.grNo || lastInfo.row?.grNo || lastInfo.student?.grNo;
-    const studentId = lastInfo.studentId || lastInfo.row?.studentId || lastInfo.student?.studentId || lastInfo.row?.id || lastInfo.student?.id;
-
-    let rawStudent = (dbStudents || []).find(s =>
-      (enrollNo && s.enrollNo === enrollNo) ||
-      (studentId && (s.studentId === studentId || s.id === studentId)) ||
-      (grNo && s.grNo === grNo) ||
-      (lastInfo.name && s.name && s.name.toUpperCase() === lastInfo.name.toUpperCase())
-    );
-
-    if (!rawStudent && lastInfo.row) rawStudent = lastInfo.row;
-    else if (!rawStudent && lastInfo.student) rawStudent = lastInfo.student;
-
-    if (!rawStudent) {
-      alert(`Could not find student record for GR #${grNo || lastInfo.name}`);
-      return;
-    }
-
-    const student = decorate(rawStudent);
-    const sec = lastInfo.row?.section || classSection(student.cls) || grSubTab || "general";
-    if (sec) {
-      setGrSubTab(sec);
-      setAddSection(sec);
-    }
-
-    setAddModalOpen(true);
-    setAddWizardActive(false);
-    setAddStep(1);
-    setAddSubPhase("details");
-    setAddSelectedStudent(student);
-    setAddGrNo(String(grNo || "").trim());
-    setAddGrEditing(false);
-    setAddDoeSlash(student.doeSlash && student.doeSlash !== "-" ? student.doeSlash : getTodaySlash());
-    setAddDoeEditing(false);
-    setAddCreatedRowId(lastInfo.row?.id || null);
-    setAddPinnedEnrollNo(null);
-    setAddRemarks(student.remarks && student.remarks !== "-" ? student.remarks : "");
-    setAddError("");
   }
 
   // ── GR / PR Number Conflict Checking ─────────────────────────────────────
@@ -3323,23 +3210,8 @@ export default function GovernmentEntryPage() {
         }));
       }
 
-      saveProgressToStorage({
-        enrollNo: addSelectedStudent.enrollNo,
-        studentId: addSelectedStudent.studentId || addSelectedStudent.id,
-        name: addSelectedStudent.name,
-        studentName: addSelectedStudent.name,
-        cls: addSelectedStudent.cls,
-        session: addSelectedStudent.session || "",
-        section: addSection,
-        step: 1,
-        grNo: addGrNo,
-        doeSlash: chosenDoe,
-        subPhase: "details",
-        createdRowId: addCreatedRowId,
-        remarks: finalRemarks,
-        completed: true,
-        timestamp: Date.now(),
-      });
+      // Entry is fully completed and saved to register — clear in-progress wizard session
+      clearProgressFromStorage();
       setAddModalOpen(false);
       setAddWizardActive(false);
 
@@ -4037,7 +3909,7 @@ export default function GovernmentEntryPage() {
         </div>
       )}
       {/* In Progress Resume Banner - Slim single-line strip */}
-      {inProgressSession && !addWizardActive && (
+      {inProgressSession && !inProgressSession.completed && !addWizardActive && (
         <div className="bg-amber-50/90 border border-amber-300/80 rounded-lg px-2.5 py-1 shadow-xs flex flex-wrap items-center justify-between gap-2 text-xs animate-fadeIn">
           <div className="flex items-center gap-2 min-w-0">
             <span className="relative flex h-2 w-2 flex-shrink-0">
@@ -4047,8 +3919,8 @@ export default function GovernmentEntryPage() {
             <div className="flex items-center gap-1.5 truncate text-[11px] text-amber-900">
               <span className="font-semibold text-amber-800">In Progress:</span>
               <span className="font-mono bg-amber-200 text-amber-950 px-1.5 py-0.2 rounded font-bold text-[10px]">{inProgressSession.grNo || "Student"}</span>
-              <span className="font-medium truncate">{inProgressSession.studentName} ({inProgressSession.cls})</span>
-              <span className="text-amber-700 hidden md:inline">· Step {inProgressSession.step}/4 ({
+              <span className="font-medium truncate">{inProgressSession.studentName || inProgressSession.name} ({inProgressSession.cls})</span>
+              <span className="text-amber-700 hidden md:inline">· Step {inProgressSession.step || 1}/4 ({
                 inProgressSession.step === 2 ? "UDISE" :
                 inProgressSession.step === 3 ? "PEN" :
                 inProgressSession.step === 4 ? "Confirm" : "Select"
@@ -4469,14 +4341,32 @@ export default function GovernmentEntryPage() {
                 </span>
 
                 {mainTab === "onlineGr" && (
-                  <button
-                    type="button"
-                    onClick={openAddModal}
-                    title="Add a new student into this register"
-                    className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 shadow-sm transition-all cursor-pointer"
-                  >
-                    <UserPlus className="w-3.5 h-3.5"/> Add New Student
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {inProgressSession && !inProgressSession.completed && !addWizardActive && (
+                      <button
+                        type="button"
+                        onClick={() => resumeProgress(inProgressSession)}
+                        title={`Resume last worked student: ${inProgressSession.studentName || inProgressSession.name} (${inProgressSession.grNo ? '#' + inProgressSession.grNo : 'Step ' + (inProgressSession.step || 1)})`}
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white shadow-xs transition-all cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5 text-amber-200" />
+                        <span>Resume: {inProgressSession.studentName || inProgressSession.name}</span>
+                        {inProgressSession.grNo && (
+                          <span className="font-mono font-bold bg-amber-700/80 px-1.5 py-0.2 rounded text-[10px]">
+                            #{inProgressSession.grNo}
+                          </span>
+                        )}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={openAddModal}
+                      title="Add a new student into this register"
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 shadow-sm transition-all cursor-pointer"
+                    >
+                      <UserPlus className="w-3.5 h-3.5"/> Add New Student
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
@@ -5227,25 +5117,17 @@ export default function GovernmentEntryPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2.5">
-                {addStep === 1 && !addSelectedStudent && (() => {
-                  const activeSec = (addClassFilter && addClassFilter !== "All")
-                    ? classSection(addClassFilter) || grSubTab || "general"
-                    : grSubTab || "general";
-                  const activeLast = getLastSavedGrInfo(activeSec, onlineGrDataset, dbStudents);
-                  const resumeTarget = inProgressSession || activeLast;
-                  if (!resumeTarget) return null;
-                  return (
-                    <button
-                      type="button"
-                      onClick={() => resumeProgress(resumeTarget)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
-                      title={`Resume: ${resumeTarget.studentName || resumeTarget.name || "Student"} (${resumeTarget.section === "primary" ? "PR" : "GR"} #${resumeTarget.grNo || "-"})`}
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-amber-300" />
-                      <span>Resume: {resumeTarget.studentName || resumeTarget.name || "Last Student"} {resumeTarget.grNo ? `(#${resumeTarget.grNo})` : ""}</span>
-                    </button>
-                  );
-                })()}
+                {addStep === 1 && !addSelectedStudent && inProgressSession && !inProgressSession.completed && (
+                  <button
+                    type="button"
+                    onClick={() => resumeProgress(inProgressSession)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
+                    title={`Resume last worked student: ${inProgressSession.studentName || inProgressSession.name} (${inProgressSession.grNo ? '#' + inProgressSession.grNo : 'Step ' + (inProgressSession.step || 1)})`}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Resume: {inProgressSession.studentName || inProgressSession.name} {inProgressSession.grNo ? `(#${inProgressSession.grNo})` : `(Step ${inProgressSession.step || 1}/4)`}</span>
+                  </button>
+                )}
                 <button onClick={closeAddModal} className="text-gray-400 hover:text-gray-600">
                   <X className="w-5 h-5"/>
                 </button>
@@ -5278,7 +5160,7 @@ export default function GovernmentEntryPage() {
                     </div>
                   </div>
 
-                  {/* Last Saved Register Assist Cards — Both Primary & 1st+ Registers */}
+                  {/* Last Saved Register Reference Cards — Both Primary & 1st+ Registers */}
                   {(() => {
                     const primaryLast = getLastSavedGrInfo("primary", onlineGrDataset, dbStudents);
                     const generalLast = getLastSavedGrInfo("general", onlineGrDataset, dbStudents);
@@ -5314,17 +5196,6 @@ export default function GovernmentEntryPage() {
                                 </span>
                               )}
                             </div>
-                            {primaryLast && (
-                              <button
-                                type="button"
-                                onClick={() => resumeProgress(primaryLast)}
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-900 hover:text-white bg-white hover:bg-blue-700 border border-blue-300 px-2.5 py-1 rounded-md transition-colors flex-shrink-0 cursor-pointer shadow-2xs"
-                                title={`Resume Primary Register last GR #${primaryLast.grNo} (${primaryLast.name})`}
-                              >
-                                <RotateCcw className="w-3 h-3 text-amber-500" />
-                                <span>Resume</span>
-                              </button>
-                            )}
                           </div>
                         </div>
 
@@ -5355,17 +5226,6 @@ export default function GovernmentEntryPage() {
                                 </span>
                               )}
                             </div>
-                            {generalLast && (
-                              <button
-                                type="button"
-                                onClick={() => resumeProgress(generalLast)}
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-900 hover:text-white bg-white hover:bg-indigo-700 border border-indigo-300 px-2.5 py-1 rounded-md transition-colors flex-shrink-0 cursor-pointer shadow-2xs"
-                                title={`Resume 1st+ Register last GR #${generalLast.grNo} (${generalLast.name})`}
-                              >
-                                <RotateCcw className="w-3 h-3 text-amber-500" />
-                                <span>Resume</span>
-                              </button>
-                            )}
                           </div>
                         </div>
                       </div>
