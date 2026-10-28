@@ -1565,28 +1565,54 @@ export default function GovernmentEntryPage() {
   }
 
   function resumeProgress(saved) {
-    if (!saved) return;
-    const rawStudent = dbStudents.find(
-      s => (saved.enrollNo && s.enrollNo === saved.enrollNo) ||
-           (saved.studentId && (s.studentId === saved.studentId || s.id === saved.studentId)) ||
-           (saved.grNo && s.grNo === saved.grNo)
-    );
-    const student = rawStudent ? decorate(rawStudent) : (saved.student ? decorate(saved.student) : null);
+    const session = saved || inProgressSession;
+    if (!session) return;
 
-    if (!student) {
-      alert("Could not locate the student record in database.");
+    // 1. Search in dbStudents
+    let rawStudent = (dbStudents || []).find(
+      s => (session.enrollNo && s.enrollNo === session.enrollNo) ||
+           (session.studentId && (s.studentId === session.studentId || s.id === session.studentId)) ||
+           (session.grNo && (s.grNo === session.grNo || s.grno === session.grNo)) ||
+           ((session.studentName || session.name) && s.name && s.name.toUpperCase() === (session.studentName || session.name).toUpperCase())
+    );
+
+    // 2. If not found in dbStudents, search onlineGrDataset (both Primary and General Registers)
+    if (!rawStudent) {
+      const allGrRows = [
+        ...(onlineGrDataset?.primary || []),
+        ...(onlineGrDataset?.general || []),
+      ];
+      rawStudent = allGrRows.find(
+        r => (session.enrollNo && r.enrollNo === session.enrollNo) ||
+             (session.studentId && (r.studentId === session.studentId || r.id === session.studentId)) ||
+             (session.createdRowId && r.id === session.createdRowId) ||
+             (session.grNo && r.grNo === session.grNo) ||
+             ((session.studentName || session.name) && r.name && r.name.toUpperCase() === (session.studentName || session.name).toUpperCase())
+      );
+    }
+
+    // 3. Fallback to session.student or session itself
+    if (!rawStudent && session.student) rawStudent = session.student;
+    if (!rawStudent && (session.studentName || session.name)) rawStudent = session;
+
+    if (!rawStudent) {
+      alert(`Could not locate student record for ${session.studentName || session.name || session.grNo || "student"}.`);
       return;
     }
 
-    const step = saved.step || 2;
-    const subPhase = saved.subPhase || "details";
-    const grNo = saved.grNo || student.grNo || "";
-    const createdRowId = saved.createdRowId || null;
+    const student = decorate(rawStudent);
+    const step = session.step || 1;
+    const subPhase = session.subPhase || "details";
+    const grNo = session.grNo || student.grNo || "";
+    const createdRowId = session.createdRowId || rawStudent.id || null;
+    const sec = session.section || (student.cls ? classSection(student.cls) : null) || grSubTab || "general";
 
+    setGrSubTab(sec);
+    setAddSection(sec);
     setAddSelectedStudent(student);
     setAddGrNo(grNo);
-    if (saved.doeSlash) setAddDoeSlash(saved.doeSlash);
-    const savedRemarks = saved.remarks || student.remarks || "";
+    if (session.doeSlash || student.doeSlash) setAddDoeSlash(session.doeSlash || student.doeSlash);
+    const savedRemarks = session.remarks || student.remarks || "";
     setAddRemarks(savedRemarks && savedRemarks !== "-" ? savedRemarks : "");
     setAddCreatedRowId(createdRowId);
     setAddStep(step);
@@ -1617,32 +1643,29 @@ export default function GovernmentEntryPage() {
       }
     } else if (step === 4) {
       setMainTab("onlineGr");
-      const sec = classSection(student.cls);
-      if (sec) setGrSubTab(sec);
       setAddPinnedEnrollNo(null);
       setAddModalOpen(true);
     } else {
       setMainTab("onlineGr");
+      setAddPinnedEnrollNo(null);
       setAddModalOpen(true);
+      setAddGrEditing(false);
+      setAddDoeEditing(false);
     }
   }
 
   function resumeFromOnlineGrRow(row) {
     if (!row) return;
-    const rawStudent = dbStudents.find(
+    let rawStudent = (dbStudents || []).find(
       s => (row.enrollNo && s.enrollNo === row.enrollNo) ||
            (row.aadharNo && row.aadharNo !== "-" && s.aadharNo === row.aadharNo) ||
            (row.mobile1 && row.mobile1 !== "-" && s.mobile1 === row.mobile1) ||
            (row.name && s.name && s.name.toUpperCase() === row.name.toUpperCase() && s.cls === row.cls)
     );
 
-    if (!rawStudent) {
-      alert(`Could not link ${row.name || "this row"} to a database student record.`);
-      return;
-    }
+    if (!rawStudent) rawStudent = row;
 
     const student = decorate(rawStudent);
-
     const grNo = row.grNo || student.grNo || "";
     const createdRowId = row.id;
 
@@ -1658,16 +1681,16 @@ export default function GovernmentEntryPage() {
     }
 
     const sessionData = {
-      enrollNo: student.enrollNo,
-      studentId: student.studentId || student.id,
+      enrollNo: student.enrollNo || row.enrollNo || "",
+      studentId: student.studentId || student.id || row.studentId || row.id,
       grNo,
       step,
       subPhase: "details",
       createdRowId,
       section: row.section || classSection(student.cls),
-      studentName: student.name,
-      cls: student.cls,
-      session: student.session || row.session,
+      studentName: student.name || row.name,
+      cls: student.cls || row.cls,
+      session: student.session || row.session || "",
       timestamp: Date.now(),
     };
 
@@ -2965,6 +2988,23 @@ export default function GovernmentEntryPage() {
     setAddDoeEditing(false);
     setAddRemarks(existingRemarks);
     setAddError("");
+
+    saveProgressToStorage({
+      enrollNo: st.enrollNo,
+      studentId: st.studentId || st.id,
+      name: st.name,
+      studentName: st.name,
+      cls: st.cls,
+      session: st.session || "",
+      section: sec,
+      step: 1,
+      grNo: existingGr || nextGr || "",
+      doeSlash: existingDoe,
+      subPhase: "details",
+      createdRowId: existingRow ? existingRow.id : null,
+      remarks: existingRemarks,
+      timestamp: Date.now(),
+    });
   }
 
   function changeAddStudent() {
@@ -3283,7 +3323,23 @@ export default function GovernmentEntryPage() {
         }));
       }
 
-      clearProgressFromStorage();
+      saveProgressToStorage({
+        enrollNo: addSelectedStudent.enrollNo,
+        studentId: addSelectedStudent.studentId || addSelectedStudent.id,
+        name: addSelectedStudent.name,
+        studentName: addSelectedStudent.name,
+        cls: addSelectedStudent.cls,
+        session: addSelectedStudent.session || "",
+        section: addSection,
+        step: 1,
+        grNo: addGrNo,
+        doeSlash: chosenDoe,
+        subPhase: "details",
+        createdRowId: addCreatedRowId,
+        remarks: finalRemarks,
+        completed: true,
+        timestamp: Date.now(),
+      });
       setAddModalOpen(false);
       setAddWizardActive(false);
 
@@ -5171,39 +5227,17 @@ export default function GovernmentEntryPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2.5">
-                {addStep === 1 && !addSelectedStudent && (() => {
-                  const activeSec = (addClassFilter && addClassFilter !== "All")
-                    ? classSection(addClassFilter) || grSubTab || "general"
-                    : grSubTab || "general";
-                  const lastInfo = getLastSavedGrInfo(activeSec, onlineGrDataset, dbStudents);
-                  const isPrimary = activeSec === "primary";
-                  return (
-                    <div className="flex items-center gap-2">
-                      {inProgressSession && (
-                        <button
-                          type="button"
-                          onClick={() => resumeProgress(inProgressSession)}
-                          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
-                          title={`Resume unfinished session for ${inProgressSession.studentName || "student"} (Step ${inProgressSession.step || 1} of 4)`}
-                        >
-                          <RotateCcw className="w-3.5 h-3.5 text-amber-200" />
-                          <span>Resume In-Progress Session</span>
-                        </button>
-                      )}
-                      {lastInfo && (
-                        <button
-                          type="button"
-                          onClick={() => openLastSavedInAddModal(lastInfo)}
-                          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
-                          title={`Open last saved ${isPrimary ? "PR" : "GR"} #${lastInfo.grNo} (${lastInfo.name}) in form`}
-                        >
-                          <FileText className="w-3.5 h-3.5 text-indigo-200" />
-                          <span>Open Last Saved (#{lastInfo.grNo})</span>
-                        </button>
-                      )}
-                    </div>
-                  );
-                })()}
+                {addStep === 1 && !addSelectedStudent && inProgressSession && (
+                  <button
+                    type="button"
+                    onClick={() => resumeProgress(inProgressSession)}
+                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
+                    title={`Resume last worked student: ${inProgressSession.studentName || inProgressSession.name} (${inProgressSession.section === "primary" ? "PR" : "GR"} #${inProgressSession.grNo || "-"})`}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-amber-300" />
+                    <span>Resume: {inProgressSession.studentName || inProgressSession.name} {inProgressSession.grNo ? `(#${inProgressSession.grNo})` : ""}</span>
+                  </button>
+                )}
                 <button onClick={closeAddModal} className="text-gray-400 hover:text-gray-600">
                   <X className="w-5 h-5"/>
                 </button>
@@ -5236,55 +5270,91 @@ export default function GovernmentEntryPage() {
                     </div>
                   </div>
 
-                  {/* Last Saved Register Assist Banner */}
+                  {/* Last Saved Register Assist Cards — Both Primary & 1st+ Registers */}
                   {(() => {
-                    const activeSec = (addClassFilter && addClassFilter !== "All")
-                      ? classSection(addClassFilter) || grSubTab || "general"
-                      : grSubTab || "general";
-                    const isPrimary = activeSec === "primary";
-                    const lastInfo = getLastSavedGrInfo(activeSec, onlineGrDataset, dbStudents);
-                    const nextGr = lastInfo ? getNextGrNo(lastInfo.grNo) : "";
-                    if (!lastInfo) return null;
+                    const primaryLast = getLastSavedGrInfo("primary", onlineGrDataset, dbStudents);
+                    const generalLast = getLastSavedGrInfo("general", onlineGrDataset, dbStudents);
+                    const primaryNext = primaryLast ? getNextGrNo(primaryLast.grNo) : "";
+                    const generalNext = generalLast ? getNextGrNo(generalLast.grNo) : "";
+
                     return (
-                      <div className="bg-gradient-to-r from-blue-50/80 via-indigo-50/40 to-blue-50/80 border border-blue-200 rounded-xl px-3.5 py-2.5 flex-shrink-0 shadow-xs">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="flex h-2 w-2 relative">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600"></span>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 flex-shrink-0">
+                        {/* 1. Primary Register (Balvatika - KG) */}
+                        <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/40 to-blue-50/90 border border-blue-200 rounded-xl p-2.5 flex flex-col justify-between shadow-2xs">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-[10px] font-bold text-blue-900 uppercase tracking-wide flex items-center gap-1.5">
+                              <span className="h-1.5 w-1.5 rounded-full bg-blue-600 inline-block"></span>
+                              Primary Last Row (Balvatika - KG)
                             </span>
-                            <span className="text-[11px] font-bold text-blue-900 uppercase tracking-wide">
-                              Last Saved in {isPrimary ? "Primary Register (PR)" : "General Register (GR)"}:
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-white border border-blue-300 font-mono font-bold text-xs text-blue-950 shadow-2xs">
-                              {lastInfo.grNo}
-                            </span>
-                            <span className="text-xs font-semibold text-gray-800">
-                              — {lastInfo.name}
-                            </span>
-                            {lastInfo.cls && (
-                              <span className="text-[11px] px-1.5 py-0.2 bg-white text-gray-600 rounded border border-gray-200">
-                                {lastInfo.cls}
+                            {primaryNext && (
+                              <span className="text-[10px] text-gray-500 font-medium">
+                                Next: <strong className="font-mono text-blue-700 font-bold">{primaryNext}</strong>
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => openLastSavedInAddModal(lastInfo)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
-                              title={`Open last saved ${isPrimary ? "PR" : "GR"} #${lastInfo.grNo} (${lastInfo.name}) in form`}
-                            >
-                              <FileText className="w-3.5 h-3.5 text-indigo-200" />
-                              <span>Open Last Saved in Form</span>
-                            </button>
-                            {nextGr && (
-                              <div className="flex items-center gap-1.5 text-xs">
-                                <span className="text-gray-500 font-medium">Next Suggested:</span>
-                                <span className="px-2 py-0.5 rounded bg-blue-600 text-white font-mono font-bold text-xs shadow-xs">
-                                  {nextGr}
+                          <div className="flex items-center justify-between mt-1.5 gap-2">
+                            <div className="flex items-center gap-1.5 truncate">
+                              <span className="font-mono font-bold text-xs bg-white border border-blue-300 text-blue-950 px-2 py-0.5 rounded shadow-2xs">
+                                {primaryLast?.grNo || "-"}
+                              </span>
+                              <span className="text-xs font-semibold text-gray-800 truncate">
+                                {primaryLast?.name || "-"}
+                              </span>
+                              {primaryLast?.cls && (
+                                <span className="text-[10px] px-1.5 py-0.2 bg-white text-gray-600 rounded border border-gray-200 flex-shrink-0">
+                                  {primaryLast.cls}
                                 </span>
-                              </div>
+                              )}
+                            </div>
+                            {primaryLast && (
+                              <button
+                                type="button"
+                                onClick={() => openLastSavedInAddModal(primaryLast)}
+                                className="text-[11px] font-semibold text-blue-800 hover:text-blue-950 bg-white hover:bg-blue-100 border border-blue-300 px-2.5 py-0.5 rounded transition-colors flex-shrink-0 cursor-pointer shadow-2xs"
+                                title={`Open ${primaryLast.name} (${primaryLast.grNo}) in form`}
+                              >
+                                Open
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 2. 1st+ (General Register, Class 1st to 12th) */}
+                        <div className="bg-gradient-to-r from-indigo-50/90 via-purple-50/40 to-indigo-50/90 border border-indigo-200 rounded-xl p-2.5 flex flex-col justify-between shadow-2xs">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-[10px] font-bold text-indigo-900 uppercase tracking-wide flex items-center gap-1.5">
+                              <span className="h-1.5 w-1.5 rounded-full bg-indigo-600 inline-block"></span>
+                              1st+ Last Row (Class 1st to 12th)
+                            </span>
+                            {generalNext && (
+                              <span className="text-[10px] text-gray-500 font-medium">
+                                Next: <strong className="font-mono text-indigo-700 font-bold">{generalNext}</strong>
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between mt-1.5 gap-2">
+                            <div className="flex items-center gap-1.5 truncate">
+                              <span className="font-mono font-bold text-xs bg-white border border-indigo-300 text-indigo-950 px-2 py-0.5 rounded shadow-2xs">
+                                {generalLast?.grNo || "-"}
+                              </span>
+                              <span className="text-xs font-semibold text-gray-800 truncate">
+                                {generalLast?.name || "-"}
+                              </span>
+                              {generalLast?.cls && (
+                                <span className="text-[10px] px-1.5 py-0.2 bg-white text-gray-600 rounded border border-gray-200 flex-shrink-0">
+                                  {generalLast.cls}
+                                </span>
+                              )}
+                            </div>
+                            {generalLast && (
+                              <button
+                                type="button"
+                                onClick={() => openLastSavedInAddModal(generalLast)}
+                                className="text-[11px] font-semibold text-indigo-800 hover:text-indigo-950 bg-white hover:bg-indigo-100 border border-indigo-300 px-2.5 py-0.5 rounded transition-colors flex-shrink-0 cursor-pointer shadow-2xs"
+                                title={`Open ${generalLast.name} (${generalLast.grNo}) in form`}
+                              >
+                                Open
+                              </button>
                             )}
                           </div>
                         </div>
