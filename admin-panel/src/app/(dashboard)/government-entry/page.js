@@ -1568,13 +1568,16 @@ export default function GovernmentEntryPage() {
 
   function resumeProgress(saved) {
     const session = saved || inProgressSession;
-    if (!session) return;
+    if (!session) {
+      alert("No in-progress student session found to resume.");
+      return;
+    }
 
     // 1. Search in dbStudents
     let rawStudent = (dbStudents || []).find(
-      s => (session.enrollNo && s.enrollNo === session.enrollNo) ||
+      s => (session.enrollNo && session.enrollNo !== "-" && s.enrollNo === session.enrollNo) ||
            (session.studentId && (s.studentId === session.studentId || s.id === session.studentId)) ||
-           (session.grNo && (s.grNo === session.grNo || s.grno === session.grNo)) ||
+           (session.grNo && session.grNo !== "-" && (s.grNo === session.grNo || s.grno === session.grNo)) ||
            ((session.studentName || session.name) && s.name && s.name.toUpperCase() === (session.studentName || session.name).toUpperCase())
     );
 
@@ -1585,10 +1588,10 @@ export default function GovernmentEntryPage() {
         ...(onlineGrDataset?.general || []),
       ];
       rawStudent = allGrRows.find(
-        r => (session.enrollNo && r.enrollNo === session.enrollNo) ||
+        r => (session.enrollNo && session.enrollNo !== "-" && r.enrollNo === session.enrollNo) ||
              (session.studentId && (r.studentId === session.studentId || r.id === session.studentId)) ||
              (session.createdRowId && r.id === session.createdRowId) ||
-             (session.grNo && r.grNo === session.grNo) ||
+             (session.grNo && session.grNo !== "-" && (r.grNo === session.grNo || parseGrNum(r.grNo) === parseGrNum(session.grNo))) ||
              ((session.studentName || session.name) && r.name && r.name.toUpperCase() === (session.studentName || session.name).toUpperCase())
       );
     }
@@ -1603,11 +1606,29 @@ export default function GovernmentEntryPage() {
     }
 
     const student = decorate(rawStudent);
-    const step = session.step || 1;
-    const subPhase = session.subPhase || "details";
     const grNo = session.grNo || student.grNo || "";
     const createdRowId = session.createdRowId || rawStudent.id || null;
     const sec = session.section || (student.cls ? classSection(student.cls) : null) || grSubTab || "general";
+
+    // Auto-detect the true step if student already has parts completed
+    const hasGr = Boolean(grNo && grNo !== "-");
+    const hasUdise = Boolean(
+      (student.udise && student.udise !== "-" && student.udise !== "Not Defined") ||
+      (rawStudent.udise && rawStudent.udise !== "-" && rawStudent.udise !== "Not Defined")
+    );
+    const hasPen = Boolean(
+      (student.pen && student.pen !== "-" && student.pen !== "Not Defined") ||
+      (rawStudent.pen && rawStudent.pen !== "-" && rawStudent.pen !== "Not Defined")
+    );
+    const penNotDefined = student.pen === "Not Defined" || rawStudent.pen === "Not Defined";
+
+    let step = session.step;
+    if (!step || (step === 1 && hasGr)) {
+      if (!hasGr) step = 1;
+      else if (!hasUdise) step = 2;
+      else if (!hasPen && !penNotDefined) step = 3;
+      else step = 4;
+    }
 
     setGrSubTab(sec);
     setAddSection(sec);
@@ -1618,40 +1639,53 @@ export default function GovernmentEntryPage() {
     setAddRemarks(savedRemarks && savedRemarks !== "-" ? savedRemarks : "");
     setAddCreatedRowId(createdRowId);
     setAddStep(step);
-    setAddSubPhase(subPhase);
     setAddWizardActive(true);
 
     if (step === 2) {
+      // Step 2: UDISE Entry — open entry modal directly so user can type UDISE immediately
       setMainTab("udise");
       setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
       setEligTab(eligibilityFns.udiseEligible(student) ? "eligible" : "ineligible");
       setSearch("");
-      setAddPinnedEnrollNo(student.enrollNo);
-      setAddModalOpen(false);
-      if (subPhase === "entry") {
-        openEntryModal(student);
-        setFormGrNo(grNo);
+      if (student.enrollNo && student.enrollNo !== "-") {
+        setAddPinnedEnrollNo(student.enrollNo);
+      } else {
+        setAddPinnedEnrollNo(null);
       }
+      setAddModalOpen(false);
+      setAddSubPhase("entry");
+      openEntryModal(student);
+      setFormGrNo(grNo);
     } else if (step === 3) {
+      // Step 3: PEN Entry — open entry modal directly so user can type PEN immediately
       setMainTab("pen");
       setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
       setEligTab(eligibilityFns.penEligible(student) ? "eligible" : "ineligible");
       setSearch("");
-      setAddPinnedEnrollNo(student.enrollNo);
-      setAddModalOpen(false);
-      if (subPhase === "entry") {
-        openEntryModal(student);
-        setFormGrNo(grNo);
+      if (student.enrollNo && student.enrollNo !== "-") {
+        setAddPinnedEnrollNo(student.enrollNo);
+      } else {
+        setAddPinnedEnrollNo(null);
       }
+      setAddModalOpen(false);
+      setAddSubPhase("entry");
+      openEntryModal(student);
+      setFormGrNo(grNo);
     } else if (step === 4) {
+      // Step 4: Final Confirmation Review
       setMainTab("onlineGr");
       setAddPinnedEnrollNo(null);
+      setAddStep(4);
+      setAddSubPhase("details");
       setAddModalOpen(true);
     } else {
+      // Step 1: Select student & enter Reg No
       setMainTab("onlineGr");
       setAddPinnedEnrollNo(null);
+      setAddStep(1);
+      setAddSubPhase("details");
       setAddModalOpen(true);
-      setAddGrEditing(false);
+      setAddGrEditing(!hasGr);
       setAddDoeEditing(false);
     }
   }
@@ -1687,7 +1721,7 @@ export default function GovernmentEntryPage() {
       studentId: student.studentId || student.id || row.studentId || row.id,
       grNo,
       step,
-      subPhase: "details",
+      subPhase: "entry",
       createdRowId,
       section: row.section || classSection(student.cls),
       studentName: student.name || row.name,
