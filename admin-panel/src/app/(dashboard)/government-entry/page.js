@@ -5309,17 +5309,6 @@ export default function GovernmentEntryPage() {
                           )}
                         </div>
                         <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-                          {addSelectedStudent?.enrollNo !== lastInfo.enrollNo && (
-                            <button
-                              type="button"
-                              onClick={() => openLastSavedAsAddStudent(lastInfo)}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-[11px] shadow-xs transition-colors cursor-pointer"
-                              title={`Resume last saved GR #${lastInfo.grNo} (${lastInfo.name})`}
-                            >
-                              <RotateCcw className="w-2.5 h-2.5 text-amber-300" />
-                              <span>Resume Last GR</span>
-                            </button>
-                          )}
                           {nextGr && (
                             <div className="flex items-center gap-1.5 flex-shrink-0">
                               <span className="text-[11px] text-gray-500 font-medium">Suggested Next:</span>
