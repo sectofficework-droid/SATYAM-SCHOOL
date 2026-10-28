@@ -1829,7 +1829,8 @@ export default function GovernmentEntryPage() {
         s => (row.enrollNo && s.enrollNo === row.enrollNo) ||
              (row.aadharNo && row.aadharNo !== "-" && s.aadharNo === row.aadharNo) ||
              (row.mobile1 && row.mobile1 !== "-" && s.mobile1 === row.mobile1) ||
-             (rowName && s.name && String(s.name).trim().toUpperCase() === rowName && s.cls === row.cls)
+             (rowName && s.name && String(s.name).trim().toUpperCase() === rowName && s.cls === row.cls) ||
+             (rowName && `${s.firstName || s.first_name || ""} ${s.surname || s.last_name || ""}`.trim().toUpperCase() === rowName)
       );
 
       if (!rawStudent) rawStudent = row;
@@ -1839,13 +1840,21 @@ export default function GovernmentEntryPage() {
       const createdRowId = row.id;
 
       const hasUdise = Boolean((student.udise && student.udise !== "-") || (row.udise && row.udise !== "-"));
-      const hasPen = Boolean((student.pen && student.pen !== "-" && student.pen !== "Not Defined") || (row.pen && row.pen !== "-" && row.pen !== "Not Defined"));
+      const hasRealPen = Boolean(
+        (student.pen && student.pen !== "-" && student.pen !== "Not Defined") ||
+        (row.pen && row.pen !== "-" && row.pen !== "Not Defined")
+      );
       const penNotDefined = student.pen === "Not Defined" || row.pen === "Not Defined";
 
+      // If missing UDISE -> step 2 (UDISE Entry)
+      // If has UDISE but missing or placeholder PEN -> step 3 (PEN Entry)
+      // If both real UDISE & real PEN exist -> step 4 (Final Confirmation Review)
       let step = 2;
-      if (hasUdise && !(hasPen || penNotDefined)) {
+      if (!hasUdise) {
+        step = 2;
+      } else if (!hasRealPen || penNotDefined) {
         step = 3;
-      } else if (hasUdise && (hasPen || penNotDefined)) {
+      } else {
         step = 4;
       }
 
@@ -4217,6 +4226,17 @@ export default function GovernmentEntryPage() {
                           Next: <strong className="font-mono text-gray-700 font-bold">{nextGr}</strong>
                         </span>
                       )}
+                      {currentLast && (currentLast.row || currentLast.student) && (
+                        <button
+                          type="button"
+                          onClick={() => resumeFromOnlineGrRow(currentLast.row || currentLast.student)}
+                          title={`Resume entry for ${currentLast.name} (${currentLast.grNo})`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-school-navy hover:bg-blue-900 text-white font-semibold text-[11px] shadow-2xs transition-colors cursor-pointer ml-1"
+                        >
+                          <RotateCcw className="w-2.5 h-2.5 text-blue-200" />
+                          <span>Resume</span>
+                        </button>
+                      )}
                     </div>
                   );
                 })()}
@@ -5394,7 +5414,7 @@ export default function GovernmentEntryPage() {
                               <span className="font-mono font-bold text-xs bg-white border border-blue-300 text-blue-950 px-2 py-0.5 rounded shadow-2xs">
                                 {primaryLast?.grNo || "-"}
                               </span>
-                              <span className="text-xs font-semibold text-gray-800 truncate">
+                              <span className="text-xs font-semibold text-gray-800 truncate" title={primaryLast?.name}>
                                 {primaryLast?.name || "-"}
                               </span>
                               {primaryLast?.cls && (
@@ -5403,6 +5423,20 @@ export default function GovernmentEntryPage() {
                                 </span>
                               )}
                             </div>
+                            {primaryLast && (primaryLast.row || primaryLast.student) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAddModalOpen(false);
+                                  resumeFromOnlineGrRow(primaryLast.row || primaryLast.student);
+                                }}
+                                title={`Resume entry for ${primaryLast.name} (${primaryLast.grNo})`}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer flex-shrink-0"
+                              >
+                                <RotateCcw className="w-3 h-3 text-blue-200" />
+                                <span>Resume</span>
+                              </button>
+                            )}
                           </div>
                         </div>
 
@@ -5424,7 +5458,7 @@ export default function GovernmentEntryPage() {
                               <span className="font-mono font-bold text-xs bg-white border border-indigo-300 text-indigo-950 px-2 py-0.5 rounded shadow-2xs">
                                 {generalLast?.grNo || "-"}
                               </span>
-                              <span className="text-xs font-semibold text-gray-800 truncate">
+                              <span className="text-xs font-semibold text-gray-800 truncate" title={generalLast?.name}>
                                 {generalLast?.name || "-"}
                               </span>
                               {generalLast?.cls && (
@@ -5433,6 +5467,20 @@ export default function GovernmentEntryPage() {
                                 </span>
                               )}
                             </div>
+                            {generalLast && (generalLast.row || generalLast.student) && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAddModalOpen(false);
+                                  resumeFromOnlineGrRow(generalLast.row || generalLast.student);
+                                }}
+                                title={`Resume entry for ${generalLast.name} (${generalLast.grNo})`}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer flex-shrink-0"
+                              >
+                                <RotateCcw className="w-3 h-3 text-indigo-200" />
+                                <span>Resume</span>
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -5602,6 +5650,20 @@ export default function GovernmentEntryPage() {
                                 <span className="text-[10px] font-normal opacity-90">(Use)</span>
                               </button>
                             </div>
+                          )}
+                          {lastInfo && (lastInfo.row || lastInfo.student) && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAddModalOpen(false);
+                                resumeFromOnlineGrRow(lastInfo.row || lastInfo.student);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-school-navy hover:bg-blue-900 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
+                              title={`Resume entry for ${lastInfo.name} (${lastInfo.grNo})`}
+                            >
+                              <RotateCcw className="w-3 h-3 text-blue-200" />
+                              <span>Resume</span>
+                            </button>
                           )}
                         </div>
                       </div>
