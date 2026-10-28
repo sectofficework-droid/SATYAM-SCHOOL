@@ -1820,6 +1820,19 @@ export default function GovernmentEntryPage() {
     }
   }
 
+  // Directly open the student details entry form for the last row (Primary or 1st+)
+  // REQ: "resume is simply way to open that student form so session is not required for this"
+  function openLastStudentForm(lastInfo, section) {
+    if (!lastInfo) return;
+    const targetRow = lastInfo.row || lastInfo.student;
+    if (!targetRow) return;
+    setAddModalOpen(false);
+    setAddWizardActive(false);
+    setMainTab("onlineGr");
+    if (section) setGrSubTab(section);
+    openEntryModal(targetRow);
+  }
+
   function resumeFromOnlineGrRow(row) {
     if (!row) return;
     try {
@@ -4229,8 +4242,8 @@ export default function GovernmentEntryPage() {
                       {currentLast && (currentLast.row || currentLast.student) && (
                         <button
                           type="button"
-                          onClick={() => resumeFromOnlineGrRow(currentLast.row || currentLast.student)}
-                          title={`Resume entry for ${currentLast.name} (${currentLast.grNo})`}
+                          onClick={() => openLastStudentForm(currentLast, grSubTab)}
+                          title={`Open entry form for ${currentLast.name} (${currentLast.grNo})`}
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-school-navy hover:bg-blue-900 text-white font-semibold text-[11px] shadow-2xs transition-colors cursor-pointer ml-1"
                         >
                           <RotateCcw className="w-2.5 h-2.5 text-blue-200" />
@@ -5426,11 +5439,8 @@ export default function GovernmentEntryPage() {
                             {primaryLast && (primaryLast.row || primaryLast.student) && (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setAddModalOpen(false);
-                                  resumeFromOnlineGrRow(primaryLast.row || primaryLast.student);
-                                }}
-                                title={`Resume entry for ${primaryLast.name} (${primaryLast.grNo})`}
+                                onClick={() => openLastStudentForm(primaryLast, "primary")}
+                                title={`Open entry form for ${primaryLast.name} (${primaryLast.grNo})`}
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer flex-shrink-0"
                               >
                                 <RotateCcw className="w-3 h-3 text-blue-200" />
@@ -5470,11 +5480,8 @@ export default function GovernmentEntryPage() {
                             {generalLast && (generalLast.row || generalLast.student) && (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setAddModalOpen(false);
-                                  resumeFromOnlineGrRow(generalLast.row || generalLast.student);
-                                }}
-                                title={`Resume entry for ${generalLast.name} (${generalLast.grNo})`}
+                                onClick={() => openLastStudentForm(generalLast, "general")}
+                                title={`Open entry form for ${generalLast.name} (${generalLast.grNo})`}
                                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer flex-shrink-0"
                               >
                                 <RotateCcw className="w-3 h-3 text-indigo-200" />
@@ -5654,12 +5661,9 @@ export default function GovernmentEntryPage() {
                           {lastInfo && (lastInfo.row || lastInfo.student) && (
                             <button
                               type="button"
-                              onClick={() => {
-                                setAddModalOpen(false);
-                                resumeFromOnlineGrRow(lastInfo.row || lastInfo.student);
-                              }}
+                              onClick={() => openLastStudentForm(lastInfo, addSection)}
                               className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-school-navy hover:bg-blue-900 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
-                              title={`Resume entry for ${lastInfo.name} (${lastInfo.grNo})`}
+                              title={`Open entry form for ${lastInfo.name} (${lastInfo.grNo})`}
                             >
                               <RotateCcw className="w-3 h-3 text-blue-200" />
                               <span>Resume</span>
