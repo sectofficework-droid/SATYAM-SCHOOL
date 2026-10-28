@@ -514,60 +514,87 @@ function getNextGrNo(grNo) {
   return `${prefix}${padded}`;
 }
 
+function parseGrNum(val) {
+  if (!val) return 0;
+  const m = String(val).match(/\d+/);
+  return m ? parseInt(m[0], 10) : 0;
+}
+
 function getLastSavedGrInfo(section, dataset, dbStudents = []) {
   const targetSec = section || "general";
-  // 1. Check dataset for section
+  // 1. Check register rows in dataset for this section
   const rows = Array.isArray(dataset?.[targetSec]) ? dataset[targetSec] : [];
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const row = rows[i];
-    const gr = row?.grNo ? String(row.grNo).trim() : "";
-    const name = row?.name ? String(row.name).trim() : "";
-    if (gr && gr !== "-" && name && name !== "-") {
-      return {
-        grNo: gr,
-        name: name,
-        cls: row.cls || "",
-        source: "register",
-        row: row,
-        student: row,
-        enrollNo: row.enrollNo || "",
-        studentId: row.studentId || row.id || "",
-        section: targetSec,
-      };
-    }
-  }
-
-  // 2. Fallback to dbStudents matching section
-  const sectionStudents = (dbStudents || []).filter(st => {
-    const s = classSection(st.cls || st.class || "");
-    const gr = st.grNo ? String(st.grNo).trim() : "";
-    return s === targetSec && gr && gr !== "-";
+  const validRows = rows.filter(r => {
+    const gr = r?.grNo ? String(r.grNo).trim() : "";
+    const name = r?.name ? String(r.name).trim() : "";
+    return gr && gr !== "-" && name && name !== "-";
   });
 
-  if (sectionStudents.length > 0) {
-    const sorted = [...sectionStudents].sort((a, b) => {
-      const matchA = String(a.grNo || "").match(/\d+/);
-      const matchB = String(b.grNo || "").match(/\d+/);
-      const numA = matchA ? parseInt(matchA[0], 10) : 0;
-      const numB = matchB ? parseInt(matchB[0], 10) : 0;
-      return numB - numA;
+  let lastRegItem = null;
+  if (validRows.length > 0) {
+    const sorted = [...validRows].sort((a, b) => {
+      const numA = parseGrNum(a.grNo);
+      const numB = parseGrNum(b.grNo);
+      if (numB !== numA) return numB - numA;
+      const timeA = a.updatedAt || a.updated_at ? new Date(a.updatedAt || a.updated_at).getTime() : 0;
+      const timeB = b.updatedAt || b.updated_at ? new Date(b.updatedAt || b.updated_at).getTime() : 0;
+      if (timeB !== timeA) return timeB - timeA;
+      return String(b.grNo || "").localeCompare(String(a.grNo || ""), undefined, { numeric: true });
     });
     const last = sorted[0];
-    const fullName = `${last.firstName || ""} ${last.surname || ""}`.trim() || last.name || "";
-    return {
+    lastRegItem = {
       grNo: String(last.grNo).trim(),
+      name: String(last.name).trim(),
+      cls: last.cls || "",
+      source: "register",
+      row: last,
+      student: last,
+      enrollNo: last.enrollNo || "",
+      studentId: last.studentId || last.id || "",
+      section: targetSec,
+      updatedAt: last.updatedAt || last.updated_at || null,
+    };
+  }
+
+  // 2. Also check dbStudents for highest GR matching this section
+  const sectionStudents = (dbStudents || []).filter(st => {
+    const s = classSection(st.cls || st.class || st.standard || "");
+    const gr = st.grNo ? String(st.grNo).trim() : (st.grno ? String(st.grno).trim() : "");
+    const name = `${st.firstName || st.first_name || ""} ${st.surname || st.last_name || ""}`.trim() || st.name || "";
+    return s === targetSec && gr && gr !== "-" && name && name !== "-";
+  });
+
+  let lastDbItem = null;
+  if (sectionStudents.length > 0) {
+    const sortedDb = [...sectionStudents].sort((a, b) => {
+      const numA = parseGrNum(a.grNo || a.grno);
+      const numB = parseGrNum(b.grNo || b.grno);
+      if (numB !== numA) return numB - numA;
+      return String(b.grNo || b.grno || "").localeCompare(String(a.grNo || a.grno || ""), undefined, { numeric: true });
+    });
+    const last = sortedDb[0];
+    const fullName = `${last.firstName || last.first_name || ""} ${last.surname || last.last_name || ""}`.trim() || last.name || "";
+    lastDbItem = {
+      grNo: String(last.grNo || last.grno).trim(),
       name: fullName,
-      cls: last.cls || last.class || "",
+      cls: last.cls || last.class || last.standard || "",
       source: "database",
       student: last,
       row: null,
-      enrollNo: last.enrollNo || "",
+      enrollNo: last.enrollNo || last.enrollment_no || "",
       studentId: last.studentId || last.id || "",
       section: targetSec,
     };
   }
 
-  return null;
+  // Pick whichever has the higher numeric GR (or register row if equal)
+  if (lastRegItem && lastDbItem) {
+    const regNum = parseGrNum(lastRegItem.grNo);
+    const dbNum = parseGrNum(lastDbItem.grNo);
+    if (dbNum > regNum) return lastDbItem;
+    return lastRegItem;
+  }
+  return lastRegItem || lastDbItem || null;
 }
 
 // UDISE Import columns (Gujarat State Portal: ssgujarat.org)
@@ -1743,7 +1770,10 @@ export default function GovernmentEntryPage() {
 
     const student = decorate(rawStudent);
     const sec = lastInfo.row?.section || classSection(student.cls) || grSubTab || "general";
-    if (sec) setGrSubTab(sec);
+    if (sec) {
+      setGrSubTab(sec);
+      setAddSection(sec);
+    }
 
     setAddModalOpen(true);
     setAddWizardActive(false);
@@ -5146,17 +5176,32 @@ export default function GovernmentEntryPage() {
                     ? classSection(addClassFilter) || grSubTab || "general"
                     : grSubTab || "general";
                   const lastInfo = getLastSavedGrInfo(activeSec, onlineGrDataset, dbStudents);
-                  if (!lastInfo) return null;
+                  const isPrimary = activeSec === "primary";
                   return (
-                    <button
-                      type="button"
-                      onClick={() => openLastSavedAsAddStudent(lastInfo)}
-                      className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
-                      title={`Resume session for GR #${lastInfo.grNo} — ${lastInfo.name}`}
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-amber-300" />
-                      <span>Resume Last GR (#{lastInfo.grNo})</span>
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {inProgressSession && (
+                        <button
+                          type="button"
+                          onClick={() => resumeProgress(inProgressSession)}
+                          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
+                          title={`Resume unfinished session for ${inProgressSession.studentName || "student"} (Step ${inProgressSession.step || 1} of 4)`}
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-amber-200" />
+                          <span>Resume In-Progress Session</span>
+                        </button>
+                      )}
+                      {lastInfo && (
+                        <button
+                          type="button"
+                          onClick={() => openLastSavedInAddModal(lastInfo)}
+                          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
+                          title={`Open last saved ${isPrimary ? "PR" : "GR"} #${lastInfo.grNo} (${lastInfo.name}) in form`}
+                        >
+                          <FileText className="w-3.5 h-3.5 text-indigo-200" />
+                          <span>Open Last Saved (#{lastInfo.grNo})</span>
+                        </button>
+                      )}
+                    </div>
                   );
                 })()}
                 <button onClick={closeAddModal} className="text-gray-400 hover:text-gray-600">
@@ -5226,21 +5271,12 @@ export default function GovernmentEntryPage() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <button
                               type="button"
-                              onClick={() => openLastSavedAsAddStudent(lastInfo)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
-                              title={`Open last saved GR #${lastInfo.grNo} (${lastInfo.name}) as Add New Student session`}
-                            >
-                              <RotateCcw className="w-3.5 h-3.5 text-amber-300" />
-                              <span>Resume Last Saved GR</span>
-                            </button>
-                            <button
-                              type="button"
                               onClick={() => openLastSavedInAddModal(lastInfo)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white hover:bg-blue-50 text-blue-900 border border-blue-300 font-semibold text-xs shadow-xs transition-colors cursor-pointer"
-                              title={`Open ${lastInfo.name} (GR #${lastInfo.grNo}) in Step 1 form`}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
+                              title={`Open last saved ${isPrimary ? "PR" : "GR"} #${lastInfo.grNo} (${lastInfo.name}) in form`}
                             >
-                              <FileText className="w-3.5 h-3.5 text-blue-600" />
-                              <span>Open in Form</span>
+                              <FileText className="w-3.5 h-3.5 text-indigo-200" />
+                              <span>Open Last Saved in Form</span>
                             </button>
                             {nextGr && (
                               <div className="flex items-center gap-1.5 text-xs">

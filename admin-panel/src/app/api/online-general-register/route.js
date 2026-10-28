@@ -78,7 +78,13 @@ function toDbRow(record, section) {
 }
 
 function fromDbRow(row) {
-  const item = { id: row.id, section: row.section, status: row.status };
+  const item = {
+    id: row.id,
+    section: row.section,
+    status: row.status,
+    updatedAt: row.updated_at || null,
+    createdAt: row.created_at || null,
+  };
   for (const [field, column] of FIELD_MAP) {
     if (row[column] === null || row[column] === undefined) {
       item[field] = "-"; // bundled-seed default; keeps the JSON contract stable
