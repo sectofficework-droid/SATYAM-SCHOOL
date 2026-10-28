@@ -525,6 +525,7 @@ function getLastSavedGrInfo(section, dataset, dbStudents = []) {
   // 1. Check register rows in dataset for this section
   const rows = Array.isArray(dataset?.[targetSec]) ? dataset[targetSec] : [];
   const validRows = rows.filter(r => {
+    if (!r) return false;
     const gr = r?.grNo ? String(r.grNo).trim() : "";
     const name = r?.name ? String(r.name).trim() : "";
     return gr && gr !== "-" && name && name !== "-";
@@ -532,32 +533,39 @@ function getLastSavedGrInfo(section, dataset, dbStudents = []) {
 
   let lastRegItem = null;
   if (validRows.length > 0) {
-    const sorted = [...validRows].sort((a, b) => {
-      const numA = parseGrNum(a.grNo);
-      const numB = parseGrNum(b.grNo);
+    // REQ: "last saved should always show last row"
+    // The physical last row of the register table is the actual last record entered
+    const lastRow = validRows[validRows.length - 1];
+    const highestNumRow = [...validRows].sort((a, b) => {
+      const numA = parseGrNum(a?.grNo);
+      const numB = parseGrNum(b?.grNo);
       if (numB !== numA) return numB - numA;
-      const timeA = a.updatedAt || a.updated_at ? new Date(a.updatedAt || a.updated_at).getTime() : 0;
-      const timeB = b.updatedAt || b.updated_at ? new Date(b.updatedAt || b.updated_at).getTime() : 0;
-      if (timeB !== timeA) return timeB - timeA;
-      return String(b.grNo || "").localeCompare(String(a.grNo || ""), undefined, { numeric: true });
-    });
-    const last = sorted[0];
+      return 0;
+    })[0];
+
+    // Prefer the last physical row of the register, unless highest numeric GR is strictly higher
+    const lastNum = parseGrNum(lastRow?.grNo);
+    const highNum = parseGrNum(highestNumRow?.grNo);
+    const chosen = (lastNum >= highNum) ? lastRow : (highestNumRow || lastRow);
+
     lastRegItem = {
-      grNo: String(last.grNo).trim(),
-      name: String(last.name).trim(),
-      cls: last.cls || "",
+      grNo: String(chosen.grNo).trim(),
+      name: String(chosen.name).trim(),
+      cls: chosen.cls || "",
       source: "register",
-      row: last,
-      student: last,
-      enrollNo: last.enrollNo || "",
-      studentId: last.studentId || last.id || "",
+      row: chosen,
+      student: chosen,
+      enrollNo: chosen.enrollNo || "",
+      studentId: chosen.studentId || chosen.id || "",
       section: targetSec,
-      updatedAt: last.updatedAt || last.updated_at || null,
+      updatedAt: chosen.updatedAt || chosen.updated_at || null,
     };
   }
 
   // 2. Also check dbStudents for highest GR matching this section
-  const sectionStudents = (dbStudents || []).filter(st => {
+  const cleanDbStudents = (dbStudents || []).filter(Boolean);
+  const sectionStudents = cleanDbStudents.filter(st => {
+    if (!st) return false;
     const s = classSection(st.cls || st.class || st.standard || "");
     const gr = st.grNo ? String(st.grNo).trim() : (st.grno ? String(st.grno).trim() : "");
     const name = `${st.firstName || st.first_name || ""} ${st.surname || st.last_name || ""}`.trim() || st.name || "";
@@ -567,10 +575,10 @@ function getLastSavedGrInfo(section, dataset, dbStudents = []) {
   let lastDbItem = null;
   if (sectionStudents.length > 0) {
     const sortedDb = [...sectionStudents].sort((a, b) => {
-      const numA = parseGrNum(a.grNo || a.grno);
-      const numB = parseGrNum(b.grNo || b.grno);
+      const numA = parseGrNum(a?.grNo || a?.grno);
+      const numB = parseGrNum(b?.grNo || b?.grno);
       if (numB !== numA) return numB - numA;
-      return String(b.grNo || b.grno || "").localeCompare(String(a.grNo || a.grno || ""), undefined, { numeric: true });
+      return String(b?.grNo || b?.grno || "").localeCompare(String(a?.grNo || a?.grno || ""), undefined, { numeric: true });
     });
     const last = sortedDb[0];
     const fullName = `${last.firstName || last.first_name || ""} ${last.surname || last.last_name || ""}`.trim() || last.name || "";
@@ -587,14 +595,16 @@ function getLastSavedGrInfo(section, dataset, dbStudents = []) {
     };
   }
 
-  // Pick whichever has the higher numeric GR (or register row if equal)
-  if (lastRegItem && lastDbItem) {
-    const regNum = parseGrNum(lastRegItem.grNo);
-    const dbNum = parseGrNum(lastDbItem.grNo);
-    if (dbNum > regNum) return lastDbItem;
+  // Pick register row (register is official for Online GR), or db if no register row
+  if (lastRegItem) {
+    if (lastDbItem) {
+      const regNum = parseGrNum(lastRegItem.grNo);
+      const dbNum = parseGrNum(lastDbItem.grNo);
+      if (dbNum > regNum) return lastDbItem;
+    }
     return lastRegItem;
   }
-  return lastRegItem || lastDbItem || null;
+  return lastDbItem || null;
 }
 
 // UDISE Import columns (Gujarat State Portal: ssgujarat.org)
@@ -847,7 +857,7 @@ export default function GovernmentEntryPage() {
       ];
       const results = await Promise.allSettled(namedLoads.map(([, p]) => p));
       const [students, sessions, phases, entries, grData] = results;
-      if (students.status === "fulfilled") setDbStudents(students.value || []);
+      if (students.status === "fulfilled") setDbStudents((students.value || []).filter(Boolean));
       if (sessions.status === "fulfilled" && sessions.value?.length) setDbSessions(sessions.value);
       if (phases.status === "fulfilled") setDbPhases(phases.value || []);
       if (entries.status === "fulfilled") setDbPhaseEntryEnrollments(entries.value || []);
@@ -1567,171 +1577,232 @@ export default function GovernmentEntryPage() {
   }
 
   function resumeProgress(saved) {
-    const session = saved || inProgressSession;
-    if (!session) {
-      alert("No in-progress student session found to resume.");
-      return;
-    }
+    try {
+      let session = saved || inProgressSession;
+      if (!session && typeof window !== "undefined") {
+        try {
+          const raw = localStorage.getItem("ssis_gov_entry_wizard_progress");
+          if (raw) session = JSON.parse(raw);
+        } catch {}
+      }
 
-    // 1. Search in dbStudents
-    let rawStudent = (dbStudents || []).find(
-      s => (session.enrollNo && session.enrollNo !== "-" && s.enrollNo === session.enrollNo) ||
-           (session.studentId && (s.studentId === session.studentId || s.id === session.studentId)) ||
-           (session.grNo && session.grNo !== "-" && (s.grNo === session.grNo || s.grno === session.grNo)) ||
-           ((session.studentName || session.name) && s.name && s.name.toUpperCase() === (session.studentName || session.name).toUpperCase())
-    );
+      // Fallback: If no session in memory/storage, try resuming the last saved register row
+      if (!session) {
+        const lastReg = getLastSavedGrInfo(grSubTab || "general", onlineGrDataset, dbStudents);
+        if (lastReg && lastReg.row) {
+          resumeFromOnlineGrRow(lastReg.row);
+          return;
+        }
+        alert("No in-progress student session found to resume.");
+        return;
+      }
 
-    // 2. If not found in dbStudents, search onlineGrDataset (both Primary and General Registers)
-    if (!rawStudent) {
-      const allGrRows = [
-        ...(onlineGrDataset?.primary || []),
-        ...(onlineGrDataset?.general || []),
-      ];
-      rawStudent = allGrRows.find(
-        r => (session.enrollNo && session.enrollNo !== "-" && r.enrollNo === session.enrollNo) ||
-             (session.studentId && (r.studentId === session.studentId || r.id === session.studentId)) ||
-             (session.createdRowId && r.id === session.createdRowId) ||
-             (session.grNo && session.grNo !== "-" && (r.grNo === session.grNo || parseGrNum(r.grNo) === parseGrNum(session.grNo))) ||
-             ((session.studentName || session.name) && r.name && r.name.toUpperCase() === (session.studentName || session.name).toUpperCase())
+      const sSessEnroll = String(session.enrollNo || "").trim();
+      const sSessId = String(session.studentId || session.id || "").trim();
+      const sSessCreatedId = String(session.createdRowId || "").trim();
+      const sSessGr = String(session.grNo || "").trim();
+      const sSessGrNum = parseGrNum(sSessGr);
+      const sSessName = String(session.studentName || session.name || "").trim().toUpperCase();
+
+      const matchStudent = (s) => {
+        if (!s) return false;
+        const sEnroll = String(s.enrollNo || s.enrollment_no || "").trim();
+        if (sSessEnroll && sSessEnroll !== "-" && sEnroll && sEnroll === sSessEnroll) return true;
+
+        const sId = String(s.studentId || s.id || "").trim();
+        if (sSessId && sId && sId === sSessId) return true;
+        if (sSessCreatedId && sId && sId === sSessCreatedId) return true;
+
+        const sGr = String(s.grNo || s.grno || "").trim();
+        if (sSessGr && sSessGr !== "-" && sGr && sGr !== "-") {
+          if (sGr === sSessGr) return true;
+          if (sSessGrNum > 0 && parseGrNum(sGr) === sSessGrNum) {
+            if (!sSessName) return true;
+            const curName = String(s.name || `${s.firstName || s.first_name || ""} ${s.surname || s.last_name || ""}`).trim().toUpperCase();
+            if (curName === sSessName) return true;
+          }
+        }
+
+        if (sSessName) {
+          const curName = String(s.name || `${s.firstName || s.first_name || ""} ${s.surname || s.last_name || ""}`).trim().toUpperCase();
+          if (curName && curName === sSessName) return true;
+        }
+
+        return false;
+      };
+
+      // 1. Search in dbStudents
+      let rawStudent = (dbStudents || []).filter(Boolean).find(matchStudent);
+
+      // 2. If not found in dbStudents, search onlineGrDataset (both Primary and General Registers)
+      if (!rawStudent) {
+        const allGrRows = [
+          ...(onlineGrDataset?.primary || []),
+          ...(onlineGrDataset?.general || []),
+        ].filter(Boolean);
+        rawStudent = allGrRows.find(matchStudent);
+      }
+
+      // 3. Fallback to session.student or session itself
+      if (!rawStudent && session.student) rawStudent = session.student;
+      if (!rawStudent && (sSessName || sSessGr || sSessEnroll)) rawStudent = { ...session };
+
+      if (!rawStudent) {
+        alert(`Could not locate student record for ${session.studentName || session.name || session.grNo || "student"}.`);
+        return;
+      }
+
+      // Ensure rawStudent has name, grNo, cls
+      if (!rawStudent.name && (session.studentName || session.name)) {
+        rawStudent.name = session.studentName || session.name;
+      }
+      if (!rawStudent.studentName && rawStudent.name) {
+        rawStudent.studentName = rawStudent.name;
+      }
+      if (!rawStudent.grNo && sSessGr) rawStudent.grNo = sSessGr;
+      if (!rawStudent.cls && session.cls) rawStudent.cls = session.cls;
+      if (!rawStudent.session && session.session) rawStudent.session = session.session;
+      if (!rawStudent.enrollNo && sSessEnroll) rawStudent.enrollNo = sSessEnroll;
+
+      const student = decorate(rawStudent) || rawStudent;
+      const grNo = sSessGr || student.grNo || "";
+      const createdRowId = session.createdRowId || rawStudent.id || null;
+      const sec = session.section || (student.cls ? classSection(student.cls) : null) || grSubTab || "general";
+
+      // Auto-detect the true step if student already has parts completed
+      const hasGr = Boolean(grNo && grNo !== "-");
+      const hasUdise = Boolean(
+        (student.udise && student.udise !== "-" && student.udise !== "Not Defined") ||
+        (rawStudent.udise && rawStudent.udise !== "-" && rawStudent.udise !== "Not Defined")
       );
-    }
+      const hasPen = Boolean(
+        (student.pen && student.pen !== "-" && student.pen !== "Not Defined") ||
+        (rawStudent.pen && rawStudent.pen !== "-" && rawStudent.pen !== "Not Defined")
+      );
+      const penNotDefined = student.pen === "Not Defined" || rawStudent.pen === "Not Defined";
 
-    // 3. Fallback to session.student or session itself
-    if (!rawStudent && session.student) rawStudent = session.student;
-    if (!rawStudent && (session.studentName || session.name)) rawStudent = session;
-
-    if (!rawStudent) {
-      alert(`Could not locate student record for ${session.studentName || session.name || session.grNo || "student"}.`);
-      return;
-    }
-
-    const student = decorate(rawStudent);
-    const grNo = session.grNo || student.grNo || "";
-    const createdRowId = session.createdRowId || rawStudent.id || null;
-    const sec = session.section || (student.cls ? classSection(student.cls) : null) || grSubTab || "general";
-
-    // Auto-detect the true step if student already has parts completed
-    const hasGr = Boolean(grNo && grNo !== "-");
-    const hasUdise = Boolean(
-      (student.udise && student.udise !== "-" && student.udise !== "Not Defined") ||
-      (rawStudent.udise && rawStudent.udise !== "-" && rawStudent.udise !== "Not Defined")
-    );
-    const hasPen = Boolean(
-      (student.pen && student.pen !== "-" && student.pen !== "Not Defined") ||
-      (rawStudent.pen && rawStudent.pen !== "-" && rawStudent.pen !== "Not Defined")
-    );
-    const penNotDefined = student.pen === "Not Defined" || rawStudent.pen === "Not Defined";
-
-    let step = session.step;
-    if (!step || (step === 1 && hasGr)) {
-      if (!hasGr) step = 1;
-      else if (!hasUdise) step = 2;
-      else if (!hasPen && !penNotDefined) step = 3;
-      else step = 4;
-    }
-
-    setGrSubTab(sec);
-    setAddSection(sec);
-    setAddSelectedStudent(student);
-    setAddGrNo(grNo);
-    if (session.doeSlash || student.doeSlash) setAddDoeSlash(session.doeSlash || student.doeSlash);
-    const savedRemarks = session.remarks || student.remarks || "";
-    setAddRemarks(savedRemarks && savedRemarks !== "-" ? savedRemarks : "");
-    setAddCreatedRowId(createdRowId);
-    setAddStep(step);
-    setAddWizardActive(true);
-
-    if (step === 2) {
-      // Step 2: UDISE Entry — open entry modal directly so user can type UDISE immediately
-      setMainTab("udise");
-      setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
-      setEligTab(eligibilityFns.udiseEligible(student) ? "eligible" : "ineligible");
-      setSearch("");
-      if (student.enrollNo && student.enrollNo !== "-") {
-        setAddPinnedEnrollNo(student.enrollNo);
-      } else {
-        setAddPinnedEnrollNo(null);
+      let step = Number(session.step) || 1;
+      if (!session.step) {
+        if (!hasGr) step = 1;
+        else if (!hasUdise) step = 2;
+        else if (!hasPen && !penNotDefined) step = 3;
+        else step = 4;
       }
-      setAddModalOpen(false);
-      setAddSubPhase("entry");
-      openEntryModal(student);
-      setFormGrNo(grNo);
-    } else if (step === 3) {
-      // Step 3: PEN Entry — open entry modal directly so user can type PEN immediately
-      setMainTab("pen");
-      setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
-      setEligTab(eligibilityFns.penEligible(student) ? "eligible" : "ineligible");
-      setSearch("");
-      if (student.enrollNo && student.enrollNo !== "-") {
-        setAddPinnedEnrollNo(student.enrollNo);
-      } else {
+
+      setGrSubTab(sec);
+      setAddSection(sec);
+      setAddSelectedStudent(student);
+      setAddGrNo(grNo);
+      if (session.doeSlash || student.doeSlash) setAddDoeSlash(session.doeSlash || student.doeSlash);
+      const savedRemarks = session.remarks || student.remarks || "";
+      setAddRemarks(savedRemarks && savedRemarks !== "-" ? savedRemarks : "");
+      setAddCreatedRowId(createdRowId);
+      setAddStep(step);
+      setAddWizardActive(true);
+
+      if (step === 2) {
+        // Step 2: UDISE Entry — open entry modal directly so user can type UDISE immediately
+        setMainTab("udise");
+        setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
+        setEligTab(eligibilityFns.udiseEligible(student) ? "eligible" : "ineligible");
+        setSearch("");
+        if (student.enrollNo && student.enrollNo !== "-") {
+          setAddPinnedEnrollNo(student.enrollNo);
+        } else {
+          setAddPinnedEnrollNo(null);
+        }
+        setAddModalOpen(false);
+        setAddSubPhase("entry");
+        openEntryModal(student);
+        setFormGrNo(grNo);
+      } else if (step === 3) {
+        // Step 3: PEN Entry — open entry modal directly so user can type PEN immediately
+        setMainTab("pen");
+        setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
+        setEligTab(eligibilityFns.penEligible(student) ? "eligible" : "ineligible");
+        setSearch("");
+        if (student.enrollNo && student.enrollNo !== "-") {
+          setAddPinnedEnrollNo(student.enrollNo);
+        } else {
+          setAddPinnedEnrollNo(null);
+        }
+        setAddModalOpen(false);
+        setAddSubPhase("entry");
+        openEntryModal(student);
+        setFormGrNo(grNo);
+      } else if (step === 4) {
+        // Step 4: Final Confirmation Review
+        setMainTab("onlineGr");
         setAddPinnedEnrollNo(null);
+        setAddStep(4);
+        setAddSubPhase("details");
+        setAddModalOpen(true);
+      } else {
+        // Step 1: Select student & enter Reg No
+        setMainTab("onlineGr");
+        setAddPinnedEnrollNo(null);
+        setAddStep(1);
+        setAddSubPhase("details");
+        setAddModalOpen(true);
+        setAddGrEditing(!hasGr);
+        setAddDoeEditing(false);
       }
-      setAddModalOpen(false);
-      setAddSubPhase("entry");
-      openEntryModal(student);
-      setFormGrNo(grNo);
-    } else if (step === 4) {
-      // Step 4: Final Confirmation Review
-      setMainTab("onlineGr");
-      setAddPinnedEnrollNo(null);
-      setAddStep(4);
-      setAddSubPhase("details");
-      setAddModalOpen(true);
-    } else {
-      // Step 1: Select student & enter Reg No
-      setMainTab("onlineGr");
-      setAddPinnedEnrollNo(null);
-      setAddStep(1);
-      setAddSubPhase("details");
-      setAddModalOpen(true);
-      setAddGrEditing(!hasGr);
-      setAddDoeEditing(false);
+    } catch (err) {
+      console.error("Error in resumeProgress:", err);
+      alert("Failed to resume session: " + (err?.message || "Unknown error"));
     }
   }
 
   function resumeFromOnlineGrRow(row) {
     if (!row) return;
-    let rawStudent = (dbStudents || []).find(
-      s => (row.enrollNo && s.enrollNo === row.enrollNo) ||
-           (row.aadharNo && row.aadharNo !== "-" && s.aadharNo === row.aadharNo) ||
-           (row.mobile1 && row.mobile1 !== "-" && s.mobile1 === row.mobile1) ||
-           (row.name && s.name && s.name.toUpperCase() === row.name.toUpperCase() && s.cls === row.cls)
-    );
+    try {
+      const cleanDbStudents = (dbStudents || []).filter(Boolean);
+      const rowName = String(row.name || "").trim().toUpperCase();
+      let rawStudent = cleanDbStudents.find(
+        s => (row.enrollNo && s.enrollNo === row.enrollNo) ||
+             (row.aadharNo && row.aadharNo !== "-" && s.aadharNo === row.aadharNo) ||
+             (row.mobile1 && row.mobile1 !== "-" && s.mobile1 === row.mobile1) ||
+             (rowName && s.name && String(s.name).trim().toUpperCase() === rowName && s.cls === row.cls)
+      );
 
-    if (!rawStudent) rawStudent = row;
+      if (!rawStudent) rawStudent = row;
 
-    const student = decorate(rawStudent);
-    const grNo = row.grNo || student.grNo || "";
-    const createdRowId = row.id;
+      const student = decorate(rawStudent) || rawStudent;
+      const grNo = row.grNo || student.grNo || "";
+      const createdRowId = row.id;
 
-    const hasUdise = (student.udise && student.udise !== "-") || (row.udise && row.udise !== "-");
-    const hasPen = (student.pen && student.pen !== "-" && student.pen !== "Not Defined") || (row.pen && row.pen !== "-" && row.pen !== "Not Defined");
-    const penNotDefined = student.pen === "Not Defined" || row.pen === "Not Defined";
+      const hasUdise = Boolean((student.udise && student.udise !== "-") || (row.udise && row.udise !== "-"));
+      const hasPen = Boolean((student.pen && student.pen !== "-" && student.pen !== "Not Defined") || (row.pen && row.pen !== "-" && row.pen !== "Not Defined"));
+      const penNotDefined = student.pen === "Not Defined" || row.pen === "Not Defined";
 
-    let step = 2;
-    if (hasUdise && !(hasPen || penNotDefined)) {
-      step = 3;
-    } else if (hasUdise && (hasPen || penNotDefined)) {
-      step = 4;
+      let step = 2;
+      if (hasUdise && !(hasPen || penNotDefined)) {
+        step = 3;
+      } else if (hasUdise && (hasPen || penNotDefined)) {
+        step = 4;
+      }
+
+      const sessionData = {
+        enrollNo: student.enrollNo || row.enrollNo || "",
+        studentId: student.studentId || student.id || row.studentId || row.id,
+        grNo,
+        step,
+        subPhase: "entry",
+        createdRowId,
+        section: row.section || classSection(student.cls) || grSubTab || "general",
+        studentName: student.name || row.name,
+        name: student.name || row.name,
+        cls: student.cls || row.cls,
+        session: student.session || row.session || "",
+        timestamp: Date.now(),
+      };
+
+      saveProgressToStorage(sessionData);
+      resumeProgress(sessionData);
+    } catch (err) {
+      console.error("Error in resumeFromOnlineGrRow:", err);
+      alert("Failed to resume from row: " + (err?.message || "Unknown error"));
     }
-
-    const sessionData = {
-      enrollNo: student.enrollNo || row.enrollNo || "",
-      studentId: student.studentId || student.id || row.studentId || row.id,
-      grNo,
-      step,
-      subPhase: "entry",
-      createdRowId,
-      section: row.section || classSection(student.cls),
-      studentName: student.name || row.name,
-      cls: student.cls || row.cls,
-      session: student.session || row.session || "",
-      timestamp: Date.now(),
-    };
-
-    saveProgressToStorage(sessionData);
-    resumeProgress(sessionData);
   }
 
   // ── GR / PR Number Conflict Checking ─────────────────────────────────────
@@ -3425,6 +3496,9 @@ export default function GovernmentEntryPage() {
   function closeModal() {
     if (saving) return;
     setModalRow(null);
+    if (addWizardActive) {
+      setAddSubPhase("details");
+    }
     setFormPenNotDefined(false);
     setFormActiveOtherSchool(false);
     setShowPasteAlert(false);
@@ -3943,7 +4017,7 @@ export default function GovernmentEntryPage() {
         </div>
       )}
       {/* In Progress Resume Banner - Slim single-line strip */}
-      {inProgressSession && !inProgressSession.completed && !addWizardActive && (
+      {inProgressSession && !inProgressSession.completed && !addModalOpen && !modalRow && (
         <div className="bg-amber-50/90 border border-amber-300/80 rounded-lg px-2.5 py-1 shadow-xs flex flex-wrap items-center justify-between gap-2 text-xs animate-fadeIn">
           <div className="flex items-center gap-2 min-w-0">
             <span className="relative flex h-2 w-2 flex-shrink-0">
@@ -4376,7 +4450,7 @@ export default function GovernmentEntryPage() {
 
                 {mainTab === "onlineGr" && (
                   <div className="flex items-center gap-2">
-                    {inProgressSession && !inProgressSession.completed && !addWizardActive && (
+                    {inProgressSession && !inProgressSession.completed && !addModalOpen && !modalRow && (
                       <button
                         type="button"
                         onClick={() => resumeProgress(inProgressSession)}
