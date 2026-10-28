@@ -5334,7 +5334,6 @@ export default function GovernmentEntryPage() {
                     if (existingGr && !addGrEditing) {
                       return (
                         <div className="flex flex-col gap-2">
-                          {lastSavedBanner}
                           {addExistingRow && (
                             <div className="flex items-center gap-2 p-2 bg-blue-50/80 border border-blue-200 rounded-lg text-xs text-blue-900">
                               <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 text-blue-600" />
