@@ -1379,7 +1379,6 @@ export default function GovernmentEntryPage() {
   const [formUdise, setFormUdise] = useState("");
   const [formPen, setFormPen] = useState("");
   const [formPenNotDefined, setFormPenNotDefined] = useState(false);
-  const [formUdiseNotDefined, setFormUdiseNotDefined] = useState(false);
   const [formActiveOtherSchool, setFormActiveOtherSchool] = useState(false);
   const [showPasteAlert, setShowPasteAlert] = useState(false);
   const [pasteAlertInput, setPasteAlertInput] = useState("");
@@ -2298,7 +2297,6 @@ export default function GovernmentEntryPage() {
     if (parsed.uid) {
       if (targetMode === "udise") {
         setFormUdise(parsed.uid);
-        setFormUdiseNotDefined(false);
       } else {
         setFormPen(parsed.uid);
         setFormPenNotDefined(false);
@@ -3232,7 +3230,6 @@ export default function GovernmentEntryPage() {
         ? fullRow.udise
         : ""
     );
-    setFormUdiseNotDefined(fullRow.udise === "Not Defined" || fullRow.udiseStatus === "Not Defined");
 
     const isPenOtherSchool = fullRow.pen === "Active in other school" || fullRow.penStatus === "Active in other school";
     setFormPen(
@@ -3260,7 +3257,6 @@ export default function GovernmentEntryPage() {
 
     if (shouldOpenOtherSchool) {
       setFormActiveOtherSchool(true);
-      if (effectiveTab === "udise") setFormUdiseNotDefined(false);
       if (effectiveTab === "pen") setFormPenNotDefined(false);
 
       // UDISE Import specific fields (Gujarat State Portal: ssgujarat.org)
@@ -3334,7 +3330,6 @@ export default function GovernmentEntryPage() {
   function closeModal() {
     if (saving) return;
     setModalRow(null);
-    setFormUdiseNotDefined(false);
     setFormPenNotDefined(false);
     setFormActiveOtherSchool(false);
     setShowPasteAlert(false);
@@ -3462,8 +3457,6 @@ export default function GovernmentEntryPage() {
     let udiseValue = "-";
     if (formActiveOtherSchool && (effectiveTab === "udise" || otherSchoolObj?.udiseActive)) {
       udiseValue = formUdise.trim() || "Active in other school";
-    } else if (formUdiseNotDefined) {
-      udiseValue = "Not Defined";
     } else {
       udiseValue = formUdise.trim() || "-";
     }
@@ -3535,7 +3528,7 @@ export default function GovernmentEntryPage() {
     // 2. Database students: UDISE Entry
     if (effectiveTab === "udise") {
       const digits = formUdise.trim();
-      if (!formActiveOtherSchool && !formUdiseNotDefined) {
+      if (!formActiveOtherSchool) {
         if (!/^\d{18}$/.test(digits)) {
           setFormError("UDISE No must be exactly 18 digits.");
           return;
@@ -4744,29 +4737,18 @@ export default function GovernmentEntryPage() {
 
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">UID (UDISE No)</label>
-                    <input type="text" value={formUdise} disabled={formUdiseNotDefined}
+                    <input type="text" value={formUdise}
                       onChange={e => setFormUdise(e.target.value.replace(/[^\d]/g, ""))}
                       maxLength={18}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy disabled:bg-gray-100 disabled:text-gray-400"
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy"
                       placeholder={formActiveOtherSchool ? "e.g. 242215313052520157 (optional if known)" : "18-digit state UID"}/>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-1 pt-1 border-t border-gray-100">
-                      <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
-                        <input type="checkbox" checked={formUdiseNotDefined}
-                          onChange={e => {
-                            const checked = e.target.checked;
-                            setFormUdiseNotDefined(checked);
-                            if (checked) setFormUdise("");
-                          }}
-                          className="w-3.5 h-3.5 accent-school-navy"/>
-                        UID not generated yet (mark &quot;Not Defined&quot;)
-                      </label>
                       <label className="flex items-center gap-2 text-xs font-semibold text-purple-700 cursor-pointer select-none">
                         <input type="checkbox" checked={formActiveOtherSchool}
                           onChange={e => {
                             const checked = e.target.checked;
                             setFormActiveOtherSchool(checked);
                             if (checked) {
-                              setFormUdiseNotDefined(false);
                               if (!formUdiseSchoolName && modalRow?.lastSchoolName) {
                                 setFormUdiseSchoolName(modalRow.lastSchoolName);
                               }
@@ -4863,10 +4845,10 @@ export default function GovernmentEntryPage() {
                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
                       UDISE No {formActiveOtherSchool ? "(Optional if known, e.g. from portal alert)" : "(18 digits)"}
                     </label>
-                    <input type="text" value={formUdise} disabled={formUdiseNotDefined}
+                    <input type="text" value={formUdise}
                       onChange={e => setFormUdise(e.target.value.replace(/[^\d]/g, ""))}
                       maxLength={18}
-                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy disabled:bg-gray-100 disabled:text-gray-400"
+                      className="border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-school-navy"
                       placeholder={formActiveOtherSchool ? "e.g. 242215313052520157 (optional if known)" : "e.g. 242215044262310036"}/>
                     <div className="flex items-center justify-between text-[10px] text-gray-400">
                       <span>{formUdise.length}/18 digits</span>
@@ -4875,26 +4857,12 @@ export default function GovernmentEntryPage() {
                       )}
                     </div>
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-1 pt-1 border-t border-gray-100">
-                      <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
-                        <input type="checkbox" checked={formUdiseNotDefined}
-                          onChange={e => {
-                            const checked = e.target.checked;
-                            setFormUdiseNotDefined(checked);
-                            if (checked) {
-                              setFormActiveOtherSchool(false);
-                              setFormUdise("");
-                            }
-                          }}
-                          className="w-3.5 h-3.5 accent-school-navy"/>
-                        UDISE not generated yet by portal (mark &quot;Not Defined&quot;)
-                      </label>
                       <label className="flex items-center gap-2 text-xs font-semibold text-purple-700 cursor-pointer select-none">
                         <input type="checkbox" checked={formActiveOtherSchool}
                           onChange={e => {
                             const checked = e.target.checked;
                             setFormActiveOtherSchool(checked);
                             if (checked) {
-                              setFormUdiseNotDefined(false);
                               if (!formUdiseSchoolName && modalRow?.lastSchoolName) {
                                 setFormUdiseSchoolName(modalRow.lastSchoolName);
                               }
