@@ -328,10 +328,8 @@ function decorate(st) {
   let udiseStatus = "Pending";
   if (isUdiseOtherSchool) {
     udiseStatus = "Active in other school";
-  } else if (st.udise && String(st.udise).trim() && String(st.udise).trim() !== "Not Defined") {
+  } else if (st.udise && String(st.udise).trim() && String(st.udise).trim() !== "-") {
     udiseStatus = "Done";
-  } else if (st.udise && String(st.udise).trim() === "Not Defined") {
-    udiseStatus = "Not Defined";
   }
 
   const isPenOtherSchool = Boolean(
@@ -358,7 +356,7 @@ function decorate(st) {
   const udiseImportSchoolName = otherSchoolData?.udiseSchoolName || (isUdiseOtherSchool ? otherSchoolData?.schoolName : "") || (isUdiseOtherSchool ? st.lastSchoolName : "") || "-";
   const udiseImportPrincipalName = otherSchoolData?.udisePrincipalName || (isUdiseOtherSchool ? otherSchoolData?.headmaster : "") || "-";
   const udiseImportPrincipalMobile = otherSchoolData?.udisePrincipalMobile || (isUdiseOtherSchool ? otherSchoolData?.contactNo : "") || "-";
-  const udiseImportStudentUid = otherSchoolData?.udiseUid || (st.udise && st.udise !== "Active in other school" && st.udise !== "Not Defined" && st.udise !== "-" ? st.udise : "") || "-";
+  const udiseImportStudentUid = otherSchoolData?.udiseUid || (st.udise && st.udise !== "Active in other school" && st.udise !== "-" ? st.udise : "") || "-";
   const udiseImportRequestSentDate = otherSchoolData?.udiseRequestSentDate || "-";
   // Auto-detected from student documents: "Uploaded" if document exists, otherwise "Not Uploaded" (no manual dropdown)
   const udiseImportTcUploaded = hasTcDoc ? "Uploaded" : "Not Uploaded";
@@ -471,10 +469,9 @@ function matchesGovStatusFilter(row, filterVal) {
   const u = String(row.udise || "").trim();
   const udiseStatus = row.udiseStatus || (
     u.toLowerCase().includes("active in other school") ? "Active in other school" :
-    u === "Not Defined" ? "Not Defined" :
     (Boolean(u) && u !== "-") ? "Done" : "Pending"
   );
-  const udiseDone = udiseStatus === "Done" || udiseStatus === "Not Defined" || udiseStatus === "Active in other school";
+  const udiseDone = udiseStatus === "Done" || udiseStatus === "Active in other school";
   const udisePending = udiseStatus === "Pending";
 
   const p = String(row.pen || "").trim();
@@ -531,38 +528,25 @@ function getLastSavedGrInfo(section, dataset, dbStudents = []) {
     return gr && gr !== "-" && name && name !== "-";
   });
 
-  let lastRegItem = null;
   if (validRows.length > 0) {
     // REQ: "last saved should always show last row"
     // The physical last row of the register table is the actual last record entered
     const lastRow = validRows[validRows.length - 1];
-    const highestNumRow = [...validRows].sort((a, b) => {
-      const numA = parseGrNum(a?.grNo);
-      const numB = parseGrNum(b?.grNo);
-      if (numB !== numA) return numB - numA;
-      return 0;
-    })[0];
-
-    // Prefer the last physical row of the register, unless highest numeric GR is strictly higher
-    const lastNum = parseGrNum(lastRow?.grNo);
-    const highNum = parseGrNum(highestNumRow?.grNo);
-    const chosen = (lastNum >= highNum) ? lastRow : (highestNumRow || lastRow);
-
-    lastRegItem = {
-      grNo: String(chosen.grNo).trim(),
-      name: String(chosen.name).trim(),
-      cls: chosen.cls || "",
+    return {
+      grNo: String(lastRow.grNo).trim(),
+      name: String(lastRow.name).trim(),
+      cls: lastRow.cls || "",
       source: "register",
-      row: chosen,
-      student: chosen,
-      enrollNo: chosen.enrollNo || "",
-      studentId: chosen.studentId || chosen.id || "",
+      row: lastRow,
+      student: lastRow,
+      enrollNo: lastRow.enrollNo || "",
+      studentId: lastRow.studentId || lastRow.id || "",
       section: targetSec,
-      updatedAt: chosen.updatedAt || chosen.updated_at || null,
+      updatedAt: lastRow.updatedAt || lastRow.updated_at || null,
     };
   }
 
-  // 2. Also check dbStudents for highest GR matching this section
+  // 2. Fallback to dbStudents only if register has no valid rows at all
   const cleanDbStudents = (dbStudents || []).filter(Boolean);
   const sectionStudents = cleanDbStudents.filter(st => {
     if (!st) return false;
@@ -572,7 +556,6 @@ function getLastSavedGrInfo(section, dataset, dbStudents = []) {
     return s === targetSec && gr && gr !== "-" && name && name !== "-";
   });
 
-  let lastDbItem = null;
   if (sectionStudents.length > 0) {
     const sortedDb = [...sectionStudents].sort((a, b) => {
       const numA = parseGrNum(a?.grNo || a?.grno);
@@ -582,7 +565,7 @@ function getLastSavedGrInfo(section, dataset, dbStudents = []) {
     });
     const last = sortedDb[0];
     const fullName = `${last.firstName || last.first_name || ""} ${last.surname || last.last_name || ""}`.trim() || last.name || "";
-    lastDbItem = {
+    return {
       grNo: String(last.grNo || last.grno).trim(),
       name: fullName,
       cls: last.cls || last.class || last.standard || "",
@@ -595,16 +578,7 @@ function getLastSavedGrInfo(section, dataset, dbStudents = []) {
     };
   }
 
-  // Pick register row (register is official for Online GR), or db if no register row
-  if (lastRegItem) {
-    if (lastDbItem) {
-      const regNum = parseGrNum(lastRegItem.grNo);
-      const dbNum = parseGrNum(lastDbItem.grNo);
-      if (dbNum > regNum) return lastDbItem;
-    }
-    return lastRegItem;
-  }
-  return lastDbItem || null;
+  return null;
 }
 
 // UDISE Import columns (Gujarat State Portal: ssgujarat.org)
@@ -921,7 +895,7 @@ export default function GovernmentEntryPage() {
 
     const getUdiseEligibility = x => {
       if (!x) return { eligible: false, reason: "No student record" };
-      if (x.udiseStatus === "Done" || x.udiseStatus === "Not Defined" || x.udiseStatus === "Active in other school") return { eligible: true, reason: "" };
+      if (x.udiseStatus === "Done" || x.udiseStatus === "Active in other school") return { eligible: true, reason: "" };
       if (!inAnyBatch(x)) return { eligible: false, reason: "Not in any Entry Batch" };
       const missing = [];
       if (!String(x.birthCertRegNo || "").trim()) missing.push("Birth Cert Reg No");
@@ -1399,7 +1373,6 @@ export default function GovernmentEntryPage() {
     if (effectiveTab === "udise") {
       return (
         modalRow.udiseStatus === "Done" ||
-        modalRow.udiseStatus === "Not Defined" ||
         modalRow.udiseStatus === "Active in other school" ||
         Boolean(modalRow.udise && String(modalRow.udise).trim() && String(modalRow.udise).trim() !== "-")
       );
@@ -1535,7 +1508,7 @@ export default function GovernmentEntryPage() {
   }, [addStep, addReview?.remarks, addRemarks]);
   // GR/PR No was already asked in stage 1 — lock it during the UDISE/PEN
   // entry modals so it can't drift from what was just registered.
-  const isWizardEntry = addWizardActive && addSubPhase === "entry";
+  const isWizardEntry = Boolean(addWizardActive && (addStep === 2 || addStep === 3));
 
   // ── Persistent In-Progress Wizard State (Resume Progress) ───────────────
   const [inProgressSession, setInProgressSession] = useState(null);
@@ -1750,8 +1723,8 @@ export default function GovernmentEntryPage() {
       // Auto-detect the true step if student already has parts completed
       const hasGr = Boolean(grNo && grNo !== "-");
       const hasUdise = Boolean(
-        (student.udise && student.udise !== "-" && student.udise !== "Not Defined") ||
-        (rawStudent.udise && rawStudent.udise !== "-" && rawStudent.udise !== "Not Defined")
+        (student.udise && student.udise !== "-") ||
+        (rawStudent.udise && rawStudent.udise !== "-")
       );
       const hasPen = Boolean(
         (student.pen && student.pen !== "-" && student.pen !== "Not Defined") ||
@@ -3470,7 +3443,7 @@ export default function GovernmentEntryPage() {
 
     const isUdiseOtherSchool = fullRow.udise === "Active in other school" || fullRow.udiseStatus === "Active in other school";
     setFormUdise(
-      fullRow.udise && fullRow.udise !== "-" && fullRow.udise !== "Not Defined" && fullRow.udise !== "Active in other school"
+      fullRow.udise && fullRow.udise !== "-" && fullRow.udise !== "Active in other school"
         ? fullRow.udise
         : ""
     );
@@ -4168,37 +4141,69 @@ export default function GovernmentEntryPage() {
           {mainTab === "onlineGr" ? (
             <>
               <span className="hidden sm:block w-px h-6 bg-gray-200"/>
-              <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit shadow-xs">
-                <button
-                  type="button"
-                  onClick={() => setGrSubTab("primary")}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                    grSubTab === "primary" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  <BookOpen className="w-3.5 h-3.5"/>
-                  <span>Primary (JR, SR, Balvatika)</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    grSubTab === "primary" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700 border border-purple-200"
-                  }`}>
-                    {(onlineGrDataset.primary || []).length}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGrSubTab("general")}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                    grSubTab === "general" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  <BookOpen className="w-3.5 h-3.5"/>
-                  <span>General (1st+)</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                    grSubTab === "general" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700 border border-purple-200"
-                  }`}>
-                    {(onlineGrDataset.general || []).length}
-                  </span>
-                </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit shadow-xs">
+                  <button
+                    type="button"
+                    onClick={() => setGrSubTab("primary")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                      grSubTab === "primary" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5"/>
+                    <span>Primary (JR, SR, Balvatika)</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      grSubTab === "primary" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700 border border-purple-200"
+                    }`}>
+                      {(onlineGrDataset.primary || []).length}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setGrSubTab("general")}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                      grSubTab === "general" ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5"/>
+                    <span>General (1st+)</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      grSubTab === "general" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700 border border-purple-200"
+                    }`}>
+                      {(onlineGrDataset.general || []).length}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Prominent Last-Saved reference chip directly on main tab */}
+                {(() => {
+                  const currentLast = getLastSavedGrInfo(grSubTab, onlineGrDataset, dbStudents);
+                  if (!currentLast) return null;
+                  const nextGr = getNextGrNo(currentLast.grNo);
+                  return (
+                    <div className="hidden lg:flex items-center gap-2 text-xs bg-white border border-gray-200 px-3 py-1.5 rounded-xl shadow-2xs">
+                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">
+                        Last Saved {grSubTab === "primary" ? "PR" : "GR"}:
+                      </span>
+                      <span className="font-mono font-bold text-blue-900 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded text-xs">
+                        {currentLast.grNo}
+                      </span>
+                      <span className="font-semibold text-gray-800 truncate max-w-[200px]" title={currentLast.name}>
+                        {currentLast.name}
+                      </span>
+                      {currentLast.cls && (
+                        <span className="text-[10px] px-1.5 py-0.2 bg-gray-100 text-gray-600 rounded">
+                          {currentLast.cls}
+                        </span>
+                      )}
+                      {nextGr && (
+                        <span className="text-[11px] text-gray-400 pl-1 border-l border-gray-200">
+                          Next: <strong className="font-mono text-gray-700 font-bold">{nextGr}</strong>
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </>
           ) : mainTab === "import" ? (
@@ -4632,7 +4637,7 @@ export default function GovernmentEntryPage() {
                           const isDone = isOnlineGr
                             ? (row.status === "Done" || Boolean(row.grNo && row.grNo !== "-"))
                             : isUdise
-                            ? (row.udiseStatus === "Done" || row.udiseStatus === "Not Defined" || row.udiseStatus === "Active in other school" || Boolean(row.udise && String(row.udise).trim() && String(row.udise).trim() !== "-"))
+                            ? (row.udiseStatus === "Done" || row.udiseStatus === "Active in other school" || Boolean(row.udise && String(row.udise).trim() && String(row.udise).trim() !== "-"))
                             : (row.penStatus === "Done" || row.penStatus === "Not Defined" || row.penStatus === "Active in other school" || Boolean(row.pen && String(row.pen).trim() && String(row.pen).trim() !== "-"));
 
                           return (
