@@ -1547,7 +1547,7 @@ export default function GovernmentEntryPage() {
         const parsed = JSON.parse(raw);
         if (parsed?.completed) {
           clearProgressFromStorage();
-        } else if (parsed?.enrollNo || parsed?.grNo || parsed?.studentName) {
+        } else if (parsed?.enrollNo || parsed?.grNo || parsed?.studentName || parsed?.name) {
           setInProgressSession(parsed);
         }
       }
@@ -1576,6 +1576,91 @@ export default function GovernmentEntryPage() {
     clearProgressFromStorage();
   }
 
+  // REQ: "if there is no active entry then no need to show resume button"
+  // Determines if an in-progress session represents a genuinely pending/active entry.
+  const hasActiveSession = useMemo(() => {
+    if (!inProgressSession || inProgressSession.completed) return false;
+
+    const gr = inProgressSession.grNo ? String(inProgressSession.grNo).trim() : "";
+    const name = inProgressSession.studentName || inProgressSession.name;
+    const enrollNo = inProgressSession.enrollNo;
+
+    if (!gr && !name && !enrollNo) return false;
+
+    // If this student is already present in the register and fully completed, they are not an active entry
+    const allRows = [
+      ...(onlineGrDataset?.primary || []),
+      ...(onlineGrDataset?.general || []),
+    ].filter(Boolean);
+
+    const normName = name ? String(name).trim().toUpperCase() : "";
+    const match = allRows.find(r => {
+      if (!r) return false;
+      if (enrollNo && enrollNo !== "-" && r.enrollNo && r.enrollNo === enrollNo) return true;
+      if (inProgressSession.createdRowId && r.id && r.id === inProgressSession.createdRowId) return true;
+      if (gr && gr !== "-" && r.grNo && (r.grNo === gr || parseGrNum(r.grNo) === parseGrNum(gr))) {
+        if (!normName) return true;
+        const rName = String(r.name || "").trim().toUpperCase();
+        if (rName === normName) return true;
+      }
+      if (normName) {
+        const rName = String(r.name || "").trim().toUpperCase();
+        if (rName === normName) return true;
+      }
+      return false;
+    });
+
+    if (match) {
+      const hasU = match.udise && match.udise !== "-" && match.udise !== "Pending";
+      const hasP = match.pen && match.pen !== "-" && match.pen !== "Pending";
+      if (match.status === "Done" || (hasU && hasP)) {
+        return false;
+      }
+    }
+
+    return true;
+  }, [inProgressSession, onlineGrDataset]);
+
+  // Clean up completed session from localStorage if already fully Done in the register
+  useEffect(() => {
+    if (inProgressSession && !inProgressSession.completed) {
+      const allRows = [
+        ...(onlineGrDataset?.primary || []),
+        ...(onlineGrDataset?.general || []),
+      ].filter(Boolean);
+      if (allRows.length === 0) return;
+
+      const gr = inProgressSession.grNo ? String(inProgressSession.grNo).trim() : "";
+      const name = inProgressSession.studentName || inProgressSession.name;
+      const enrollNo = inProgressSession.enrollNo;
+      const normName = name ? String(name).trim().toUpperCase() : "";
+
+      const match = allRows.find(r => {
+        if (!r) return false;
+        if (enrollNo && enrollNo !== "-" && r.enrollNo && r.enrollNo === enrollNo) return true;
+        if (inProgressSession.createdRowId && r.id && r.id === inProgressSession.createdRowId) return true;
+        if (gr && gr !== "-" && r.grNo && (r.grNo === gr || parseGrNum(r.grNo) === parseGrNum(gr))) {
+          if (!normName) return true;
+          const rName = String(r.name || "").trim().toUpperCase();
+          if (rName === normName) return true;
+        }
+        if (normName) {
+          const rName = String(r.name || "").trim().toUpperCase();
+          if (rName === normName) return true;
+        }
+        return false;
+      });
+
+      if (match) {
+        const hasU = match.udise && match.udise !== "-" && match.udise !== "Pending";
+        const hasP = match.pen && match.pen !== "-" && match.pen !== "Pending";
+        if (match.status === "Done" || (hasU && hasP)) {
+          clearProgressFromStorage();
+        }
+      }
+    }
+  }, [inProgressSession, onlineGrDataset]);
+
   function resumeProgress(saved) {
     try {
       let session = saved || inProgressSession;
@@ -1586,14 +1671,7 @@ export default function GovernmentEntryPage() {
         } catch {}
       }
 
-      // Fallback: If no session in memory/storage, try resuming the last saved register row
       if (!session) {
-        const lastReg = getLastSavedGrInfo(grSubTab || "general", onlineGrDataset, dbStudents);
-        if (lastReg && lastReg.row) {
-          resumeFromOnlineGrRow(lastReg.row);
-          return;
-        }
-        alert("No in-progress student session found to resume.");
         return;
       }
 
@@ -4017,7 +4095,7 @@ export default function GovernmentEntryPage() {
         </div>
       )}
       {/* In Progress Resume Banner - Slim single-line strip */}
-      {inProgressSession && !inProgressSession.completed && !addModalOpen && !modalRow && (
+      {hasActiveSession && inProgressSession && !addModalOpen && !modalRow && (
         <div className="bg-amber-50/90 border border-amber-300/80 rounded-lg px-2.5 py-1 shadow-xs flex flex-wrap items-center justify-between gap-2 text-xs animate-fadeIn">
           <div className="flex items-center gap-2 min-w-0">
             <span className="relative flex h-2 w-2 flex-shrink-0">
@@ -4450,7 +4528,7 @@ export default function GovernmentEntryPage() {
 
                 {mainTab === "onlineGr" && (
                   <div className="flex items-center gap-2">
-                    {inProgressSession && !inProgressSession.completed && !addModalOpen && !modalRow && (
+                    {hasActiveSession && inProgressSession && !addModalOpen && !modalRow && (
                       <button
                         type="button"
                         onClick={() => resumeProgress(inProgressSession)}
@@ -5225,7 +5303,7 @@ export default function GovernmentEntryPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2.5">
-                {addStep === 1 && !addSelectedStudent && inProgressSession && !inProgressSession.completed && (
+                {addStep === 1 && !addSelectedStudent && hasActiveSession && inProgressSession && (
                   <button
                     type="button"
                     onClick={() => resumeProgress(inProgressSession)}
