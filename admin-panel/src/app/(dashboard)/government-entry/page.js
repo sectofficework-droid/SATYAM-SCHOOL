@@ -5227,17 +5227,25 @@ export default function GovernmentEntryPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2.5">
-                {addStep === 1 && !addSelectedStudent && inProgressSession && (
-                  <button
-                    type="button"
-                    onClick={() => resumeProgress(inProgressSession)}
-                    className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
-                    title={`Resume last worked student: ${inProgressSession.studentName || inProgressSession.name} (${inProgressSession.section === "primary" ? "PR" : "GR"} #${inProgressSession.grNo || "-"})`}
-                  >
-                    <RotateCcw className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Resume: {inProgressSession.studentName || inProgressSession.name} {inProgressSession.grNo ? `(#${inProgressSession.grNo})` : ""}</span>
-                  </button>
-                )}
+                {addStep === 1 && !addSelectedStudent && (() => {
+                  const activeSec = (addClassFilter && addClassFilter !== "All")
+                    ? classSection(addClassFilter) || grSubTab || "general"
+                    : grSubTab || "general";
+                  const activeLast = getLastSavedGrInfo(activeSec, onlineGrDataset, dbStudents);
+                  const resumeTarget = inProgressSession || activeLast;
+                  if (!resumeTarget) return null;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => resumeProgress(resumeTarget)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-700 hover:bg-indigo-800 text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer"
+                      title={`Resume: ${resumeTarget.studentName || resumeTarget.name || "Student"} (${resumeTarget.section === "primary" ? "PR" : "GR"} #${resumeTarget.grNo || "-"})`}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Resume: {resumeTarget.studentName || resumeTarget.name || "Last Student"} {resumeTarget.grNo ? `(#${resumeTarget.grNo})` : ""}</span>
+                    </button>
+                  );
+                })()}
                 <button onClick={closeAddModal} className="text-gray-400 hover:text-gray-600">
                   <X className="w-5 h-5"/>
                 </button>
@@ -5309,11 +5317,12 @@ export default function GovernmentEntryPage() {
                             {primaryLast && (
                               <button
                                 type="button"
-                                onClick={() => openLastSavedInAddModal(primaryLast)}
-                                className="text-[11px] font-semibold text-blue-800 hover:text-blue-950 bg-white hover:bg-blue-100 border border-blue-300 px-2.5 py-0.5 rounded transition-colors flex-shrink-0 cursor-pointer shadow-2xs"
-                                title={`Open ${primaryLast.name} (${primaryLast.grNo}) in form`}
+                                onClick={() => resumeProgress(primaryLast)}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-900 hover:text-white bg-white hover:bg-blue-700 border border-blue-300 px-2.5 py-1 rounded-md transition-colors flex-shrink-0 cursor-pointer shadow-2xs"
+                                title={`Resume Primary Register last GR #${primaryLast.grNo} (${primaryLast.name})`}
                               >
-                                Open
+                                <RotateCcw className="w-3 h-3 text-amber-500" />
+                                <span>Resume</span>
                               </button>
                             )}
                           </div>
@@ -5349,11 +5358,12 @@ export default function GovernmentEntryPage() {
                             {generalLast && (
                               <button
                                 type="button"
-                                onClick={() => openLastSavedInAddModal(generalLast)}
-                                className="text-[11px] font-semibold text-indigo-800 hover:text-indigo-950 bg-white hover:bg-indigo-100 border border-indigo-300 px-2.5 py-0.5 rounded transition-colors flex-shrink-0 cursor-pointer shadow-2xs"
-                                title={`Open ${generalLast.name} (${generalLast.grNo}) in form`}
+                                onClick={() => resumeProgress(generalLast)}
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-900 hover:text-white bg-white hover:bg-indigo-700 border border-indigo-300 px-2.5 py-1 rounded-md transition-colors flex-shrink-0 cursor-pointer shadow-2xs"
+                                title={`Resume 1st+ Register last GR #${generalLast.grNo} (${generalLast.name})`}
                               >
-                                Open
+                                <RotateCcw className="w-3 h-3 text-amber-500" />
+                                <span>Resume</span>
                               </button>
                             )}
                           </div>
