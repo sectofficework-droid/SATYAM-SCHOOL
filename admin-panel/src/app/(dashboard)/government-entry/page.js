@@ -3515,6 +3515,45 @@ export default function GovernmentEntryPage() {
     setFormGrNo(fullRow.grNo && fullRow.grNo !== "-" ? fullRow.grNo : "");
     setFormDoeSlash(fullRow.doeSlash && fullRow.doeSlash !== "-" ? fullRow.doeSlash : getTodaySlash());
 
+    // REQ: Track this student as in-progress session if entry is not already fully completed
+    const hasU = Boolean(
+      (fullRow.udise && fullRow.udise !== "-" && fullRow.udise !== "Pending" && fullRow.udise !== "Active in other school") ||
+      fullRow.udiseStatus === "Done"
+    );
+    const hasP = Boolean(
+      (fullRow.pen && fullRow.pen !== "-" && fullRow.pen !== "Pending" && fullRow.pen !== "Not Defined" && fullRow.pen !== "Active in other school") ||
+      fullRow.penStatus === "Done"
+    );
+    const penNotDef = fullRow.pen === "Not Defined" || fullRow.penStatus === "Not Defined";
+    const isCompleted = fullRow.status === "Done" || (hasU && (hasP || penNotDef));
+
+    if (!isCompleted && !addWizardActive) {
+      let step = 2;
+      if (mainTab === "pen") step = 3;
+      else if (mainTab === "udise") step = 2;
+      else if (!fullRow.grNo || fullRow.grNo === "-") step = 1;
+      else if (!hasU) step = 2;
+      else if (!hasP && !penNotDef) step = 3;
+      else step = 4;
+
+      saveProgressToStorage({
+        enrollNo: fullRow.enrollNo || "",
+        studentId: fullRow.studentId || fullRow.id,
+        grNo: fullRow.grNo && fullRow.grNo !== "-" ? fullRow.grNo : "",
+        step,
+        subPhase: step === 4 || step === 1 ? "details" : "entry",
+        createdRowId: fullRow.id || null,
+        section: fullRow.section || (fullRow.cls ? classSection(fullRow.cls) : null) || grSubTab || "general",
+        studentName: fullRow.name,
+        name: fullRow.name,
+        cls: fullRow.cls,
+        session: fullRow.session || "",
+        doeSlash: fullRow.doeSlash || getTodaySlash(),
+        remarks: fullRow.remarks || "",
+        timestamp: Date.now(),
+      });
+    }
+
     const isUdiseOtherSchool = fullRow.udise === "Active in other school" || fullRow.udiseStatus === "Active in other school";
     setFormUdise(
       fullRow.udise && fullRow.udise !== "-" && fullRow.udise !== "Active in other school"
@@ -3947,6 +3986,32 @@ export default function GovernmentEntryPage() {
           setSearch("");
           setAddPinnedEnrollNo(nextRow.enrollNo);
           openEntryModal(nextRow);
+        } else if (!addWizardActive && modalRow) {
+          const hasRealPen = Boolean(
+            (modalRow.pen && modalRow.pen !== "-" && modalRow.pen !== "Not Defined" && modalRow.pen !== "Active in other school") ||
+            modalRow.penStatus === "Done"
+          );
+          const penNotDef = modalRow.pen === "Not Defined" || modalRow.penStatus === "Not Defined";
+          if (!hasRealPen && !penNotDef) {
+            saveProgressToStorage({
+              enrollNo: modalRow.enrollNo || "",
+              studentId: modalRow.studentId || modalRow.id,
+              grNo: formGrNo.trim() || modalRow.grNo || "",
+              step: 3,
+              subPhase: "entry",
+              createdRowId: modalRow.id || targetOnlineGrId || null,
+              section: modalRow.section || (modalRow.cls ? classSection(modalRow.cls) : null) || grSubTab || "general",
+              studentName: modalRow.name,
+              name: modalRow.name,
+              cls: modalRow.cls,
+              session: modalRow.session || "",
+              doeSlash: modalRow.doeSlash || getTodaySlash(),
+              remarks: chosenRemarks || modalRow.remarks || "",
+              timestamp: Date.now(),
+            });
+          } else {
+            clearProgressFromStorage();
+          }
         }
 
         // Silent background sync
@@ -4079,6 +4144,14 @@ export default function GovernmentEntryPage() {
         if (addSection) setGrSubTab(addSection);
         setAddPinnedEnrollNo(null);
         setAddModalOpen(true);
+      } else if (!addWizardActive && modalRow) {
+        const hasUdise = Boolean(
+          (modalRow.udise && modalRow.udise !== "-" && modalRow.udise !== "Active in other school") ||
+          modalRow.udiseStatus === "Done"
+        );
+        if (hasUdise) {
+          clearProgressFromStorage();
+        }
       }
     } catch (e) {
       setFormError(e.message || "Failed to save.");
@@ -4167,8 +4240,8 @@ export default function GovernmentEntryPage() {
           <span>{loadError}</span>
         </div>
       )}
-      {/* In Progress Resume Banner - Slim single-line strip */}
-      {hasActiveSession && inProgressSession && !addModalOpen && !modalRow && (
+      {/* In Progress Resume Banner - Slim single-line strip (for non-Online-GR tabs) */}
+      {hasActiveSession && inProgressSession && !addModalOpen && !modalRow && mainTab !== "onlineGr" && (
         <div className="bg-amber-50/90 border border-amber-300/80 rounded-lg px-2.5 py-1 shadow-xs flex flex-wrap items-center justify-between gap-2 text-xs animate-fadeIn">
           <div className="flex items-center gap-2 min-w-0">
             <span className="relative flex h-2 w-2 flex-shrink-0">
@@ -4275,43 +4348,56 @@ export default function GovernmentEntryPage() {
                   </button>
                 </div>
 
-                {/* Prominent Last-Saved reference chip directly on main tab */}
-                {(() => {
-                  const currentLast = getLastSavedGrInfo(grSubTab, onlineGrDataset, dbStudents);
-                  if (!currentLast) return null;
-                  const nextGr = getNextGrNo(currentLast.grNo);
+                {/* REQ: "instead last saved at top of the page ; resume last entry (suppose i need to work on previous entry (not last entry)) it will simply show that resume for that student on which i was working last time not the last row" */}
+                {/* REQ: "if there is no active entry then no need to show resume button" */}
+                {hasActiveSession && inProgressSession && !addModalOpen && !modalRow && (() => {
+                  const sGr = inProgressSession.grNo ? String(inProgressSession.grNo).trim() : "";
+                  const sName = inProgressSession.studentName || inProgressSession.name || "Student";
+                  const sCls = inProgressSession.cls;
+                  const sStep = inProgressSession.step || 1;
+                  const stepLabel = sStep === 2 ? "UDISE" : sStep === 3 ? "PEN" : sStep === 4 ? "Confirm" : "Reg No";
+
                   return (
-                    <div className="hidden lg:flex items-center gap-2 text-xs bg-white border border-gray-200 px-3 py-1.5 rounded-xl shadow-2xs">
-                      <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wide">
-                        Last Saved {grSubTab === "primary" ? "PR" : "GR"}:
+                    <div className="flex items-center gap-2 text-xs bg-amber-50/90 border border-amber-300 rounded-xl px-2.5 py-1 shadow-2xs animate-fadeIn flex-wrap">
+                      <span className="relative flex h-2 w-2 flex-shrink-0">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
                       </span>
-                      <span className="font-mono font-bold text-blue-900 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded text-xs">
-                        {currentLast.grNo}
+                      <span className="text-[10px] font-bold text-amber-900 uppercase tracking-wide">
+                        Resume Last Entry:
                       </span>
-                      <span className="font-semibold text-gray-800 truncate max-w-[200px]" title={currentLast.name}>
-                        {currentLast.name}
-                      </span>
-                      {currentLast.cls && (
-                        <span className="text-[10px] px-1.5 py-0.2 bg-gray-100 text-gray-600 rounded">
-                          {currentLast.cls}
+                      {sGr && (
+                        <span className="font-mono font-bold text-amber-950 bg-amber-200/90 border border-amber-300 px-1.5 py-0.5 rounded text-xs">
+                          {sGr}
                         </span>
                       )}
-                      {nextGr && (
-                        <span className="text-[11px] text-gray-400 pl-1 border-l border-gray-200">
-                          Next: <strong className="font-mono text-gray-700 font-bold">{nextGr}</strong>
+                      <span className="font-semibold text-amber-950 truncate max-w-[180px]" title={sName}>
+                        {sName}
+                      </span>
+                      {sCls && (
+                        <span className="text-[10px] px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded font-medium">
+                          {sCls}
                         </span>
                       )}
-                      {currentLast && (currentLast.row || currentLast.student) && (
-                        <button
-                          type="button"
-                          onClick={() => openLastStudentForm(currentLast, grSubTab)}
-                          title={`Resume government entry for ${currentLast.name} (${currentLast.grNo})`}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-school-navy hover:bg-blue-900 text-white font-semibold text-[11px] shadow-2xs transition-colors cursor-pointer ml-1"
-                        >
-                          <RotateCcw className="w-2.5 h-2.5 text-blue-200" />
-                          <span>Resume</span>
-                        </button>
-                      )}
+                      <span className="text-[11px] text-amber-800 hidden sm:inline">
+                        · Step {sStep}/4 ({stepLabel})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => resumeProgress(inProgressSession)}
+                        title={`Resume government entry for ${sName} (${sGr || sCls || ""})`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-semibold text-[11px] rounded-md shadow-xs transition-all cursor-pointer ml-1"
+                      >
+                        ▶ Resume
+                      </button>
+                      <button
+                        type="button"
+                        onClick={dismissInProgress}
+                        title="Dismiss in-progress resume"
+                        className="text-amber-700 hover:text-amber-950 hover:bg-amber-200/60 p-1 rounded-md transition-colors cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   );
                 })()}
