@@ -1572,6 +1572,8 @@ export default function GovernmentEntryPage() {
 
   // REQ: "if there is no active entry then no need to show resume button"
   // Determines if an in-progress session represents a genuinely pending/active entry.
+  // NOTE: In online_general_register table, row.status represents GR registration.
+  // A government entry is only fully completed when BOTH UDISE and PEN are done.
   const hasActiveSession = useMemo(() => {
     if (!inProgressSession || inProgressSession.completed) return false;
 
@@ -1581,7 +1583,8 @@ export default function GovernmentEntryPage() {
 
     if (!gr && !name && !enrollNo) return false;
 
-    // If this student is already present in the register and fully completed, they are not an active entry
+    // If this student is already present in the register and BOTH UDISE and PEN are completed,
+    // they are not an active entry.
     const allRows = [
       ...(onlineGrDataset?.primary || []),
       ...(onlineGrDataset?.general || []),
@@ -1597,17 +1600,28 @@ export default function GovernmentEntryPage() {
         const rName = String(r.name || "").trim().toUpperCase();
         if (rName === normName) return true;
       }
-      if (normName) {
+      if (normName && inProgressSession.cls) {
         const rName = String(r.name || "").trim().toUpperCase();
-        if (rName === normName) return true;
+        if (rName === normName && r.cls === inProgressSession.cls) return true;
       }
       return false;
     });
 
     if (match) {
-      const hasU = match.udise && match.udise !== "-" && match.udise !== "Pending";
-      const hasP = match.pen && match.pen !== "-" && match.pen !== "Pending";
-      if (match.status === "Done" || (hasU && hasP)) {
+      const u = String(match.udise || "").trim();
+      const hasU = match.udiseStatus === "Done" ||
+        match.udiseStatus === "Active in other school" ||
+        (u !== "" && u !== "-" && u !== "Pending");
+
+      const p = String(match.pen || "").trim();
+      const hasP = match.penStatus === "Done" ||
+        match.penStatus === "Not Defined" ||
+        match.penStatus === "Active in other school" ||
+        p === "Not Defined" ||
+        (p !== "" && p !== "-" && p !== "Pending");
+
+      // Only if BOTH UDISE and PEN are completed is this student finished
+      if (hasU && hasP) {
         return false;
       }
     }
@@ -1615,7 +1629,7 @@ export default function GovernmentEntryPage() {
     return true;
   }, [inProgressSession, onlineGrDataset]);
 
-  // Clean up completed session from localStorage if already fully Done in the register
+  // Clean up completed session from localStorage ONLY if already fully Done (both UDISE & PEN)
   useEffect(() => {
     if (inProgressSession && !inProgressSession.completed) {
       const allRows = [
@@ -1638,17 +1652,27 @@ export default function GovernmentEntryPage() {
           const rName = String(r.name || "").trim().toUpperCase();
           if (rName === normName) return true;
         }
-        if (normName) {
+        if (normName && inProgressSession.cls) {
           const rName = String(r.name || "").trim().toUpperCase();
-          if (rName === normName) return true;
+          if (rName === normName && r.cls === inProgressSession.cls) return true;
         }
         return false;
       });
 
       if (match) {
-        const hasU = match.udise && match.udise !== "-" && match.udise !== "Pending";
-        const hasP = match.pen && match.pen !== "-" && match.pen !== "Pending";
-        if (match.status === "Done" || (hasU && hasP)) {
+        const u = String(match.udise || "").trim();
+        const hasU = match.udiseStatus === "Done" ||
+          match.udiseStatus === "Active in other school" ||
+          (u !== "" && u !== "-" && u !== "Pending");
+
+        const p = String(match.pen || "").trim();
+        const hasP = match.penStatus === "Done" ||
+          match.penStatus === "Not Defined" ||
+          match.penStatus === "Active in other school" ||
+          p === "Not Defined" ||
+          (p !== "" && p !== "-" && p !== "Pending");
+
+        if (hasU && hasP) {
           clearProgressFromStorage();
         }
       }
