@@ -2383,6 +2383,7 @@ export default function GovernmentEntryPage() {
         }
         return {
           ...prevStudent,
+          hasBirthCert: true,
           studentDocuments: nextDocs,
         };
       };
@@ -5692,8 +5693,10 @@ export default function GovernmentEntryPage() {
                         {filteredAddableStudents.map(st => {
                           const isBcUploaded = Boolean(st.hasBirthCert || getBcDoc(st));
                           return (
-                            <button key={st.enrollNo} type="button" onClick={() => selectAddStudent(st)}
-                              className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition-colors">
+                            <div key={st.enrollNo} role="button" tabIndex={0}
+                              onClick={() => selectAddStudent(st)}
+                              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") selectAddStudent(st); }}
+                              className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition-colors cursor-pointer">
                               <div className="flex items-center justify-between gap-2">
                                 <div className="flex items-center gap-2 flex-wrap min-w-0">
                                   <span className="font-semibold text-gray-800">{st.name}</span>
@@ -5706,13 +5709,26 @@ export default function GovernmentEntryPage() {
                                   ) : (
                                     <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200 flex-shrink-0">
                                       <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
-                                      Birth Certificate Not Uploaded
+                                      <span>Birth Certificate Not Uploaded</span>
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          triggerBcUpload(st);
+                                        }}
+                                        disabled={bcUploading}
+                                        title={`Upload Birth Certificate for ${st.name}`}
+                                        className="ml-1 inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer shadow-2xs"
+                                      >
+                                        <Upload className="w-2 h-2" />
+                                        <span>Upload</span>
+                                      </button>
                                     </span>
                                   )}
                                 </div>
                                 <span className="flex-shrink-0">{eligibilityBadge(st)}</span>
                               </div>
-                            </button>
+                            </div>
                           );
                         })}
                       </>
@@ -5740,18 +5756,60 @@ export default function GovernmentEntryPage() {
                     <div><span className="text-gray-400">MOBILE 2</span><div className="font-semibold text-gray-700">{addSelectedStudent.mobile2 || "-"}</div></div>
                     <div>
                       <span className="text-gray-400">BIRTH CERT</span>
-                      <div>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         {Boolean(addSelectedStudent.hasBirthCert || getBcDoc(addSelectedStudent)) ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Uploaded
-                          </span>
+                          <>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Uploaded
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadBirthCert(addSelectedStudent)}
+                              disabled={bcDownloading}
+                              title="Download / View Birth Certificate"
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition-colors cursor-pointer"
+                            >
+                              {bcDownloading ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Download className="w-2.5 h-2.5" />}
+                              <span>View</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => triggerBcUpload(addSelectedStudent)}
+                              disabled={bcUploading}
+                              title="Re-upload Birth Certificate"
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors cursor-pointer"
+                            >
+                              <Upload className="w-2.5 h-2.5" />
+                              <span>Re-upload</span>
+                            </button>
+                          </>
                         ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
-                            <AlertTriangle className="w-2.5 h-2.5 text-amber-600" /> Not Uploaded
-                          </span>
+                          <>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                              <AlertTriangle className="w-2.5 h-2.5 text-amber-600" /> Not Uploaded
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => triggerBcUpload(addSelectedStudent)}
+                              disabled={bcUploading}
+                              title="Upload Birth Certificate for this student"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer shadow-2xs"
+                            >
+                              {bcUploading ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Upload className="w-2.5 h-2.5" />}
+                              <span>{bcUploading ? "Uploading..." : "Upload"}</span>
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
+                    {bcMessage && bcUploadTarget?.enrollNo === addSelectedStudent.enrollNo && (
+                      <div className={`col-span-2 sm:col-span-3 p-2 rounded-lg text-xs flex items-center gap-2 ${
+                        bcMessage.type === "success" ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-rose-50 text-rose-800 border border-rose-200"
+                      }`}>
+                        {bcMessage.type === "success" ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />}
+                        <span>{bcMessage.text}</span>
+                      </div>
+                    )}
                     <div className="col-span-2 sm:col-span-3 pt-1">{eligibilityBadge(addReview)}</div>
                   </div>
 
