@@ -1765,27 +1765,7 @@ export default function GovernmentEntryPage() {
       const createdRowId = session.createdRowId || rawStudent.id || null;
       const sec = session.section || (student.cls ? classSection(student.cls) : null) || grSubTab || "general";
 
-      // Auto-detect the true step if student already has parts completed
       const hasGr = Boolean(grNo && grNo !== "-");
-      const hasUdise = Boolean(
-        (student.udise && student.udise !== "-" && student.udise !== "Active in other school") ||
-        (rawStudent.udise && rawStudent.udise !== "-" && rawStudent.udise !== "Active in other school") ||
-        (student.udiseStatus === "Done" || rawStudent.udiseStatus === "Done")
-      );
-      const hasPen = Boolean(
-        (student.pen && student.pen !== "-" && student.pen !== "Not Defined" && student.pen !== "Active in other school") ||
-        (rawStudent.pen && rawStudent.pen !== "-" && rawStudent.pen !== "Not Defined" && rawStudent.pen !== "Active in other school") ||
-        (student.penStatus === "Done" || rawStudent.penStatus === "Done")
-      );
-      const penNotDefined = student.pen === "Not Defined" || rawStudent.pen === "Not Defined";
-
-      let step = Number(session.step) || 1;
-      if (!session.step) {
-        if (!hasGr) step = 1;
-        else if (!hasUdise) step = 2;
-        else if (!hasPen && !penNotDefined) step = 3;
-        else step = 4;
-      }
 
       setGrSubTab(sec);
       setAddSection(sec);
@@ -1795,68 +1775,36 @@ export default function GovernmentEntryPage() {
       const savedRemarks = session.remarks || student.remarks || "";
       setAddRemarks(savedRemarks && savedRemarks !== "-" ? savedRemarks : "");
       setAddCreatedRowId(createdRowId);
-      setAddStep(step);
+      setAddStep(1);
+      setAddSubPhase("details");
       setAddWizardActive(true);
 
-      if (step === 2) {
-        // Step 2: UDISE Entry
-        setMainTab("udise");
-        setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
-        setEligTab(eligibilityFns.udiseEligible(student) ? "eligible" : "ineligible");
-        setSearch("");
-        if (student.enrollNo && student.enrollNo !== "-") {
-          setAddPinnedEnrollNo(student.enrollNo);
-        } else {
-          setAddPinnedEnrollNo(null);
-        }
-        setAddModalOpen(false);
-        const subPhase = session.subPhase || "details";
-        setAddSubPhase(subPhase);
-        if (subPhase === "entry") {
-          openEntryModal(student);
-          setFormGrNo(grNo);
-        } else {
-          setModalRow(null);
-        }
-      } else if (step === 3) {
-        // Step 3: PEN Entry
-        setMainTab("pen");
-        setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
-        setEligTab(eligibilityFns.penEligible(student) ? "eligible" : "ineligible");
-        setSearch("");
-        if (student.enrollNo && student.enrollNo !== "-") {
-          setAddPinnedEnrollNo(student.enrollNo);
-        } else {
-          setAddPinnedEnrollNo(null);
-        }
-        setAddModalOpen(false);
-        const subPhase = session.subPhase || "details";
-        setAddSubPhase(subPhase);
-        if (subPhase === "entry") {
-          openEntryModal(student);
-          setFormGrNo(grNo);
-        } else {
-          setModalRow(null);
-        }
-      } else if (step === 4) {
-        // Step 4: Final Confirmation Review
-        setModalRow(null);
-        setMainTab("onlineGr");
-        setAddPinnedEnrollNo(null);
-        setAddStep(4);
-        setAddSubPhase("details");
-        setAddModalOpen(true);
-      } else {
-        // Step 1: Select student & enter Reg No
-        setModalRow(null);
-        setMainTab("onlineGr");
-        setAddPinnedEnrollNo(null);
-        setAddStep(1);
-        setAddSubPhase("details");
-        setAddModalOpen(true);
-        setAddGrEditing(!hasGr);
-        setAddDoeEditing(false);
-      }
+      // REQ: Resuming ALWAYS opens Step 1 (student details & Reg No) so the operator
+      // can review details and proceed cleanly, rather than jumping straight to PEN form or Step 4.
+      setModalRow(null);
+      setMainTab("onlineGr");
+      setAddPinnedEnrollNo(null);
+      setAddModalOpen(true);
+      setAddGrEditing(!hasGr);
+      setAddDoeEditing(false);
+
+      saveProgressToStorage({
+        ...session,
+        enrollNo: student.enrollNo || sSessEnroll || "",
+        studentId: student.studentId || student.id || sSessId,
+        grNo,
+        step: 1,
+        subPhase: "details",
+        createdRowId,
+        section: sec,
+        studentName: student.name,
+        name: student.name,
+        cls: student.cls,
+        session: student.session || "",
+        doeSlash: session.doeSlash || student.doeSlash || getTodaySlash(),
+        remarks: savedRemarks,
+        timestamp: Date.now(),
+      });
     } catch (err) {
       console.error("Error in resumeProgress:", err);
       alert("Failed to resume session: " + (err?.message || "Unknown error"));
@@ -1887,41 +1835,15 @@ export default function GovernmentEntryPage() {
       const createdRowId = row.id || student.id || null;
       const sec = sectionHint || row.section || (student.cls ? classSection(student.cls) : null) || grSubTab || "general";
 
-      const hasGr = Boolean(grNo && grNo !== "-");
-      const hasUdise = Boolean(
-        (student.udise && student.udise !== "-" && student.udise !== "Active in other school") ||
-        (row.udise && row.udise !== "-" && row.udise !== "Active in other school") ||
-        (student.udiseStatus === "Done" || row.udiseStatus === "Done")
-      );
-      const hasRealPen = Boolean(
-        (student.pen && student.pen !== "-" && student.pen !== "Not Defined" && student.pen !== "Active in other school") ||
-        (row.pen && row.pen !== "-" && row.pen !== "Not Defined" && row.pen !== "Active in other school") ||
-        (student.penStatus === "Done" || row.penStatus === "Done")
-      );
-      const penNotDefined = student.pen === "Not Defined" || row.pen === "Not Defined";
-
-      // Auto-detect the true step to proceed entry:
-      // If missing Reg No -> step 1
-      // If missing UDISE -> step 2 (UDISE Entry)
-      // If has UDISE but missing or placeholder PEN -> step 3 (PEN Entry)
-      // If both real UDISE & real PEN exist -> step 4 (Final Confirmation Review)
-      let step = 1;
-      if (!hasGr) {
-        step = 1;
-      } else if (!hasUdise) {
-        step = 2;
-      } else if (!hasRealPen || penNotDefined) {
-        step = 3;
-      } else {
-        step = 4;
-      }
+      // ALWAYS start from Step 1 of the Add New Student wizard
+      const step = 1;
 
       const sessionData = {
         enrollNo: student.enrollNo || row.enrollNo || "",
         studentId: student.studentId || student.id || row.studentId || row.id,
         grNo,
-        step,
-        subPhase: step === 4 || step === 1 ? "details" : "entry",
+        step: 1,
+        subPhase: "details",
         createdRowId,
         section: sec,
         studentName: student.name || row.name,
@@ -3160,7 +3082,7 @@ export default function GovernmentEntryPage() {
 
   // Stage 1 — create/update the Online GR row right away, then hand off to
   // the real UDISE Entry tab's own Entry Done modal for this student.
-  async function saveStep1AndContinue() {
+  async function saveStep1AndContinue(forceTarget) {
     if (!addSelectedStudent || !addSection) { setAddError("Select a student first."); return; }
     if (!addGrNo.trim()) { setAddError(`${addSection === "primary" ? "PR" : "GR"} No is required.`); return; }
     if (addGrConflict) {
@@ -3234,8 +3156,19 @@ export default function GovernmentEntryPage() {
         return { ...prev, [addSection]: nextList };
       });
 
-      // Hand off depending on eligibility:
-      if (udiseInfo.eligible) {
+      const hasUdise = Boolean(
+        (addSelectedStudent.udise && addSelectedStudent.udise !== "-" && addSelectedStudent.udise !== "Active in other school" && addSelectedStudent.udise !== "Pending") ||
+        addSelectedStudent.udiseStatus === "Done"
+      );
+
+      const targetStep = forceTarget === "pen"
+        ? "pen"
+        : forceTarget === "udise"
+        ? "udise"
+        : (udiseInfo.eligible ? (hasUdise && penInfo.eligible ? "pen" : "udise") : (penInfo.eligible ? "pen" : "ineligible"));
+
+      // Hand off depending on target step & eligibility:
+      if (targetStep === "udise") {
         saveProgressToStorage({
           enrollNo: addSelectedStudent.enrollNo,
           studentId: addSelectedStudent.studentId || addSelectedStudent.id,
@@ -3260,8 +3193,7 @@ export default function GovernmentEntryPage() {
         setEligTab("eligible");
         setSearch("");
         setAddPinnedEnrollNo(addSelectedStudent.enrollNo);
-      } else if (penInfo.eligible) {
-        // UDISE ineligible — skip UDISE step and go to PEN
+      } else if (targetStep === "pen") {
         saveProgressToStorage({
           enrollNo: addSelectedStudent.enrollNo,
           studentId: addSelectedStudent.studentId || addSelectedStudent.id,
@@ -3556,20 +3488,12 @@ export default function GovernmentEntryPage() {
     const isCompleted = fullRow.status === "Done" || (hasU && (hasP || penNotDef));
 
     if (!isCompleted && !addWizardActive) {
-      let step = 2;
-      if (mainTab === "pen") step = 3;
-      else if (mainTab === "udise") step = 2;
-      else if (!fullRow.grNo || fullRow.grNo === "-") step = 1;
-      else if (!hasU) step = 2;
-      else if (!hasP && !penNotDef) step = 3;
-      else step = 4;
-
       saveProgressToStorage({
         enrollNo: fullRow.enrollNo || "",
         studentId: fullRow.studentId || fullRow.id,
         grNo: fullRow.grNo && fullRow.grNo !== "-" ? fullRow.grNo : "",
-        step,
-        subPhase: step === 4 || step === 1 ? "details" : "entry",
+        step: 1,
+        subPhase: "details",
         createdRowId: fullRow.id || null,
         section: fullRow.section || (fullRow.cls ? classSection(fullRow.cls) : null) || grSubTab || "general",
         studentName: fullRow.name,
@@ -4027,8 +3951,8 @@ export default function GovernmentEntryPage() {
               enrollNo: modalRow.enrollNo || "",
               studentId: modalRow.studentId || modalRow.id,
               grNo: formGrNo.trim() || modalRow.grNo || "",
-              step: 3,
-              subPhase: "entry",
+              step: 1,
+              subPhase: "details",
               createdRowId: modalRow.id || targetOnlineGrId || null,
               section: modalRow.section || (modalRow.cls ? classSection(modalRow.cls) : null) || grSubTab || "general",
               studentName: modalRow.name,
@@ -6188,24 +6112,61 @@ export default function GovernmentEntryPage() {
                   const udiseInfo = addSelectedStudent ? eligibilityFns.getUdiseEligibility(addSelectedStudent) : { eligible: false };
                   const penInfo = addSelectedStudent ? eligibilityFns.getPenEligibility(addSelectedStudent) : { eligible: false };
                   const bothIneligible = addSelectedStudent && !udiseInfo.eligible && !penInfo.eligible;
+                  const hasUdise = Boolean(
+                    (addSelectedStudent?.udise && addSelectedStudent.udise !== "-" && addSelectedStudent.udise !== "Active in other school" && addSelectedStudent.udise !== "Pending") ||
+                    addSelectedStudent?.udiseStatus === "Done"
+                  );
+
+                  if (bothIneligible) {
+                    return (
+                      <button onClick={() => saveStep1AndContinue()} disabled={addSaving || !addSelectedStudent || !!addGrConflict}
+                        className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700 transition-colors disabled:opacity-60 cursor-pointer">
+                        {addSaving && <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
+                        {addSaving ? "Saving..." : "Save & Mark Ineligible (Next Steps Disabled)"}
+                      </button>
+                    );
+                  }
+
+                  if (!udiseInfo.eligible) {
+                    return (
+                      <button onClick={() => saveStep1AndContinue("pen")} disabled={addSaving || !addSelectedStudent || !!addGrConflict}
+                        className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-60 cursor-pointer">
+                        {addSaving && <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
+                        {addSaving ? "Saving..." : "Save & Skip to PEN Entry (UDISE Ineligible) →"}
+                      </button>
+                    );
+                  }
+
+                  if (hasUdise && penInfo.eligible) {
+                    return (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => saveStep1AndContinue("udise")}
+                          disabled={addSaving || !addSelectedStudent || !!addGrConflict}
+                          className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-60 cursor-pointer"
+                          title="Review or edit UDISE number in Step 2"
+                        >
+                          Review UDISE (Step 2)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => saveStep1AndContinue("pen")}
+                          disabled={addSaving || !addSelectedStudent || !!addGrConflict}
+                          className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors disabled:opacity-60 shadow-xs cursor-pointer"
+                        >
+                          {addSaving && <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
+                          {addSaving ? "Saving..." : "Save & Continue to PEN Entry (UDISE Done) →"}
+                        </button>
+                      </div>
+                    );
+                  }
 
                   return (
-                    <button onClick={saveStep1AndContinue} disabled={addSaving || !addSelectedStudent || !!addGrConflict}
-                      className={`flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg transition-colors disabled:opacity-60 ${
-                        bothIneligible
-                          ? "bg-amber-600 text-white hover:bg-amber-700"
-                          : !udiseInfo.eligible
-                          ? "bg-blue-600 text-white hover:bg-blue-700"
-                          : "bg-school-navy text-white hover:bg-school-navy/90"
-                      }`}>
+                    <button onClick={() => saveStep1AndContinue("udise")} disabled={addSaving || !addSelectedStudent || !!addGrConflict}
+                      className="flex items-center gap-1.5 text-xs font-semibold px-3.5 py-1.5 rounded-lg bg-school-navy text-white hover:bg-school-navy/90 transition-colors disabled:opacity-60 cursor-pointer">
                       {addSaving && <Loader2 className="w-3.5 h-3.5 animate-spin"/>}
-                      {addSaving
-                        ? "Saving..."
-                        : bothIneligible
-                        ? "Save & Mark Ineligible (Next Steps Disabled)"
-                        : !udiseInfo.eligible
-                        ? "Save & Skip to PEN Entry (UDISE Ineligible) →"
-                        : "Save & Continue to UDISE Entry"}
+                      {addSaving ? "Saving..." : "Save & Continue to UDISE Entry"}
                     </button>
                   );
                 })()
