@@ -2183,9 +2183,10 @@ export default function GovernmentEntryPage() {
 
   function getBcDoc(st) {
     if (!st) return null;
-    return (st.studentDocuments || []).find(
-      d => d.document_types?.name === "Birth Certificate" && d.status === "Uploaded"
-    ) || null;
+    const docs = st.studentDocuments || st.student_documents || [];
+    return docs.find(
+      d => d.document_types?.name === "Birth Certificate" && (d.status === "Uploaded" || Boolean(d.file_url))
+    ) || (st.hasBirthCert ? { status: "Uploaded", document_types: { name: "Birth Certificate" } } : null);
   }
 
   function getTcDoc(st) {
@@ -3476,16 +3477,22 @@ export default function GovernmentEntryPage() {
     }
     const q = addSearch.trim().toLowerCase();
     if (q) {
-      list = list.filter(x =>
-        String(x.name || "").toLowerCase().includes(q) ||
-        String(x.enrollNo || "").toLowerCase().includes(q) ||
-        String(x.grNo || "").toLowerCase().includes(q) ||
-        String(x.cls || "").toLowerCase().includes(q) ||
-        String(x.mobile1 || "").toLowerCase().includes(q) ||
-        String(x.aadharNo || "").toLowerCase().includes(q) ||
-        String(x.udise || "").toLowerCase().includes(q) ||
-        String(x.pen || "").toLowerCase().includes(q)
-      );
+      list = list.filter(x => {
+        const isBc = Boolean(x.hasBirthCert || getBcDoc(x));
+        const bcStatus = isBc ? "birth certificate uploaded" : "birth certificate not uploaded";
+        return (
+          String(x.name || "").toLowerCase().includes(q) ||
+          String(x.enrollNo || "").toLowerCase().includes(q) ||
+          String(x.grNo || "").toLowerCase().includes(q) ||
+          String(x.cls || "").toLowerCase().includes(q) ||
+          String(x.session || "").toLowerCase().includes(q) ||
+          String(x.mobile1 || "").toLowerCase().includes(q) ||
+          String(x.aadharNo || "").toLowerCase().includes(q) ||
+          String(x.udise || "").toLowerCase().includes(q) ||
+          String(x.pen || "").toLowerCase().includes(q) ||
+          bcStatus.includes(q)
+        );
+      });
     }
     return list;
   }, [addableStudents, addEligFilter, addClassFilter, addStatusFilter, addSearch, eligibilityFns]);
@@ -5682,18 +5689,32 @@ export default function GovernmentEntryPage() {
                             Total in database: {addEligCounts.all}
                           </span>
                         </div>
-                        {filteredAddableStudents.map(st => (
-                          <button key={st.enrollNo} type="button" onClick={() => selectAddStudent(st)}
-                            className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition-colors">
-                            <div className="flex items-center justify-between gap-2">
-                              <span>
-                                <span className="font-semibold text-gray-800">{st.name}</span>
-                                <span className="text-gray-400"> · {st.cls} · {st.session}</span>
-                              </span>
-                              <span className="flex-shrink-0">{eligibilityBadge(st)}</span>
-                            </div>
-                          </button>
-                        ))}
+                        {filteredAddableStudents.map(st => {
+                          const isBcUploaded = Boolean(st.hasBirthCert || getBcDoc(st));
+                          return (
+                            <button key={st.enrollNo} type="button" onClick={() => selectAddStudent(st)}
+                              className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 transition-colors">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 flex-wrap min-w-0">
+                                  <span className="font-semibold text-gray-800">{st.name}</span>
+                                  <span className="text-gray-400">· {st.cls} · {st.session}</span>
+                                  {isBcUploaded ? (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200 flex-shrink-0">
+                                      <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                      Birth Certificate Uploaded
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200 flex-shrink-0">
+                                      <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
+                                      Birth Certificate Not Uploaded
+                                    </span>
+                                  )}
+                                </div>
+                                <span className="flex-shrink-0">{eligibilityBadge(st)}</span>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </>
                     )}
                   </div>
@@ -5708,7 +5729,7 @@ export default function GovernmentEntryPage() {
                       Change student
                     </button>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
                     <div><span className="text-gray-400">AY</span><div className="font-semibold text-gray-700">{addSelectedStudent.session || "-"}</div></div>
                     <div><span className="text-gray-400">TC</span><div className="font-semibold text-gray-700">{addReview?.tcStatus}</div></div>
                     <div><span className="text-gray-400">STD</span><div className="font-semibold text-gray-700">{addSelectedStudent.cls}</div></div>
@@ -5717,7 +5738,21 @@ export default function GovernmentEntryPage() {
                     <div><span className="text-gray-400">AADHAR</span><div className="font-semibold text-gray-700">{addSelectedStudent.aadharNo || "-"}</div></div>
                     <div><span className="text-gray-400">MOBILE 1</span><div className="font-semibold text-gray-700">{addSelectedStudent.mobile1 || "-"}</div></div>
                     <div><span className="text-gray-400">MOBILE 2</span><div className="font-semibold text-gray-700">{addSelectedStudent.mobile2 || "-"}</div></div>
-                    <div className="col-span-2 pt-1">{eligibilityBadge(addReview)}</div>
+                    <div>
+                      <span className="text-gray-400">BIRTH CERT</span>
+                      <div>
+                        {Boolean(addSelectedStudent.hasBirthCert || getBcDoc(addSelectedStudent)) ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                            <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Uploaded
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                            <AlertTriangle className="w-2.5 h-2.5 text-amber-600" /> Not Uploaded
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="col-span-2 sm:col-span-3 pt-1">{eligibilityBadge(addReview)}</div>
                   </div>
 
                   {/* UDISE & PEN Eligibility Breakdown */}
