@@ -868,14 +868,21 @@ export async function updateStudentBasicDetails(studentId, data) {
 // from updateStudent() (which rewrites every field from a full formData
 // object) means marking a government portal entry done can never
 // accidentally blank out the rest of a student's record.
-export async function updateStudentGovId(studentId, { grNo, udise, pen, apaar, remarks, enrollmentId }) {
-  const fields = { updated_at: new Date().toISOString() };
+export async function updateStudentGovId(studentId, { grNo, udise, pen, apaar, remarks, enrollmentId } = {}) {
+  const fields = {};
   if (grNo !== undefined)  fields.grno  = grNo || null;
   if (udise !== undefined) fields.udise = udise || null;
   if (pen !== undefined)   fields.pen   = pen || null;
   if (apaar !== undefined) fields.apaar = apaar || null;
 
-  const promises = [supabase.from("students").update(fields).eq("id", studentId)];
+  const promises = [];
+  // Only update students table if at least one student column is actually provided
+  if (studentId && Object.keys(fields).length > 0) {
+    fields.updated_at = new Date().toISOString();
+    promises.push(supabase.from("students").update(fields).eq("id", studentId));
+  }
+
+  // Only update student_enrollments table if remarks are provided
   if (enrollmentId && remarks !== undefined) {
     promises.push(
       supabase
@@ -885,10 +892,15 @@ export async function updateStudentGovId(studentId, { grNo, udise, pen, apaar, r
     );
   }
 
+  if (promises.length === 0) return;
+
   const results = await Promise.all(promises);
-  const studentRes = results[0];
-  if (studentRes.error) throw studentRes.error;
-  if (results[1]?.error) console.warn("Failed to update remarks on enrollment:", results[1].error);
+  for (const res of results) {
+    if (res?.error) {
+      console.warn("updateStudentGovId error:", res.error);
+      throw res.error;
+    }
+  }
 }
 
 // ── Deactivate Student ────────────────────────────────────────────────────────

@@ -3092,17 +3092,6 @@ export default function GovernmentEntryPage() {
     setAddSaving(true);
     setAddError("");
     try {
-      // If GR No was changed or newly set, also sync to students table
-      const studentId = addSelectedStudent.studentId || addSelectedStudent.id;
-      if (studentId && addGrNo.trim() !== String(addSelectedStudent.grNo || "").trim()) {
-        try {
-          await updateStudentGovId(studentId, { grNo: addGrNo.trim() });
-          setDbStudents(prev => prev.map(s => s.enrollNo === addSelectedStudent.enrollNo ? { ...s, grNo: addGrNo.trim() } : s));
-        } catch (err) {
-          console.warn("Could not sync GR No to student record:", err);
-        }
-      }
-
       const dec = decorate({ ...addSelectedStudent, grNo: addGrNo.trim() });
       const existingRow = findExistingOnlineGrRow(addSelectedStudent, addSection);
       const targetId = addCreatedRowId || existingRow?.id;
@@ -3125,7 +3114,16 @@ export default function GovernmentEntryPage() {
         ? (baseRemarks && baseRemarks !== "-" ? `${baseRemarks} | ${ineligRemark}` : ineligRemark)
         : (baseRemarks || "-");
 
-      const created = await updateOnlineGrRow(id, addSection, {
+      const studentId = addSelectedStudent.studentId || addSelectedStudent.id;
+      const syncStudentPromise = (studentId && addGrNo.trim() !== String(addSelectedStudent.grNo || "").trim())
+        ? updateStudentGovId(studentId, { grNo: addGrNo.trim() })
+            .then(() => {
+              setDbStudents(prev => prev.map(s => s.enrollNo === addSelectedStudent.enrollNo ? { ...s, grNo: addGrNo.trim() } : s));
+            })
+            .catch(err => console.warn("Could not sync GR No to student record:", err))
+        : Promise.resolve();
+
+      const createdPromise = updateOnlineGrRow(id, addSection, {
         enrollNo:         addSelectedStudent.enrollNo,
         session:          addSelectedStudent.session || "",
         tcStatus:         dec.tcStatus,
@@ -3144,6 +3142,9 @@ export default function GovernmentEntryPage() {
         remarks:          remarksToSave,
         documentsPending: dec.documentsPending,
       });
+
+      // Execute both saves in parallel to cut latency in half
+      const [, created] = await Promise.all([syncStudentPromise, createdPromise]);
 
       const finalId = created.id || id;
       setAddCreatedRowId(finalId);
@@ -3391,25 +3392,60 @@ export default function GovernmentEntryPage() {
         );
       }
 
-      const [created] = await Promise.all(updatePromises);
+      // Optimistic instant UI update: reflect completed entry immediately in local register state
+      const optimisticRow = {
+        id:               targetId,
+        section:          targetSection,
+        doeSlash:         chosenDoe,
+        udise:            addSelectedStudent.udise || "-",
+        pen:              addSelectedStudent.pen || "-",
+        remarks:          finalRemarks,
+        documentsPending: dec.documentsPending,
+        status:           "Done",
+      };
 
-      if (created) {
-        setOnlineGrDataset(prev => ({
-          ...prev,
-          [targetSection]: (prev[targetSection] || []).map(r => r.id === created.id ? created : r),
+      setOnlineGrDataset(prev => {
+        const list = prev[targetSection] || [];
+        const idx = list.findIndex(r => r.id === targetId);
+        const nextList = idx >= 0
+          ? list.map(r => r.id === targetId ? { ...r, ...optimisticRow } : r)
+          : [...list, { ...addSelectedStudent, ...optimisticRow }];
+        return { ...prev, [targetSection]: nextList };
+      });
+
+      if (studentId) {
+        setDbStudents(prev => prev.map(s => {
+          if (s.studentId === studentId || s.enrollNo === addSelectedStudent.enrollNo) {
+            return {
+              ...s,
+              remarks: finalRemarks !== "-" ? finalRemarks : s.remarks,
+              udise: addSelectedStudent.udise || s.udise,
+              pen: addSelectedStudent.pen || s.pen,
+            };
+          }
+          return s;
         }));
       }
 
-      // Entry is fully completed and saved to register — clear in-progress wizard session
+      // Entry is fully completed and saved to register — close wizard and clear storage immediately (0 ms perceived lag)
       clearProgressFromStorage();
       setAddModalOpen(false);
       setAddWizardActive(false);
+      setAddSaving(false);
 
-      // Background sync without blocking the UI
-      loadAll();
+      // Persist in background without freezing the modal or triggering heavy whole-database re-fetches
+      Promise.all(updatePromises).then(([created]) => {
+        if (created) {
+          setOnlineGrDataset(prev => ({
+            ...prev,
+            [targetSection]: (prev[targetSection] || []).map(r => r.id === created.id ? created : r),
+          }));
+        }
+      }).catch(err => {
+        console.error("Background sync error on finalizeAdd:", err);
+      });
     } catch (e) {
       setAddError(e.message || "Failed to finalize entry.");
-    } finally {
       setAddSaving(false);
     }
   }
@@ -3880,8 +3916,6 @@ export default function GovernmentEntryPage() {
           }
         }
 
-        await Promise.all(updatePromises);
-
         // Optimistically update dbStudents in memory so UI reflects changes instantly
         setDbStudents(prev => prev.map(s => {
           if (s.student?.id === modalRow.studentId || s.enrollment_no === modalRow.enrollNo) {
@@ -3908,8 +3942,10 @@ export default function GovernmentEntryPage() {
           }));
         }
 
-        // Close modal immediately without waiting for full database reload
+        // Close modal and transition immediately without waiting for network round trips
         setModalRow(null);
+        setSaving(false);
+
         // Add-New-Student wizard, stage 2 done — hand off to PEN Entry
         // Opens the PEN Entry table view ("ENTRY") with click-to-copy cells so the operator
         // can view/copy student details for the national portal, then click "Next: Enter PEN No →"
@@ -3939,7 +3975,6 @@ export default function GovernmentEntryPage() {
           setEligTab(eligibilityFns.penEligible(nextRow) ? "eligible" : "ineligible");
           setSearch("");
           setAddPinnedEnrollNo(nextRow.enrollNo);
-          setModalRow(null);
         } else if (!addWizardActive && modalRow) {
           const hasRealPen = Boolean(
             (modalRow.pen && modalRow.pen !== "-" && modalRow.pen !== "Not Defined" && modalRow.pen !== "Active in other school") ||
@@ -3968,11 +4003,12 @@ export default function GovernmentEntryPage() {
           }
         }
 
-        // Silent background sync
-        loadAll();
+        // Run persistence in background without blocking the UI
+        Promise.all(updatePromises).catch(err => {
+          console.error("Background sync error on UDISE save:", err);
+        });
       } catch (e) {
         setFormError(e.message || "Failed to save.");
-      } finally {
         setSaving(false);
       }
       return;
@@ -4040,8 +4076,6 @@ export default function GovernmentEntryPage() {
         }
       }
 
-      await Promise.all(updatePromises);
-
       // Optimistically update dbStudents in memory so UI reflects changes instantly
       setDbStudents(prev => prev.map(s => {
         if (s.student?.id === modalRow.studentId || s.enrollment_no === modalRow.enrollNo) {
@@ -4068,8 +4102,10 @@ export default function GovernmentEntryPage() {
         }));
       }
 
-      // Close modal immediately without waiting for full database reload
+      // Close modal and transition immediately without waiting for network round trips
       setModalRow(null);
+      setSaving(false);
+
       // Add-New-Student wizard, stage 3 done — back to Online GR for the
       // final confirmation review (stage 4).
       if (addWizardActive && addStep === 3) {
@@ -4107,9 +4143,13 @@ export default function GovernmentEntryPage() {
           clearProgressFromStorage();
         }
       }
+
+      // Run persistence in background without blocking the UI transition to Final Review
+      Promise.all(updatePromises).catch(e => {
+        console.error("Background sync failed on PEN save:", e);
+      });
     } catch (e) {
       setFormError(e.message || "Failed to save.");
-    } finally {
       setSaving(false);
     }
   }

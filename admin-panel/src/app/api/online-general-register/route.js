@@ -247,6 +247,29 @@ export async function POST(request) {
       if (updates[field] !== undefined) safeUpdates[field] = updates[field];
     }
 
+    // Fast-path: if grNo is not changing (e.g. UDISE, PEN, remarks, doe updates),
+    // update the existing row directly in a single DB query returning * without fetching first.
+    if (!safeUpdates.grNo) {
+      const dbRowUpdates = { updated_at: new Date().toISOString() };
+      for (const [field, col] of FIELD_MAP) {
+        if (safeUpdates[field] !== undefined) dbRowUpdates[col] = safeUpdates[field];
+      }
+      const { data: directUpdated, error: directErr } = await supabaseAdmin
+        .from(TABLE)
+        .update(dbRowUpdates)
+        .eq("id", id)
+        .eq("section", section)
+        .select("*")
+        .maybeSingle();
+
+      if (!directErr && directUpdated) {
+        return NextResponse.json({
+          success: true,
+          item: fromDbRow(directUpdated),
+        });
+      }
+    }
+
     const { data: existing, error: fetchErr } = await supabaseAdmin
       .from(TABLE)
       .select("*")
