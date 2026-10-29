@@ -1775,7 +1775,7 @@ export default function GovernmentEntryPage() {
       setAddWizardActive(true);
 
       if (step === 2) {
-        // Step 2: UDISE Entry — open entry modal directly so user can type UDISE immediately
+        // Step 2: UDISE Entry
         setMainTab("udise");
         setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
         setEligTab(eligibilityFns.udiseEligible(student) ? "eligible" : "ineligible");
@@ -1786,11 +1786,16 @@ export default function GovernmentEntryPage() {
           setAddPinnedEnrollNo(null);
         }
         setAddModalOpen(false);
-        setAddSubPhase("entry");
-        openEntryModal(student);
-        setFormGrNo(grNo);
+        const subPhase = session.subPhase || "details";
+        setAddSubPhase(subPhase);
+        if (subPhase === "entry") {
+          openEntryModal(student);
+          setFormGrNo(grNo);
+        } else {
+          setModalRow(null);
+        }
       } else if (step === 3) {
-        // Step 3: PEN Entry — open entry modal directly so user can type PEN immediately
+        // Step 3: PEN Entry
         setMainTab("pen");
         setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
         setEligTab(eligibilityFns.penEligible(student) ? "eligible" : "ineligible");
@@ -1801,9 +1806,14 @@ export default function GovernmentEntryPage() {
           setAddPinnedEnrollNo(null);
         }
         setAddModalOpen(false);
-        setAddSubPhase("entry");
-        openEntryModal(student);
-        setFormGrNo(grNo);
+        const subPhase = session.subPhase || "details";
+        setAddSubPhase(subPhase);
+        if (subPhase === "entry") {
+          openEntryModal(student);
+          setFormGrNo(grNo);
+        } else {
+          setModalRow(null);
+        }
       } else if (step === 4) {
         // Step 4: Final Confirmation Review
         setModalRow(null);
@@ -2144,6 +2154,8 @@ export default function GovernmentEntryPage() {
     setAddWizardActive(true);
     const sec = addSection || (addSelectedStudent ? classSection(addSelectedStudent.cls) : grSubTab) || "general";
     if (sec) setAddSection(sec);
+    setModalRow(null);
+    setAddSubPhase("details");
     if (addSelectedStudent) {
       saveProgressToStorage({
         enrollNo: addSelectedStudent.enrollNo,
@@ -2152,7 +2164,7 @@ export default function GovernmentEntryPage() {
         doeSlash: addDoeSlash,
         remarks: addRemarks,
         step: 2,
-        subPhase: "entry",
+        subPhase: "details",
         createdRowId: addCreatedRowId,
         section: sec,
         studentName: addSelectedStudent.name,
@@ -2160,11 +2172,6 @@ export default function GovernmentEntryPage() {
         session: addSelectedStudent.session || "",
         timestamp: Date.now(),
       });
-      setAddSubPhase("entry");
-      openEntryModal(addSelectedStudent);
-      if (addGrNo) setFormGrNo(addGrNo.trim());
-    } else {
-      setAddSubPhase("details");
     }
   }
 
@@ -2182,6 +2189,8 @@ export default function GovernmentEntryPage() {
     setAddWizardActive(true);
     const sec = addSection || (addSelectedStudent ? classSection(addSelectedStudent.cls) : grSubTab) || "general";
     if (sec) setAddSection(sec);
+    setModalRow(null);
+    setAddSubPhase("details");
     if (addSelectedStudent) {
       saveProgressToStorage({
         enrollNo: addSelectedStudent.enrollNo,
@@ -2190,7 +2199,7 @@ export default function GovernmentEntryPage() {
         doeSlash: addDoeSlash,
         remarks: addRemarks,
         step: 3,
-        subPhase: "entry",
+        subPhase: "details",
         createdRowId: addCreatedRowId,
         section: sec,
         studentName: addSelectedStudent.name,
@@ -2198,11 +2207,6 @@ export default function GovernmentEntryPage() {
         session: addSelectedStudent.session || "",
         timestamp: Date.now(),
       });
-      setAddSubPhase("entry");
-      openEntryModal(addSelectedStudent);
-      if (addGrNo) setFormGrNo(addGrNo.trim());
-    } else {
-      setAddSubPhase("details");
     }
   }
 
@@ -3959,6 +3963,8 @@ export default function GovernmentEntryPage() {
         // Close modal immediately without waiting for full database reload
         setModalRow(null);
         // Add-New-Student wizard, stage 2 done — hand off to PEN Entry
+        // Opens the PEN Entry table view ("ENTRY") with click-to-copy cells so the operator
+        // can view/copy student details for the national portal, then click "Next: Enter PEN No →"
         if (addWizardActive && addStep === 2) {
           const nextRow = { ...modalRow, udise: udiseValue, remarks: chosenRemarks };
           saveProgressToStorage({
@@ -3966,7 +3972,7 @@ export default function GovernmentEntryPage() {
             studentId: modalRow.studentId || modalRow.id,
             grNo: formGrNo.trim(),
             step: 3,
-            subPhase: "entry",
+            subPhase: "details",
             createdRowId: addCreatedRowId || targetOnlineGrId,
             section: addSection,
             studentName: nextRow.name,
@@ -3979,13 +3985,13 @@ export default function GovernmentEntryPage() {
           setAddSelectedStudent(nextRow);
           setAddRemarks(chosenRemarks);
           setAddStep(3);
-          setAddSubPhase("entry");
+          setAddSubPhase("details");
           setMainTab("pen");
           setFilters({ cls: "All", session: "All", batch: "All", status: "All" });
           setEligTab(eligibilityFns.penEligible(nextRow) ? "eligible" : "ineligible");
           setSearch("");
           setAddPinnedEnrollNo(nextRow.enrollNo);
-          openEntryModal(nextRow);
+          setModalRow(null);
         } else if (!addWizardActive && modalRow) {
           const hasRealPen = Boolean(
             (modalRow.pen && modalRow.pen !== "-" && modalRow.pen !== "Not Defined" && modalRow.pen !== "Active in other school") ||
