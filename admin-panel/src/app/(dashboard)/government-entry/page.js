@@ -899,14 +899,18 @@ export default function GovernmentEntryPage() {
 
   // UDISE/PEN eligibility rules, shared between the rows table and the
   // "Add New Student" picker (REQ: Online GR additions draw from the same pool).
+  // REQ-FEAT-022: Accepts either Birth Certificate Reg No OR Transfer Certificate (TC/LC).
   const eligibilityFns = useMemo(() => {
     const inAnyBatch = x => !!enrollToBatches.get(x.enrollNo)?.size;
-    const birthDetailsFilled = x => !!(
-      String(x.birthCertRegNo || "").trim() &&
-      String(x.birthState || "").trim() &&
-      String(x.birthDistrict || "").trim() &&
-      String(x.birthCity || "").trim()
+    const hasTc = x => Boolean(
+      (x.studentDocuments || x.student_documents || []).some(
+        d => (d.document_types?.name === "Leaving Certificate" || d.document_types?.name === "Transfer Certificate") &&
+             (d.status === "Uploaded" || Boolean(d.file_url))
+      ) ||
+      String(x.lastSchoolName || "").trim() ||
+      String(x.lastSchoolGrNo || "").trim()
     );
+    const hasCert = x => Boolean(String(x.birthCertRegNo || "").trim()) || hasTc(x);
     const aadharAvailable = x => !!String(x.aadharNo || "").trim();
 
     const getUdiseEligibility = x => {
@@ -914,7 +918,7 @@ export default function GovernmentEntryPage() {
       if (x.udiseStatus === "Done" || x.udiseStatus === "Active in other school") return { eligible: true, reason: "" };
       if (!inAnyBatch(x)) return { eligible: false, reason: "Not in any Entry Batch" };
       const missing = [];
-      if (!String(x.birthCertRegNo || "").trim()) missing.push("Birth Cert Reg No");
+      if (!hasCert(x)) missing.push("Birth Cert Reg No or Transfer Certificate");
       if (!String(x.birthState || "").trim()) missing.push("Birth State");
       if (!String(x.birthDistrict || "").trim()) missing.push("Birth District");
       if (!String(x.birthCity || "").trim()) missing.push("Birth City");
@@ -927,7 +931,7 @@ export default function GovernmentEntryPage() {
       if (x.penStatus === "Done" || x.penStatus === "Not Defined" || x.penStatus === "Active in other school") return { eligible: true, reason: "" };
       if (!inAnyBatch(x)) return { eligible: false, reason: "Not in any Entry Batch" };
       const missing = [];
-      if (!String(x.birthCertRegNo || "").trim()) missing.push("Birth Cert Reg No");
+      if (!hasCert(x)) missing.push("Birth Cert Reg No or Transfer Certificate");
       if (!String(x.birthState || "").trim()) missing.push("Birth State");
       if (!String(x.birthDistrict || "").trim()) missing.push("Birth District");
       if (!String(x.birthCity || "").trim()) missing.push("Birth City");
@@ -939,7 +943,7 @@ export default function GovernmentEntryPage() {
     const udiseEligible = x => getUdiseEligibility(x).eligible;
     const penEligible = x => getPenEligibility(x).eligible;
 
-    return { udiseEligible, penEligible, getUdiseEligibility, getPenEligibility };
+    return { udiseEligible, penEligible, getUdiseEligibility, getPenEligibility, hasTc, hasCert };
   }, [enrollToBatches]);
 
   const classOptions = useMemo(() => {
@@ -4879,21 +4883,38 @@ export default function GovernmentEntryPage() {
                                 </button>
                               )}
                               {isUdise && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (getBcDoc(row)) handleDownloadBirthCert(row);
-                                    else triggerBcUpload(row);
-                                  }}
-                                  title={getBcDoc(row) ? "Download / View Birth Certificate" : "Upload Birth Certificate (Missing)"}
-                                  className={`inline-flex items-center justify-center p-1 rounded border transition-colors cursor-pointer ${
-                                    getBcDoc(row)
-                                      ? "text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100"
-                                      : "text-amber-700 bg-amber-50 border-amber-300 hover:bg-amber-100"
-                                  }`}
-                                >
-                                  {getBcDoc(row) ? <Download className="w-2.5 h-2.5" /> : <Upload className="w-2.5 h-2.5" />}
-                                </button>
+                                <div className="inline-flex items-center gap-1">
+                                  {getBcDoc(row) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDownloadBirthCert(row)}
+                                      title="Download / View Birth Certificate"
+                                      className="inline-flex items-center justify-center p-1 rounded border transition-colors cursor-pointer text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100"
+                                    >
+                                      <Download className="w-2.5 h-2.5" />
+                                    </button>
+                                  )}
+                                  {getTcDoc(row)?.file_url && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDownloadTcDoc(row)}
+                                      title="Download / View Transfer Certificate (TC/LC)"
+                                      className="inline-flex items-center justify-center p-1 rounded border transition-colors cursor-pointer text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100"
+                                    >
+                                      <Download className="w-2.5 h-2.5" />
+                                    </button>
+                                  )}
+                                  {!getBcDoc(row) && !getTcDoc(row) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => triggerBcUpload(row)}
+                                      title="Upload Birth Certificate (Missing)"
+                                      className="inline-flex items-center justify-center p-1 rounded border transition-colors cursor-pointer text-amber-700 bg-amber-50 border-amber-300 hover:bg-amber-100"
+                                    >
+                                      <Upload className="w-2.5 h-2.5" />
+                                    </button>
+                                  )}
+                                </div>
                               )}
                               {isOnlineGr && status === "Pending" && (
                                 <button
@@ -5551,7 +5572,7 @@ export default function GovernmentEntryPage() {
                     </div>
                     <div className="text-[11px] text-gray-500 font-medium">
                       {addEligFilter === "eligible" && "Ready for UDISE or PEN portal entry"}
-                      {addEligFilter === "ineligible" && "Missing batch assignment / birth / Aadhar details"}
+                      {addEligFilter === "ineligible" && "Missing batch assignment / certificate (BC/TC) / birth / Aadhar details"}
                       {addEligFilter === "all" && "All enrolled students in database"}
                     </div>
                   </div>
@@ -5692,6 +5713,7 @@ export default function GovernmentEntryPage() {
                         </div>
                         {filteredAddableStudents.map(st => {
                           const isBcUploaded = Boolean(st.hasBirthCert || getBcDoc(st));
+                          const isTcUploaded = Boolean(getTcDoc(st));
                           return (
                             <div key={st.enrollNo} role="button" tabIndex={0}
                               onClick={() => selectAddStudent(st)}
@@ -5706,10 +5728,15 @@ export default function GovernmentEntryPage() {
                                       <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
                                       Birth Certificate Uploaded
                                     </span>
+                                  ) : isTcUploaded ? (
+                                    <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded border border-blue-200 flex-shrink-0">
+                                      <CheckCircle2 className="w-2.5 h-2.5 text-blue-600" />
+                                      Transfer Certificate Uploaded
+                                    </span>
                                   ) : (
                                     <span className="inline-flex items-center gap-1 text-[9px] font-semibold bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded border border-amber-200 flex-shrink-0">
                                       <AlertTriangle className="w-2.5 h-2.5 text-amber-600" />
-                                      <span>Birth Certificate Not Uploaded</span>
+                                      <span>Birth Cert / TC Not Uploaded</span>
                                       <button
                                         type="button"
                                         onClick={(e) => {
@@ -5755,12 +5782,12 @@ export default function GovernmentEntryPage() {
                     <div><span className="text-gray-400">MOBILE 1</span><div className="font-semibold text-gray-700">{addSelectedStudent.mobile1 || "-"}</div></div>
                     <div><span className="text-gray-400">MOBILE 2</span><div className="font-semibold text-gray-700">{addSelectedStudent.mobile2 || "-"}</div></div>
                     <div>
-                      <span className="text-gray-400">BIRTH CERT</span>
+                      <span className="text-gray-400">CERTIFICATE (BC / TC)</span>
                       <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                         {Boolean(addSelectedStudent.hasBirthCert || getBcDoc(addSelectedStudent)) ? (
                           <>
                             <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Uploaded
+                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> BC Uploaded
                             </span>
                             <button
                               type="button"
@@ -5781,6 +5808,21 @@ export default function GovernmentEntryPage() {
                             >
                               <Upload className="w-2.5 h-2.5" />
                               <span>Re-upload</span>
+                            </button>
+                          </>
+                        ) : Boolean(getTcDoc(addSelectedStudent)) ? (
+                          <>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
+                              <CheckCircle2 className="w-2.5 h-2.5 text-blue-600" /> TC Uploaded
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadTcDoc(addSelectedStudent)}
+                              title="Download / View Transfer Certificate (TC/LC)"
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-100 hover:bg-blue-200 text-blue-800 transition-colors cursor-pointer"
+                            >
+                              <Download className="w-2.5 h-2.5" />
+                              <span>View</span>
                             </button>
                           </>
                         ) : (
@@ -6380,16 +6422,16 @@ export default function GovernmentEntryPage() {
               <div>
                 <p className="font-bold text-gray-800 mb-1">UDISE Entry - Eligible if:</p>
                 <ul className="list-disc pl-4 space-y-0.5">
-                  <li>UDISE is already marked <b>Done</b>, <u>or</u></li>
-                  <li>The student is in <b>any Entry Batch</b> <u>AND</u> all of Birth Cert Reg No, Birth State, Birth District and Birth City are filled in</li>
+                  <li>UDISE is already marked <b>Done</b> or <b>Active in other school</b>, <u>or</u></li>
+                  <li>The student is in <b>any Entry Batch</b> <u>AND</u> has either a <b>Birth Cert Reg No</b> or <b>Transfer Certificate (TC/LC)</b> <u>AND</u> all of Birth State, Birth District and Birth City are filled in</li>
                 </ul>
               </div>
 
               <div>
                 <p className="font-bold text-gray-800 mb-1">PEN Entry - Eligible if:</p>
                 <ul className="list-disc pl-4 space-y-0.5">
-                  <li>PEN is already marked <b>Done</b> or <b>Not Defined</b>, <u>or</u></li>
-                  <li>The student is in <b>any Entry Batch</b> <u>AND</u> all of Birth Cert Reg No, Birth State, Birth District and Birth City are filled in <u>AND</u> Aadhar Number is filled in</li>
+                  <li>PEN is already marked <b>Done</b>, <b>Not Defined</b>, or <b>Active in other school</b>, <u>or</u></li>
+                  <li>The student is in <b>any Entry Batch</b> <u>AND</u> has either a <b>Birth Cert Reg No</b> or <b>Transfer Certificate (TC/LC)</b> <u>AND</u> all of Birth State, Birth District and Birth City are filled in <u>AND</u> Aadhar Number is filled in</li>
                 </ul>
               </div>
 

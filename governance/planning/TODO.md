@@ -4125,6 +4125,16 @@ pattern), it is noted as already-known and not re-filed as new.
       "No Batch" and "pick a batch" paths on all 4 kept tools, single-edit
       paths recording nothing, and Government Entry's "Not in any batch"
       list reflecting the 13 deleted entries).
+- [x] **REQ-FEAT-022 - Government Entry UDISE & PEN eligibility: accept Transfer Certificate (TC) as alternative to Birth Certificate Reg No. CODED 2026-10-31.** User: "WITH BIRTH CERTIFICATE INCLUDE TRANSFER CERTIFICATE EITHER BIRTH CERTIFICATE OR TRANSFER CERTIFICATE".
+      **Scope (MINOR CHANGE under §J12B):**
+      (1) In `admin-panel/src/app/(dashboard)/government-entry/page.js`, update `eligibilityFns` (`getUdiseEligibility`, `getPenEligibility`):
+          - Certificate requirement: student satisfies the certificate requirement if they have `birthCertRegNo` filled (Birth Certificate route) OR have a Transfer Certificate (TC/LC document uploaded `hasTcDoc` or previous school details recorded `lastSchoolName`/`lastSchoolGrNo`).
+          - Birth place requirement: `birthState`, `birthDistrict`, `birthCity` remain mandatory for all students (required for government portal filing).
+          - PEN requirement: `aadharNo` remains mandatory for PEN.
+          - Missing reason: if neither BC nor TC is present, reports `"Missing Birth Cert Reg No or Transfer Certificate"`.
+      (2) Rules Modal (`showRules`): update UDISE and PEN rule text to state that either Birth Cert Reg No OR Transfer Certificate is accepted.
+      (3) Table rows & Add Student wizard: support viewing/downloading Transfer Certificate alongside Birth Certificate, and display TC availability badge.
+      **Verified**: `npm run lint` clean (0 warnings, 0 errors). Level 1 verified.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to
