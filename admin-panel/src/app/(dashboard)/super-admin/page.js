@@ -18,7 +18,7 @@ import {
   isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
 import { getStudents, getClasses, getStudentByEnrollment, addStudent as dbAddStudent, updateStudent as dbUpdateStudent, deleteStudentPermanently, bagItemAllowedForClass } from "@/lib/studentService";
-import { recordPhase, buildPhaseSnapshot } from "@/lib/studentPhaseService";
+import { recordPhase, buildPhaseSnapshot, getReplacedStudentPhases } from "@/lib/studentPhaseService";
 import BatchSelector from "@/components/BatchSelector";
 import { normalizeDate, normalizeAgainstList } from "@/lib/importUtils";
 import { getCurrentYearClassFees } from "@/lib/settingsService";
@@ -3018,17 +3018,84 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
   const [templateMode, setTemplateMode] = useState("all");
   const [pickSearch,   setPickSearch]   = useState("");
   const [pickedNos,    setPickedNos]    = useState(new Set());
+  const [replacedStudents, setReplacedStudents] = useState([]);
+
+  const loadReplaced = useCallback(() => {
+    getReplacedStudentPhases()
+      .then(data => setReplacedStudents(data || []))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    loadReplaced();
+  }, [loadReplaced]);
+
+  const replacedMap = useMemo(() => {
+    const byStudentId = new Map();
+    const byEnroll = new Map();
+    const byName = new Map();
+
+    const normEnr = (e) => (e ? String(e).trim().toLowerCase().replace(/^0+/, "") || "0" : "");
+    const normNm = (n) => (n ? String(n).trim().toLowerCase().replace(/\s+/g, " ") : "");
+
+    for (const r of replacedStudents) {
+      const phases = r.phases || [];
+      if (r.studentId) {
+        byStudentId.set(r.studentId, phases);
+      }
+      const enr = normEnr(r.enrollmentNo);
+      if (enr) {
+        byEnroll.set(enr, phases);
+      }
+      const nm = normNm(r.name);
+      if (nm) {
+        byName.set(nm, phases);
+      }
+    }
+    return { byStudentId, byEnroll, byName, normEnr, normNm };
+  }, [replacedStudents]);
+
+  const getBatchInfo = useCallback((s) => {
+    if (!s) return null;
+    const { byStudentId, byEnroll, byName, normEnr, normNm } = replacedMap;
+    if (s._studentId && byStudentId.has(s._studentId)) return byStudentId.get(s._studentId);
+    if (s.id && byStudentId.has(s.id)) return byStudentId.get(s.id);
+
+    const enr1 = normEnr(s.enrollment);
+    if (enr1 && byEnroll.has(enr1)) return byEnroll.get(enr1);
+    const enr2 = normEnr(s.enrollNo);
+    if (enr2 && byEnroll.has(enr2)) return byEnroll.get(enr2);
+
+    const nm1 = normNm(s.name);
+    if (nm1 && byName.has(nm1)) return byName.get(nm1);
+    const nm2 = normNm(`${s.firstName || ""} ${s.lastName || ""}`);
+    if (nm2 && byName.has(nm2)) return byName.get(nm2);
+
+    return null;
+  }, [replacedMap]);
 
   const pickFiltered = useMemo(() => {
     const q = pickSearch.trim().toLowerCase();
     const list = students || [];
     if (!q) return list;
-    return list.filter(s =>
-      (s.name||"").toLowerCase().includes(q) ||
-      (s.enrollment||"").toLowerCase().includes(q) ||
-      (s.fatherName||"").toLowerCase().includes(q)
-    );
-  }, [students, pickSearch]);
+    return list.filter(s => {
+      const basic =
+        (s.name||"").toLowerCase().includes(q) ||
+        (s.enrollment||"").toLowerCase().includes(q) ||
+        (s.fatherName||"").toLowerCase().includes(q);
+      if (basic) return true;
+
+      const batchInfo = getBatchInfo(s);
+      if (batchInfo?.length) {
+        if ("replace completed".includes(q) || "completed".includes(q)) return true;
+        if (batchInfo.some(b => {
+          const lbl = b.label || `Batch ${b.phaseNumber}`;
+          return lbl.toLowerCase().includes(q) || String(b.phaseNumber) === q;
+        })) return true;
+      }
+      return false;
+    });
+  }, [students, pickSearch, getBatchInfo]);
 
   function togglePicked(enrollNo) {
     setPickedNos(prev => {
@@ -3268,6 +3335,7 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
     if (batchId !== "none") {
       try {
         await recordPhase({ type: "Replaced", source: "replace_full_details", createdBy: authUser?.id, existingBatchId: batchId || null, entries: phaseEntries });
+        loadReplaced();
       } catch {}
     }
   }
@@ -3339,14 +3407,30 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
                 </div>
                 <div className="max-h-52 overflow-y-auto border border-blue-200 rounded-lg bg-white divide-y divide-blue-50">
                   {pickFiltered.length === 0 && <p className="text-xs text-gray-400 p-3 text-center">No students match</p>}
-                  {pickFiltered.map(s => (
-                    <label key={s.enrollment} className="flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-blue-50 cursor-pointer">
-                      <input type="checkbox" checked={pickedNos.has(s.enrollment)} onChange={()=>togglePicked(s.enrollment)} className="w-3.5 h-3.5 accent-blue-600 flex-shrink-0"/>
-                      <span className="font-mono text-blue-500 flex-shrink-0">#{s.enrollment}</span>
-                      <span className="text-gray-700 font-medium truncate">{s.name}</span>
-                      <span className="text-gray-400 flex-shrink-0">{s.std}{s.section?" - "+s.section:""}</span>
-                    </label>
-                  ))}
+                  {pickFiltered.map(s => {
+                    const batchInfo = getBatchInfo(s);
+                    const isCompleted = Boolean(batchInfo && batchInfo.length > 0);
+                    const batchDesc = isCompleted
+                      ? batchInfo.map(b => b.label || `Batch ${b.phaseNumber}`).join(", ")
+                      : "";
+                    return (
+                      <label key={s.enrollment} className={`flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-blue-50 cursor-pointer ${isCompleted ? "bg-emerald-50/40" : ""}`}>
+                        <input type="checkbox" checked={pickedNos.has(s.enrollment)} onChange={()=>togglePicked(s.enrollment)} className="w-3.5 h-3.5 accent-blue-600 flex-shrink-0"/>
+                        <span className="font-mono text-blue-500 flex-shrink-0">#{s.enrollment}</span>
+                        <span className="text-gray-700 font-medium truncate">{s.name}</span>
+                        <span className="text-gray-400 flex-shrink-0">{s.std}{s.section?" - "+s.section:""}</span>
+                        {isCompleted && (
+                          <span
+                            className="ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 flex-shrink-0"
+                            title={`Replace completed in ${batchDesc}`}
+                          >
+                            <Check className="w-3 h-3 text-emerald-600 flex-shrink-0" />
+                            Replace Completed
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
                 </div>
                 <button onClick={() => downloadTemplate(true)} disabled={pickedNos.size === 0}
                   className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">

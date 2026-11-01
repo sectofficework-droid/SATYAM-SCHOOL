@@ -314,7 +314,7 @@ export async function getPhaseEntries(phaseId) {
 export async function getReplacedStudentPhases() {
   const { data, error } = await supabase
     .from("student_import_phase_entries")
-    .select("student_id, enrollment_no, snapshot, created_at, phase:student_import_phases!inner(phase_number, phase_type, created_at)")
+    .select("student_id, enrollment_no, snapshot, created_at, phase:student_import_phases!inner(phase_number, phase_type, label, created_at)")
     .eq("phase.phase_type", "Replaced")
     .order("created_at", { ascending: true });
   if (error) throw error;
@@ -334,7 +334,7 @@ export async function getReplacedStudentPhases() {
         phases:       [],
       });
     }
-    byStudent.get(key).phases.push({ phaseNumber: row.phase.phase_number, createdAt: row.created_at });
+    byStudent.get(key).phases.push({ phaseNumber: row.phase.phase_number, label: row.phase.label || null, createdAt: row.created_at });
   }
   return Array.from(byStudent.values()).sort((a, b) => b.phases.length - a.phases.length || a.name.localeCompare(b.name));
 }
