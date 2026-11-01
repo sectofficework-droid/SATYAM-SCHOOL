@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   Layers, Plus, Pencil, Trash2, ChevronDown, ChevronUp, RefreshCw,
-  ArrowRightLeft, Check, X, Users,
+  ArrowRightLeft, Check, X, Users, UserPlus, Search,
 } from "lucide-react";
 import useStore from "@/lib/store";
 import useConfirm from "@/components/ConfirmDialog";
+import { getStudents } from "@/lib/studentService";
 import {
   getPhases, getPhaseEntries, createEmptyBatch, renameBatch, deleteBatch,
   deletePhaseEntry, moveEntryToBatch, recomputeBatchCount,
+  getAllAssignedPhaseStudents, addStudentsToBatch,
 } from "@/lib/studentPhaseService";
 
 const SOURCE_LABELS = {
@@ -153,6 +155,134 @@ export default function EntryBatchesTab() {
     }
   }
 
+  const [addingBatch, setAddingBatch] = useState(null); // phase object currently adding students into
+  const [availableStudents, setAvailableStudents] = useState([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+  const [pickerSearch, setPickerSearch] = useState("");
+  const [pickerClassFilter, setPickerClassFilter] = useState("All");
+  const [selectedStudentIds, setSelectedStudentIds] = useState(new Set());
+  const [addingSaving, setAddingSaving] = useState(false);
+
+  const openAddStudentsModal = useCallback(async (phase) => {
+    setAddingBatch(phase);
+    setPickerSearch("");
+    setPickerClassFilter("All");
+    setSelectedStudentIds(new Set());
+    setPickerLoading(true);
+    setError("");
+
+    try {
+      const [allStudents, assignedEntries] = await Promise.all([
+        getStudents(),
+        getAllAssignedPhaseStudents(),
+      ]);
+
+      const assignedIds = new Set();
+      const assignedEnrolls = new Set();
+      const norm = (e) => (e ? String(e).trim().toLowerCase().replace(/^0+/, "") || "0" : "");
+
+      for (const entry of assignedEntries || []) {
+        if (entry.student_id) assignedIds.add(entry.student_id);
+        if (entry.enrollment_no) assignedEnrolls.add(norm(entry.enrollment_no));
+      }
+
+      // Filter to students who are NOT already in ANY batch
+      const unassigned = (allStudents || []).filter((s) => {
+        const id1 = s._studentId;
+        const id2 = s.id;
+        const en1 = norm(s.enrollment);
+        const en2 = norm(s.enrollNo);
+
+        if (id1 && assignedIds.has(id1)) return false;
+        if (id2 && assignedIds.has(id2)) return false;
+        if (en1 && assignedEnrolls.has(en1)) return false;
+        if (en2 && assignedEnrolls.has(en2)) return false;
+
+        return true;
+      });
+
+      setAvailableStudents(unassigned);
+    } catch (err) {
+      setError(err?.message || "Failed to load students for batch.");
+      setAddingBatch(null);
+    } finally {
+      setPickerLoading(false);
+    }
+  }, []);
+
+  const classOptions = useMemo(() => {
+    const set = new Set();
+    for (const s of availableStudents) {
+      if (s.std) set.add(s.std);
+    }
+    return ["All", ...Array.from(set).sort()];
+  }, [availableStudents]);
+
+  const filteredAvailableStudents = useMemo(() => {
+    const q = pickerSearch.trim().toLowerCase();
+    return availableStudents.filter(s => {
+      if (pickerClassFilter !== "All" && s.std !== pickerClassFilter) return false;
+      if (!q) return true;
+      return (
+        (s.name || "").toLowerCase().includes(q) ||
+        (s.enrollment || "").toLowerCase().includes(q) ||
+        (s.enrollNo || "").toLowerCase().includes(q) ||
+        (s.fatherName || "").toLowerCase().includes(q) ||
+        (s.std || "").toLowerCase().includes(q)
+      );
+    });
+  }, [availableStudents, pickerSearch, pickerClassFilter]);
+
+  function toggleSelectStudent(key) {
+    setSelectedStudentIds(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  function selectAllFiltered() {
+    setSelectedStudentIds(prev => {
+      const next = new Set(prev);
+      filteredAvailableStudents.forEach(s => {
+        const key = s._studentId || s.enrollment;
+        if (key) next.add(key);
+      });
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedStudentIds(new Set());
+  }
+
+  async function handleConfirmAddStudents() {
+    if (!addingBatch || selectedStudentIds.size === 0) return;
+    setAddingSaving(true);
+    setError("");
+
+    try {
+      const toAdd = availableStudents.filter(s => {
+        const key = s._studentId || s.enrollment;
+        return selectedStudentIds.has(key);
+      });
+
+      await addStudentsToBatch(addingBatch.id, toAdd);
+
+      if (expanded === addingBatch.id) {
+        setEntries(await getPhaseEntries(addingBatch.id));
+      }
+
+      setAddingBatch(null);
+      setSelectedStudentIds(new Set());
+      load();
+    } catch (err) {
+      setError(err?.message || "Failed to add students to batch.");
+    } finally {
+      setAddingSaving(false);
+    }
+  }
+
   if (loading) return <div className="flex items-center justify-center py-24 text-sm text-gray-400">Loading batches…</div>;
 
   return (
@@ -241,6 +371,10 @@ export default function EntryBatchesTab() {
                       </p>
                     </div>
 
+                    <button onClick={() => openAddStudentsModal(p)} title="Add students to this batch"
+                      className="flex items-center gap-1 text-xs text-school-navy hover:text-school-navy/80 font-semibold px-2.5 py-1.5 rounded-lg bg-school-navy/5 hover:bg-school-navy/10 transition-colors flex-shrink-0">
+                      <UserPlus className="w-3.5 h-3.5" /> Add Students
+                    </button>
                     <button onClick={() => handleRecompute(p)} title="Recompute student count from actual entries"
                       className="flex items-center gap-1 text-xs text-gray-500 hover:text-school-navy px-2 py-1.5 rounded-lg hover:bg-gray-50 flex-shrink-0">
                       <RefreshCw className="w-3.5 h-3.5" /> Recompute
@@ -252,10 +386,18 @@ export default function EntryBatchesTab() {
                   </div>
 
                   {expanded === p.id && (
-                    <div className="bg-gray-50 border-t border-gray-100 px-4 py-3">
+                    <div className="bg-gray-50 border-t border-gray-100 px-4 py-3 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-gray-600">
+                          {entriesLoading ? "Loading entries…" : `${entries.length} student${entries.length !== 1 ? "s" : ""} in this batch`}
+                        </span>
+                        <button onClick={() => openAddStudentsModal(p)} className="flex items-center gap-1 text-xs text-school-navy font-semibold hover:underline">
+                          <Plus className="w-3.5 h-3.5" /> Add Students
+                        </button>
+                      </div>
                       {entriesLoading && <p className="text-xs text-gray-400">Loading entries…</p>}
                       {!entriesLoading && entries.length === 0 && (
-                        <p className="text-xs text-gray-400 flex items-center gap-1.5"><Users className="w-3.5 h-3.5" /> No students in this batch yet.</p>
+                        <p className="text-xs text-gray-400 flex items-center gap-1.5 py-2"><Users className="w-3.5 h-3.5" /> No students in this batch yet.</p>
                       )}
                       {!entriesLoading && entries.length > 0 && (
                         <div className="overflow-x-auto">
@@ -311,6 +453,183 @@ export default function EntryBatchesTab() {
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* Add Students Modal */}
+      {addingBatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !addingSaving && setAddingBatch(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150" onClick={e => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-school-navy/10 flex items-center justify-center text-school-navy flex-shrink-0">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-gray-800 text-base">Add Students to Batch {addingBatch.phase_number}</h3>
+                    {addingBatch.label && <span className="text-xs text-gray-500">— {addingBatch.label}</span>}
+                    <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${addingBatch.phase_type === "Added" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}`}>
+                      {addingBatch.phase_type}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    {pickerLoading ? "Loading students…" : `${availableStudents.length} student${availableStudents.length !== 1 ? "s" : ""} available (not in any batch)`}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => !addingSaving && setAddingBatch(null)} disabled={addingSaving}
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Filters bar */}
+            <div className="px-6 py-3 border-b border-gray-100 bg-white space-y-2.5">
+              <div className="flex items-center gap-2.5">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    type="text"
+                    value={pickerSearch}
+                    onChange={e => setPickerSearch(e.target.value)}
+                    placeholder="Search by name, enrollment, father…"
+                    className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-xs focus:outline-none focus:border-school-navy bg-white"
+                  />
+                </div>
+                {classOptions.length > 2 && (
+                  <select
+                    value={pickerClassFilter}
+                    onChange={e => setPickerClassFilter(e.target.value)}
+                    className="px-3 py-2 border border-gray-200 rounded-xl text-xs bg-white text-gray-700 font-medium focus:outline-none focus:border-school-navy"
+                  >
+                    {classOptions.map(cls => (
+                      <option key={cls} value={cls}>{cls === "All" ? "All Classes" : `Class ${cls}`}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-gray-500 pt-0.5">
+                <span>
+                  Showing <strong className="text-gray-700">{filteredAvailableStudents.length}</strong> of {availableStudents.length} eligible
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={selectAllFiltered}
+                    disabled={filteredAvailableStudents.length === 0}
+                    className="text-xs font-semibold text-school-navy hover:underline disabled:opacity-40"
+                  >
+                    Select All
+                  </button>
+                  {selectedStudentIds.size > 0 && (
+                    <>
+                      <span>·</span>
+                      <button
+                        type="button"
+                        onClick={clearSelection}
+                        className="text-xs font-semibold text-gray-500 hover:text-gray-700 hover:underline"
+                      >
+                        Clear Selection ({selectedStudentIds.size})
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Student Picker Body */}
+            <div className="flex-1 overflow-y-auto px-6 py-3 min-h-[220px] max-h-[380px]">
+              {pickerLoading && (
+                <div className="flex flex-col items-center justify-center py-16 text-gray-400 gap-2">
+                  <div className="w-5 h-5 border-2 border-school-navy/30 border-t-school-navy rounded-full animate-spin" />
+                  <p className="text-xs">Finding students not in any batch…</p>
+                </div>
+              )}
+
+              {!pickerLoading && availableStudents.length === 0 && (
+                <div className="text-center py-16 text-gray-400 text-xs space-y-1">
+                  <p className="font-semibold text-gray-600">All students are already in a batch</p>
+                  <p>Every student in the school has already been assigned to an Entry Batch.</p>
+                </div>
+              )}
+
+              {!pickerLoading && availableStudents.length > 0 && filteredAvailableStudents.length === 0 && (
+                <div className="text-center py-16 text-gray-400 text-xs">
+                  No unassigned students match &ldquo;{pickerSearch}&rdquo;
+                </div>
+              )}
+
+              {!pickerLoading && filteredAvailableStudents.length > 0 && (
+                <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 overflow-hidden bg-white">
+                  {filteredAvailableStudents.map(s => {
+                    const key = s._studentId || s.enrollment;
+                    const isChecked = selectedStudentIds.has(key);
+                    return (
+                      <label key={key}
+                        className={`flex items-center gap-3 px-3.5 py-2.5 text-xs hover:bg-blue-50/60 cursor-pointer transition-colors ${
+                          isChecked ? "bg-blue-50/40" : ""
+                        }`}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleSelectStudent(key)}
+                          className="w-4 h-4 accent-school-navy rounded flex-shrink-0 cursor-pointer"
+                        />
+                        <span className="font-mono text-blue-600 font-semibold flex-shrink-0">#{s.enrollment || s.enrollNo}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-gray-800 truncate">{s.name}</p>
+                          {s.fatherName && <p className="text-[11px] text-gray-400 truncate">Father: {s.fatherName}</p>}
+                        </div>
+                        <span className="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-md flex-shrink-0">
+                          {s.std}{s.section ? ` - ${s.section}` : ""}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between px-6 py-3.5 border-t border-gray-100 bg-gray-50/50">
+              <span className="text-xs text-gray-600 font-medium">
+                {selectedStudentIds.size === 0
+                  ? "No students selected"
+                  : `${selectedStudentIds.size} student${selectedStudentIds.size !== 1 ? "s" : ""} selected`}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAddingBatch(null)}
+                  disabled={addingSaving}
+                  className="px-4 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmAddStudents}
+                  disabled={selectedStudentIds.size === 0 || addingSaving}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-school-navy text-white text-xs font-semibold hover:bg-school-navy/90 transition-colors disabled:opacity-50 shadow-sm"
+                >
+                  {addingSaving ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Adding…
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3.5 h-3.5" />
+                      Add {selectedStudentIds.size > 0 ? `${selectedStudentIds.size} ` : ""}Student${selectedStudentIds.size !== 1 ? "s" : ""}
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

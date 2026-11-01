@@ -85,48 +85,48 @@ export const PHASE_EXPORT_FIELDS = [
 // them).
 export function buildPhaseSnapshot(payload, enrollmentNo) {
   return {
-    enrollmentNo:       enrollmentNo || "",
-    grNo:                payload.grNo || "",
-    cls:                  payload.std || "",
-    admissionClass:       payload.admissionClass || payload.std || "",
+    enrollmentNo:       enrollmentNo || payload.enrollment || payload.enrollNo || "",
+    grNo:                payload.grNo || payload.grno || "",
+    cls:                  payload.std || payload.cls || "",
+    admissionClass:       payload.admissionClass || payload.std || payload.cls || "",
     section:              payload.section || "",
-    rollNo:               payload.rollNo ?? "",
-    joinDate:             payload.joinDate || payload.dateOfJoin || "",
+    rollNo:               payload.rollNo ?? payload.roll_no ?? "",
+    joinDate:             payload.joinDate || payload.dateOfJoin || payload.date_of_join || "",
     feeTotal:             payload.feeTotal ?? "",
     discountAmount:       payload.discountAmount ?? "",
     discountReason:       payload.discountReason || "",
-    firstName:            payload.firstName || "",
-    lastName:             payload.lastName || "",
-    fatherName:           payload.fatherName || "",
-    motherName:           payload.motherName || "",
+    firstName:            payload.firstName || payload.first_name || "",
+    lastName:             payload.lastName || payload.last_name || "",
+    fatherName:           payload.fatherName || payload.father_name || "",
+    motherName:           payload.motherName || payload.mother_name || "",
     dob:                  payload.dob || "",
-    birthCertRegNo:       payload.birthCertRegNo || "",
-    birthCertRegDate:     payload.birthCertRegDate || "",
+    birthCertRegNo:       payload.birthCertRegNo || payload.birth_cert_reg_no || "",
+    birthCertRegDate:     payload.birthCertRegDate || payload.birth_cert_reg_date || "",
     gender:               payload.gender || "",
-    birthVillage:         payload.birthVillage || "",
-    birthCity:            payload.birthCity || "",
-    birthDistrict:        payload.birthDistrict || "",
-    birthState:           payload.birthState || "",
-    motherTongue:         payload.motherTongue || "",
+    birthVillage:         payload.birthVillage || payload.birth_village || "",
+    birthCity:            payload.birthCity || payload.birth_city || "",
+    birthDistrict:        payload.birthDistrict || payload.birth_district || "",
+    birthState:           payload.birthState || payload.birth_state || "",
+    motherTongue:         payload.motherTongue || payload.mother_tongue || "",
     religion:             payload.religion || "",
     caste:                payload.caste || "",
-    subCaste:             payload.subCaste || "",
-    height:               payload.height ?? "",
-    weight:               payload.weight ?? "",
-    mobile1:              payload.mobile || "",
+    subCaste:             payload.subCaste || payload.sub_caste || "",
+    height:               payload.height ?? payload.height_cm ?? "",
+    weight:               payload.weight ?? payload.weight_kg ?? "",
+    mobile1:              payload.mobile || payload.mobile1 || "",
     mobile2:              payload.mobile2 || "",
-    roomPlotNo:           payload.roomPlotNo || "",
+    roomPlotNo:           payload.roomPlotNo || payload.room_plot_no || "",
     society:              payload.society || "",
     landmark:             payload.landmark || "",
     area:                 payload.area || "",
-    pinCode:              payload.pinCode || "",
+    pinCode:              payload.pinCode || payload.pincode || "",
     address:              payload.address || "",
-    aadharNo:             payload.aadhar || "",
-    aadharName:           payload.aadharName || "",
-    fatherAadhar:         payload.fatherAadhar || "",
-    fatherAadharName:     payload.fatherAadharName || "",
-    motherAadhar:         payload.motherAadhar || "",
-    motherAadharName:     payload.motherAadharName || "",
+    aadharNo:             payload.aadhar || payload.aadharNo || "",
+    aadharName:           payload.aadharName || payload.aadhar_name || "",
+    fatherAadhar:         payload.fatherAadhar || payload.father_aadhar || "",
+    fatherAadharName:     payload.fatherAadharName || payload.father_aadhar_name || "",
+    motherAadhar:         payload.motherAadhar || payload.mother_aadhar || "",
+    motherAadharName:     payload.motherAadharName || payload.mother_aadhar_name || "",
     udise:                payload.udise || "",
     pen:                  payload.pen || "",
     apaar:                payload.apaar || "",
@@ -354,4 +354,33 @@ export async function getAllPhaseEntryEnrollments() {
     .not("enrollment_no", "is", null);
   if (error) throw error;
   return (data || []).map(r => ({ enrollmentNo: r.enrollment_no, phaseNumber: r.phase.phase_number }));
+}
+
+// Returns every student_id and enrollment_no already present in ANY batch entry.
+// Used by the Entry Batches student picker to only offer students not in any batch.
+export async function getAllAssignedPhaseStudents() {
+  const { data, error } = await supabase
+    .from("student_import_phase_entries")
+    .select("student_id, enrollment_no");
+  if (error) throw error;
+  return data || [];
+}
+
+// Adds one or more students directly into an existing batch, creating locked
+// phase snapshots and recomputing the batch's student_count.
+export async function addStudentsToBatch(phaseId, students) {
+  if (!students?.length) return;
+  const rows = students.map(s => {
+    const enr = s.enrollment || s.enrollNo || "";
+    const stId = s._studentId || s.id || null;
+    return {
+      phase_id:      phaseId,
+      student_id:    stId,
+      enrollment_no: enr,
+      snapshot:      buildPhaseSnapshot(s, enr),
+    };
+  });
+  const { error } = await supabase.from("student_import_phase_entries").insert(rows);
+  if (error) throw error;
+  await recomputeBatchCount(phaseId);
 }
