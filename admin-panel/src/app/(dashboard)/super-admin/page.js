@@ -3018,6 +3018,7 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
   const [templateMode, setTemplateMode] = useState("all");
   const [pickSearch,   setPickSearch]   = useState("");
   const [pickedNos,    setPickedNos]    = useState(new Set());
+  const [replaceStatusFilter, setReplaceStatusFilter] = useState("all"); // "all" | "completed" | "not_completed"
   const [replacedStudents, setReplacedStudents] = useState([]);
 
   const loadReplaced = useCallback(() => {
@@ -3074,18 +3075,37 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
     return null;
   }, [replacedMap]);
 
+  const statusCounts = useMemo(() => {
+    const list = students || [];
+    let completed = 0;
+    for (const s of list) {
+      if (getBatchInfo(s)) completed++;
+    }
+    return {
+      all: list.length,
+      completed,
+      not_completed: list.length - completed,
+    };
+  }, [students, getBatchInfo]);
+
   const pickFiltered = useMemo(() => {
     const q = pickSearch.trim().toLowerCase();
     const list = students || [];
-    if (!q) return list;
     return list.filter(s => {
+      const batchInfo = getBatchInfo(s);
+      const isCompleted = Boolean(batchInfo && batchInfo.length > 0);
+
+      if (replaceStatusFilter === "completed" && !isCompleted) return false;
+      if (replaceStatusFilter === "not_completed" && isCompleted) return false;
+
+      if (!q) return true;
+
       const basic =
         (s.name||"").toLowerCase().includes(q) ||
         (s.enrollment||"").toLowerCase().includes(q) ||
         (s.fatherName||"").toLowerCase().includes(q);
       if (basic) return true;
 
-      const batchInfo = getBatchInfo(s);
       if (batchInfo?.length) {
         if ("replace completed".includes(q) || "completed".includes(q)) return true;
         if (batchInfo.some(b => {
@@ -3095,7 +3115,7 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
       }
       return false;
     });
-  }, [students, pickSearch, getBatchInfo]);
+  }, [students, pickSearch, replaceStatusFilter, getBatchInfo]);
 
   function togglePicked(enrollNo) {
     setPickedNos(prev => {
@@ -3343,6 +3363,7 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
   function reset() {
     setParsed([]); setRowErrors([]); setStep("idle"); setImportLog([]);
     setTemplateMode("all"); setPickSearch(""); setPickedNos(new Set());
+    setReplaceStatusFilter("all");
   }
 
   const valid   = parsed.filter(s => s._errors.length === 0);
@@ -3399,6 +3420,41 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
             {templateMode === "pick" && (
               <div className="space-y-2">
                 <p className="text-xs text-blue-700">Safer for everyday use — only the students you pick below go into the sheet.</p>
+                <div className="flex gap-1 bg-white/70 border border-blue-200 rounded-lg p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setReplaceStatusFilter("all")}
+                    className={`flex-1 text-[11px] font-semibold py-1 rounded-md transition-colors ${
+                      replaceStatusFilter === "all"
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "text-blue-700 hover:bg-blue-100"
+                    }`}
+                  >
+                    All ({statusCounts.all})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReplaceStatusFilter("completed")}
+                    className={`flex-1 text-[11px] font-semibold py-1 rounded-md transition-colors ${
+                      replaceStatusFilter === "completed"
+                        ? "bg-emerald-600 text-white shadow-xs"
+                        : "text-emerald-700 hover:bg-emerald-100"
+                    }`}
+                  >
+                    Completed ({statusCounts.completed})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReplaceStatusFilter("not_completed")}
+                    className={`flex-1 text-[11px] font-semibold py-1 rounded-md transition-colors ${
+                      replaceStatusFilter === "not_completed"
+                        ? "bg-amber-600 text-white shadow-xs"
+                        : "text-amber-700 hover:bg-amber-100"
+                    }`}
+                  >
+                    Not Completed ({statusCounts.not_completed})
+                  </button>
+                </div>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-blue-400"/>
                   <input type="text" placeholder="Search by name, enrollment, father…" value={pickSearch}
