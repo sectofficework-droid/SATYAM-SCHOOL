@@ -6,12 +6,15 @@ import {
   FileText, Search, Download, Upload, Check, CheckCircle2,
   Clock, AlertCircle, RefreshCw, FileSpreadsheet, Eye, X,
   ExternalLink, RotateCcw, Plus, MoreHorizontal, ShieldCheck,
-  Filter, Table, CheckSquare, Sparkles, ChevronDown, Layers
+  Filter, Table, CheckSquare, Sparkles, ChevronDown, Layers,
+  Phone, Users, MapPin, Calendar, HelpCircle, ArrowUpDown,
+  CheckCircle, MinusCircle, FileCheck
 } from "lucide-react";
 import {
   getDocumentTypes,
   markDocumentDone,
   markDocumentPending,
+  markDocumentNotRequired,
   updateStudentDocument
 } from "@/lib/studentService";
 import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, slugify, fileExt } from "@/lib/s3Upload";
@@ -99,22 +102,29 @@ function getOtherDocsForStudent(studentDocs = [], allDocTypes = []) {
   return { otherDocs, otherDocTypes };
 }
 
-// Fixed column widths for spreadsheet freeze-panes (in pixels)
+// Column widths for spreadsheet freeze-panes
 const COL_WIDTHS = {
-  sr: 52,
-  class: 92,
-  name: 230,
-  gr: 80,
-  doc: 172,
-  other: 220,
+  sr: 46,
+  class: 82,
+  formNo: 72,
+  gr: 72,
+  name: 210,
+  fatherName: 160,
+  motherName: 160,
+  dob: 95,
+  mobile: 145,
+  address: 200,
+  doc: 170,
+  other: 200,
 };
 
 // Left offsets for frozen columns
 const STICKY_OFFSETS = {
   sr: 0,
   class: COL_WIDTHS.sr,
-  name: COL_WIDTHS.sr + COL_WIDTHS.class, // 144
-  gr: COL_WIDTHS.sr + COL_WIDTHS.class + COL_WIDTHS.name, // 374
+  formNo: COL_WIDTHS.sr + COL_WIDTHS.class, // 128
+  gr: COL_WIDTHS.sr + COL_WIDTHS.class + COL_WIDTHS.formNo, // 200
+  name: COL_WIDTHS.sr + COL_WIDTHS.class + COL_WIDTHS.formNo + COL_WIDTHS.gr, // 272
 };
 
 export default function StudentDocumentsSection({ students = [], onRefresh }) {
@@ -124,9 +134,10 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   // Filters & controls
   const [classFilter, setClassFilter] = useState("All");
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all"); // "all" | "pending" | "done"
+  const [statusFilter, setStatusFilter] = useState("all"); // "all" | "pending" | "done" | "not_required"
   const [docColumnFilter, setDocColumnFilter] = useState("all"); // specific document filter
   const [density, setDensity] = useState("compact"); // "compact" | "normal"
+  const [showContactDetails, setShowContactDetails] = useState(false); // Toggle parent & contact info
 
   // Interactive states
   const [localStudents, setLocalStudents] = useState([]);
@@ -136,6 +147,13 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [otherDropdownOpen, setOtherDropdownOpen] = useState(null); // studentId of open popover
   const [activeCellInfo, setActiveCellInfo] = useState(null); // Spreadsheet active cell tooltip
+  const [cellMenuOpen, setCellMenuOpen] = useState(null); // `${studentId}_${category}`
+
+  // Sync Modal State
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncResult, setSyncResult] = useState(null);
+  const [customCsvFile, setCustomCsvFile] = useState(null);
 
   // Keep localStudents in sync with parent prop
   useEffect(() => {
@@ -164,11 +182,11 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
   // Primary document columns configuration
   const PRIMARY_COLUMNS = useMemo(() => [
-    { key: "birth",          colLetter: "E", title: "BIRTH CERTIFICATE",    shortTitle: "Birth Cert",     matchKey: "birth" },
-    { key: "transfer",       colLetter: "F", title: "TRANSFER CERTIFICATE", shortTitle: "Transfer Cert",  matchKey: "transfer" },
-    { key: "student_aadhar", colLetter: "G", title: "STUDENT AADHAR",       shortTitle: "Student Aadhar", matchKey: "student_aadhar" },
-    { key: "father_aadhar",  colLetter: "H", title: "FATHER AADHAR",        shortTitle: "Father Aadhar",  matchKey: "father_aadhar" },
-    { key: "mother_aadhar",  colLetter: "I", title: "MOTHER AADHAR",        shortTitle: "Mother Aadhar",  matchKey: "mother_aadhar" },
+    { key: "birth",          title: "BIRTH CERTIFICATE",    shortTitle: "Birth Cert",     matchKey: "birth" },
+    { key: "transfer",       title: "TRANSFER CERTIFICATE", shortTitle: "Transfer Cert",  matchKey: "transfer" },
+    { key: "student_aadhar", title: "STUDENT AADHAR",       shortTitle: "Student Aadhar", matchKey: "student_aadhar" },
+    { key: "father_aadhar",  title: "FATHER AADHAR",        shortTitle: "Father Aadhar",  matchKey: "father_aadhar" },
+    { key: "mother_aadhar",  title: "MOTHER AADHAR",        shortTitle: "Mother Aadhar",  matchKey: "mother_aadhar" },
   ], []);
 
   // Filtered students computation
@@ -177,31 +195,38 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
       // Class filter
       if (classFilter !== "All" && s.std !== classFilter) return false;
 
-      // Search filter (Name, Enrollment, GR)
+      // Search filter (Name, Enrollment, GR, Father, Phone)
       if (search.trim()) {
         const q = search.toLowerCase().trim();
         const matchesName = (s.name || "").toLowerCase().includes(q);
         const matchesEnroll = (s.enrollment || "").toLowerCase().includes(q);
         const matchesGr = (s.grNo || "").toLowerCase().includes(q);
-        if (!matchesName && !matchesEnroll && !matchesGr) return false;
+        const matchesFather = (s.fatherName || "").toLowerCase().includes(q);
+        const matchesMobile = (s.mobile || "").includes(q) || (s.mobile2 || "").includes(q);
+        if (!matchesName && !matchesEnroll && !matchesGr && !matchesFather && !matchesMobile) return false;
       }
 
       // Check primary documents status for statusFilter
       const primaryStatuses = PRIMARY_COLUMNS.map(col => {
         const doc = matchDocByCategory(col.matchKey, s.documents);
-        return doc && (doc.uploaded || doc.status === "Uploaded");
+        const isUploaded = Boolean(doc && (doc.uploaded || doc.status === "Uploaded"));
+        const isNotReq = Boolean(doc && (doc.notRequired || (doc.reason && doc.reason.toLowerCase().includes("not required")) || doc.reason === "-" || (col.key === "transfer" && s.hasPrevSchool === false)));
+        return { isUploaded, isNotReq, isPending: !isUploaded && !isNotReq };
       });
-      const allDone = primaryStatuses.every(Boolean);
-      const hasPending = primaryStatuses.some(status => !status);
+
+      const allDone = primaryStatuses.every(st => st.isUploaded || st.isNotReq);
+      const hasPending = primaryStatuses.some(st => st.isPending);
+      const hasNotRequired = primaryStatuses.some(st => st.isNotReq);
 
       if (statusFilter === "pending" && !hasPending) return false;
       if (statusFilter === "done" && !allDone) return false;
+      if (statusFilter === "not_required" && !hasNotRequired) return false;
 
       // Specific doc filter
       if (docColumnFilter !== "all") {
         const doc = matchDocByCategory(docColumnFilter, s.documents);
-        const isUploaded = doc && (doc.uploaded || doc.status === "Uploaded");
-        if (isUploaded) return false; // Show only pending for this specific doc
+        const isUploaded = Boolean(doc && (doc.uploaded || doc.status === "Uploaded"));
+        if (isUploaded) return false; // Show only pending/missing for this specific doc
       }
 
       return true;
@@ -213,23 +238,30 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     let totalStudents = localStudents.length;
     let fullyDoneStudents = 0;
     let totalUploadedDocs = 0;
+    let totalNotRequiredDocs = 0;
     let totalPendingDocs = 0;
 
     const columnCounts = {
-      birth:          { done: 0, pending: 0 },
-      transfer:       { done: 0, pending: 0 },
-      student_aadhar: { done: 0, pending: 0 },
-      father_aadhar:  { done: 0, pending: 0 },
-      mother_aadhar:  { done: 0, pending: 0 },
+      birth:          { ok: 0, notRequired: 0, pending: 0 },
+      transfer:       { ok: 0, notRequired: 0, pending: 0 },
+      student_aadhar: { ok: 0, notRequired: 0, pending: 0 },
+      father_aadhar:  { ok: 0, notRequired: 0, pending: 0 },
+      mother_aadhar:  { ok: 0, notRequired: 0, pending: 0 },
     };
 
     localStudents.forEach(s => {
       let studentAllDone = true;
       PRIMARY_COLUMNS.forEach(col => {
         const doc = matchDocByCategory(col.matchKey, s.documents);
-        if (doc && (doc.uploaded || doc.status === "Uploaded")) {
+        const isUploaded = Boolean(doc && (doc.uploaded || doc.status === "Uploaded"));
+        const isNotReq = Boolean(doc && (doc.notRequired || (doc.reason && doc.reason.toLowerCase().includes("not required")) || doc.reason === "-" || (col.key === "transfer" && s.hasPrevSchool === false)));
+
+        if (isUploaded) {
           totalUploadedDocs++;
-          if (columnCounts[col.key]) columnCounts[col.key].done++;
+          if (columnCounts[col.key]) columnCounts[col.key].ok++;
+        } else if (isNotReq) {
+          totalNotRequiredDocs++;
+          if (columnCounts[col.key]) columnCounts[col.key].notRequired++;
         } else {
           totalPendingDocs++;
           studentAllDone = false;
@@ -240,13 +272,14 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     });
 
     const completionRate = totalStudents > 0
-      ? Math.round((totalUploadedDocs / (totalStudents * PRIMARY_COLUMNS.length)) * 100)
+      ? Math.round(((totalUploadedDocs + totalNotRequiredDocs) / (totalStudents * PRIMARY_COLUMNS.length)) * 100)
       : 0;
 
     return {
       totalStudents,
       fullyDoneStudents,
       totalUploadedDocs,
+      totalNotRequiredDocs,
       totalPendingDocs,
       completionRate,
       columnCounts,
@@ -277,7 +310,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         uploaded: true,
         notRequired: false,
         status: "Uploaded",
-        reason: "Marked as Done",
+        reason: "Verified (Done)",
         file: existingIdx > -1 ? currentDocs[existingIdx].file : "",
         uploadedAt: new Date().toISOString(),
       };
@@ -291,11 +324,58 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     }));
 
     try {
-      await markDocumentDone(student._studentId, docType.id, "Marked as Done");
+      await markDocumentDone(student._studentId, docType.id, "Verified (Done)");
       onRefresh?.();
     } catch (err) {
       console.error("Mark Done failed:", err);
       alert("Failed to mark document as done: " + (err.message || "Unknown error"));
+      onRefresh?.();
+    } finally {
+      setUploadingKey(null);
+    }
+  };
+
+  // Handle Mark as Not Required ("-")
+  const handleMarkNotRequired = async (student, category, docTypeOverride = null) => {
+    const docType = docTypeOverride || findDocTypeByCategory(category, docTypes);
+    if (!docType?.id) return;
+
+    const key = `${student._studentId}_${docType.id}`;
+    setUploadingKey(key);
+    setCellMenuOpen(null);
+
+    // Optimistic update
+    setLocalStudents(prev => prev.map(s => {
+      if (s._studentId !== student._studentId) return s;
+      const currentDocs = [...(s.documents || [])];
+      const existingIdx = currentDocs.findIndex(d => d.documentTypeId === docType.id || d.name === docType.name);
+
+      const updatedDoc = {
+        id: existingIdx > -1 ? currentDocs[existingIdx].id : null,
+        name: docType.name,
+        documentTypeId: docType.id,
+        uploaded: false,
+        notRequired: true,
+        status: "Pending",
+        reason: "Not Required",
+        file: "",
+        uploadedAt: null,
+      };
+
+      if (existingIdx > -1) {
+        currentDocs[existingIdx] = updatedDoc;
+      } else {
+        currentDocs.push(updatedDoc);
+      }
+      return { ...s, documents: currentDocs };
+    }));
+
+    try {
+      await markDocumentNotRequired(student._studentId, docType.id, "Not Required");
+      onRefresh?.();
+    } catch (err) {
+      console.error("Mark Not Required failed:", err);
+      alert("Failed to update status: " + (err.message || "Unknown error"));
       onRefresh?.();
     } finally {
       setUploadingKey(null);
@@ -309,6 +389,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
     const key = `${student._studentId}_${docType.id}`;
     setUploadingKey(key);
+    setCellMenuOpen(null);
 
     // Optimistic update
     setLocalStudents(prev => prev.map(s => {
@@ -318,6 +399,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
           return {
             ...d,
             uploaded: false,
+            notRequired: false,
             status: "Pending",
             reason: null,
             file: "",
@@ -471,8 +553,8 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     }
   };
 
-  // Export to Excel
-  const handleExportExcel = () => {
+  // Export to Excel / CSV in the EXACT format of "Document Collection Report - Classwise - ALL CLASSES.csv"
+  const handleExportSchoolReport = () => {
     try {
       const exportRows = filteredStudents.map((s, idx) => {
         const birthDoc = matchDocByCategory("birth", s.documents);
@@ -480,44 +562,80 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         const stAadharDoc = matchDocByCategory("student_aadhar", s.documents);
         const faAadharDoc = matchDocByCategory("father_aadhar", s.documents);
         const moAadharDoc = matchDocByCategory("mother_aadhar", s.documents);
-        const { otherDocs } = getOtherDocsForStudent(s.documents, docTypes);
 
-        const formatStatus = (doc) => {
-          if (!doc) return "Upload Pending";
-          if (doc.uploaded || doc.status === "Uploaded") {
-            return doc.file ? "Done (File Uploaded)" : "Done (Marked)";
+        const getStatusSymbol = (doc, isTc = false) => {
+          if (!doc) {
+            if (isTc && s.hasPrevSchool === false) return "-";
+            return "";
           }
-          return "Upload Pending";
+          if (doc.uploaded || doc.status === "Uploaded") return "OK";
+          if (doc.notRequired || (doc.reason && doc.reason.toLowerCase().includes("not required")) || doc.reason === "-") return "-";
+          if (isTc && s.hasPrevSchool === false) return "-";
+          return "";
         };
 
-        const otherStatusStr = otherDocs.length > 0
-          ? otherDocs.map(d => `${d.name}: ${formatStatus(d)}`).join("; ")
-          : "None";
-
         return {
-          "SR NO": idx + 1,
-          "CLASS": s.std ? `${s.std}${s.section ? ` - ${s.section}` : ""}` : "",
-          "STUDENT NAME": s.name || "",
-          "GR NO": s.grNo || "",
-          "ENROLLMENT NO": s.enrollment || "",
-          "BIRTH CERTIFICATE": formatStatus(birthDoc),
-          "TRANSFER CERTIFICATE": formatStatus(tcDoc),
-          "STUDENT AADHAR": formatStatus(stAadharDoc),
-          "FATHER AADHAR": formatStatus(faAadharDoc),
-          "MOTHER AADHAR": formatStatus(moAadharDoc),
-          "OTHER DOCUMENTS": otherStatusStr,
+          "Class": s.std || "",
+          "Sr": idx + 1,
+          "FormNo": s.enrollment || "",
+          "GR No": s.grNo || "",
+          "Name": (s.name || "").toUpperCase(),
+          "Father Name": (s.fatherName || "").toUpperCase(),
+          "Mother Name": (s.motherName || "").toUpperCase(),
+          "DOB": s.dob || "",
+          "Mobile No": s.mobile ? (s.mobile2 ? `${s.mobile} / ${s.mobile2}` : s.mobile) : "",
+          "Address": s.address || "",
+          "Birth Certificate": getStatusSymbol(birthDoc),
+          "Transfer Certificate": getStatusSymbol(tcDoc, true),
+          "Student Aadhar": getStatusSymbol(stAadharDoc),
+          "Father Aadhar": getStatusSymbol(faAadharDoc),
+          "Mother Aadhar": getStatusSymbol(moAadharDoc),
         };
       });
 
       const worksheet = XLSX.utils.json_to_sheet(exportRows);
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "Student Documents");
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Document Collection Report");
 
       const dateStr = new Date().toISOString().slice(0, 10);
-      XLSX.writeFile(workbook, `Student_Documents_Register_${dateStr}.xlsx`);
+      XLSX.writeFile(workbook, `Document_Collection_Report_Classwise_${dateStr}.xlsx`);
     } catch (err) {
-      console.error("Excel export error:", err);
-      alert("Failed to export Excel: " + err.message);
+      console.error("Export error:", err);
+      alert("Failed to export: " + err.message);
+    }
+  };
+
+  // Perform Sync from CSV (either official project file or custom uploaded CSV)
+  const handlePerformSync = async (useCustom = false) => {
+    try {
+      setSyncLoading(true);
+      setSyncResult(null);
+
+      let payload = { syncDefault: true };
+
+      if (useCustom && customCsvFile) {
+        const text = await customCsvFile.text();
+        payload = { csvText: text };
+      }
+
+      const res = await fetch("/api/documents/sync-collection-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Sync request failed");
+      }
+
+      setSyncResult(data.stats);
+      onRefresh?.();
+    } catch (err) {
+      console.error("Sync error:", err);
+      alert("Sync failed: " + err.message);
+    } finally {
+      setSyncLoading(false);
     }
   };
 
@@ -528,24 +646,44 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     const docTypeId = docType?.id || doc?.documentTypeId;
 
     const isUploaded = Boolean(doc && (doc.uploaded || doc.status === "Uploaded"));
+    const isNotRequired = Boolean(
+      !isUploaded && (
+        (doc && (doc.notRequired || (doc.reason && doc.reason.toLowerCase().includes("not required")) || doc.reason === "-")) ||
+        (category === "transfer" && student.hasPrevSchool === false)
+      )
+    );
     const hasFile = Boolean(doc?.file);
-    const cellKey = `${student._studentId}_${docTypeId}`;
-    const isThisUploading = uploadingKey === cellKey;
+    const cellKey = `${student._studentId}_${docTypeId || category}`;
+    const isThisUploading = uploadingKey === `${student._studentId}_${docTypeId}`;
     const isThisDownloading = downloadingKey === `${student._studentId}_${doc?.file}`;
+    const isMenuOpen = cellMenuOpen === `${student._studentId}_${category}`;
 
     return (
       <td
         key={category}
-        className={`border-r border-b border-slate-200 transition-colors align-middle ${
+        className={`border-r border-b border-slate-200 transition-colors align-middle relative ${
           density === "compact" ? "p-1.5" : "p-2"
-        } ${isUploaded ? "bg-emerald-50/40 hover:bg-emerald-100/60" : "bg-amber-50/30 hover:bg-amber-100/50"}`}
+        } ${
+          isUploaded
+            ? "bg-emerald-50/40 hover:bg-emerald-100/60"
+            : isNotRequired
+            ? "bg-slate-50 hover:bg-slate-100/80"
+            : "bg-amber-50/30 hover:bg-amber-100/50"
+        }`}
         style={{ width: COL_WIDTHS.doc, minWidth: COL_WIDTHS.doc, maxWidth: COL_WIDTHS.doc }}
         onMouseEnter={() => setActiveCellInfo({
           student: student.name,
           class: student.std,
+          formNo: student.enrollment,
           gr: student.grNo,
+          father: student.fatherName,
+          mobile: student.mobile,
           doc: colConfig.title,
-          status: isUploaded ? (hasFile ? "Done (File Uploaded)" : "Done (Manually Marked)") : "Upload Pending"
+          status: isUploaded
+            ? (hasFile ? "OK (File Uploaded)" : `OK (${doc?.reason || "Verified"})`)
+            : isNotRequired
+            ? "— Not Required (Exempt)"
+            : "Upload Pending"
         })}
       >
         {isThisUploading ? (
@@ -554,23 +692,33 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             <span>Saving...</span>
           </div>
         ) : isUploaded ? (
-          /* State: DONE */
+          /* State 1: OK / DONE */
           <div className="flex flex-col gap-1">
             <div className="flex items-center justify-between">
               <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-emerald-800 tracking-tight">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
-                Done
+                <span>OK</span>
+                {!hasFile && <span className="text-[9.5px] font-normal text-emerald-700">(Verified)</span>}
               </span>
 
-              {hasFile && (
+              <div className="flex items-center gap-0.5">
+                {hasFile && (
+                  <button
+                    onClick={() => handlePreview(student, colConfig.title, doc.file)}
+                    className="p-0.5 text-slate-400 hover:text-school-navy hover:bg-slate-200/60 rounded transition-colors"
+                    title="Quick Preview"
+                  >
+                    <Eye className="w-3 h-3" />
+                  </button>
+                )}
                 <button
-                  onClick={() => handlePreview(student, colConfig.title, doc.file)}
-                  className="p-0.5 text-slate-400 hover:text-school-navy hover:bg-slate-200/60 rounded transition-colors"
-                  title="Quick View"
+                  onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
+                  className="p-0.5 text-slate-400 hover:text-slate-600 rounded"
+                  title="More actions"
                 >
-                  <Eye className="w-3 h-3" />
+                  <MoreHorizontal className="w-3 h-3" />
                 </button>
-              )}
+              </div>
             </div>
 
             {hasFile ? (
@@ -604,7 +752,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               </div>
             ) : (
               <div className="flex items-center gap-1">
-                <label className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-1.5 text-[10px] font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded cursor-pointer shadow-2xs transition-colors">
+                <label className="flex-1 inline-flex items-center justify-center gap-1 py-0.5 px-1.5 text-[10px] font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded cursor-pointer shadow-2xs transition-colors">
                   <Upload className="w-2.5 h-2.5 text-slate-500" />
                   <span>Attach File</span>
                   <input
@@ -614,33 +762,108 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                     onChange={(e) => handleFileUpload(student, category, e)}
                   />
                 </label>
+              </div>
+            )}
 
+            {/* Cell Context Menu */}
+            {isMenuOpen && (
+              <div className="absolute right-1 top-full mt-1 w-44 bg-white rounded-lg shadow-xl border border-slate-300 p-1.5 z-50 space-y-1 text-xs">
                 <button
                   onClick={() => handleMarkPending(student, category)}
-                  className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                  title="Revert to Pending"
+                  className="w-full text-left px-2 py-1 hover:bg-red-50 text-red-700 font-semibold rounded text-[11px] flex items-center gap-1.5"
                 >
-                  <RotateCcw className="w-2.5 h-2.5" />
+                  <RotateCcw className="w-3 h-3" /> Mark as Pending
+                </button>
+                <button
+                  onClick={() => handleMarkNotRequired(student, category)}
+                  className="w-full text-left px-2 py-1 hover:bg-slate-100 text-slate-700 font-medium rounded text-[11px] flex items-center gap-1.5"
+                >
+                  <MinusCircle className="w-3 h-3 text-slate-400" /> Mark as Not Required (—)
+                </button>
+              </div>
+            )}
+          </div>
+        ) : isNotRequired ? (
+          /* State 2: NOT REQUIRED / EXEMPT (—) */
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-slate-600 tracking-tight">
+                <span className="font-mono text-slate-400 font-bold">—</span>
+                <span>Not Required</span>
+              </span>
+
+              <button
+                onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
+                className="p-0.5 text-slate-400 hover:text-slate-600 rounded"
+                title="Change status"
+              >
+                <MoreHorizontal className="w-3 h-3" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handleMarkDone(student, category)}
+                className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-semibold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-300 rounded shadow-2xs transition-colors"
+                title="Mark as OK / Submitted"
+              >
+                <Check className="w-2.5 h-2.5 text-emerald-700" />
+                <span>Mark OK</span>
+              </button>
+
+              <label
+                className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-semibold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors"
+                title="Upload Document"
+              >
+                <Upload className="w-2.5 h-2.5 text-school-navy" />
+                <span>Upload</span>
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={(e) => handleFileUpload(student, category, e)}
+                />
+              </label>
+            </div>
+
+            {/* Cell Context Menu */}
+            {isMenuOpen && (
+              <div className="absolute right-1 top-full mt-1 w-44 bg-white rounded-lg shadow-xl border border-slate-300 p-1.5 z-50 space-y-1 text-xs">
+                <button
+                  onClick={() => handleMarkPending(student, category)}
+                  className="w-full text-left px-2 py-1 hover:bg-amber-50 text-amber-800 font-semibold rounded text-[11px] flex items-center gap-1.5"
+                >
+                  <Clock className="w-3 h-3 text-amber-600" /> Mark as Required (Pending)
                 </button>
               </div>
             )}
           </div>
         ) : (
-          /* State: UPLOAD PENDING */
+          /* State 3: UPLOAD PENDING */
           <div className="flex flex-col gap-1">
-            <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-800 tracking-tight">
-              <Clock className="w-3 h-3 text-amber-600 flex-shrink-0" />
-              Upload Pending
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-800 tracking-tight">
+                <Clock className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                Upload Pending
+              </span>
+
+              <button
+                onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
+                className="p-0.5 text-slate-400 hover:text-slate-600 rounded"
+                title="Change status"
+              >
+                <MoreHorizontal className="w-3 h-3" />
+              </button>
+            </div>
 
             <div className="flex items-center gap-1">
               <button
                 onClick={() => handleMarkDone(student, category)}
                 className="flex-1 inline-flex items-center justify-center gap-0.5 py-1 px-1 text-[10.5px] font-bold text-emerald-800 bg-white hover:bg-emerald-100/80 active:bg-emerald-200 border border-emerald-300 rounded shadow-2xs transition-colors"
-                title="Mark as Done"
+                title="Mark as Done / OK"
               >
                 <Check className="w-2.5 h-2.5 text-emerald-700" />
-                <span>Mark Done</span>
+                <span>Mark OK</span>
               </button>
 
               <label
@@ -657,6 +880,18 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                 />
               </label>
             </div>
+
+            {/* Cell Context Menu */}
+            {isMenuOpen && (
+              <div className="absolute right-1 top-full mt-1 w-44 bg-white rounded-lg shadow-xl border border-slate-300 p-1.5 z-50 space-y-1 text-xs">
+                <button
+                  onClick={() => handleMarkNotRequired(student, category)}
+                  className="w-full text-left px-2 py-1 hover:bg-slate-100 text-slate-700 font-medium rounded text-[11px] flex items-center gap-1.5"
+                >
+                  <MinusCircle className="w-3 h-3 text-slate-400" /> Mark as Not Required (—)
+                </button>
+              </div>
+            )}
           </div>
         )}
       </td>
@@ -687,13 +922,13 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
                 return (
                   <div key={d.name || idx} className="flex items-center justify-between gap-1 bg-white/90 p-1 rounded border border-slate-200 shadow-2xs">
-                    <span className="font-semibold text-slate-800 truncate text-[10.5px] max-w-[110px]" title={d.name}>
+                    <span className="font-semibold text-slate-800 truncate text-[10.5px] max-w-[105px]" title={d.name}>
                       {d.name}
                     </span>
 
                     <div className="flex items-center gap-0.5 flex-shrink-0">
                       <span className="text-[9.5px] text-emerald-700 font-bold px-1 py-0.2 rounded bg-emerald-100">
-                        ✓
+                        OK
                       </span>
 
                       {hasFile ? (
@@ -762,7 +997,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           <div className="flex items-center justify-between">
                             <span className="font-semibold text-slate-800 text-[10.5px] truncate">{dt.name}</span>
                             {isDone ? (
-                              <span className="text-[9.5px] text-emerald-700 font-bold">✓ Done</span>
+                              <span className="text-[9.5px] text-emerald-700 font-bold">✓ OK</span>
                             ) : (
                               <span className="text-[9.5px] text-amber-700 font-bold">Pending</span>
                             )}
@@ -781,7 +1016,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                                   <Download className="w-2.5 h-2.5" /> Download
                                 </button>
                               ) : (
-                                <span className="text-[9.5px] text-slate-400">Marked Done</span>
+                                <span className="text-[9.5px] text-slate-400">Marked OK</span>
                               )
                             ) : (
                               <>
@@ -792,7 +1027,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                                   }}
                                   className="flex-1 py-0.5 px-1 text-[9.5px] font-bold bg-white text-emerald-700 border border-emerald-300 rounded hover:bg-emerald-50"
                                 >
-                                  Mark Done
+                                  Mark OK
                                 </button>
                                 <label className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[9.5px] font-bold bg-white text-school-navy border border-blue-300 rounded cursor-pointer hover:bg-blue-50">
                                   <Upload className="w-2.5 h-2.5" /> Upload
@@ -825,47 +1060,58 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   return (
     <div className="flex flex-col gap-3 font-sans">
       {/* ── Spreadsheet KPI Metric Cards ────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
         <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
           <div>
-            <p className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider">Total Students</p>
+            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Students</p>
             <p className="text-xl font-extrabold text-slate-900 mt-0.5">{stats.totalStudents}</p>
             <p className="text-[10px] text-slate-400">Enrolled Roster</p>
           </div>
-          <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-school-navy">
+          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-school-navy">
             <Table className="w-4 h-4" />
           </div>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
           <div>
-            <p className="text-[10.5px] font-bold text-emerald-700 uppercase tracking-wider">All Docs Done</p>
+            <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Fully Collected</p>
             <p className="text-xl font-extrabold text-emerald-700 mt-0.5">{stats.fullyDoneStudents}</p>
-            <p className="text-[10px] text-emerald-600">100% verified students</p>
+            <p className="text-[10px] text-emerald-600">All docs verified</p>
           </div>
-          <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+          <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
             <ShieldCheck className="w-4 h-4" />
           </div>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
           <div>
-            <p className="text-[10.5px] font-bold text-blue-700 uppercase tracking-wider">Docs Completed</p>
+            <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Documents OK</p>
             <p className="text-xl font-extrabold text-blue-700 mt-0.5">{stats.totalUploadedDocs}</p>
             <p className="text-[10px] text-blue-600">{stats.completionRate}% completion rate</p>
           </div>
-          <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
             <CheckCircle2 className="w-4 h-4" />
           </div>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
           <div>
-            <p className="text-[10.5px] font-bold text-amber-700 uppercase tracking-wider">Upload Pending</p>
+            <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Not Required (—)</p>
+            <p className="text-xl font-extrabold text-slate-700 mt-0.5">{stats.totalNotRequiredDocs}</p>
+            <p className="text-[10px] text-slate-500">Exempt (e.g. TC pre-pri)</p>
+          </div>
+          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
+            <MinusCircle className="w-4 h-4" />
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs col-span-2 sm:col-span-1">
+          <div>
+            <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Upload Pending</p>
             <p className="text-xl font-extrabold text-amber-700 mt-0.5">{stats.totalPendingDocs}</p>
             <p className="text-[10px] text-amber-600">Action required</p>
           </div>
-          <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
+          <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
             <Clock className="w-4 h-4" />
           </div>
         </div>
@@ -876,13 +1122,13 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         {/* Left Toolbar Controls */}
         <div className="flex flex-wrap items-center gap-2 flex-1">
           {/* Search Box */}
-          <div className="relative min-w-[210px] max-w-xs flex-1">
+          <div className="relative min-w-[200px] max-w-xs flex-1">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter by name, GR, enrollment..."
+              placeholder="Search name, GR, Form No, father, phone..."
               className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-school-navy focus:ring-1 focus:ring-school-navy"
             />
             {search && (
@@ -922,7 +1168,8 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             >
               <option value="all">All Rows</option>
               <option value="pending">Pending Only</option>
-              <option value="done">Completed Only</option>
+              <option value="done">Completed (OK) Only</option>
+              <option value="not_required">Not Required (—) Only</option>
             </select>
           </div>
 
@@ -945,7 +1192,21 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         </div>
 
         {/* Right Toolbar Controls */}
-        <div className="flex items-center gap-1.5 self-end md:self-auto flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-1.5 self-end md:self-auto flex-shrink-0">
+          {/* Toggle Parent & Contact Info Columns */}
+          <button
+            onClick={() => setShowContactDetails(!showContactDetails)}
+            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+              showContactDetails
+                ? "bg-school-navy text-white border-school-navy shadow-2xs"
+                : "bg-white text-slate-700 border-slate-300 hover:bg-slate-200"
+            }`}
+            title="Toggle Father, Mother, DOB, Mobile, Address columns"
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>{showContactDetails ? "Hide Contact Info" : "Show Contact Info"}</span>
+          </button>
+
           {/* Density Switch */}
           <div className="flex items-center bg-white border border-slate-300 rounded-lg p-0.5 text-[11px]">
             <button
@@ -964,14 +1225,24 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             </button>
           </div>
 
-          {/* Export to Excel (.xlsx) */}
+          {/* Sync from CSV Modal Trigger */}
           <button
-            onClick={handleExportExcel}
-            className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors"
-            title="Download Excel Spreadsheet"
+            onClick={() => setIsSyncModalOpen(true)}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 text-school-navy hover:bg-blue-100 border border-blue-300 rounded-lg text-xs font-bold transition-colors shadow-2xs"
+            title="Synchronize from Document Collection Report CSV"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>Excel (.xlsx)</span>
+            <FileSpreadsheet className="w-3.5 h-3.5 text-school-navy" />
+            <span>Sync CSV</span>
+          </button>
+
+          {/* Export to Excel (.xlsx) matching School Report */}
+          <button
+            onClick={handleExportSchoolReport}
+            className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors"
+            title="Download Document Collection Report (.xlsx)"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>Export Report</span>
           </button>
 
           {/* Refresh Data */}
@@ -997,16 +1268,36 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               <span className="text-slate-400 mx-1">|</span>
               Class: <strong>{activeCellInfo.class || "—"}</strong>
               <span className="text-slate-400 mx-1">|</span>
+              Form No: <strong>{activeCellInfo.formNo || "—"}</strong>
+              <span className="text-slate-400 mx-1">|</span>
               GR: <strong>{activeCellInfo.gr || "—"}</strong>
+              {activeCellInfo.father && (
+                <>
+                  <span className="text-slate-400 mx-1">|</span>
+                  Father: <strong>{activeCellInfo.father}</strong>
+                </>
+              )}
+              {activeCellInfo.mobile && (
+                <>
+                  <span className="text-slate-400 mx-1">|</span>
+                  Mobile: <strong>{activeCellInfo.mobile}</strong>
+                </>
+              )}
               <span className="text-slate-400 mx-1">|</span>
               <span className="text-slate-700">{activeCellInfo.doc}:</span>{" "}
-              <strong className={activeCellInfo.status.startsWith("Done") ? "text-emerald-700 font-bold" : "text-amber-700 font-bold"}>
+              <strong className={
+                activeCellInfo.status.startsWith("OK")
+                  ? "text-emerald-700 font-bold"
+                  : activeCellInfo.status.includes("Not Required")
+                  ? "text-slate-600 font-bold"
+                  : "text-amber-700 font-bold"
+              }>
                 {activeCellInfo.status}
               </strong>
             </span>
           ) : (
             <span className="text-slate-400 italic">
-              Hover over any document cell to inspect details
+              Hover over or click any document cell to inspect details
             </span>
           )}
         </div>
@@ -1014,7 +1305,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         <div className="flex items-center gap-3 text-[11px] font-medium text-slate-500 flex-shrink-0">
           <span>Rows: <strong className="text-slate-800">{filteredStudents.length}</strong> / {localStudents.length}</span>
           <span className="text-slate-300">|</span>
-          <span>Columns: <strong className="text-slate-800">10</strong></span>
+          <span>Columns: <strong className="text-slate-800">{showContactDetails ? "15 (Full)" : "10 (Standard)"}</strong></span>
         </div>
       </div>
 
@@ -1036,7 +1327,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   }}
                 >
                   <div className="text-[9px] text-slate-400 font-mono font-normal">A</div>
-                  <span>SR NO</span>
+                  <span>SR</span>
                 </th>
 
                 {/* Column B: CLASS (Frozen 2) */}
@@ -1053,23 +1344,23 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   <span>CLASS</span>
                 </th>
 
-                {/* Column C: NAME (Frozen 3) */}
+                {/* Column C: FORM NO (Frozen 3) */}
                 <th
-                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 py-2 px-2.5 text-slate-700"
+                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 py-2 px-1.5 text-center text-slate-700"
                   style={{
-                    left: STICKY_OFFSETS.name,
-                    width: COL_WIDTHS.name,
-                    minWidth: COL_WIDTHS.name,
-                    maxWidth: COL_WIDTHS.name,
+                    left: STICKY_OFFSETS.formNo,
+                    width: COL_WIDTHS.formNo,
+                    minWidth: COL_WIDTHS.formNo,
+                    maxWidth: COL_WIDTHS.formNo,
                   }}
                 >
                   <div className="text-[9px] text-slate-400 font-mono font-normal">C</div>
-                  <span>STUDENT NAME</span>
+                  <span>FORM NO</span>
                 </th>
 
-                {/* Column D: GR (Frozen 4 - Right Border Separator) */}
+                {/* Column D: GR NO (Frozen 4) */}
                 <th
-                  className="sticky z-40 bg-slate-200 border-r-2 border-r-slate-400 border-b-2 border-slate-300 text-center py-2 px-1 text-slate-700 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)]"
+                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 text-center py-2 px-1.5 text-slate-700"
                   style={{
                     left: STICKY_OFFSETS.gr,
                     width: COL_WIDTHS.gr,
@@ -1078,12 +1369,69 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   }}
                 >
                   <div className="text-[9px] text-slate-400 font-mono font-normal">D</div>
-                  <span>GR</span>
+                  <span>GR NO</span>
                 </th>
 
-                {/* Columns E to I: Primary Documents */}
-                {PRIMARY_COLUMNS.map((col) => {
-                  const counts = stats.columnCounts[col.key] || { done: 0, pending: 0 };
+                {/* Column E: NAME (Frozen 5 - Right Border Separator) */}
+                <th
+                  className="sticky z-40 bg-slate-200 border-r-2 border-r-slate-400 border-b-2 border-slate-300 py-2 px-2.5 text-slate-700 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)]"
+                  style={{
+                    left: STICKY_OFFSETS.name,
+                    width: COL_WIDTHS.name,
+                    minWidth: COL_WIDTHS.name,
+                    maxWidth: COL_WIDTHS.name,
+                  }}
+                >
+                  <div className="text-[9px] text-slate-400 font-mono font-normal">E</div>
+                  <span>STUDENT NAME</span>
+                </th>
+
+                {/* Optional Contact Detail Columns (F to J) */}
+                {showContactDetails && (
+                  <>
+                    <th
+                      className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
+                      style={{ width: COL_WIDTHS.fatherName, minWidth: COL_WIDTHS.fatherName, maxWidth: COL_WIDTHS.fatherName }}
+                    >
+                      <div className="text-[9px] text-slate-400 font-mono font-normal">F</div>
+                      <span className="text-[11px] block">FATHER NAME</span>
+                    </th>
+                    <th
+                      className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
+                      style={{ width: COL_WIDTHS.motherName, minWidth: COL_WIDTHS.motherName, maxWidth: COL_WIDTHS.motherName }}
+                    >
+                      <div className="text-[9px] text-slate-400 font-mono font-normal">G</div>
+                      <span className="text-[11px] block">MOTHER NAME</span>
+                    </th>
+                    <th
+                      className="border-r border-b-2 border-slate-300 py-2 px-1 text-center text-slate-800 bg-slate-100"
+                      style={{ width: COL_WIDTHS.dob, minWidth: COL_WIDTHS.dob, maxWidth: COL_WIDTHS.dob }}
+                    >
+                      <div className="text-[9px] text-slate-400 font-mono font-normal">H</div>
+                      <span className="text-[11px] block">DOB</span>
+                    </th>
+                    <th
+                      className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
+                      style={{ width: COL_WIDTHS.mobile, minWidth: COL_WIDTHS.mobile, maxWidth: COL_WIDTHS.mobile }}
+                    >
+                      <div className="text-[9px] text-slate-400 font-mono font-normal">I</div>
+                      <span className="text-[11px] block">MOBILE NO</span>
+                    </th>
+                    <th
+                      className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
+                      style={{ width: COL_WIDTHS.address, minWidth: COL_WIDTHS.address, maxWidth: COL_WIDTHS.address }}
+                    >
+                      <div className="text-[9px] text-slate-400 font-mono font-normal">J</div>
+                      <span className="text-[11px] block">ADDRESS</span>
+                    </th>
+                  </>
+                )}
+
+                {/* Primary Documents Columns */}
+                {PRIMARY_COLUMNS.map((col, idx) => {
+                  const counts = stats.columnCounts[col.key] || { ok: 0, notRequired: 0, pending: 0 };
+                  const colLetter = String.fromCharCode(65 + 5 + (showContactDetails ? 5 : 0) + idx);
+
                   return (
                     <th
                       key={col.key}
@@ -1091,23 +1439,29 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                       style={{ width: COL_WIDTHS.doc, minWidth: COL_WIDTHS.doc, maxWidth: COL_WIDTHS.doc }}
                     >
                       <div className="flex items-center justify-between text-[9px] font-mono text-slate-400 font-normal">
-                        <span>{col.colLetter}</span>
-                        <span className="font-sans font-semibold text-emerald-700">{counts.done} ✓ / <span className="text-amber-700">{counts.pending} ⌛</span></span>
+                        <span>{colLetter}</span>
+                        <span className="font-sans font-semibold text-emerald-700">
+                          {counts.ok} OK
+                          {counts.notRequired > 0 && <span className="text-slate-500 font-normal ml-1">({counts.notRequired} —)</span>}
+                          <span className="text-amber-700 ml-1">/ {counts.pending} ⌛</span>
+                        </span>
                       </div>
-                      <span className="text-[11px] block truncate" title={col.title}>
+                      <span className="text-[11px] block truncate font-bold text-slate-900" title={col.title}>
                         {col.title}
                       </span>
                     </th>
                   );
                 })}
 
-                {/* Column J: OTHER DOCUMENTS */}
+                {/* OTHER DOCUMENTS Column */}
                 <th
                   className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
                   style={{ width: COL_WIDTHS.other, minWidth: COL_WIDTHS.other, maxWidth: COL_WIDTHS.other }}
                 >
-                  <div className="text-[9px] text-slate-400 font-mono font-normal">J</div>
-                  <span className="text-[11px] block">OTHER DOCUMENTS</span>
+                  <div className="text-[9px] text-slate-400 font-mono font-normal">
+                    {String.fromCharCode(65 + 5 + (showContactDetails ? 5 : 0) + 5)}
+                  </div>
+                  <span className="text-[11px] block font-bold text-slate-900">OTHER DOCUMENTS</span>
                 </th>
               </tr>
             </thead>
@@ -1116,7 +1470,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             <tbody>
               {filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-20 text-center text-slate-400 bg-white">
+                  <td colSpan={showContactDetails ? 16 : 11} className="py-20 text-center text-slate-400 bg-white">
                     <Table className="w-10 h-10 mx-auto text-slate-300 mb-2" />
                     <p className="font-bold text-slate-700 text-sm">No student records match the active criteria</p>
                     <p className="text-xs text-slate-400 mt-1">Try resetting the class or status filter above</p>
@@ -1169,31 +1523,24 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                         )}
                       </td>
 
-                      {/* Column C: NAME (Frozen) */}
+                      {/* Column C: FORM NO (Frozen) */}
                       <td
-                        className={`sticky z-20 border-r border-b border-slate-200 transition-colors ${
+                        className={`sticky z-20 border-r border-b border-slate-200 text-center font-mono font-bold text-slate-700 transition-colors ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
-                        } ${density === "compact" ? "py-1.5 px-2.5" : "py-2 px-2.5"}`}
+                        } ${density === "compact" ? "py-1.5 px-1 text-[11px]" : "py-2 px-1 text-xs"}`}
                         style={{
-                          left: STICKY_OFFSETS.name,
-                          width: COL_WIDTHS.name,
-                          minWidth: COL_WIDTHS.name,
-                          maxWidth: COL_WIDTHS.name,
+                          left: STICKY_OFFSETS.formNo,
+                          width: COL_WIDTHS.formNo,
+                          minWidth: COL_WIDTHS.formNo,
+                          maxWidth: COL_WIDTHS.formNo,
                         }}
                       >
-                        <div className="flex flex-col min-w-0">
-                          <span className="font-bold text-slate-900 truncate leading-tight text-xs" title={student.name}>
-                            {student.name || "—"}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-mono mt-0.5">
-                            #{student.enrollment}
-                          </span>
-                        </div>
+                        {student.enrollment || "—"}
                       </td>
 
-                      {/* Column D: GR (Frozen - Right Border Separator) */}
+                      {/* Column D: GR NO (Frozen) */}
                       <td
-                        className={`sticky z-20 border-r-2 border-r-slate-400 border-b border-slate-200 text-center whitespace-nowrap shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)] transition-colors ${
+                        className={`sticky z-20 border-r border-b border-slate-200 text-center whitespace-nowrap transition-colors ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
                         } ${density === "compact" ? "py-1.5 px-1" : "py-2 px-1"}`}
                         style={{
@@ -1212,10 +1559,83 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                         )}
                       </td>
 
-                      {/* Columns E to I: Primary Documents */}
+                      {/* Column E: NAME (Frozen - Right Border Separator) */}
+                      <td
+                        className={`sticky z-20 border-r-2 border-r-slate-400 border-b border-slate-200 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)] transition-colors ${
+                          isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
+                        } ${density === "compact" ? "py-1.5 px-2.5" : "py-2 px-2.5"}`}
+                        style={{
+                          left: STICKY_OFFSETS.name,
+                          width: COL_WIDTHS.name,
+                          minWidth: COL_WIDTHS.name,
+                          maxWidth: COL_WIDTHS.name,
+                        }}
+                      >
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-bold text-slate-900 truncate leading-tight text-xs uppercase" title={student.name}>
+                            {student.name || "—"}
+                          </span>
+                          {student.fatherName && !showContactDetails && (
+                            <span className="text-[10px] text-slate-500 truncate mt-0.5" title={`Father: ${student.fatherName}`}>
+                              C/O {student.fatherName}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Optional Contact Detail Columns (F to J) */}
+                      {showContactDetails && (
+                        <>
+                          <td
+                            className={`border-r border-b border-slate-200 transition-colors ${density === "compact" ? "py-1.5 px-2 text-[11px]" : "py-2 px-2 text-xs"}`}
+                            style={{ width: COL_WIDTHS.fatherName, minWidth: COL_WIDTHS.fatherName, maxWidth: COL_WIDTHS.fatherName }}
+                          >
+                            <span className="font-medium text-slate-800 truncate block uppercase" title={student.fatherName}>
+                              {student.fatherName || "—"}
+                            </span>
+                          </td>
+
+                          <td
+                            className={`border-r border-b border-slate-200 transition-colors ${density === "compact" ? "py-1.5 px-2 text-[11px]" : "py-2 px-2 text-xs"}`}
+                            style={{ width: COL_WIDTHS.motherName, minWidth: COL_WIDTHS.motherName, maxWidth: COL_WIDTHS.motherName }}
+                          >
+                            <span className="font-medium text-slate-800 truncate block uppercase" title={student.motherName}>
+                              {student.motherName || "—"}
+                            </span>
+                          </td>
+
+                          <td
+                            className={`border-r border-b border-slate-200 text-center font-mono transition-colors ${density === "compact" ? "py-1.5 px-1 text-[10.5px]" : "py-2 px-1 text-xs"}`}
+                            style={{ width: COL_WIDTHS.dob, minWidth: COL_WIDTHS.dob, maxWidth: COL_WIDTHS.dob }}
+                          >
+                            {student.dob || "—"}
+                          </td>
+
+                          <td
+                            className={`border-r border-b border-slate-200 font-mono transition-colors ${density === "compact" ? "py-1.5 px-2 text-[10.5px]" : "py-2 px-2 text-xs"}`}
+                            style={{ width: COL_WIDTHS.mobile, minWidth: COL_WIDTHS.mobile, maxWidth: COL_WIDTHS.mobile }}
+                          >
+                            <div className="flex flex-col">
+                              <span>{student.mobile || "—"}</span>
+                              {student.mobile2 && <span className="text-[9.5px] text-slate-400">{student.mobile2}</span>}
+                            </div>
+                          </td>
+
+                          <td
+                            className={`border-r border-b border-slate-200 transition-colors ${density === "compact" ? "py-1.5 px-2 text-[10px]" : "py-2 px-2 text-[11px]"}`}
+                            style={{ width: COL_WIDTHS.address, minWidth: COL_WIDTHS.address, maxWidth: COL_WIDTHS.address }}
+                          >
+                            <span className="truncate block text-slate-700" title={student.address}>
+                              {student.address || "—"}
+                            </span>
+                          </td>
+                        </>
+                      )}
+
+                      {/* Primary Document Columns */}
                       {PRIMARY_COLUMNS.map(col => renderDocCell(student, col.matchKey, col))}
 
-                      {/* Column J: OTHER DOCUMENTS */}
+                      {/* Column: OTHER DOCUMENTS */}
                       {renderOtherDocsCell(student)}
                     </tr>
                   );
@@ -1230,10 +1650,10 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
           <div className="flex items-center gap-3">
             <span className="flex items-center gap-1.5 font-sans font-bold text-slate-700">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Spreadsheet View Ready
+              Aligned with School Document Collection Report
             </span>
             <span className="text-slate-300">|</span>
-            <span>Freeze Panes Active: Cols A-D (SR, Class, Name, GR)</span>
+            <span>Freeze Panes Active: Cols A-E (SR, Class, Form No, GR, Name)</span>
           </div>
 
           <div className="flex items-center gap-3 font-sans">
@@ -1256,7 +1676,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
       {previewDoc && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
             <div className="bg-school-navy px-5 py-3 flex items-center justify-between text-white">
               <div>
                 <h3 className="font-bold text-sm flex items-center gap-2">
@@ -1290,7 +1709,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               </div>
             </div>
 
-            {/* Modal Body */}
             <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-slate-50 min-h-[350px]">
               {previewLoading ? (
                 <div className="flex flex-col items-center gap-3 text-slate-500">
@@ -1319,7 +1737,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               )}
             </div>
 
-            {/* Modal Footer */}
             <div className="px-5 py-3 border-t border-slate-200 bg-white flex items-center justify-end gap-2">
               {previewDoc.url && (
                 <a
@@ -1334,6 +1751,119 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               <button
                 onClick={() => setPreviewDoc(null)}
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Sync from CSV Modal ────────────────────────────────────────── */}
+      {isSyncModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col">
+            <div className="bg-school-navy px-5 py-4 flex items-center justify-between text-white">
+              <div className="flex items-center gap-2">
+                <FileSpreadsheet className="w-5 h-5 text-blue-200" />
+                <h3 className="font-bold text-sm">Sync with Document Collection Report</h3>
+              </div>
+              <button
+                onClick={() => {
+                  setIsSyncModalOpen(false);
+                  setSyncResult(null);
+                  setCustomCsvFile(null);
+                }}
+                className="p-1 text-white/80 hover:text-white rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs text-slate-700">
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5 space-y-1.5">
+                <p className="font-bold text-school-navy text-xs flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  Aligned to Official School Collection Report
+                </p>
+                <p className="text-slate-600 leading-relaxed text-[11.5px]">
+                  Matches all students by <strong>GR No</strong>, <strong>Student Name</strong>, <strong>Parent Mobile</strong>, or <strong>Form No</strong>. Synchronizes the 5 core documents:
+                </p>
+                <ul className="list-disc list-inside text-slate-600 text-[11px] space-y-0.5 ml-1">
+                  <li><strong>OK</strong> marks updated to <em>Verified / Uploaded</em> (preserves existing file uploads)</li>
+                  <li><strong>—</strong> marks updated to <em>Not Required (Exempt)</em></li>
+                  <li>Blanks retained as <em>Upload Pending</em></li>
+                </ul>
+              </div>
+
+              {/* Option 1: Quick Sync System CSV */}
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/60 space-y-2">
+                <h4 className="font-bold text-slate-800 text-xs">Option 1: One-Click Sync with System Report</h4>
+                <p className="text-slate-500 text-[11px]">
+                  Synchronize directly from <code>Document Collection Report - Classwise - ALL CLASSES.csv</code> on the server.
+                </p>
+                <button
+                  onClick={() => handlePerformSync(false)}
+                  disabled={syncLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-school-navy hover:bg-school-navy-dark text-white rounded-lg font-bold transition-colors disabled:opacity-50"
+                >
+                  {syncLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  <span>{syncLoading ? "Synchronizing Records..." : "Quick Sync System Report"}</span>
+                </button>
+              </div>
+
+              {/* Option 2: Upload Custom CSV */}
+              <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/60 space-y-2">
+                <h4 className="font-bold text-slate-800 text-xs">Option 2: Upload Updated CSV File</h4>
+                <p className="text-slate-500 text-[11px]">
+                  Select an updated Document Collection Report CSV to import new changes.
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => setCustomCsvFile(e.target.files?.[0] || null)}
+                    className="text-xs text-slate-600 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
+                  />
+                  {customCsvFile && (
+                    <button
+                      onClick={() => handlePerformSync(true)}
+                      disabled={syncLoading}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg font-bold transition-colors disabled:opacity-50"
+                    >
+                      {syncLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                      <span>Sync Uploaded File</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Sync Results Display */}
+              {syncResult && (
+                <div className="bg-emerald-50 border border-emerald-300 rounded-xl p-3.5 space-y-1.5 animate-in fade-in">
+                  <p className="font-bold text-emerald-800 text-xs flex items-center gap-1.5">
+                    <CheckCircle className="w-4 h-4 text-emerald-600" />
+                    Sync Completed Successfully!
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] text-emerald-900 pt-1">
+                    <div>Total Report Students: <strong>{syncResult.totalCsvRows}</strong></div>
+                    <div>Matched in Database: <strong>{syncResult.matchedStudents}</strong></div>
+                    <div>Marked OK (Verified): <strong>{syncResult.markOkCount}</strong></div>
+                    <div>Marked Not Required (—): <strong>{syncResult.markNotRequiredCount}</strong></div>
+                    <div className="col-span-2">Existing Files Preserved: <strong>{syncResult.preservedFilesCount}</strong></div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-end">
+              <button
+                onClick={() => {
+                  setIsSyncModalOpen(false);
+                  setSyncResult(null);
+                  setCustomCsvFile(null);
+                }}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition-colors"
               >
                 Close
               </button>

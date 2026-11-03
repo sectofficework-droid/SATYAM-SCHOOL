@@ -38,7 +38,7 @@ export function mapToStudent(enrollment) {
   // either way, it should stop nagging as pending.
   const resolvedDocNames = new Set(
     (enrollment.student?.student_documents || [])
-      .filter(d => d.status === "Uploaded" || d.status === "Not Required")
+      .filter(d => d.status === "Uploaded" || d.status === "Not Required" || (d.reason && d.reason.toLowerCase().includes("not required")) || d.reason === "-")
       .map(d => d.document_types?.name)
       .filter(Boolean)
   );
@@ -162,6 +162,7 @@ export function mapToStudent(enrollment) {
     // Tracking
     pendingDocs,
     pendingInventory,
+    hasPrevSchool,
 
     // Full documents list (populated when student_documents is loaded)
     documents: s.student_documents
@@ -170,7 +171,7 @@ export function mapToStudent(enrollment) {
           name:           d.document_types?.name || "",
           documentTypeId: d.document_types?.id || null,
           uploaded:       d.status === "Uploaded",
-          notRequired:    d.status === "Not Required",
+          notRequired:    d.status === "Not Required" || (d.reason && d.reason.toLowerCase().includes("not required")) || d.reason === "-",
           status:         d.status || "Pending",
           reason:         d.reason || "",
           file:           d.file_url || "",
@@ -441,14 +442,14 @@ export async function getStudentByEnrollment(enrollmentNo) {
 // so it stops counting as pending without ever being uploaded - e.g. a
 // document that genuinely doesn't apply to this particular student.
 
-export async function markDocumentNotRequired(studentId, documentTypeId, reason) {
+export async function markDocumentNotRequired(studentId, documentTypeId, reason = "Not Required") {
   const { error } = await supabase.from("student_documents").upsert({
     student_id:       studentId,
     document_type_id: documentTypeId,
-    status:           "Not Required",
-    reason:           reason || null,
+    status:           "Pending",
+    reason:           reason || "Not Required",
     file_url:         null,
-    uploaded_at:       null,
+    uploaded_at:      null,
   }, { onConflict: "student_id,document_type_id" });
   if (error) throw error;
 }
@@ -1138,4 +1139,163 @@ export async function saveTransferCertificate(studentId, enrollmentId, tcData) {
   });
   if (error) throw error;
   return data;
+}
+
+// ── Sync Student Documents from Document Collection Report CSV ────────────────
+export async function syncStudentDocumentsFromCsvText(csvText, studentsList = [], docTypesList = []) {
+  if (!csvText) throw new Error("CSV content is empty");
+
+  // Parse lines handling quotes
+  const lines = csvText.split(/\r?\n/).filter(l => l.trim().length > 0);
+  const rows = [];
+  for (const line of lines) {
+    const row = [];
+    let insideQuote = false;
+    let cell = '';
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        insideQuote = !insideQuote;
+      } else if (ch === ',' && !insideQuote) {
+        row.push(cell.trim());
+        cell = '';
+      } else {
+        cell += ch;
+      }
+    }
+    row.push(cell.trim());
+    rows.push(row);
+  }
+
+  // Find header row containing "Birth Certificate" or "Transfer Certificate"
+  let headerIdx = rows.findIndex(r => r.some(c => (c || '').toLowerCase().includes("birth certificate")));
+  if (headerIdx === -1) headerIdx = 3;
+  const header = rows[headerIdx] || [];
+
+  const dataRows = rows.slice(headerIdx + 1).filter(r => r.length >= 10 && r[4]);
+
+  // Ensure docTypesList is loaded
+  let types = docTypesList;
+  if (!types || types.length === 0) {
+    types = await getDocumentTypes();
+  }
+
+  const dtBirth = types.find(d => (d.name || '').toLowerCase().includes('birth'))?.id;
+  const dtTc = types.find(d => (d.name || '').toLowerCase().includes('leaving') || (d.name || '').toLowerCase().includes('transfer'))?.id;
+  const dtStAadhar = types.find(d => (d.name || '').toLowerCase().includes('student') && (d.name || '').toLowerCase().includes('aadhar'))?.id;
+  const dtFaAadhar = types.find(d => (d.name || '').toLowerCase().includes('father') && (d.name || '').toLowerCase().includes('aadhar'))?.id;
+  const dtMoAadhar = types.find(d => (d.name || '').toLowerCase().includes('mother') && (d.name || '').toLowerCase().includes('aadhar'))?.id;
+
+  const docMap = [
+    { idx: 10, name: 'Birth Certificate', id: dtBirth },
+    { idx: 11, name: 'Transfer Certificate', id: dtTc },
+    { idx: 12, name: 'Student Aadhar', id: dtStAadhar },
+    { idx: 13, name: 'Father Aadhar', id: dtFaAadhar },
+    { idx: 14, name: 'Mother Aadhar', id: dtMoAadhar },
+  ];
+
+  // Helper clean string
+  const clean = (s) => (s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  const updateMap = new Map();
+  let matchedCount = 0;
+  let preservedFilesCount = 0;
+  let markOkCount = 0;
+  let markNotRequiredCount = 0;
+
+  for (const r of dataRows) {
+    const [cls, sr, formNo, grNo, name, fName, mName, dob, mobile, addr] = r;
+    const normName = clean(name);
+    const normFName = clean(fName);
+    const csvPhones = (mobile ? mobile.match(/\d{10}/g) || [] : []);
+
+    let match = null;
+
+    if (grNo && clean(grNo)) {
+      match = studentsList.find(s => clean(s.grNo) === clean(grNo));
+    }
+    if (!match) {
+      match = studentsList.find(s => {
+        const full1 = clean(`${s.firstName} ${s.lastName}`);
+        const full2 = clean(`${s.lastName} ${s.firstName}`);
+        const single = clean(s.name);
+        return full1 === normName || full2 === normName || single === normName;
+      });
+    }
+    if (!match && csvPhones.length > 0) {
+      match = studentsList.find(s => {
+        const m1 = clean(s.mobile);
+        const m2 = clean(s.mobile2);
+        return csvPhones.some(p => (m1 && m1.includes(p)) || (m2 && m2.includes(p)));
+      });
+    }
+    if (!match && fName) {
+      match = studentsList.find(s => {
+        const sFirst = clean(s.firstName);
+        const sFather = clean(s.fatherName);
+        return (normName.includes(sFirst) || sFirst.includes(normName)) &&
+               (normFName.includes(sFather) || sFather.includes(normFName));
+      });
+    }
+    if (!match && formNo && !isNaN(parseInt(formNo))) {
+      match = studentsList.find(s => parseInt(s.enrollment) === parseInt(formNo));
+    }
+
+    if (!match) continue;
+    matchedCount++;
+
+    const studentId = match._studentId;
+    const existingDocs = match.documents || [];
+
+    for (const dm of docMap) {
+      if (!dm.id) continue;
+      const csvVal = (r[dm.idx] || '').trim();
+      const existingDoc = existingDocs.find(d => d.documentTypeId === dm.id);
+      const key = `${studentId}_${dm.id}`;
+
+      if (csvVal === 'OK') {
+        markOkCount++;
+        if (existingDoc && existingDoc.file) preservedFilesCount++;
+        updateMap.set(key, {
+          student_id: studentId,
+          document_type_id: dm.id,
+          status: 'Uploaded',
+          reason: existingDoc?.reason || 'Verified (Collection Report)',
+          file_url: existingDoc?.file || null,
+          uploaded_at: existingDoc?.uploadedAt || new Date().toISOString(),
+        });
+      } else if (csvVal === '-') {
+        if (!existingDoc || !existingDoc.file) {
+          markNotRequiredCount++;
+          updateMap.set(key, {
+            student_id: studentId,
+            document_type_id: dm.id,
+            status: 'Pending',
+            reason: 'Not Required',
+            file_url: null,
+            uploaded_at: null,
+          });
+        }
+      }
+    }
+  }
+
+  const updates = Array.from(updateMap.values());
+  const chunkSize = 50;
+  for (let i = 0; i < updates.length; i += chunkSize) {
+    const chunk = updates.slice(i, i + chunkSize);
+    const { error } = await supabase.from('student_documents').upsert(chunk, {
+      onConflict: 'student_id,document_type_id'
+    });
+    if (error) throw error;
+  }
+
+  return {
+    totalRows: dataRows.length,
+    matchedCount,
+    updatedRecords: updates.length,
+    markOkCount,
+    markNotRequiredCount,
+    preservedFilesCount,
+  };
 }
