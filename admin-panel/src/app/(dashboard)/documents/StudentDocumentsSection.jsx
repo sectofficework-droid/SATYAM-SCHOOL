@@ -136,7 +136,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // "all" | "pending" | "done" | "not_required"
   const [docColumnFilter, setDocColumnFilter] = useState("all"); // specific document filter
-  const [density, setDensity] = useState("compact"); // "compact" | "normal"
   const [showContactDetails, setShowContactDetails] = useState(false); // Toggle parent & contact info
 
   // Interactive states
@@ -661,9 +660,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     return (
       <td
         key={category}
-        className={`border-r border-b border-slate-200 transition-colors align-middle relative ${
-          density === "compact" ? "p-1.5" : "p-2"
-        } ${
+        className={`border-r border-b border-slate-200 transition-colors align-middle relative p-1.5 ${
           isUploaded
             ? "bg-emerald-50/40 hover:bg-emerald-100/60"
             : isNotRequired
@@ -908,9 +905,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     return (
       <td
         key="other_docs"
-        className={`border-r border-b border-slate-200 transition-colors align-middle relative ${
-          density === "compact" ? "p-1.5" : "p-2"
-        } ${hasAnyUploaded ? "bg-emerald-50/30 hover:bg-emerald-100/50" : "bg-amber-50/30 hover:bg-amber-100/40"}`}
+        className={`border-r border-b border-slate-200 transition-colors align-middle relative p-1.5 ${hasAnyUploaded ? "bg-emerald-50/30 hover:bg-emerald-100/50" : "bg-amber-50/30 hover:bg-amber-100/40"}`}
         style={{ width: COL_WIDTHS.other, minWidth: COL_WIDTHS.other, maxWidth: COL_WIDTHS.other }}
       >
         <div className="flex flex-col gap-1">
@@ -1207,24 +1202,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             <span>{showContactDetails ? "Hide Contact Info" : "Show Contact Info"}</span>
           </button>
 
-          {/* Density Switch */}
-          <div className="flex items-center bg-white border border-slate-300 rounded-lg p-0.5 text-[11px]">
-            <button
-              onClick={() => setDensity("compact")}
-              className={`px-2 py-1 rounded font-semibold transition-colors ${density === "compact" ? "bg-slate-200 text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"}`}
-              title="Compact spreadsheet view"
-            >
-              Compact
-            </button>
-            <button
-              onClick={() => setDensity("normal")}
-              className={`px-2 py-1 rounded font-semibold transition-colors ${density === "normal" ? "bg-slate-200 text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"}`}
-              title="Comfortable view"
-            >
-              Normal
-            </button>
-          </div>
-
           {/* Sync from CSV Modal Trigger */}
           <button
             onClick={() => setIsSyncModalOpen(true)}
@@ -1488,9 +1465,9 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                     >
                       {/* Column A: SR NO (Frozen) */}
                       <td
-                        className={`sticky z-20 border-r border-b border-slate-200 text-center font-mono font-bold text-slate-600 transition-colors ${
+                        className={`sticky z-20 border-r border-b border-slate-200 text-center font-mono font-bold text-slate-600 transition-colors py-1.5 px-1 text-[11px] ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
-                        } ${density === "compact" ? "py-1.5 px-1 text-[11px]" : "py-2 px-1 text-xs"}`}
+                        }`}
                         style={{
                           left: STICKY_OFFSETS.sr,
                           width: COL_WIDTHS.sr,
@@ -1503,9 +1480,9 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
                       {/* Column B: CLASS (Frozen) */}
                       <td
-                        className={`sticky z-20 border-r border-b border-slate-200 whitespace-nowrap transition-colors ${
+                        className={`sticky z-20 border-r border-b border-slate-200 whitespace-nowrap transition-colors py-1.5 px-2 ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
-                        } ${density === "compact" ? "py-1.5 px-2" : "py-2 px-2"}`}
+                        }`}
                         style={{
                           left: STICKY_OFFSETS.class,
                           width: COL_WIDTHS.class,
@@ -1525,9 +1502,9 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
                       {/* Column C: FORM NO (Frozen) */}
                       <td
-                        className={`sticky z-20 border-r border-b border-slate-200 text-center font-mono font-bold text-slate-700 transition-colors ${
+                        className={`sticky z-20 border-r border-b border-slate-200 text-center font-mono font-bold text-slate-700 transition-colors py-1.5 px-1 text-[11px] ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
-                        } ${density === "compact" ? "py-1.5 px-1 text-[11px]" : "py-2 px-1 text-xs"}`}
+                        }`}
                         style={{
                           left: STICKY_OFFSETS.formNo,
                           width: COL_WIDTHS.formNo,
@@ -1540,9 +1517,9 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
                       {/* Column D: GR NO (Frozen) */}
                       <td
-                        className={`sticky z-20 border-r border-b border-slate-200 text-center whitespace-nowrap transition-colors ${
+                        className={`sticky z-20 border-r border-b border-slate-200 text-center whitespace-nowrap transition-colors py-1.5 px-1 ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
-                        } ${density === "compact" ? "py-1.5 px-1" : "py-2 px-1"}`}
+                        }`}
                         style={{
                           left: STICKY_OFFSETS.gr,
                           width: COL_WIDTHS.gr,
@@ -1561,9 +1538,9 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
                       {/* Column E: NAME (Frozen - Right Border Separator) */}
                       <td
-                        className={`sticky z-20 border-r-2 border-r-slate-400 border-b border-slate-200 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)] transition-colors ${
+                        className={`sticky z-20 border-r-2 border-r-slate-400 border-b border-slate-200 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)] transition-colors py-1.5 px-2.5 ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
-                        } ${density === "compact" ? "py-1.5 px-2.5" : "py-2 px-2.5"}`}
+                        }`}
                         style={{
                           left: STICKY_OFFSETS.name,
                           width: COL_WIDTHS.name,
@@ -1587,7 +1564,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                       {showContactDetails && (
                         <>
                           <td
-                            className={`border-r border-b border-slate-200 transition-colors ${density === "compact" ? "py-1.5 px-2 text-[11px]" : "py-2 px-2 text-xs"}`}
+                            className="border-r border-b border-slate-200 transition-colors py-1.5 px-2 text-[11px]"
                             style={{ width: COL_WIDTHS.fatherName, minWidth: COL_WIDTHS.fatherName, maxWidth: COL_WIDTHS.fatherName }}
                           >
                             <span className="font-medium text-slate-800 truncate block uppercase" title={student.fatherName}>
@@ -1596,7 +1573,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           </td>
 
                           <td
-                            className={`border-r border-b border-slate-200 transition-colors ${density === "compact" ? "py-1.5 px-2 text-[11px]" : "py-2 px-2 text-xs"}`}
+                            className="border-r border-b border-slate-200 transition-colors py-1.5 px-2 text-[11px]"
                             style={{ width: COL_WIDTHS.motherName, minWidth: COL_WIDTHS.motherName, maxWidth: COL_WIDTHS.motherName }}
                           >
                             <span className="font-medium text-slate-800 truncate block uppercase" title={student.motherName}>
@@ -1605,14 +1582,14 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           </td>
 
                           <td
-                            className={`border-r border-b border-slate-200 text-center font-mono transition-colors ${density === "compact" ? "py-1.5 px-1 text-[10.5px]" : "py-2 px-1 text-xs"}`}
+                            className="border-r border-b border-slate-200 text-center font-mono transition-colors py-1.5 px-1 text-[10.5px]"
                             style={{ width: COL_WIDTHS.dob, minWidth: COL_WIDTHS.dob, maxWidth: COL_WIDTHS.dob }}
                           >
                             {student.dob || "—"}
                           </td>
 
                           <td
-                            className={`border-r border-b border-slate-200 font-mono transition-colors ${density === "compact" ? "py-1.5 px-2 text-[10.5px]" : "py-2 px-2 text-xs"}`}
+                            className="border-r border-b border-slate-200 font-mono transition-colors py-1.5 px-2 text-[10.5px]"
                             style={{ width: COL_WIDTHS.mobile, minWidth: COL_WIDTHS.mobile, maxWidth: COL_WIDTHS.mobile }}
                           >
                             <div className="flex flex-col">
@@ -1622,7 +1599,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           </td>
 
                           <td
-                            className={`border-r border-b border-slate-200 transition-colors ${density === "compact" ? "py-1.5 px-2 text-[10px]" : "py-2 px-2 text-[11px]"}`}
+                            className="border-r border-b border-slate-200 transition-colors py-1.5 px-2 text-[10px]"
                             style={{ width: COL_WIDTHS.address, minWidth: COL_WIDTHS.address, maxWidth: COL_WIDTHS.address }}
                           >
                             <span className="truncate block text-slate-700" title={student.address}>
