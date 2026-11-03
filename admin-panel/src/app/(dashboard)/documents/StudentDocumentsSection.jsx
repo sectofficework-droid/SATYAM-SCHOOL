@@ -8,7 +8,8 @@ import {
   ExternalLink, RotateCcw, Plus, MoreHorizontal, ShieldCheck,
   Filter, Table, CheckSquare, Sparkles, ChevronDown, Layers,
   Phone, Users, MapPin, Calendar, HelpCircle, ArrowUpDown,
-  CheckCircle, MinusCircle, FileCheck, Edit3, AlertTriangle
+  CheckCircle, MinusCircle, FileCheck, Edit3, AlertTriangle,
+  Maximize2, Minimize2
 } from "lucide-react";
 import {
   getDocumentTypes,
@@ -160,6 +161,40 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const [syncLoading, setSyncLoading] = useState(false);
   const [syncResult, setSyncResult] = useState(null);
   const [customCsvFile, setCustomCsvFile] = useState(null);
+
+  // Full Screen Mode State & Table Scroll Ref
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const tableScrollRef = useRef(null);
+
+  // Toggle Full Screen mode
+  const toggleFullScreen = () => {
+    setIsFullscreen(prev => !prev);
+  };
+
+  // Handle Fullscreen escape key & body scroll lock
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        // If a modal is open, let modal close first
+        if (confirmGrModal || isSyncModalOpen || previewDoc) return;
+        if (isFullscreen) {
+          setIsFullscreen(false);
+        }
+      }
+    };
+
+    if (isFullscreen) {
+      document.body.style.overflow = "hidden";
+      window.addEventListener("keydown", handleKeyDown);
+    } else {
+      document.body.style.overflow = "";
+    }
+
+    return () => {
+      document.body.style.overflow = "";
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isFullscreen, confirmGrModal, isSyncModalOpen, previewDoc]);
 
   // Keep localStudents in sync with parent prop
   useEffect(() => {
@@ -1106,64 +1141,121 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   };
 
   return (
-    <div className="flex flex-col gap-3 font-sans">
-      {/* ── Spreadsheet KPI Metric Cards ────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-        <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
-          <div>
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Students</p>
-            <p className="text-xl font-extrabold text-slate-900 mt-0.5">{stats.totalStudents}</p>
-            <p className="text-[10px] text-slate-400">Enrolled Roster</p>
+    <div
+      className={`font-sans transition-all duration-200 ${
+        isFullscreen
+          ? "fixed inset-0 z-[50] bg-slate-100 flex flex-col h-screen w-screen p-3 sm:p-4 overflow-hidden gap-2.5"
+          : "flex flex-col gap-3"
+      }`}
+    >
+      {/* ── Dedicated Full Screen Header Bar (Only in Full Screen) ─────── */}
+      {isFullscreen && (
+        <div className="bg-white rounded-xl border border-slate-300 px-3.5 py-2 flex items-center justify-between shadow-2xs flex-shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-school-navy text-white flex items-center justify-center shadow-xs">
+              <FileSpreadsheet className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-extrabold text-slate-900 tracking-tight">
+                  Document Collection Spreadsheet
+                </h2>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  FULL SCREEN MODE
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 font-medium">
+                Clean and distraction-free view • Press <kbd className="font-mono bg-slate-100 px-1 py-0.5 rounded border border-slate-300 text-[9.5px]">Esc</kbd> to exit full screen
+              </p>
+            </div>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-school-navy">
-            <Table className="w-4 h-4" />
-          </div>
-        </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
-          <div>
-            <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Fully Collected</p>
-            <p className="text-xl font-extrabold text-emerald-700 mt-0.5">{stats.fullyDoneStudents}</p>
-            <p className="text-[10px] text-emerald-600">All docs verified</p>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <ShieldCheck className="w-4 h-4" />
-          </div>
-        </div>
+          <div className="flex items-center gap-2.5">
+            {/* Quick Metrics Strip */}
+            <div className="hidden lg:flex items-center gap-2 text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 font-medium">
+              <span><strong>{stats.totalStudents}</strong> Students</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-emerald-700 font-bold">{stats.totalUploadedDocs} OK</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-slate-600 font-semibold">{stats.totalNotRequiredDocs} Exempt (—)</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-amber-700 font-bold">{stats.totalPendingDocs} Pending</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-school-navy font-bold">{stats.completionRate}% Done</span>
+            </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
-          <div>
-            <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Documents OK</p>
-            <p className="text-xl font-extrabold text-blue-700 mt-0.5">{stats.totalUploadedDocs}</p>
-            <p className="text-[10px] text-blue-600">{stats.completionRate}% completion rate</p>
-          </div>
-          <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-            <CheckCircle2 className="w-4 h-4" />
+            {/* Exit Full Screen Button */}
+            <button
+              onClick={toggleFullScreen}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              title="Exit Full Screen (Esc)"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>Exit Full Screen (Esc)</span>
+            </button>
           </div>
         </div>
+      )}
 
-        <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
-          <div>
-            <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Not Required (—)</p>
-            <p className="text-xl font-extrabold text-slate-700 mt-0.5">{stats.totalNotRequiredDocs}</p>
-            <p className="text-[10px] text-slate-500">Exempt (e.g. TC pre-pri)</p>
+      {/* ── Spreadsheet KPI Metric Cards (Only in Normal Embedded Mode) ─── */}
+      {!isFullscreen && (
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+          <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
+            <div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Students</p>
+              <p className="text-xl font-extrabold text-slate-900 mt-0.5">{stats.totalStudents}</p>
+              <p className="text-[10px] text-slate-400">Enrolled Roster</p>
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-school-navy">
+              <Table className="w-4 h-4" />
+            </div>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
-            <MinusCircle className="w-4 h-4" />
-          </div>
-        </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs col-span-2 sm:col-span-1">
-          <div>
-            <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Upload Pending</p>
-            <p className="text-xl font-extrabold text-amber-700 mt-0.5">{stats.totalPendingDocs}</p>
-            <p className="text-[10px] text-amber-600">Action required</p>
+          <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
+            <div>
+              <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Fully Collected</p>
+              <p className="text-xl font-extrabold text-emerald-700 mt-0.5">{stats.fullyDoneStudents}</p>
+              <p className="text-[10px] text-emerald-600">All docs verified</p>
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <ShieldCheck className="w-4 h-4" />
+            </div>
           </div>
-          <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-            <Clock className="w-4 h-4" />
+
+          <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
+            <div>
+              <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Documents OK</p>
+              <p className="text-xl font-extrabold text-blue-700 mt-0.5">{stats.totalUploadedDocs}</p>
+              <p className="text-[10px] text-blue-600">{stats.completionRate}% completion rate</p>
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+              <CheckCircle2 className="w-4 h-4" />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
+            <div>
+              <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Not Required (—)</p>
+              <p className="text-xl font-extrabold text-slate-700 mt-0.5">{stats.totalNotRequiredDocs}</p>
+              <p className="text-[10px] text-slate-500">Exempt (e.g. TC pre-pri)</p>
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
+              <MinusCircle className="w-4 h-4" />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs col-span-2 sm:col-span-1">
+            <div>
+              <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Upload Pending</p>
+              <p className="text-xl font-extrabold text-amber-700 mt-0.5">{stats.totalPendingDocs}</p>
+              <p className="text-[10px] text-amber-600">Action required</p>
+            </div>
+            <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
+              <Clock className="w-4 h-4" />
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* ── Spreadsheet Toolbar ────────────────────────────────────────── */}
       <div className="bg-slate-100 rounded-xl border border-slate-300 p-2.5 flex flex-col md:flex-row md:items-center justify-between gap-2 shadow-2xs">
@@ -1283,6 +1375,29 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
+
+          {/* Full Screen Mode Toggle */}
+          <button
+            onClick={toggleFullScreen}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer ${
+              isFullscreen
+                ? "bg-slate-900 hover:bg-slate-800 text-white shadow-xs"
+                : "bg-white hover:bg-slate-200 active:bg-slate-300 text-school-navy border border-slate-300"
+            }`}
+            title={isFullscreen ? "Exit Full Screen Mode (Esc)" : "Open Clean & Clear Full Screen Spreadsheet"}
+          >
+            {isFullscreen ? (
+              <>
+                <Minimize2 className="w-3.5 h-3.5" />
+                <span>Exit Full Screen</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>Full Screen</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 
@@ -1340,8 +1455,12 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
       </div>
 
       {/* ── Spreadsheet Grid with Freeze Panes ────────────────────────── */}
-      <div className="border-2 border-slate-300 rounded-xl overflow-hidden bg-white shadow-xs max-h-[76vh] flex flex-col">
-        <div className="overflow-auto flex-1 relative">
+      <div
+        className={`border-2 border-slate-300 rounded-xl overflow-hidden bg-white shadow-xs flex flex-col ${
+          isFullscreen ? "flex-1 min-h-0" : "max-h-[76vh]"
+        }`}
+      >
+        <div ref={tableScrollRef} className="overflow-auto flex-1 relative">
           <table className="border-separate border-spacing-0 w-full text-left text-xs">
             {/* Table Header (Sticky Top) */}
             <thead className="sticky top-0 z-30 select-none">
@@ -1746,10 +1865,9 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             <span className="text-slate-300">|</span>
             <button
               onClick={() => {
-                const el = document.querySelector(".max-h-\\[76vh\\] > div");
-                if (el) el.scrollTo({ top: 0, behavior: "smooth" });
+                tableScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
               }}
-              className="text-school-navy font-bold hover:underline"
+              className="text-school-navy font-bold hover:underline cursor-pointer"
             >
               Back to Top ↑
             </button>
@@ -1759,7 +1877,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
       {/* ── Document Preview Modal ─────────────────────────────────────── */}
       {previewDoc && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
             <div className="bg-school-navy px-5 py-3 flex items-center justify-between text-white">
               <div>
@@ -1846,7 +1964,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
       {/* ── Sync from CSV Modal ────────────────────────────────────────── */}
       {isSyncModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col">
             <div className="bg-school-navy px-5 py-4 flex items-center justify-between text-white">
               <div className="flex items-center gap-2">
@@ -1959,7 +2077,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
       {/* ── Confirm GR Assignment Modal ─────────────────────────────────── */}
       {confirmGrModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-slate-200 animate-in fade-in zoom-in-95">
             {/* Modal Header */}
             <div className="bg-school-navy px-5 py-3.5 flex items-center justify-between text-white">
