@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 import {
   FileText, Search, Download, Upload, Check, CheckCircle2,
   Clock, AlertCircle, RefreshCw, FileSpreadsheet, Eye, X,
-  ChevronLeft, ChevronRight, ExternalLink, RotateCcw,
+  ExternalLink, RotateCcw,
   Plus, MoreHorizontal, ShieldCheck, Filter
 } from "lucide-react";
 import {
@@ -110,10 +110,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // "all" | "pending" | "done"
   const [docColumnFilter, setDocColumnFilter] = useState("all"); // specific document filter
-
-  // Pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25); // 25, 50, 100, -1 (all)
 
   // Interactive states
   const [localStudents, setLocalStudents] = useState([]);
@@ -227,19 +223,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
       completionRate,
     };
   }, [localStudents, PRIMARY_COLUMNS]);
-
-  // Paginated students
-  const totalPages = pageSize === -1 ? 1 : Math.ceil(filteredStudents.length / pageSize) || 1;
-  const paginatedStudents = useMemo(() => {
-    if (pageSize === -1) return filteredStudents;
-    const start = (currentPage - 1) * pageSize;
-    return filteredStudents.slice(start, start + pageSize);
-  }, [filteredStudents, currentPage, pageSize]);
-
-  // Reset page when filters change
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [classFilter, search, statusFilter, docColumnFilter, pageSize]);
 
   // Handle Mark Done (optimistic update + DB call)
   const handleMarkDone = async (student, category, docTypeOverride = null) => {
@@ -943,23 +926,13 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               Student Document Registry
             </span>
             <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-school-navy/10 text-school-navy">
-              {filteredStudents.length} student{filteredStudents.length !== 1 ? "s" : ""}
+              All {filteredStudents.length} student{filteredStudents.length !== 1 ? "s" : ""}
             </span>
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <span>Rows:</span>
-            <select
-              value={pageSize}
-              onChange={(e) => setPageSize(Number(e.target.value))}
-              className="px-2 py-1 text-xs border border-gray-200 rounded-lg bg-white"
-            >
-              <option value={25}>25</option>
-              <option value={50}>50</option>
-              <option value={100}>100</option>
-              <option value={-1}>All ({filteredStudents.length})</option>
-            </select>
-          </div>
+          <span className="text-xs text-gray-400 hidden sm:inline">
+            All students listed continuously
+          </span>
         </div>
 
         {/* Scrollable Table Content */}
@@ -980,7 +953,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-xs">
-              {paginatedStudents.length === 0 ? (
+              {filteredStudents.length === 0 ? (
                 <tr>
                   <td colSpan={10} className="py-16 text-center text-gray-400">
                     <FileText className="w-10 h-10 mx-auto text-gray-300 mb-2" />
@@ -989,10 +962,8 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   </td>
                 </tr>
               ) : (
-                paginatedStudents.map((student, idx) => {
-                  const serialNo = pageSize === -1
-                    ? idx + 1
-                    : (currentPage - 1) * pageSize + idx + 1;
+                filteredStudents.map((student, idx) => {
+                  const serialNo = idx + 1;
 
                   return (
                     <tr
@@ -1075,51 +1046,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             </tbody>
           </table>
         </div>
-
-        {/* ── Pagination Controls ───────────────────────────────────────── */}
-        {totalPages > 1 && (
-          <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between bg-gray-50/50">
-            <span className="text-xs text-gray-500">
-              Showing{" "}
-              <span className="font-bold text-gray-800">
-                {(currentPage - 1) * pageSize + 1}
-              </span>{" "}
-              to{" "}
-              <span className="font-bold text-gray-800">
-                {Math.min(currentPage * pageSize, filteredStudents.length)}
-              </span>{" "}
-              of{" "}
-              <span className="font-bold text-gray-800">
-                {filteredStudents.length}
-              </span>{" "}
-              students
-            </span>
-
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-                disabled={currentPage === 1}
-                className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                title="Previous page"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-
-              <span className="text-xs font-semibold text-gray-700 px-2">
-                Page {currentPage} of {totalPages}
-              </span>
-
-              <button
-                onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-                disabled={currentPage === totalPages}
-                className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                title="Next page"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ── Document Preview Modal ─────────────────────────────────────── */}
