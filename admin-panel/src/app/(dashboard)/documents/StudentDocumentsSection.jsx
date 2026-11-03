@@ -104,19 +104,19 @@ function getOtherDocsForStudent(studentDocs = [], allDocTypes = []) {
   return { otherDocs, otherDocTypes };
 }
 
-// Column widths for spreadsheet freeze-panes
+// Column widths for spreadsheet freeze-panes (Ultra-compact spreadsheet layout)
 const COL_WIDTHS = {
-  sr: 46,
-  class: 82,
-  gr: 76,
-  name: 220,
-  fatherName: 160,
-  motherName: 160,
-  dob: 95,
-  mobile: 145,
-  address: 200,
-  doc: 165,
-  other: 195,
+  sr: 38,
+  class: 66,
+  gr: 66,
+  name: 185,
+  fatherName: 140,
+  motherName: 140,
+  dob: 85,
+  mobile: 125,
+  address: 160,
+  doc: 142,
+  other: 160,
 };
 
 // Left offsets for frozen columns
@@ -745,7 +745,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     return (
       <td
         key={category}
-        className={`border-r border-b border-slate-200 transition-colors align-middle relative p-1.5 ${
+        className={`border-r border-b border-slate-200 transition-colors align-middle relative p-1 ${
           isUploaded
             ? "bg-emerald-50/40 hover:bg-emerald-100/60"
             : isNotRequired
@@ -768,36 +768,36 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         })}
       >
         {isThisUploading ? (
-          <div className="flex items-center justify-center gap-1.5 py-1 text-[11px] font-semibold text-school-navy">
-            <RefreshCw className="w-3 h-3 animate-spin" />
+          <div className="flex items-center justify-center gap-1 py-1 text-[10.5px] font-semibold text-school-navy">
+            <RefreshCw className="w-2.5 h-2.5 animate-spin" />
             <span>Saving...</span>
           </div>
         ) : isUploaded ? (
-          /* State 1: OK / DONE - OK ENLARGED BIG, ACTIONS FULLY RESTORED, DOWNLOAD SMALL LIKE UPLOAD */
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1.5 text-emerald-800 tracking-wide">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                <span className="text-sm font-black">OK</span>
-                {!hasFile && <span className="text-[9.5px] font-semibold text-emerald-700 font-sans ml-0.5">(Verified)</span>}
+          /* State 1: OK / DONE - ULTRA-COMPACT */
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between leading-none">
+              <span className="inline-flex items-center gap-1 text-emerald-800 tracking-tight">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                <span className="text-xs font-black">OK</span>
+                {!hasFile && <span className="text-[9px] font-semibold text-emerald-700/80 font-sans ml-0.5">(Verified)</span>}
               </span>
 
               <div className="flex items-center gap-0.5">
                 {hasFile && (
                   <button
                     onClick={() => handlePreview(student, colConfig.title, doc.file)}
-                    className="p-1 text-slate-400 hover:text-school-navy hover:bg-slate-200/60 rounded transition-colors cursor-pointer"
+                    className="p-0.5 text-slate-400 hover:text-school-navy hover:bg-slate-200/60 rounded transition-colors cursor-pointer"
                     title="Quick Preview"
                   >
-                    <Eye className="w-3.5 h-3.5" />
+                    <Eye className="w-3 h-3" />
                   </button>
                 )}
                 <button
                   onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
-                  className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+                  className="p-0.5 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
                   title="More actions"
                 >
-                  <MoreHorizontal className="w-3.5 h-3.5" />
+                  <MoreHorizontal className="w-3 h-3" />
                 </button>
               </div>
             </div>
@@ -807,22 +807,22 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                 <button
                   onClick={() => handleDownload(student, colConfig.title, doc.file)}
                   disabled={isThisDownloading}
-                  className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-1 text-[10.5px] font-bold text-white bg-school-navy hover:bg-school-navy-dark active:bg-school-navy rounded border border-school-navy shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
+                  className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-bold text-white bg-school-navy hover:bg-school-navy-dark active:bg-school-navy rounded shadow-2xs transition-colors disabled:opacity-50 cursor-pointer leading-tight"
                   title="Download Document"
                 >
                   {isThisDownloading ? (
-                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    <RefreshCw className="w-2.5 h-2.5 animate-spin" />
                   ) : (
-                    <Download className="w-3 h-3" />
+                    <Download className="w-2.5 h-2.5" />
                   )}
                   <span>Download</span>
                 </button>
 
                 <label
-                  className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-1 text-[10.5px] font-bold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors"
+                  className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-bold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors leading-tight"
                   title="Replace / Re-upload File"
                 >
-                  <Upload className="w-3 h-3 text-school-navy" />
+                  <Upload className="w-2.5 h-2.5 text-school-navy" />
                   <span>Upload</span>
                   <input
                     type="file"
@@ -834,8 +834,8 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               </div>
             ) : (
               <div className="flex items-center gap-1">
-                <label className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-1 text-[10.5px] font-bold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors">
-                  <Upload className="w-3 h-3 text-slate-500" />
+                <label className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-bold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors leading-tight">
+                  <Upload className="w-2.5 h-2.5 text-slate-500" />
                   <span>Attach File</span>
                   <input
                     type="file"
@@ -849,16 +849,16 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
             {/* Cell Context Menu */}
             {isMenuOpen && (
-              <div className="absolute right-1 top-full mt-1 w-44 bg-white rounded-lg shadow-xl border border-slate-300 p-1.5 z-50 space-y-1 text-xs">
+              <div className="absolute right-1 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-slate-300 p-1.5 z-50 space-y-1 text-xs">
                 <button
                   onClick={() => handleMarkPending(student, category)}
-                  className="w-full text-left px-2 py-1 hover:bg-red-50 text-red-700 font-semibold rounded text-[11px] flex items-center gap-1.5"
+                  className="w-full text-left px-2 py-1 hover:bg-red-50 text-red-700 font-semibold rounded text-[10.5px] flex items-center gap-1.5"
                 >
                   <RotateCcw className="w-3 h-3" /> Mark as Pending
                 </button>
                 <button
                   onClick={() => handleMarkNotRequired(student, category)}
-                  className="w-full text-left px-2 py-1 hover:bg-slate-100 text-slate-700 font-medium rounded text-[11px] flex items-center gap-1.5"
+                  className="w-full text-left px-2 py-1 hover:bg-slate-100 text-slate-700 font-medium rounded text-[10.5px] flex items-center gap-1.5"
                 >
                   <MinusCircle className="w-3 h-3 text-slate-400" /> Mark as Not Required (—)
                 </button>
@@ -866,72 +866,17 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             )}
           </div>
         ) : isNotRequired ? (
-          /* State 2: NOT REQUIRED / EXEMPT (—) */
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 tracking-tight">
-                <span className="font-mono text-slate-400 font-bold text-xs">—</span>
-                <span>Not Required</span>
+          /* State 2: NOT REQUIRED / EXEMPT (—) - ULTRA-COMPACT */
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between leading-none">
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 tracking-tight">
+                <span className="font-mono text-slate-400 font-extrabold text-[11px]">—</span>
+                <span>Exempt</span>
               </span>
 
               <button
                 onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
                 className="p-0.5 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
-                title="Change status"
-              >
-                <MoreHorizontal className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => handleMarkDone(student, category)}
-                className="flex-1 inline-flex items-center justify-center gap-0.5 py-1 px-1 text-[10.5px] font-semibold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-300 rounded shadow-2xs transition-colors cursor-pointer"
-                title="Mark as OK / Submitted"
-              >
-                <Check className="w-2.5 h-2.5 text-emerald-700" />
-                <span>Mark OK</span>
-              </button>
-
-              <label
-                className="flex-1 inline-flex items-center justify-center gap-0.5 py-1 px-1 text-[10.5px] font-semibold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors"
-                title="Upload Document"
-              >
-                <Upload className="w-2.5 h-2.5 text-school-navy" />
-                <span>Upload</span>
-                <input
-                  type="file"
-                  className="hidden"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={(e) => handleFileUpload(student, category, e)}
-                />
-              </label>
-            </div>
-
-            {/* Cell Context Menu */}
-            {isMenuOpen && (
-              <div className="absolute right-1 top-full mt-1 w-44 bg-white rounded-lg shadow-xl border border-slate-300 p-1.5 z-50 space-y-1 text-xs">
-                <button
-                  onClick={() => handleMarkPending(student, category)}
-                  className="w-full text-left px-2 py-1 hover:bg-amber-50 text-amber-800 font-semibold rounded text-[11px] flex items-center gap-1.5"
-                >
-                  <Clock className="w-3 h-3 text-amber-600" /> Mark as Required (Pending)
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          /* State 3: UPLOAD PENDING */
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-800 tracking-tight">
-                <Clock className="w-3 h-3 text-amber-600 flex-shrink-0" />
-                Upload Pending
-              </span>
-
-              <button
-                onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
-                className="p-0.5 text-slate-400 hover:text-slate-600 rounded"
                 title="Change status"
               >
                 <MoreHorizontal className="w-3 h-3" />
@@ -941,15 +886,15 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             <div className="flex items-center gap-1">
               <button
                 onClick={() => handleMarkDone(student, category)}
-                className="flex-1 inline-flex items-center justify-center gap-0.5 py-1 px-1 text-[10.5px] font-bold text-emerald-800 bg-white hover:bg-emerald-100/80 active:bg-emerald-200 border border-emerald-300 rounded shadow-2xs transition-colors"
-                title="Mark as Done / OK"
+                className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-semibold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-300 rounded shadow-2xs transition-colors cursor-pointer leading-tight"
+                title="Mark as OK / Submitted"
               >
                 <Check className="w-2.5 h-2.5 text-emerald-700" />
                 <span>Mark OK</span>
               </button>
 
               <label
-                className="flex-1 inline-flex items-center justify-center gap-0.5 py-1 px-1 text-[10.5px] font-bold text-school-navy bg-white hover:bg-blue-100/80 active:bg-blue-200 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors"
+                className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-semibold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors leading-tight"
                 title="Upload Document"
               >
                 <Upload className="w-2.5 h-2.5 text-school-navy" />
@@ -965,10 +910,65 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
             {/* Cell Context Menu */}
             {isMenuOpen && (
-              <div className="absolute right-1 top-full mt-1 w-44 bg-white rounded-lg shadow-xl border border-slate-300 p-1.5 z-50 space-y-1 text-xs">
+              <div className="absolute right-1 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-slate-300 p-1.5 z-50 space-y-1 text-xs">
+                <button
+                  onClick={() => handleMarkPending(student, category)}
+                  className="w-full text-left px-2 py-1 hover:bg-amber-50 text-amber-800 font-semibold rounded text-[10.5px] flex items-center gap-1.5"
+                >
+                  <Clock className="w-3 h-3 text-amber-600" /> Mark as Required (Pending)
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          /* State 3: UPLOAD PENDING - ULTRA-COMPACT */
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between leading-none">
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 tracking-tight">
+                <Clock className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
+                <span>Pending</span>
+              </span>
+
+              <button
+                onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
+                className="p-0.5 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+                title="Change status"
+              >
+                <MoreHorizontal className="w-3 h-3" />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handleMarkDone(student, category)}
+                className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-bold text-emerald-800 bg-white hover:bg-emerald-100/80 active:bg-emerald-200 border border-emerald-300 rounded shadow-2xs transition-colors cursor-pointer leading-tight"
+                title="Mark as Done / OK"
+              >
+                <Check className="w-2.5 h-2.5 text-emerald-700" />
+                <span>Mark OK</span>
+              </button>
+
+              <label
+                className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-bold text-school-navy bg-white hover:bg-blue-100/80 active:bg-blue-200 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors leading-tight"
+                title="Upload Document"
+              >
+                <Upload className="w-2.5 h-2.5 text-school-navy" />
+                <span>Upload</span>
+                <input
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.jpg,.jpeg,.png"
+                  onChange={(e) => handleFileUpload(student, category, e)}
+                />
+              </label>
+            </div>
+
+            {/* Cell Context Menu */}
+            {isMenuOpen && (
+              <div className="absolute right-1 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-slate-300 p-1.5 z-50 space-y-1 text-xs">
                 <button
                   onClick={() => handleMarkNotRequired(student, category)}
-                  className="w-full text-left px-2 py-1 hover:bg-slate-100 text-slate-700 font-medium rounded text-[11px] flex items-center gap-1.5"
+                  className="w-full text-left px-2 py-1 hover:bg-slate-100 text-slate-700 font-medium rounded text-[10.5px] flex items-center gap-1.5"
                 >
                   <MinusCircle className="w-3 h-3 text-slate-400" /> Mark as Not Required (—)
                 </button>
@@ -990,24 +990,24 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     return (
       <td
         key="other_docs"
-        className={`border-r border-b border-slate-200 transition-colors align-middle relative p-1.5 ${hasAnyUploaded ? "bg-emerald-50/30 hover:bg-emerald-100/50" : "bg-amber-50/30 hover:bg-amber-100/40"}`}
+        className={`border-r border-b border-slate-200 transition-colors align-middle relative p-1 ${hasAnyUploaded ? "bg-emerald-50/30 hover:bg-emerald-100/50" : "bg-amber-50/30 hover:bg-amber-100/40"}`}
         style={{ width: COL_WIDTHS.other, minWidth: COL_WIDTHS.other, maxWidth: COL_WIDTHS.other }}
       >
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-0.5">
           {hasAnyUploaded ? (
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {uploadedOthers.map((d, idx) => {
                 const hasFile = Boolean(d.file);
                 const isThisDownloading = downloadingKey === `${student._studentId}_${d.file}`;
 
                 return (
-                  <div key={d.name || idx} className="flex items-center justify-between gap-1 bg-white/90 p-1 rounded border border-slate-200 shadow-2xs">
-                    <span className="font-semibold text-slate-800 truncate text-[10.5px] max-w-[105px]" title={d.name}>
+                  <div key={d.name || idx} className="flex items-center justify-between gap-1 bg-white/90 p-0.5 rounded border border-slate-200 shadow-2xs">
+                    <span className="font-semibold text-slate-800 truncate text-[10px] max-w-[80px]" title={d.name}>
                       {d.name}
                     </span>
 
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <span className="text-[10.5px] text-emerald-800 font-extrabold px-1.5 py-0.5 rounded bg-emerald-100 border border-emerald-300 shadow-2xs">
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <span className="text-[9.5px] text-emerald-800 font-extrabold px-1 py-0.2 rounded bg-emerald-100 border border-emerald-300">
                         OK
                       </span>
 
@@ -1015,13 +1015,13 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                         <button
                           onClick={() => handleDownload(student, d.name, d.file)}
                           disabled={isThisDownloading}
-                          className="p-1 bg-school-navy hover:bg-school-navy-dark text-white rounded text-[10px] transition-colors cursor-pointer"
+                          className="p-0.5 bg-school-navy hover:bg-school-navy-dark text-white rounded text-[9.5px] transition-colors cursor-pointer"
                           title={`Download ${d.name}`}
                         >
                           {isThisDownloading ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Download className="w-2.5 h-2.5" />}
                         </button>
                       ) : (
-                        <label className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded cursor-pointer transition-colors" title={`Attach file for ${d.name}`}>
+                        <label className="p-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded cursor-pointer transition-colors" title={`Attach file for ${d.name}`}>
                           <Upload className="w-2.5 h-2.5" />
                           <input
                             type="file"
@@ -1037,21 +1037,21 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               })}
             </div>
           ) : (
-            <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-800 tracking-tight">
-              <Clock className="w-3 h-3 text-amber-600 flex-shrink-0" />
-              Upload Pending
-            </span>
+            <div className="flex items-center gap-1 text-[10px] font-bold text-amber-800 leading-none py-0.5">
+              <Clock className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
+              <span>Pending</span>
+            </div>
           )}
 
           {/* Manage Others Button */}
           <div className="relative">
             <button
               onClick={() => setOtherDropdownOpen(isOpen ? null : student._studentId)}
-              className="w-full inline-flex items-center justify-center gap-1 py-0.5 px-1.5 text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded shadow-2xs transition-colors"
+              className="w-full inline-flex items-center justify-center gap-1 py-0.5 px-1 text-[9.5px] font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded shadow-2xs transition-colors"
             >
-              <Plus className="w-2.5 h-2.5" />
+              <Plus className="w-2 h-2" />
               <span>Manage Others</span>
-              <ChevronDown className="w-2.5 h-2.5 text-slate-400" />
+              <ChevronDown className="w-2 h-2 text-slate-400" />
             </button>
 
             {/* Popover Menu */}
@@ -1141,35 +1141,35 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     <div
       className={`font-sans transition-all duration-200 ${
         isFullscreen
-          ? "fixed inset-0 z-[50] bg-slate-100 flex flex-col h-screen w-screen p-3 sm:p-4 overflow-hidden gap-2.5"
-          : "flex flex-col gap-3"
+          ? "fixed inset-0 z-[50] bg-slate-100 flex flex-col h-screen w-screen p-2 sm:p-2.5 overflow-hidden gap-1.5"
+          : "flex flex-col gap-1.5"
       }`}
     >
       {/* ── Dedicated Full Screen Header Bar (Only in Full Screen) ─────── */}
       {isFullscreen && (
-        <div className="bg-white rounded-xl border border-slate-300 px-3.5 py-2 flex items-center justify-between shadow-2xs flex-shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-school-navy text-white flex items-center justify-center shadow-xs">
-              <FileSpreadsheet className="w-4 h-4" />
+        <div className="bg-white rounded-lg border border-slate-300 px-3 py-1.5 flex items-center justify-between shadow-2xs flex-shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-md bg-school-navy text-white flex items-center justify-center shadow-xs">
+              <FileSpreadsheet className="w-3.5 h-3.5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-extrabold text-slate-900 tracking-tight">
+              <div className="flex items-center gap-1.5">
+                <h2 className="text-xs font-extrabold text-slate-900 tracking-tight">
                   Document Collection Spreadsheet
                 </h2>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  FULL SCREEN MODE
+                <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                  FULL SCREEN
                 </span>
               </div>
-              <p className="text-[10px] text-slate-500 font-medium">
-                Clean and distraction-free view • Press <kbd className="font-mono bg-slate-100 px-1 py-0.5 rounded border border-slate-300 text-[9.5px]">Esc</kbd> to exit full screen
+              <p className="text-[9.5px] text-slate-500 font-medium">
+                Clean and distraction-free view • Press <kbd className="font-mono bg-slate-100 px-1 py-0.2 rounded border border-slate-300 text-[9px]">Esc</kbd> to exit
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             {/* Quick Metrics Strip */}
-            <div className="hidden lg:flex items-center gap-2 text-[11px] bg-slate-50 border border-slate-200 rounded-lg px-3 py-1 font-medium">
+            <div className="hidden lg:flex items-center gap-1.5 text-[10.5px] bg-slate-50 border border-slate-200 rounded-md px-2.5 py-0.5 font-medium">
               <span><strong>{stats.totalStudents}</strong> Students</span>
               <span className="text-slate-300">•</span>
               <span className="text-emerald-700 font-bold">{stats.totalUploadedDocs} OK</span>
@@ -1184,107 +1184,107 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             {/* Exit Full Screen Button */}
             <button
               onClick={toggleFullScreen}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 px-2.5 py-1 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-md text-[11px] font-bold shadow-xs transition-colors cursor-pointer"
               title="Exit Full Screen (Esc)"
             >
-              <Minimize2 className="w-3.5 h-3.5" />
-              <span>Exit Full Screen (Esc)</span>
+              <Minimize2 className="w-3 h-3" />
+              <span>Exit (Esc)</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* ── Spreadsheet KPI Metric Cards (Only in Normal Embedded Mode) ─── */}
+      {/* ── Spreadsheet KPI Metric Cards (Only in Normal Embedded Mode - Compact) ─── */}
       {!isFullscreen && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-          <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
+          <div className="bg-white rounded-lg border border-slate-200 px-2.5 py-1.5 flex items-center justify-between shadow-2xs">
             <div>
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Students</p>
-              <p className="text-xl font-extrabold text-slate-900 mt-0.5">{stats.totalStudents}</p>
-              <p className="text-[10px] text-slate-400">Enrolled Roster</p>
+              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Total Students</p>
+              <p className="text-base font-extrabold text-slate-900 leading-tight">{stats.totalStudents}</p>
+              <p className="text-[9px] text-slate-400">Enrolled Roster</p>
             </div>
-            <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-school-navy">
-              <Table className="w-4 h-4" />
+            <div className="w-7 h-7 rounded-md bg-slate-100 flex items-center justify-center text-school-navy">
+              <Table className="w-3.5 h-3.5" />
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
+          <div className="bg-white rounded-lg border border-slate-200 px-2.5 py-1.5 flex items-center justify-between shadow-2xs">
             <div>
-              <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">Fully Collected</p>
-              <p className="text-xl font-extrabold text-emerald-700 mt-0.5">{stats.fullyDoneStudents}</p>
-              <p className="text-[10px] text-emerald-600">All docs verified</p>
+              <p className="text-[9px] font-bold text-emerald-700 uppercase tracking-wider">Fully Collected</p>
+              <p className="text-base font-extrabold text-emerald-700 leading-tight">{stats.fullyDoneStudents}</p>
+              <p className="text-[9px] text-emerald-600">All docs verified</p>
             </div>
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
-              <ShieldCheck className="w-4 h-4" />
+            <div className="w-7 h-7 rounded-md bg-emerald-50 flex items-center justify-center text-emerald-600">
+              <ShieldCheck className="w-3.5 h-3.5" />
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
+          <div className="bg-white rounded-lg border border-slate-200 px-2.5 py-1.5 flex items-center justify-between shadow-2xs">
             <div>
-              <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">Documents OK</p>
-              <p className="text-xl font-extrabold text-blue-700 mt-0.5">{stats.totalUploadedDocs}</p>
-              <p className="text-[10px] text-blue-600">{stats.completionRate}% completion rate</p>
+              <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wider">Documents OK</p>
+              <p className="text-base font-extrabold text-blue-700 leading-tight">{stats.totalUploadedDocs}</p>
+              <p className="text-[9px] text-blue-600">{stats.completionRate}% completion</p>
             </div>
-            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
-              <CheckCircle2 className="w-4 h-4" />
+            <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center text-blue-600">
+              <CheckCircle2 className="w-3.5 h-3.5" />
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
+          <div className="bg-white rounded-lg border border-slate-200 px-2.5 py-1.5 flex items-center justify-between shadow-2xs">
             <div>
-              <p className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Not Required (—)</p>
-              <p className="text-xl font-extrabold text-slate-700 mt-0.5">{stats.totalNotRequiredDocs}</p>
-              <p className="text-[10px] text-slate-500">Exempt (e.g. TC pre-pri)</p>
+              <p className="text-[9px] font-bold text-slate-600 uppercase tracking-wider">Not Required (—)</p>
+              <p className="text-base font-extrabold text-slate-700 leading-tight">{stats.totalNotRequiredDocs}</p>
+              <p className="text-[9px] text-slate-500">Exempt</p>
             </div>
-            <div className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600">
-              <MinusCircle className="w-4 h-4" />
+            <div className="w-7 h-7 rounded-md bg-slate-100 flex items-center justify-center text-slate-600">
+              <MinusCircle className="w-3.5 h-3.5" />
             </div>
           </div>
 
-          <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs col-span-2 sm:col-span-1">
+          <div className="bg-white rounded-lg border border-slate-200 px-2.5 py-1.5 flex items-center justify-between shadow-2xs col-span-2 sm:col-span-1">
             <div>
-              <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">Upload Pending</p>
-              <p className="text-xl font-extrabold text-amber-700 mt-0.5">{stats.totalPendingDocs}</p>
-              <p className="text-[10px] text-amber-600">Action required</p>
+              <p className="text-[9px] font-bold text-amber-700 uppercase tracking-wider">Upload Pending</p>
+              <p className="text-base font-extrabold text-amber-700 leading-tight">{stats.totalPendingDocs}</p>
+              <p className="text-[9px] text-amber-600">Action required</p>
             </div>
-            <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
-              <Clock className="w-4 h-4" />
+            <div className="w-7 h-7 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
+              <Clock className="w-3.5 h-3.5" />
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Spreadsheet Toolbar ────────────────────────────────────────── */}
-      <div className="bg-slate-100 rounded-xl border border-slate-300 p-2.5 flex flex-col md:flex-row md:items-center justify-between gap-2 shadow-2xs">
+      {/* ── Spreadsheet Toolbar (Compact) ─────────────────────────── */}
+      <div className="bg-slate-100 rounded-lg border border-slate-300 p-1.5 sm:p-2 flex flex-col md:flex-row md:items-center justify-between gap-1.5 shadow-2xs">
         {/* Left Toolbar Controls */}
-        <div className="flex flex-wrap items-center gap-2 flex-1">
+        <div className="flex flex-wrap items-center gap-1.5 flex-1">
           {/* Search Box */}
-          <div className="relative min-w-[200px] max-w-xs flex-1">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <div className="relative min-w-[180px] max-w-xs flex-1">
+            <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search name, GR, father, phone..."
-              className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-school-navy focus:ring-1 focus:ring-school-navy"
+              className="w-full pl-7 pr-6 py-1 text-[11px] bg-white border border-slate-300 rounded-md focus:outline-none focus:border-school-navy focus:ring-1 focus:ring-school-navy"
             />
             {search && (
               <button
                 onClick={() => setSearch("")}
                 className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
-                <X className="w-3 h-3" />
+                <X className="w-2.5 h-2.5" />
               </button>
             )}
           </div>
 
           {/* Class Selector */}
-          <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1">
-            <span className="text-[11px] font-bold text-slate-500 uppercase">Class:</span>
+          <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-md px-1.5 py-0.5">
+            <span className="text-[10px] font-bold text-slate-500 uppercase">Class:</span>
             <select
               value={classFilter}
               onChange={(e) => setClassFilter(e.target.value)}
-              className="text-xs bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+              className="text-[11px] bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
             >
               <option value="All">All ({localStudents.length})</option>
               {CLASSES_LIST.map((cls) => (
@@ -1296,27 +1296,27 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
           </div>
 
           {/* Status Filter */}
-          <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1">
-            <span className="text-[11px] font-bold text-slate-500 uppercase">Status:</span>
+          <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-md px-1.5 py-0.5">
+            <span className="text-[10px] font-bold text-slate-500 uppercase">Status:</span>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="text-xs bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+              className="text-[11px] bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
             >
-              <option value="all">All Rows</option>
+              <option value="all">All</option>
               <option value="pending">Pending Only</option>
-              <option value="done">Completed (OK) Only</option>
-              <option value="not_required">Not Required (—) Only</option>
+              <option value="done">OK Only</option>
+              <option value="not_required">Exempt (—) Only</option>
             </select>
           </div>
 
           {/* Missing Document Filter */}
-          <div className="hidden lg:flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1">
-            <span className="text-[11px] font-bold text-slate-500 uppercase">Missing:</span>
+          <div className="hidden lg:flex items-center gap-1 bg-white border border-slate-300 rounded-md px-1.5 py-0.5">
+            <span className="text-[10px] font-bold text-slate-500 uppercase">Missing:</span>
             <select
               value={docColumnFilter}
               onChange={(e) => setDocColumnFilter(e.target.value)}
-              className="text-xs bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+              className="text-[11px] bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
             >
               <option value="all">Any</option>
               <option value="birth">Birth Certificate</option>
@@ -1329,54 +1329,54 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         </div>
 
         {/* Right Toolbar Controls */}
-        <div className="flex flex-wrap items-center gap-1.5 self-end md:self-auto flex-shrink-0">
+        <div className="flex flex-wrap items-center gap-1 self-end md:self-auto flex-shrink-0">
           {/* Toggle Parent & Contact Info Columns */}
           <button
             onClick={() => setShowContactDetails(!showContactDetails)}
-            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition-colors ${
+            className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-semibold border transition-colors ${
               showContactDetails
                 ? "bg-school-navy text-white border-school-navy shadow-2xs"
                 : "bg-white text-slate-700 border-slate-300 hover:bg-slate-200"
             }`}
             title="Toggle Father, Mother, DOB, Mobile, Address columns"
           >
-            <Users className="w-3.5 h-3.5" />
-            <span>{showContactDetails ? "Hide Contact Info" : "Show Contact Info"}</span>
+            <Users className="w-3 h-3" />
+            <span>{showContactDetails ? "Hide Contact" : "Contact Info"}</span>
           </button>
 
           {/* Sync from CSV Modal Trigger */}
           <button
             onClick={() => setIsSyncModalOpen(true)}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 text-school-navy hover:bg-blue-100 border border-blue-300 rounded-lg text-xs font-bold transition-colors shadow-2xs"
+            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-school-navy hover:bg-blue-100 border border-blue-300 rounded-md text-[11px] font-bold transition-colors shadow-2xs"
             title="Synchronize from Document Collection Report CSV"
           >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-school-navy" />
+            <FileSpreadsheet className="w-3 h-3 text-school-navy" />
             <span>Sync CSV</span>
           </button>
 
           {/* Export to Excel (.xlsx) matching School Report */}
           <button
             onClick={handleExportSchoolReport}
-            className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors"
+            className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white rounded-md text-[11px] font-bold shadow-2xs transition-colors"
             title="Download Document Collection Report (.xlsx)"
           >
-            <Download className="w-3.5 h-3.5" />
-            <span>Export Report</span>
+            <Download className="w-3 h-3" />
+            <span>Export</span>
           </button>
 
           {/* Refresh Data */}
           <button
             onClick={() => onRefresh?.()}
-            className="p-1.5 bg-white hover:bg-slate-200 active:bg-slate-300 text-slate-700 border border-slate-300 rounded-lg transition-colors"
+            className="p-1 bg-white hover:bg-slate-200 active:bg-slate-300 text-slate-700 border border-slate-300 rounded-md transition-colors"
             title="Refresh from database"
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <RefreshCw className="w-3 h-3" />
           </button>
 
           {/* Full Screen Mode Toggle */}
           <button
             onClick={toggleFullScreen}
-            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer ${
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold transition-all shadow-2xs cursor-pointer ${
               isFullscreen
                 ? "bg-slate-900 hover:bg-slate-800 text-white shadow-xs"
                 : "bg-white hover:bg-slate-200 active:bg-slate-300 text-school-navy border border-slate-300"
@@ -1385,12 +1385,12 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
           >
             {isFullscreen ? (
               <>
-                <Minimize2 className="w-3.5 h-3.5" />
-                <span>Exit Full Screen</span>
+                <Minimize2 className="w-3 h-3" />
+                <span>Exit</span>
               </>
             ) : (
               <>
-                <Maximize2 className="w-3.5 h-3.5" />
+                <Maximize2 className="w-3 h-3" />
                 <span>Full Screen</span>
               </>
             )}
@@ -1398,14 +1398,14 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         </div>
       </div>
 
-      {/* ── Spreadsheet Formula / Active Cell Indicator ───────────────── */}
-      <div className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg flex items-center justify-between text-xs text-slate-600 shadow-2xs">
-        <div className="flex items-center gap-2 overflow-hidden text-ellipsis whitespace-nowrap">
-          <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 border border-slate-300 text-slate-700">
+      {/* ── Spreadsheet Formula / Active Cell Indicator (Compact) ───────── */}
+      <div className="bg-white border border-slate-300 px-2 py-1 rounded-md flex items-center justify-between text-[11px] text-slate-600 shadow-2xs leading-none">
+        <div className="flex items-center gap-1.5 overflow-hidden text-ellipsis whitespace-nowrap">
+          <span className="font-mono text-[10px] font-bold px-1 py-0.2 rounded bg-slate-100 border border-slate-300 text-slate-700">
             fx
           </span>
           {activeCellInfo ? (
-            <span className="text-slate-800">
+            <span className="text-slate-800 truncate">
               <strong className="text-school-navy font-bold">{activeCellInfo.student}</strong>
               <span className="text-slate-400 mx-1">|</span>
               Class: <strong>{activeCellInfo.class || "—"}</strong>
@@ -1436,33 +1436,33 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               </strong>
             </span>
           ) : (
-            <span className="text-slate-400 italic">
-              Hover over or click any document cell to inspect details
+            <span className="text-slate-400 italic text-[10.5px]">
+              Hover or click any cell to inspect
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-3 text-[11px] font-medium text-slate-500 flex-shrink-0">
+        <div className="flex items-center gap-2 text-[10.5px] font-medium text-slate-500 flex-shrink-0">
           <span>Rows: <strong className="text-slate-800">{filteredStudents.length}</strong> / {localStudents.length}</span>
           <span className="text-slate-300">|</span>
-          <span>Columns: <strong className="text-slate-800">{showContactDetails ? "15 (Full)" : "10 (Standard)"}</strong></span>
+          <span>Cols: <strong className="text-slate-800">{showContactDetails ? "15" : "10"}</strong></span>
         </div>
       </div>
 
       {/* ── Spreadsheet Grid with Freeze Panes ────────────────────────── */}
       <div
-        className={`border-2 border-slate-300 rounded-xl overflow-hidden bg-white shadow-xs flex flex-col ${
-          isFullscreen ? "flex-1 min-h-0" : "max-h-[76vh]"
+        className={`border-2 border-slate-300 rounded-lg overflow-hidden bg-white shadow-xs flex flex-col ${
+          isFullscreen ? "flex-1 min-h-0" : "max-h-[82vh]"
         }`}
       >
         <div ref={tableScrollRef} className="overflow-auto flex-1 relative">
           <table className="border-separate border-spacing-0 w-full text-left text-xs">
-            {/* Table Header (Sticky Top) */}
+            {/* Table Header (Sticky Top - Compact) */}
             <thead className="sticky top-0 z-30 select-none">
-              <tr className="bg-slate-200/95 backdrop-blur-xs text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+              <tr className="bg-slate-200/95 backdrop-blur-xs text-[10.5px] font-bold text-slate-700 uppercase tracking-wider">
                 {/* Column A: SR NO (Frozen 1) */}
                 <th
-                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 text-center py-2 px-1 text-slate-700"
+                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 text-center py-1.5 px-0.5 text-slate-700"
                   style={{
                     left: STICKY_OFFSETS.sr,
                     width: COL_WIDTHS.sr,
@@ -1470,13 +1470,13 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                     maxWidth: COL_WIDTHS.sr,
                   }}
                 >
-                  <div className="text-[9px] text-slate-400 font-mono font-normal">A</div>
-                  <span>SR</span>
+                  <div className="text-[8.5px] text-slate-400 font-mono font-normal">A</div>
+                  <span>#</span>
                 </th>
 
                 {/* Column B: CLASS (Frozen 2) */}
                 <th
-                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 py-2 px-2 text-slate-700"
+                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 py-1.5 px-1 text-slate-700"
                   style={{
                     left: STICKY_OFFSETS.class,
                     width: COL_WIDTHS.class,
@@ -1484,13 +1484,13 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                     maxWidth: COL_WIDTHS.class,
                   }}
                 >
-                  <div className="text-[9px] text-slate-400 font-mono font-normal">B</div>
+                  <div className="text-[8.5px] text-slate-400 font-mono font-normal">B</div>
                   <span>CLASS</span>
                 </th>
 
                 {/* Column C: GR NO (Frozen 3) */}
                 <th
-                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 text-center py-2 px-1.5 text-slate-700"
+                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 text-center py-1.5 px-1 text-slate-700"
                   style={{
                     left: STICKY_OFFSETS.gr,
                     width: COL_WIDTHS.gr,
@@ -1498,13 +1498,13 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                     maxWidth: COL_WIDTHS.gr,
                   }}
                 >
-                  <div className="text-[9px] text-slate-400 font-mono font-normal">C</div>
+                  <div className="text-[8.5px] text-slate-400 font-mono font-normal">C</div>
                   <span>GR NO</span>
                 </th>
 
                 {/* Column D: NAME (Frozen 4 - Right Border Separator) */}
                 <th
-                  className="sticky z-40 bg-slate-200 border-r-2 border-r-slate-400 border-b-2 border-slate-300 py-2 px-2.5 text-slate-700 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)]"
+                  className="sticky z-40 bg-slate-200 border-r-2 border-r-slate-400 border-b-2 border-slate-300 py-1.5 px-2 text-slate-700 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)]"
                   style={{
                     left: STICKY_OFFSETS.name,
                     width: COL_WIDTHS.name,
@@ -1512,7 +1512,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                     maxWidth: COL_WIDTHS.name,
                   }}
                 >
-                  <div className="text-[9px] text-slate-400 font-mono font-normal">D</div>
+                  <div className="text-[8.5px] text-slate-400 font-mono font-normal">D</div>
                   <span>STUDENT NAME</span>
                 </th>
 
@@ -1520,39 +1520,39 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                 {showContactDetails && (
                   <>
                     <th
-                      className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
+                      className="border-r border-b-2 border-slate-300 py-1 px-1.5 text-slate-800 bg-slate-100"
                       style={{ width: COL_WIDTHS.fatherName, minWidth: COL_WIDTHS.fatherName, maxWidth: COL_WIDTHS.fatherName }}
                     >
-                      <div className="text-[9px] text-slate-400 font-mono font-normal">E</div>
-                      <span className="text-[11px] block">FATHER NAME</span>
+                      <div className="text-[8.5px] text-slate-400 font-mono font-normal">E</div>
+                      <span className="text-[10px] block truncate">FATHER NAME</span>
                     </th>
                     <th
-                      className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
+                      className="border-r border-b-2 border-slate-300 py-1 px-1.5 text-slate-800 bg-slate-100"
                       style={{ width: COL_WIDTHS.motherName, minWidth: COL_WIDTHS.motherName, maxWidth: COL_WIDTHS.motherName }}
                     >
-                      <div className="text-[9px] text-slate-400 font-mono font-normal">F</div>
-                      <span className="text-[11px] block">MOTHER NAME</span>
+                      <div className="text-[8.5px] text-slate-400 font-mono font-normal">F</div>
+                      <span className="text-[10px] block truncate">MOTHER NAME</span>
                     </th>
                     <th
-                      className="border-r border-b-2 border-slate-300 py-2 px-1 text-center text-slate-800 bg-slate-100"
+                      className="border-r border-b-2 border-slate-300 py-1 px-1 text-center text-slate-800 bg-slate-100"
                       style={{ width: COL_WIDTHS.dob, minWidth: COL_WIDTHS.dob, maxWidth: COL_WIDTHS.dob }}
                     >
-                      <div className="text-[9px] text-slate-400 font-mono font-normal">G</div>
-                      <span className="text-[11px] block">DOB</span>
+                      <div className="text-[8.5px] text-slate-400 font-mono font-normal">G</div>
+                      <span className="text-[10px] block truncate">DOB</span>
                     </th>
                     <th
-                      className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
+                      className="border-r border-b-2 border-slate-300 py-1 px-1.5 text-slate-800 bg-slate-100"
                       style={{ width: COL_WIDTHS.mobile, minWidth: COL_WIDTHS.mobile, maxWidth: COL_WIDTHS.mobile }}
                     >
-                      <div className="text-[9px] text-slate-400 font-mono font-normal">H</div>
-                      <span className="text-[11px] block">MOBILE NO</span>
+                      <div className="text-[8.5px] text-slate-400 font-mono font-normal">H</div>
+                      <span className="text-[10px] block truncate">MOBILE</span>
                     </th>
                     <th
-                      className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
+                      className="border-r border-b-2 border-slate-300 py-1 px-1.5 text-slate-800 bg-slate-100"
                       style={{ width: COL_WIDTHS.address, minWidth: COL_WIDTHS.address, maxWidth: COL_WIDTHS.address }}
                     >
-                      <div className="text-[9px] text-slate-400 font-mono font-normal">I</div>
-                      <span className="text-[11px] block">ADDRESS</span>
+                      <div className="text-[8.5px] text-slate-400 font-mono font-normal">I</div>
+                      <span className="text-[10px] block truncate">ADDRESS</span>
                     </th>
                   </>
                 )}
@@ -1565,19 +1565,19 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   return (
                     <th
                       key={col.key}
-                      className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
+                      className="border-r border-b-2 border-slate-300 py-1 px-1.5 text-slate-800 bg-slate-100"
                       style={{ width: COL_WIDTHS.doc, minWidth: COL_WIDTHS.doc, maxWidth: COL_WIDTHS.doc }}
                     >
-                      <div className="flex items-center justify-between text-[9px] font-mono text-slate-400 font-normal">
+                      <div className="flex items-center justify-between text-[8.5px] font-mono text-slate-400 font-normal leading-tight">
                         <span>{colLetter}</span>
                         <span className="font-sans font-semibold text-emerald-700">
                           {counts.ok} OK
-                          {counts.notRequired > 0 && <span className="text-slate-500 font-normal ml-1">({counts.notRequired} —)</span>}
-                          <span className="text-amber-700 ml-1">/ {counts.pending} ⌛</span>
+                          {counts.notRequired > 0 && <span className="text-slate-500 font-normal ml-0.5">({counts.notRequired}—)</span>}
+                          <span className="text-amber-700 ml-0.5">/{counts.pending}⌛</span>
                         </span>
                       </div>
-                      <span className="text-[11px] block truncate font-bold text-slate-900" title={col.title}>
-                        {col.title}
+                      <span className="text-[10.5px] block truncate font-bold text-slate-900 leading-tight mt-0.5" title={col.title}>
+                        {col.shortTitle || col.title}
                       </span>
                     </th>
                   );
@@ -1585,13 +1585,13 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
                 {/* OTHER DOCUMENTS Column */}
                 <th
-                  className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
+                  className="border-r border-b-2 border-slate-300 py-1 px-1.5 text-slate-800 bg-slate-100"
                   style={{ width: COL_WIDTHS.other, minWidth: COL_WIDTHS.other, maxWidth: COL_WIDTHS.other }}
                 >
-                  <div className="text-[9px] text-slate-400 font-mono font-normal">
+                  <div className="text-[8.5px] text-slate-400 font-mono font-normal">
                     {String.fromCharCode(65 + 4 + (showContactDetails ? 5 : 0) + 5)}
                   </div>
-                  <span className="text-[11px] block font-bold text-slate-900">OTHER DOCUMENTS</span>
+                  <span className="text-[10.5px] block font-bold text-slate-900 truncate">OTHER DOCS</span>
                 </th>
               </tr>
             </thead>
@@ -1600,10 +1600,10 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             <tbody>
               {filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={showContactDetails ? 15 : 10} className="py-20 text-center text-slate-400 bg-white">
-                    <Table className="w-10 h-10 mx-auto text-slate-300 mb-2" />
-                    <p className="font-bold text-slate-700 text-sm">No student records match the active criteria</p>
-                    <p className="text-xs text-slate-400 mt-1">Try resetting the class or status filter above</p>
+                  <td colSpan={showContactDetails ? 15 : 10} className="py-12 text-center text-slate-400 bg-white">
+                    <Table className="w-8 h-8 mx-auto text-slate-300 mb-1.5" />
+                    <p className="font-bold text-slate-700 text-xs">No student records match the active criteria</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Try resetting the class or status filter above</p>
                   </td>
                 </tr>
               ) : (
@@ -1618,7 +1618,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                     >
                       {/* Column A: SR NO (Frozen) */}
                       <td
-                        className={`sticky z-20 border-r border-b border-slate-200 text-center font-mono font-bold text-slate-600 transition-colors py-1.5 px-1 text-[11px] ${
+                        className={`sticky z-20 border-r border-b border-slate-200 text-center font-mono font-bold text-slate-600 transition-colors py-1 px-0.5 text-[10.5px] ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
                         }`}
                         style={{
@@ -1633,7 +1633,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
                       {/* Column B: CLASS (Frozen) */}
                       <td
-                        className={`sticky z-20 border-r border-b border-slate-200 whitespace-nowrap transition-colors py-1.5 px-2 ${
+                        className={`sticky z-20 border-r border-b border-slate-200 whitespace-nowrap transition-colors py-1 px-1 ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
                         }`}
                         style={{
@@ -1643,11 +1643,11 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           maxWidth: COL_WIDTHS.class,
                         }}
                       >
-                        <span className="font-bold text-school-navy text-xs">
+                        <span className="font-bold text-school-navy text-[11px]">
                           {student.std || "—"}
                         </span>
                         {student.section && (
-                          <span className="text-[10px] text-slate-500 font-semibold ml-0.5">
+                          <span className="text-[9.5px] text-slate-500 font-semibold ml-0.5">
                             -{student.section}
                           </span>
                         )}
@@ -1655,7 +1655,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
                       {/* Column C: GR NO (Frozen - Editable if not already saved, with confirmation) */}
                       <td
-                        className={`sticky z-20 border-r border-b border-slate-200 text-center whitespace-nowrap transition-colors py-1 px-1 ${
+                        className={`sticky z-20 border-r border-b border-slate-200 text-center whitespace-nowrap transition-colors py-0.5 px-0.5 ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
                         }`}
                         style={{
@@ -1681,18 +1681,18 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                                 }
                               }}
                               placeholder="GR..."
-                              className="w-14 px-1 py-0.5 text-[10.5px] font-mono font-bold text-center border border-school-navy rounded bg-white shadow-2xs focus:outline-none focus:ring-1 focus:ring-school-navy"
+                              className="w-11 px-1 py-0.5 text-[10px] font-mono font-bold text-center border border-school-navy rounded bg-white shadow-2xs focus:outline-none focus:ring-1 focus:ring-school-navy"
                             />
                             <button
                               onClick={() => handleRequestSaveGr(student, editingGrValue)}
-                              className="p-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] shadow-2xs transition-colors"
+                              className="p-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[9.5px] shadow-2xs transition-colors"
                               title="Save GR (Enter)"
                             >
                               <Check className="w-2.5 h-2.5" />
                             </button>
                             <button
                               onClick={() => setEditingGrStudentId(null)}
-                              className="p-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[10px] transition-colors"
+                              className="p-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[9.5px] transition-colors"
                               title="Cancel (Esc)"
                             >
                               <X className="w-2.5 h-2.5" />
@@ -1700,7 +1700,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           </div>
                         ) : student.grNo ? (
                           <div className="inline-flex items-center gap-0.5 group/gr justify-center">
-                            <span className="px-1.5 py-0.5 rounded font-mono font-bold text-[11px] bg-slate-100 text-slate-800 border border-slate-300">
+                            <span className="px-1 py-0.2 rounded font-mono font-bold text-[10.5px] bg-slate-100 text-slate-800 border border-slate-300">
                               {student.grNo}
                             </span>
                             <button
@@ -1711,7 +1711,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                               className="opacity-0 group-hover/gr:opacity-100 p-0.5 text-slate-400 hover:text-school-navy hover:bg-slate-200 rounded transition-all cursor-pointer"
                               title="Edit GR Number"
                             >
-                              <Edit3 className="w-2.5 h-2.5" />
+                              <Edit3 className="w-2 h-2" />
                             </button>
                           </div>
                         ) : (
@@ -1720,18 +1720,18 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                               setEditingGrStudentId(student._studentId);
                               setEditingGrValue("");
                             }}
-                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 border border-dashed border-amber-400 hover:border-amber-600 shadow-2xs transition-all cursor-pointer group/add"
+                            className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 border border-dashed border-amber-400 hover:border-amber-600 shadow-2xs transition-all cursor-pointer group/add"
                             title="GR not saved — click to enter and save with confirmation"
                           >
-                            <Plus className="w-2.5 h-2.5 text-amber-600 group-hover/add:scale-110 transition-transform" />
-                            <span>+ Set GR</span>
+                            <Plus className="w-2 h-2 text-amber-600 group-hover/add:scale-110 transition-transform" />
+                            <span>+ Set</span>
                           </button>
                         )}
                       </td>
 
                       {/* Column D: NAME (Frozen - Right Border Separator) */}
                       <td
-                        className={`sticky z-20 border-r-2 border-r-slate-400 border-b border-slate-200 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)] transition-colors py-1.5 px-2.5 ${
+                        className={`sticky z-20 border-r-2 border-r-slate-400 border-b border-slate-200 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)] transition-colors py-1 px-1.5 ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
                         }`}
                         style={{
@@ -1742,22 +1742,22 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                         }}
                       >
                         <div className="flex flex-col min-w-0">
-                          <span className="font-bold text-slate-900 truncate leading-tight text-xs uppercase" title={student.name}>
+                          <span className="font-bold text-slate-900 truncate leading-tight text-[11px] uppercase" title={student.name}>
                             {student.name || "—"}
                           </span>
                           {student.fatherName && !showContactDetails && (
-                            <span className="text-[10px] text-slate-500 truncate mt-0.5" title={`Father: ${student.fatherName}`}>
+                            <span className="text-[9px] text-slate-400 truncate leading-tight mt-0.5" title={`Father: ${student.fatherName}`}>
                               C/O {student.fatherName}
                             </span>
                           )}
                         </div>
                       </td>
 
-                      {/* Optional Contact Detail Columns (F to J) */}
+                      {/* Optional Contact Detail Columns (E to I) */}
                       {showContactDetails && (
                         <>
                           <td
-                            className="border-r border-b border-slate-200 transition-colors py-1.5 px-2 text-[11px]"
+                            className="border-r border-b border-slate-200 transition-colors py-1 px-1.5 text-[10px]"
                             style={{ width: COL_WIDTHS.fatherName, minWidth: COL_WIDTHS.fatherName, maxWidth: COL_WIDTHS.fatherName }}
                           >
                             <span className="font-medium text-slate-800 truncate block uppercase" title={student.fatherName}>
@@ -1766,7 +1766,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           </td>
 
                           <td
-                            className="border-r border-b border-slate-200 transition-colors py-1.5 px-2 text-[11px]"
+                            className="border-r border-b border-slate-200 transition-colors py-1 px-1.5 text-[10px]"
                             style={{ width: COL_WIDTHS.motherName, minWidth: COL_WIDTHS.motherName, maxWidth: COL_WIDTHS.motherName }}
                           >
                             <span className="font-medium text-slate-800 truncate block uppercase" title={student.motherName}>
@@ -1775,24 +1775,24 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           </td>
 
                           <td
-                            className="border-r border-b border-slate-200 text-center font-mono transition-colors py-1.5 px-1 text-[10.5px]"
+                            className="border-r border-b border-slate-200 text-center font-mono transition-colors py-1 px-1 text-[10px]"
                             style={{ width: COL_WIDTHS.dob, minWidth: COL_WIDTHS.dob, maxWidth: COL_WIDTHS.dob }}
                           >
                             {student.dob || "—"}
                           </td>
 
                           <td
-                            className="border-r border-b border-slate-200 font-mono transition-colors py-1.5 px-2 text-[10.5px]"
+                            className="border-r border-b border-slate-200 font-mono transition-colors py-1 px-1.5 text-[10px]"
                             style={{ width: COL_WIDTHS.mobile, minWidth: COL_WIDTHS.mobile, maxWidth: COL_WIDTHS.mobile }}
                           >
-                            <div className="flex flex-col">
+                            <div className="flex flex-col leading-tight">
                               <span>{student.mobile || "—"}</span>
-                              {student.mobile2 && <span className="text-[9.5px] text-slate-400">{student.mobile2}</span>}
+                              {student.mobile2 && <span className="text-[9px] text-slate-400">{student.mobile2}</span>}
                             </div>
                           </td>
 
                           <td
-                            className="border-r border-b border-slate-200 transition-colors py-1.5 px-2 text-[10px]"
+                            className="border-r border-b border-slate-200 transition-colors py-1 px-1.5 text-[9.5px]"
                             style={{ width: COL_WIDTHS.address, minWidth: COL_WIDTHS.address, maxWidth: COL_WIDTHS.address }}
                           >
                             <span className="truncate block text-slate-700" title={student.address}>
@@ -1815,19 +1815,19 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
           </table>
         </div>
 
-        {/* Spreadsheet Status Footer */}
-        <div className="px-3 py-1.5 bg-slate-100 border-t-2 border-slate-300 flex items-center justify-between text-[11px] text-slate-600 font-mono select-none">
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-1.5 font-sans font-bold text-slate-700">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Aligned with School Document Collection Report
+        {/* Spreadsheet Status Footer (Compact) */}
+        <div className="px-2.5 py-1 bg-slate-100 border-t border-slate-300 flex items-center justify-between text-[10px] text-slate-600 font-mono select-none">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1 font-sans font-bold text-slate-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              Aligned with School Report
             </span>
             <span className="text-slate-300">|</span>
-            <span>Freeze Panes Active: Cols A-D (SR, Class, GR, Name)</span>
+            <span>Freeze Panes: Cols A-D (SR, Class, GR, Name)</span>
           </div>
 
-          <div className="flex items-center gap-3 font-sans">
-            <span>Showing all <strong>{filteredStudents.length}</strong> students</span>
+          <div className="flex items-center gap-2 font-sans">
+            <span>Showing <strong>{filteredStudents.length}</strong> students</span>
             <span className="text-slate-300">|</span>
             <button
               onClick={() => {
@@ -1835,7 +1835,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               }}
               className="text-school-navy font-bold hover:underline cursor-pointer"
             >
-              Back to Top ↑
+              Top ↑
             </button>
           </div>
         </div>
