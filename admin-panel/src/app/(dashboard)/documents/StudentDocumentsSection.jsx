@@ -108,25 +108,23 @@ function getOtherDocsForStudent(studentDocs = [], allDocTypes = []) {
 const COL_WIDTHS = {
   sr: 46,
   class: 82,
-  formNo: 72,
-  gr: 72,
-  name: 210,
+  gr: 76,
+  name: 220,
   fatherName: 160,
   motherName: 160,
   dob: 95,
   mobile: 145,
   address: 200,
-  doc: 170,
-  other: 200,
+  doc: 165,
+  other: 195,
 };
 
 // Left offsets for frozen columns
 const STICKY_OFFSETS = {
   sr: 0,
   class: COL_WIDTHS.sr,
-  formNo: COL_WIDTHS.sr + COL_WIDTHS.class, // 128
-  gr: COL_WIDTHS.sr + COL_WIDTHS.class + COL_WIDTHS.formNo, // 200
-  name: COL_WIDTHS.sr + COL_WIDTHS.class + COL_WIDTHS.formNo + COL_WIDTHS.gr, // 272
+  gr: COL_WIDTHS.sr + COL_WIDTHS.class,
+  name: COL_WIDTHS.sr + COL_WIDTHS.class + COL_WIDTHS.gr,
 };
 
 export default function StudentDocumentsSection({ students = [], onRefresh }) {
@@ -620,10 +618,10 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const handlePreview = async (student, docTitle, fileKey) => {
     if (!fileKey) return;
     setPreviewLoading(true);
-    setPreviewDoc({ name: student.name, enrollment: student.enrollment, title: docTitle, fileKey, url: null });
+    setPreviewDoc({ name: student.name, grNo: student.grNo, title: docTitle, fileKey, url: null });
 
     try {
-      const downloadName = buildDocDownloadName(student.enrollment, student.name, docTitle, fileKey);
+      const downloadName = buildDocDownloadName(student.grNo || student.enrollment, student.name, docTitle, fileKey);
       const url = await getS3ViewUrl(fileKey, downloadName);
       if (url) {
         setPreviewDoc(prev => ({ ...prev, url }));
@@ -664,7 +662,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         return {
           "Class": s.std || "",
           "Sr": idx + 1,
-          "FormNo": s.enrollment || "",
           "GR No": s.grNo || "",
           "Name": (s.name || "").toUpperCase(),
           "Father Name": (s.fatherName || "").toUpperCase(),
@@ -759,7 +756,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         onMouseEnter={() => setActiveCellInfo({
           student: student.name,
           class: student.std,
-          formNo: student.enrollment,
           gr: student.grNo,
           father: student.fatherName,
           mobile: student.mobile,
@@ -777,56 +773,68 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             <span>Saving...</span>
           </div>
         ) : isUploaded ? (
-          /* State 1: OK / DONE */
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-emerald-800 tracking-tight">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
-                <span>OK</span>
-                {!hasFile && <span className="text-[9.5px] font-normal text-emerald-700">(Verified)</span>}
-              </span>
-
-              <div className="flex items-center gap-0.5">
-                {hasFile && (
-                  <button
-                    onClick={() => handlePreview(student, colConfig.title, doc.file)}
-                    className="p-0.5 text-slate-400 hover:text-school-navy hover:bg-slate-200/60 rounded transition-colors"
-                    title="Quick Preview"
-                  >
-                    <Eye className="w-3 h-3" />
-                  </button>
-                )}
-                <button
-                  onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
-                  className="p-0.5 text-slate-400 hover:text-slate-600 rounded"
-                  title="More actions"
-                >
-                  <MoreHorizontal className="w-3 h-3" />
-                </button>
-              </div>
+          /* State 1: OK / DONE - OK IS BIG MAIN FOCUS, DOWNLOAD IS SMALL LIKE UPLOAD */
+          <div className="flex items-center justify-between gap-1 w-full">
+            {/* Big Main Focus OK Badge */}
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-100 text-emerald-900 border border-emerald-400 font-black tracking-wider shadow-2xs">
+              <CheckCircle2 className="w-4 h-4 text-emerald-700 flex-shrink-0 stroke-[2.5]" />
+              <span className="text-xs sm:text-[13px]">OK</span>
+              {!hasFile && (
+                <span className="text-[9px] font-semibold text-emerald-700/80 uppercase font-sans border-l border-emerald-300 pl-1 ml-0.5 hidden sm:inline">
+                  Report
+                </span>
+              )}
             </div>
 
-            {hasFile ? (
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => handleDownload(student, colConfig.title, doc.file)}
-                  disabled={isThisDownloading}
-                  className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-1.5 text-[11px] font-semibold text-white bg-school-navy hover:bg-school-navy-dark active:bg-school-navy rounded border border-school-navy-dark shadow-2xs transition-colors disabled:opacity-50"
-                  title="Download Document"
-                >
-                  {isThisDownloading ? (
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <Download className="w-3 h-3" />
-                  )}
-                  <span>Download</span>
-                </button>
+            {/* Small Action Buttons: Download (small like upload), Preview, Upload, More */}
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              {hasFile ? (
+                <>
+                  {/* Small Download button - same compact size as small upload button */}
+                  <button
+                    onClick={() => handleDownload(student, colConfig.title, doc.file)}
+                    disabled={isThisDownloading}
+                    className="p-1.5 bg-school-navy hover:bg-school-navy-dark active:bg-school-navy text-white rounded-md border border-school-navy shadow-2xs transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center"
+                    title="Download Document"
+                  >
+                    {isThisDownloading ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Download className="w-3.5 h-3.5" />
+                    )}
+                  </button>
 
+                  {/* Quick Preview */}
+                  <button
+                    onClick={() => handlePreview(student, colConfig.title, doc.file)}
+                    className="p-1.5 text-slate-500 hover:text-school-navy hover:bg-slate-200/70 rounded-md transition-colors cursor-pointer flex items-center justify-center"
+                    title="Quick Preview"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Small Upload / Replace button */}
+                  <label
+                    className="p-1.5 text-slate-500 hover:text-school-navy hover:bg-slate-200/70 rounded-md cursor-pointer transition-colors flex items-center justify-center"
+                    title="Replace / Re-upload File"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={(e) => handleFileUpload(student, category, e)}
+                    />
+                  </label>
+                </>
+              ) : (
+                /* Verified without physical file: Small Attach / Upload button */
                 <label
-                  className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded cursor-pointer transition-colors"
-                  title="Replace / Re-upload"
+                  className="inline-flex items-center gap-1 px-1.5 py-1 text-[10px] font-bold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded-md cursor-pointer shadow-2xs transition-colors"
+                  title="Attach file (PDF / Image)"
                 >
-                  <Upload className="w-3 h-3" />
+                  <Upload className="w-3 h-3 text-school-navy" />
+                  <span className="hidden sm:inline">Attach</span>
                   <input
                     type="file"
                     className="hidden"
@@ -834,21 +842,17 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                     onChange={(e) => handleFileUpload(student, category, e)}
                   />
                 </label>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1">
-                <label className="flex-1 inline-flex items-center justify-center gap-1 py-0.5 px-1.5 text-[10px] font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded cursor-pointer shadow-2xs transition-colors">
-                  <Upload className="w-2.5 h-2.5 text-slate-500" />
-                  <span>Attach File</span>
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={(e) => handleFileUpload(student, category, e)}
-                  />
-                </label>
-              </div>
-            )}
+              )}
+
+              {/* Context menu toggle */}
+              <button
+                onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
+                className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-md transition-colors cursor-pointer"
+                title="More actions"
+              >
+                <MoreHorizontal className="w-3 h-3" />
+              </button>
+            </div>
 
             {/* Cell Context Menu */}
             {isMenuOpen && (
@@ -870,38 +874,26 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
           </div>
         ) : isNotRequired ? (
           /* State 2: NOT REQUIRED / EXEMPT (—) */
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-slate-600 tracking-tight">
-                <span className="font-mono text-slate-400 font-bold">—</span>
-                <span>Not Required</span>
-              </span>
-
-              <button
-                onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
-                className="p-0.5 text-slate-400 hover:text-slate-600 rounded"
-                title="Change status"
-              >
-                <MoreHorizontal className="w-3 h-3" />
-              </button>
+          <div className="flex items-center justify-between gap-1 w-full">
+            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs shadow-2xs">
+              <span className="font-mono text-slate-400 font-extrabold text-sm leading-none">—</span>
+              <span className="text-[10px] text-slate-500 font-medium">Exempt</span>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5 flex-shrink-0">
               <button
                 onClick={() => handleMarkDone(student, category)}
-                className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-semibold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-300 rounded shadow-2xs transition-colors"
-                title="Mark as OK / Submitted"
+                className="p-1.5 text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100/70 rounded-md transition-colors cursor-pointer flex items-center justify-center border border-emerald-300 bg-white shadow-2xs"
+                title="Mark as OK"
               >
-                <Check className="w-2.5 h-2.5 text-emerald-700" />
-                <span>Mark OK</span>
+                <Check className="w-3.5 h-3.5" />
               </button>
 
               <label
-                className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-semibold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors"
+                className="p-1.5 text-school-navy hover:text-school-navy-dark hover:bg-blue-100/70 rounded-md cursor-pointer transition-colors flex items-center justify-center border border-blue-300 bg-white shadow-2xs"
                 title="Upload Document"
               >
-                <Upload className="w-2.5 h-2.5 text-school-navy" />
-                <span>Upload</span>
+                <Upload className="w-3.5 h-3.5" />
                 <input
                   type="file"
                   className="hidden"
@@ -909,6 +901,14 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   onChange={(e) => handleFileUpload(student, category, e)}
                 />
               </label>
+
+              <button
+                onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
+                className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-md"
+                title="Change status"
+              >
+                <MoreHorizontal className="w-3 h-3" />
+              </button>
             </div>
 
             {/* Cell Context Menu */}
@@ -1009,8 +1009,8 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                       {d.name}
                     </span>
 
-                    <div className="flex items-center gap-0.5 flex-shrink-0">
-                      <span className="text-[9.5px] text-emerald-700 font-bold px-1 py-0.2 rounded bg-emerald-100">
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <span className="text-[10.5px] text-emerald-800 font-extrabold px-1.5 py-0.5 rounded bg-emerald-100 border border-emerald-300 shadow-2xs">
                         OK
                       </span>
 
@@ -1018,7 +1018,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                         <button
                           onClick={() => handleDownload(student, d.name, d.file)}
                           disabled={isThisDownloading}
-                          className="p-1 bg-school-navy hover:bg-school-navy-dark text-white rounded text-[10px] transition-colors"
+                          className="p-1 bg-school-navy hover:bg-school-navy-dark text-white rounded text-[10px] transition-colors cursor-pointer"
                           title={`Download ${d.name}`}
                         >
                           {isThisDownloading ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Download className="w-2.5 h-2.5" />}
@@ -1268,7 +1268,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, GR, Form No, father, phone..."
+              placeholder="Search name, GR, father, phone..."
               className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-school-navy focus:ring-1 focus:ring-school-navy"
             />
             {search && (
@@ -1413,8 +1413,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               <span className="text-slate-400 mx-1">|</span>
               Class: <strong>{activeCellInfo.class || "—"}</strong>
               <span className="text-slate-400 mx-1">|</span>
-              Form No: <strong>{activeCellInfo.formNo || "—"}</strong>
-              <span className="text-slate-400 mx-1">|</span>
               GR: <strong>{activeCellInfo.gr || "—"}</strong>
               {activeCellInfo.father && (
                 <>
@@ -1493,21 +1491,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   <span>CLASS</span>
                 </th>
 
-                {/* Column C: FORM NO (Frozen 3) */}
-                <th
-                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 py-2 px-1.5 text-center text-slate-700"
-                  style={{
-                    left: STICKY_OFFSETS.formNo,
-                    width: COL_WIDTHS.formNo,
-                    minWidth: COL_WIDTHS.formNo,
-                    maxWidth: COL_WIDTHS.formNo,
-                  }}
-                >
-                  <div className="text-[9px] text-slate-400 font-mono font-normal">C</div>
-                  <span>FORM NO</span>
-                </th>
-
-                {/* Column D: GR NO (Frozen 4) */}
+                {/* Column C: GR NO (Frozen 3) */}
                 <th
                   className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 text-center py-2 px-1.5 text-slate-700"
                   style={{
@@ -1517,11 +1501,11 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                     maxWidth: COL_WIDTHS.gr,
                   }}
                 >
-                  <div className="text-[9px] text-slate-400 font-mono font-normal">D</div>
+                  <div className="text-[9px] text-slate-400 font-mono font-normal">C</div>
                   <span>GR NO</span>
                 </th>
 
-                {/* Column E: NAME (Frozen 5 - Right Border Separator) */}
+                {/* Column D: NAME (Frozen 4 - Right Border Separator) */}
                 <th
                   className="sticky z-40 bg-slate-200 border-r-2 border-r-slate-400 border-b-2 border-slate-300 py-2 px-2.5 text-slate-700 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)]"
                   style={{
@@ -1531,46 +1515,46 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                     maxWidth: COL_WIDTHS.name,
                   }}
                 >
-                  <div className="text-[9px] text-slate-400 font-mono font-normal">E</div>
+                  <div className="text-[9px] text-slate-400 font-mono font-normal">D</div>
                   <span>STUDENT NAME</span>
                 </th>
 
-                {/* Optional Contact Detail Columns (F to J) */}
+                {/* Optional Contact Detail Columns (E to I) */}
                 {showContactDetails && (
                   <>
                     <th
                       className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
                       style={{ width: COL_WIDTHS.fatherName, minWidth: COL_WIDTHS.fatherName, maxWidth: COL_WIDTHS.fatherName }}
                     >
-                      <div className="text-[9px] text-slate-400 font-mono font-normal">F</div>
+                      <div className="text-[9px] text-slate-400 font-mono font-normal">E</div>
                       <span className="text-[11px] block">FATHER NAME</span>
                     </th>
                     <th
                       className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
                       style={{ width: COL_WIDTHS.motherName, minWidth: COL_WIDTHS.motherName, maxWidth: COL_WIDTHS.motherName }}
                     >
-                      <div className="text-[9px] text-slate-400 font-mono font-normal">G</div>
+                      <div className="text-[9px] text-slate-400 font-mono font-normal">F</div>
                       <span className="text-[11px] block">MOTHER NAME</span>
                     </th>
                     <th
                       className="border-r border-b-2 border-slate-300 py-2 px-1 text-center text-slate-800 bg-slate-100"
                       style={{ width: COL_WIDTHS.dob, minWidth: COL_WIDTHS.dob, maxWidth: COL_WIDTHS.dob }}
                     >
-                      <div className="text-[9px] text-slate-400 font-mono font-normal">H</div>
+                      <div className="text-[9px] text-slate-400 font-mono font-normal">G</div>
                       <span className="text-[11px] block">DOB</span>
                     </th>
                     <th
                       className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
                       style={{ width: COL_WIDTHS.mobile, minWidth: COL_WIDTHS.mobile, maxWidth: COL_WIDTHS.mobile }}
                     >
-                      <div className="text-[9px] text-slate-400 font-mono font-normal">I</div>
+                      <div className="text-[9px] text-slate-400 font-mono font-normal">H</div>
                       <span className="text-[11px] block">MOBILE NO</span>
                     </th>
                     <th
                       className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
                       style={{ width: COL_WIDTHS.address, minWidth: COL_WIDTHS.address, maxWidth: COL_WIDTHS.address }}
                     >
-                      <div className="text-[9px] text-slate-400 font-mono font-normal">J</div>
+                      <div className="text-[9px] text-slate-400 font-mono font-normal">I</div>
                       <span className="text-[11px] block">ADDRESS</span>
                     </th>
                   </>
@@ -1579,7 +1563,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                 {/* Primary Documents Columns */}
                 {PRIMARY_COLUMNS.map((col, idx) => {
                   const counts = stats.columnCounts[col.key] || { ok: 0, notRequired: 0, pending: 0 };
-                  const colLetter = String.fromCharCode(65 + 5 + (showContactDetails ? 5 : 0) + idx);
+                  const colLetter = String.fromCharCode(65 + 4 + (showContactDetails ? 5 : 0) + idx);
 
                   return (
                     <th
@@ -1608,7 +1592,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   style={{ width: COL_WIDTHS.other, minWidth: COL_WIDTHS.other, maxWidth: COL_WIDTHS.other }}
                 >
                   <div className="text-[9px] text-slate-400 font-mono font-normal">
-                    {String.fromCharCode(65 + 5 + (showContactDetails ? 5 : 0) + 5)}
+                    {String.fromCharCode(65 + 4 + (showContactDetails ? 5 : 0) + 5)}
                   </div>
                   <span className="text-[11px] block font-bold text-slate-900">OTHER DOCUMENTS</span>
                 </th>
@@ -1619,7 +1603,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             <tbody>
               {filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={showContactDetails ? 16 : 11} className="py-20 text-center text-slate-400 bg-white">
+                  <td colSpan={showContactDetails ? 15 : 10} className="py-20 text-center text-slate-400 bg-white">
                     <Table className="w-10 h-10 mx-auto text-slate-300 mb-2" />
                     <p className="font-bold text-slate-700 text-sm">No student records match the active criteria</p>
                     <p className="text-xs text-slate-400 mt-1">Try resetting the class or status filter above</p>
@@ -1672,22 +1656,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                         )}
                       </td>
 
-                      {/* Column C: FORM NO (Frozen) */}
-                      <td
-                        className={`sticky z-20 border-r border-b border-slate-200 text-center font-mono font-bold text-slate-700 transition-colors py-1.5 px-1 text-[11px] ${
-                          isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
-                        }`}
-                        style={{
-                          left: STICKY_OFFSETS.formNo,
-                          width: COL_WIDTHS.formNo,
-                          minWidth: COL_WIDTHS.formNo,
-                          maxWidth: COL_WIDTHS.formNo,
-                        }}
-                      >
-                        {student.enrollment || "—"}
-                      </td>
-
-                      {/* Column D: GR NO (Frozen - Editable if not already saved, with confirmation) */}
+                      {/* Column C: GR NO (Frozen - Editable if not already saved, with confirmation) */}
                       <td
                         className={`sticky z-20 border-r border-b border-slate-200 text-center whitespace-nowrap transition-colors py-1 px-1 ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
@@ -1763,7 +1732,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                         )}
                       </td>
 
-                      {/* Column E: NAME (Frozen - Right Border Separator) */}
+                      {/* Column D: NAME (Frozen - Right Border Separator) */}
                       <td
                         className={`sticky z-20 border-r-2 border-r-slate-400 border-b border-slate-200 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)] transition-colors py-1.5 px-2.5 ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
@@ -1857,7 +1826,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               Aligned with School Document Collection Report
             </span>
             <span className="text-slate-300">|</span>
-            <span>Freeze Panes Active: Cols A-E (SR, Class, Form No, GR, Name)</span>
+            <span>Freeze Panes Active: Cols A-D (SR, Class, GR, Name)</span>
           </div>
 
           <div className="flex items-center gap-3 font-sans">
@@ -1886,7 +1855,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   {previewDoc.title}
                 </h3>
                 <p className="text-xs text-white/70 mt-0.5">
-                  {previewDoc.name} (#{previewDoc.enrollment})
+                  {previewDoc.name} {previewDoc.grNo ? `(GR: ${previewDoc.grNo})` : ""}
                 </p>
               </div>
 
@@ -1990,7 +1959,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   Aligned to Official School Collection Report
                 </p>
                 <p className="text-slate-600 leading-relaxed text-[11.5px]">
-                  Matches all students by <strong>GR No</strong>, <strong>Student Name</strong>, <strong>Parent Mobile</strong>, or <strong>Form No</strong>. Synchronizes the 5 core documents:
+                  Matches all students by <strong>GR No</strong>, <strong>Student Name</strong>, or <strong>Parent Mobile</strong>. Synchronizes the 5 core documents:
                 </p>
                 <ul className="list-disc list-inside text-slate-600 text-[11px] space-y-0.5 ml-1">
                   <li><strong>OK</strong> marks updated to <em>Verified / Uploaded</em> (preserves existing file uploads)</li>
@@ -2106,10 +2075,12 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                     {confirmGrModal.student.std} {confirmGrModal.student.section ? `(${confirmGrModal.student.section})` : ""}
                   </span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-slate-500 font-semibold">Form No / Enrollment:</span>
-                  <span className="font-mono font-bold text-slate-700">#{confirmGrModal.student.enrollment}</span>
-                </div>
+                {confirmGrModal.student.fatherName && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-semibold">Father Name:</span>
+                    <span className="font-semibold text-slate-800 uppercase">{confirmGrModal.student.fatherName}</span>
+                  </div>
+                )}
                 {confirmGrModal.oldGr && (
                   <div className="flex items-center justify-between pt-1 border-t border-slate-200">
                     <span className="text-amber-700 font-semibold">Previous GR:</span>
