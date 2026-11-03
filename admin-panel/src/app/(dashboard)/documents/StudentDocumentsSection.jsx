@@ -115,8 +115,8 @@ const COL_WIDTHS = {
   dob: 85,
   mobile: 125,
   address: 160,
-  doc: 142,
-  other: 160,
+  doc: 136,
+  other: 140,
 };
 
 // Left offsets for frozen columns
@@ -745,7 +745,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     return (
       <td
         key={category}
-        className={`border-r border-b border-slate-200 transition-colors align-middle relative p-1 ${
+        className={`border-r border-b border-slate-200 transition-colors align-middle relative px-1 py-0.5 ${
           isUploaded
             ? "bg-emerald-50/40 hover:bg-emerald-100/60"
             : isNotRequired
@@ -772,209 +772,233 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             <RefreshCw className="w-2.5 h-2.5 animate-spin" />
             <span>Saving...</span>
           </div>
-        ) : isUploaded ? (
-          /* State 1: OK / DONE - ULTRA-COMPACT */
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center justify-between leading-none">
-              <span className="inline-flex items-center gap-1 text-emerald-800 tracking-tight">
+        ) : (
+          <div className="flex items-center justify-between gap-1 w-full">
+            {/* 1. Status indicator (Left) */}
+            {isUploaded ? (
+              <span className="inline-flex items-center gap-1 text-emerald-800 tracking-tight flex-shrink-0">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
                 <span className="text-xs font-black">OK</span>
-                {!hasFile && <span className="text-[9px] font-semibold text-emerald-700/80 font-sans ml-0.5">(Verified)</span>}
-              </span>
-
-              <div className="flex items-center gap-0.5">
-                {hasFile && (
-                  <button
-                    onClick={() => handlePreview(student, colConfig.title, doc.file)}
-                    className="p-0.5 text-slate-400 hover:text-school-navy hover:bg-slate-200/60 rounded transition-colors cursor-pointer"
-                    title="Quick Preview"
-                  >
-                    <Eye className="w-3 h-3" />
-                  </button>
+                {!hasFile && (
+                  <span className="text-[9px] font-semibold text-emerald-700/80 font-sans" title="Verified without file">
+                    (Ver)
+                  </span>
                 )}
-                <button
-                  onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
-                  className="p-0.5 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
-                  title="More actions"
-                >
-                  <MoreHorizontal className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-
-            {hasFile ? (
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => handleDownload(student, colConfig.title, doc.file)}
-                  disabled={isThisDownloading}
-                  className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-bold text-white bg-school-navy hover:bg-school-navy-dark active:bg-school-navy rounded shadow-2xs transition-colors disabled:opacity-50 cursor-pointer leading-tight"
-                  title="Download Document"
-                >
-                  {isThisDownloading ? (
-                    <RefreshCw className="w-2.5 h-2.5 animate-spin" />
-                  ) : (
-                    <Download className="w-2.5 h-2.5" />
-                  )}
-                  <span>Download</span>
-                </button>
-
-                <label
-                  className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-bold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors leading-tight"
-                  title="Replace / Re-upload File"
-                >
-                  <Upload className="w-2.5 h-2.5 text-school-navy" />
-                  <span>Upload</span>
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={(e) => handleFileUpload(student, category, e)}
-                  />
-                </label>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1">
-                <label className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-bold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors leading-tight">
-                  <Upload className="w-2.5 h-2.5 text-slate-500" />
-                  <span>Attach File</span>
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept=".pdf,.jpg,.jpeg,.png"
-                    onChange={(e) => handleFileUpload(student, category, e)}
-                  />
-                </label>
-              </div>
-            )}
-
-            {/* Cell Context Menu */}
-            {isMenuOpen && (
-              <div className="absolute right-1 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-slate-300 p-1.5 z-50 space-y-1 text-xs">
-                <button
-                  onClick={() => handleMarkPending(student, category)}
-                  className="w-full text-left px-2 py-1 hover:bg-red-50 text-red-700 font-semibold rounded text-[10.5px] flex items-center gap-1.5"
-                >
-                  <RotateCcw className="w-3 h-3" /> Mark as Pending
-                </button>
-                <button
-                  onClick={() => handleMarkNotRequired(student, category)}
-                  className="w-full text-left px-2 py-1 hover:bg-slate-100 text-slate-700 font-medium rounded text-[10.5px] flex items-center gap-1.5"
-                >
-                  <MinusCircle className="w-3 h-3 text-slate-400" /> Mark as Not Required (—)
-                </button>
-              </div>
-            )}
-          </div>
-        ) : isNotRequired ? (
-          /* State 2: NOT REQUIRED / EXEMPT (—) - ULTRA-COMPACT */
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center justify-between leading-none">
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 tracking-tight">
+              </span>
+            ) : isNotRequired ? (
+              <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-slate-600 tracking-tight flex-shrink-0">
                 <span className="font-mono text-slate-400 font-extrabold text-[11px]">—</span>
                 <span>Exempt</span>
               </span>
-
-              <button
-                onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
-                className="p-0.5 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
-                title="Change status"
-              >
-                <MoreHorizontal className="w-3 h-3" />
-              </button>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => handleMarkDone(student, category)}
-                className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-semibold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-300 rounded shadow-2xs transition-colors cursor-pointer leading-tight"
-                title="Mark as OK / Submitted"
-              >
-                <Check className="w-2.5 h-2.5 text-emerald-700" />
-                <span>Mark OK</span>
-              </button>
-
-              <label
-                className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-semibold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors leading-tight"
-                title="Upload Document"
-              >
-                <Upload className="w-2.5 h-2.5 text-school-navy" />
-                <span>Upload</span>
-                <input
-                  type="file"
-                  className="hidden"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={(e) => handleFileUpload(student, category, e)}
-                />
-              </label>
-            </div>
-
-            {/* Cell Context Menu */}
-            {isMenuOpen && (
-              <div className="absolute right-1 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-slate-300 p-1.5 z-50 space-y-1 text-xs">
-                <button
-                  onClick={() => handleMarkPending(student, category)}
-                  className="w-full text-left px-2 py-1 hover:bg-amber-50 text-amber-800 font-semibold rounded text-[10.5px] flex items-center gap-1.5"
-                >
-                  <Clock className="w-3 h-3 text-amber-600" /> Mark as Required (Pending)
-                </button>
-              </div>
-            )}
-          </div>
-        ) : (
-          /* State 3: UPLOAD PENDING - ULTRA-COMPACT */
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center justify-between leading-none">
-              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 tracking-tight">
-                <Clock className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-800 tracking-tight flex-shrink-0">
+                <Clock className="w-3 h-3 text-amber-600 flex-shrink-0" />
                 <span>Pending</span>
               </span>
+            )}
+
+            {/* 2. Actions: VIEW button + 3-dots Menu button (Right) */}
+            <div className="flex items-center gap-0.5 flex-shrink-0">
+              {hasFile ? (
+                <button
+                  onClick={() => handlePreview(student, colConfig.title, doc.file)}
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-bold text-school-navy bg-blue-50 hover:bg-blue-100 active:bg-blue-200 border border-blue-200 rounded shadow-2xs transition-colors cursor-pointer"
+                  title="View / Preview Document"
+                >
+                  <Eye className="w-3 h-3 text-school-navy" />
+                  <span>View</span>
+                </button>
+              ) : (
+                <button
+                  disabled
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 bg-slate-100/70 border border-slate-200 rounded cursor-not-allowed opacity-50"
+                  title="No file uploaded yet"
+                >
+                  <Eye className="w-3 h-3 text-slate-400" />
+                  <span>View</span>
+                </button>
+              )}
 
               <button
                 onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
-                className="p-0.5 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
-                title="Change status"
+                className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-200/70 rounded cursor-pointer transition-colors"
+                title="Actions menu"
               >
-                <MoreHorizontal className="w-3 h-3" />
+                <MoreHorizontal className="w-3.5 h-3.5" />
               </button>
             </div>
-
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => handleMarkDone(student, category)}
-                className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-bold text-emerald-800 bg-white hover:bg-emerald-100/80 active:bg-emerald-200 border border-emerald-300 rounded shadow-2xs transition-colors cursor-pointer leading-tight"
-                title="Mark as Done / OK"
-              >
-                <Check className="w-2.5 h-2.5 text-emerald-700" />
-                <span>Mark OK</span>
-              </button>
-
-              <label
-                className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[10px] font-bold text-school-navy bg-white hover:bg-blue-100/80 active:bg-blue-200 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors leading-tight"
-                title="Upload Document"
-              >
-                <Upload className="w-2.5 h-2.5 text-school-navy" />
-                <span>Upload</span>
-                <input
-                  type="file"
-                  className="hidden"
-                  accept=".pdf,.jpg,.jpeg,.png"
-                  onChange={(e) => handleFileUpload(student, category, e)}
-                />
-              </label>
-            </div>
-
-            {/* Cell Context Menu */}
-            {isMenuOpen && (
-              <div className="absolute right-1 top-full mt-1 w-40 bg-white rounded-lg shadow-xl border border-slate-300 p-1.5 z-50 space-y-1 text-xs">
-                <button
-                  onClick={() => handleMarkNotRequired(student, category)}
-                  className="w-full text-left px-2 py-1 hover:bg-slate-100 text-slate-700 font-medium rounded text-[10.5px] flex items-center gap-1.5"
-                >
-                  <MinusCircle className="w-3 h-3 text-slate-400" /> Mark as Not Required (—)
-                </button>
-              </div>
-            )}
           </div>
+        )}
+
+        {/* 3. 3-Dots Action Dropdown Menu */}
+        {isMenuOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={(e) => {
+                e.stopPropagation();
+                setCellMenuOpen(null);
+              }}
+            />
+
+            <div
+              className="absolute right-1 top-full mt-1 w-44 bg-white rounded-lg shadow-xl border border-slate-300 p-1.5 z-50 space-y-1 text-xs select-none"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {isUploaded ? (
+                <>
+                  {hasFile && (
+                    <button
+                      onClick={() => {
+                        setCellMenuOpen(null);
+                        handlePreview(student, colConfig.title, doc.file);
+                      }}
+                      className="w-full text-left px-2 py-1 hover:bg-blue-50 text-school-navy font-semibold rounded text-[10.5px] flex items-center gap-2 cursor-pointer transition-colors"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-school-navy" />
+                      <span>View / Preview</span>
+                    </button>
+                  )}
+
+                  {hasFile && (
+                    <button
+                      onClick={() => {
+                        setCellMenuOpen(null);
+                        handleDownload(student, colConfig.title, doc.file);
+                      }}
+                      disabled={isThisDownloading}
+                      className="w-full text-left px-2 py-1 hover:bg-slate-100 text-slate-800 font-semibold rounded text-[10.5px] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
+                    >
+                      {isThisDownloading ? (
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin text-school-navy" />
+                      ) : (
+                        <Download className="w-3.5 h-3.5 text-slate-600" />
+                      )}
+                      <span>Download File</span>
+                    </button>
+                  )}
+
+                  <label className="w-full text-left px-2 py-1 hover:bg-slate-100 text-slate-800 font-semibold rounded text-[10.5px] flex items-center gap-2 cursor-pointer transition-colors">
+                    <Upload className="w-3.5 h-3.5 text-slate-600" />
+                    <span>{hasFile ? "Replace File" : "Attach File"}</span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={(e) => {
+                        setCellMenuOpen(null);
+                        handleFileUpload(student, category, e);
+                      }}
+                    />
+                  </label>
+
+                  <div className="border-t border-slate-200 my-0.5" />
+
+                  <button
+                    onClick={() => {
+                      setCellMenuOpen(null);
+                      handleMarkPending(student, category);
+                    }}
+                    className="w-full text-left px-2 py-1 hover:bg-amber-50 text-amber-800 font-semibold rounded text-[10.5px] flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Mark as Pending</span>
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setCellMenuOpen(null);
+                      handleMarkNotRequired(student, category);
+                    }}
+                    className="w-full text-left px-2 py-1 hover:bg-slate-100 text-slate-600 font-medium rounded text-[10.5px] flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <MinusCircle className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Mark Not Required (—)</span>
+                  </button>
+                </>
+              ) : isNotRequired ? (
+                <>
+                  <button
+                    onClick={() => {
+                      setCellMenuOpen(null);
+                      handleMarkDone(student, category);
+                    }}
+                    className="w-full text-left px-2 py-1 hover:bg-emerald-50 text-emerald-800 font-bold rounded text-[10.5px] flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Mark as OK</span>
+                  </button>
+
+                  <label className="w-full text-left px-2 py-1 hover:bg-blue-50 text-school-navy font-semibold rounded text-[10.5px] flex items-center gap-2 cursor-pointer transition-colors">
+                    <Upload className="w-3.5 h-3.5 text-school-navy" />
+                    <span>Upload File</span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={(e) => {
+                        setCellMenuOpen(null);
+                        handleFileUpload(student, category, e);
+                      }}
+                    />
+                  </label>
+
+                  <div className="border-t border-slate-200 my-0.5" />
+
+                  <button
+                    onClick={() => {
+                      setCellMenuOpen(null);
+                      handleMarkPending(student, category);
+                    }}
+                    className="w-full text-left px-2 py-1 hover:bg-amber-50 text-amber-800 font-semibold rounded text-[10.5px] flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Mark as Required (Pending)</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      setCellMenuOpen(null);
+                      handleMarkDone(student, category);
+                    }}
+                    className="w-full text-left px-2 py-1 hover:bg-emerald-50 text-emerald-800 font-bold rounded text-[10.5px] flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Mark as OK</span>
+                  </button>
+
+                  <label className="w-full text-left px-2 py-1 hover:bg-blue-50 text-school-navy font-semibold rounded text-[10.5px] flex items-center gap-2 cursor-pointer transition-colors">
+                    <Upload className="w-3.5 h-3.5 text-school-navy" />
+                    <span>Upload File</span>
+                    <input
+                      type="file"
+                      className="hidden"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={(e) => {
+                        setCellMenuOpen(null);
+                        handleFileUpload(student, category, e);
+                      }}
+                    />
+                  </label>
+
+                  <div className="border-t border-slate-200 my-0.5" />
+
+                  <button
+                    onClick={() => {
+                      setCellMenuOpen(null);
+                      handleMarkNotRequired(student, category);
+                    }}
+                    className="w-full text-left px-2 py-1 hover:bg-slate-100 text-slate-600 font-medium rounded text-[10.5px] flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <MinusCircle className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Mark Not Required (—)</span>
+                  </button>
+                </>
+              )}
+            </div>
+          </>
         )}
       </td>
     );
@@ -985,154 +1009,187 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     const { otherDocs, otherDocTypes } = getOtherDocsForStudent(student.documents, docTypes);
     const uploadedOthers = otherDocs.filter(d => d.uploaded || d.status === "Uploaded");
     const hasAnyUploaded = uploadedOthers.length > 0;
+    const firstDocWithFile = uploadedOthers.find(d => Boolean(d.file));
     const isOpen = otherDropdownOpen === student._studentId;
 
     return (
       <td
         key="other_docs"
-        className={`border-r border-b border-slate-200 transition-colors align-middle relative p-1 ${hasAnyUploaded ? "bg-emerald-50/30 hover:bg-emerald-100/50" : "bg-amber-50/30 hover:bg-amber-100/40"}`}
+        className={`border-r border-b border-slate-200 transition-colors align-middle relative px-1 py-0.5 ${
+          hasAnyUploaded ? "bg-emerald-50/40 hover:bg-emerald-100/60" : "bg-amber-50/30 hover:bg-amber-100/50"
+        }`}
         style={{ width: COL_WIDTHS.other, minWidth: COL_WIDTHS.other, maxWidth: COL_WIDTHS.other }}
       >
-        <div className="flex flex-col gap-0.5">
+        <div className="flex items-center justify-between gap-1 w-full">
+          {/* Status on left */}
           {hasAnyUploaded ? (
-            <div className="space-y-0.5">
-              {uploadedOthers.map((d, idx) => {
-                const hasFile = Boolean(d.file);
-                const isThisDownloading = downloadingKey === `${student._studentId}_${d.file}`;
-
-                return (
-                  <div key={d.name || idx} className="flex items-center justify-between gap-1 bg-white/90 p-0.5 rounded border border-slate-200 shadow-2xs">
-                    <span className="font-semibold text-slate-800 truncate text-[10px] max-w-[80px]" title={d.name}>
-                      {d.name}
-                    </span>
-
-                    <div className="flex items-center gap-0.5 flex-shrink-0">
-                      <span className="text-[9.5px] text-emerald-800 font-extrabold px-1 py-0.2 rounded bg-emerald-100 border border-emerald-300">
-                        OK
-                      </span>
-
-                      {hasFile ? (
-                        <button
-                          onClick={() => handleDownload(student, d.name, d.file)}
-                          disabled={isThisDownloading}
-                          className="p-0.5 bg-school-navy hover:bg-school-navy-dark text-white rounded text-[9.5px] transition-colors cursor-pointer"
-                          title={`Download ${d.name}`}
-                        >
-                          {isThisDownloading ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Download className="w-2.5 h-2.5" />}
-                        </button>
-                      ) : (
-                        <label className="p-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded cursor-pointer transition-colors" title={`Attach file for ${d.name}`}>
-                          <Upload className="w-2.5 h-2.5" />
-                          <input
-                            type="file"
-                            className="hidden"
-                            accept=".pdf,.jpg,.jpeg,.png"
-                            onChange={(e) => handleFileUpload(student, "other", e, { id: d.documentTypeId, name: d.name })}
-                          />
-                        </label>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <span
+              className="inline-flex items-center gap-1 text-emerald-800 tracking-tight"
+              title={`${uploadedOthers.length} other document(s) uploaded: ${uploadedOthers.map(d => d.name).join(", ")}`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+              <span className="text-xs font-black">OK</span>
+              <span className="text-[9.5px] font-bold text-emerald-700/80">({uploadedOthers.length})</span>
+            </span>
           ) : (
-            <div className="flex items-center gap-1 text-[10px] font-bold text-amber-800 leading-none py-0.5">
-              <Clock className="w-2.5 h-2.5 text-amber-600 flex-shrink-0" />
+            <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-800 tracking-tight">
+              <Clock className="w-3 h-3 text-amber-600 flex-shrink-0" />
               <span>Pending</span>
-            </div>
+            </span>
           )}
 
-          {/* Manage Others Button */}
-          <div className="relative">
+          {/* Right side: View button + 3-dots */}
+          <div className="flex items-center gap-0.5 flex-shrink-0">
+            {firstDocWithFile ? (
+              <button
+                onClick={() => handlePreview(student, firstDocWithFile.name, firstDocWithFile.file)}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-bold text-school-navy bg-blue-50 hover:bg-blue-100 active:bg-blue-200 border border-blue-200 rounded shadow-2xs transition-colors cursor-pointer"
+                title={`View ${firstDocWithFile.name}`}
+              >
+                <Eye className="w-3 h-3 text-school-navy" />
+                <span>View</span>
+              </button>
+            ) : (
+              <button
+                disabled
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 bg-slate-100/70 border border-slate-200 rounded cursor-not-allowed opacity-50"
+                title="No other file uploaded yet"
+              >
+                <Eye className="w-3 h-3 text-slate-400" />
+                <span>View</span>
+              </button>
+            )}
+
             <button
               onClick={() => setOtherDropdownOpen(isOpen ? null : student._studentId)}
-              className="w-full inline-flex items-center justify-center gap-1 py-0.5 px-1 text-[9.5px] font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded shadow-2xs transition-colors"
+              className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-200/70 rounded cursor-pointer transition-colors"
+              title="Other Documents Actions"
             >
-              <Plus className="w-2 h-2" />
-              <span>Manage Others</span>
-              <ChevronDown className="w-2 h-2 text-slate-400" />
+              <MoreHorizontal className="w-3.5 h-3.5" />
             </button>
+          </div>
+        </div>
 
-            {/* Popover Menu */}
-            {isOpen && (
-              <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-300 p-2 z-50 space-y-1.5 text-xs">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-1">
-                  <span className="font-bold text-slate-800 text-[11px]">Other Documents</span>
-                  <button onClick={() => setOtherDropdownOpen(null)} className="text-slate-400 hover:text-slate-600">
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
+        {/* Popover Menu for Other Documents */}
+        {isOpen && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOtherDropdownOpen(null);
+              }}
+            />
+            <div
+              className="absolute right-1 top-full mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-300 p-2 z-50 space-y-1.5 text-xs select-none"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+                <span className="font-bold text-slate-800 text-[11px]">Other Documents</span>
+                <button
+                  onClick={() => setOtherDropdownOpen(null)}
+                  className="text-slate-400 hover:text-slate-600 p-0.5"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
 
-                {otherDocTypes.length === 0 ? (
-                  <p className="text-[10px] text-slate-400 py-1">No other document types registered.</p>
-                ) : (
-                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
-                    {otherDocTypes.map(dt => {
-                      const existingDoc = (student.documents || []).find(d => d.documentTypeId === dt.id || d.name === dt.name);
-                      const isDone = existingDoc && (existingDoc.uploaded || existingDoc.status === "Uploaded");
+              {otherDocTypes.length === 0 ? (
+                <p className="text-[10px] text-slate-400 py-1">No other document types registered.</p>
+              ) : (
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+                  {otherDocTypes.map(dt => {
+                    const existingDoc = (student.documents || []).find(d => d.documentTypeId === dt.id || d.name === dt.name);
+                    const isDone = existingDoc && (existingDoc.uploaded || existingDoc.status === "Uploaded");
+                    const hasDocFile = Boolean(existingDoc?.file);
+                    const isThisDown = downloadingKey === `${student._studentId}_${existingDoc?.file}`;
 
-                      return (
-                        <div key={dt.id} className="p-1.5 bg-slate-50 rounded border border-slate-200 space-y-1">
-                          <div className="flex items-center justify-between">
-                            <span className="font-semibold text-slate-800 text-[10.5px] truncate">{dt.name}</span>
-                            {isDone ? (
-                              <span className="text-[9.5px] text-emerald-700 font-bold">✓ OK</span>
-                            ) : (
-                              <span className="text-[9.5px] text-amber-700 font-bold">Pending</span>
-                            )}
-                          </div>
+                    return (
+                      <div key={dt.id} className="p-1.5 bg-slate-50 rounded border border-slate-200 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-slate-800 text-[10.5px] truncate max-w-[140px]" title={dt.name}>
+                            {dt.name}
+                          </span>
+                          {isDone ? (
+                            <span className="text-[9.5px] text-emerald-700 font-bold bg-emerald-100 px-1 rounded">✓ OK</span>
+                          ) : (
+                            <span className="text-[9.5px] text-amber-700 font-bold bg-amber-100 px-1 rounded">Pending</span>
+                          )}
+                        </div>
 
-                          <div className="flex items-center gap-1 pt-0.5">
-                            {isDone ? (
-                              existingDoc?.file ? (
+                        <div className="flex items-center gap-1 pt-0.5">
+                          {isDone ? (
+                            <>
+                              {hasDocFile && (
+                                <button
+                                  onClick={() => {
+                                    setOtherDropdownOpen(null);
+                                    handlePreview(student, dt.name, existingDoc.file);
+                                  }}
+                                  className="flex-1 inline-flex items-center justify-center gap-1 py-0.5 px-1 text-[10px] font-semibold bg-blue-50 text-school-navy border border-blue-200 rounded hover:bg-blue-100"
+                                >
+                                  <Eye className="w-2.5 h-2.5" /> View
+                                </button>
+                              )}
+                              {hasDocFile && (
                                 <button
                                   onClick={() => {
                                     setOtherDropdownOpen(null);
                                     handleDownload(student, dt.name, existingDoc.file);
                                   }}
-                                  className="flex-1 inline-flex items-center justify-center gap-1 py-0.5 px-1 text-[10px] font-semibold bg-school-navy text-white rounded"
+                                  disabled={isThisDown}
+                                  className="flex-1 inline-flex items-center justify-center gap-1 py-0.5 px-1 text-[10px] font-semibold bg-school-navy text-white rounded hover:bg-school-navy-dark"
                                 >
                                   <Download className="w-2.5 h-2.5" /> Download
                                 </button>
-                              ) : (
-                                <span className="text-[9.5px] text-slate-400">Marked OK</span>
-                              )
-                            ) : (
-                              <>
-                                <button
-                                  onClick={() => {
+                              )}
+                              <label className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[9.5px] font-bold bg-white text-school-navy border border-blue-300 rounded cursor-pointer hover:bg-blue-50">
+                                <Upload className="w-2.5 h-2.5" /> {hasDocFile ? "Replace" : "Attach"}
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  accept=".pdf,.jpg,.jpeg,.png"
+                                  onChange={(e) => {
                                     setOtherDropdownOpen(null);
-                                    handleMarkDone(student, "other", dt);
+                                    handleFileUpload(student, "other", e, dt);
                                   }}
-                                  className="flex-1 py-0.5 px-1 text-[9.5px] font-bold bg-white text-emerald-700 border border-emerald-300 rounded hover:bg-emerald-50"
-                                >
-                                  Mark OK
-                                </button>
-                                <label className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[9.5px] font-bold bg-white text-school-navy border border-blue-300 rounded cursor-pointer hover:bg-blue-50">
-                                  <Upload className="w-2.5 h-2.5" /> Upload
-                                  <input
-                                    type="file"
-                                    className="hidden"
-                                    accept=".pdf,.jpg,.jpeg,.png"
-                                    onChange={(e) => {
-                                      setOtherDropdownOpen(null);
-                                      handleFileUpload(student, "other", e, dt);
-                                    }}
-                                  />
-                                </label>
-                              </>
-                            )}
-                          </div>
+                                />
+                              </label>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setOtherDropdownOpen(null);
+                                  handleMarkDone(student, "other", dt);
+                                }}
+                                className="flex-1 py-0.5 px-1 text-[9.5px] font-bold bg-white text-emerald-700 border border-emerald-300 rounded hover:bg-emerald-50"
+                              >
+                                Mark OK
+                              </button>
+                              <label className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[9.5px] font-bold bg-white text-school-navy border border-blue-300 rounded cursor-pointer hover:bg-blue-50">
+                                <Upload className="w-2.5 h-2.5" /> Upload
+                                <input
+                                  type="file"
+                                  className="hidden"
+                                  accept=".pdf,.jpg,.jpeg,.png"
+                                  onChange={(e) => {
+                                    setOtherDropdownOpen(null);
+                                    handleFileUpload(student, "other", e, dt);
+                                  }}
+                                />
+                              </label>
+                            </>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </td>
     );
   };
