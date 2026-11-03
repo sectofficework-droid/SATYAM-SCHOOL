@@ -13,8 +13,9 @@ import * as XLSX from "xlsx";
 import {
   CreditCard, Award, FileText, Search, Download, FileSpreadsheet,
   Users, GraduationCap, X, CheckSquare, ChevronLeft, ChevronRight,
-  Upload, AlertCircle, Printer, Trash2, Pencil
+  Upload, AlertCircle, Printer, Trash2, Pencil, FolderCheck
 } from "lucide-react";
+import StudentDocumentsSection from "./StudentDocumentsSection";
 
 import {
   TC_FIELDS,
@@ -46,11 +47,12 @@ const CLASSES_LIST = [
 ];
 
 const SUB_TABS = [
-  { key:"idcard",    label:"ID Card",   icon:CreditCard },
-  { key:"marksheet", label:"Marksheet", icon:Award      },
-  { key:"bonafide",  label:"Bonafide",  icon:FileText   },
-  { key:"noc",       label:"NOC",       icon:FileText   },
-  { key:"tc",        label:"TC",        icon:FileText   },
+  { key:"student_docs", label:"Student Documents", icon:FolderCheck },
+  { key:"idcard",       label:"ID Card",           icon:CreditCard  },
+  { key:"marksheet",    label:"Marksheet",         icon:Award       },
+  { key:"bonafide",     label:"Bonafide",          icon:FileText    },
+  { key:"noc",          label:"NOC",               icon:FileText    },
+  { key:"tc",           label:"TC",                icon:FileText    },
 ];
 
 // Two fixed ID card designs:
@@ -1327,6 +1329,15 @@ export default function DocumentsPage() {
   const tcFileRef = useRef(null);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const tab = new URLSearchParams(window.location.search).get("tab");
+      if (tab && SUB_TABS.some(t => t.key === tab)) {
+        setActiveTab(tab);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     setLoading(true);
     getStudents().then(d => setStudents(d||[])).catch(()=>{}).finally(()=>setLoading(false));
     setLogoUrl(window.location.origin + "/school-logo.jpg");
@@ -1573,6 +1584,15 @@ export default function DocumentsPage() {
           </button>
         ))}
       </div>
+
+      {activeTab === "student_docs" && (
+        <StudentDocumentsSection
+          students={students}
+          onRefresh={() => {
+            getStudents().then(d => setStudents(d || [])).catch(() => {});
+          }}
+        />
+      )}
 
       {activeTab === "noc" && (
         <div className="flex flex-col items-center justify-center h-64 gap-4 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">

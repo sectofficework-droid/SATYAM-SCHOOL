@@ -171,8 +171,10 @@ export function mapToStudent(enrollment) {
           documentTypeId: d.document_types?.id || null,
           uploaded:       d.status === "Uploaded",
           notRequired:    d.status === "Not Required",
+          status:         d.status || "Pending",
           reason:         d.reason || "",
           file:           d.file_url || "",
+          uploadedAt:     d.uploaded_at || null,
         }))
       : [],
 
@@ -354,7 +356,7 @@ export async function getStudents(yearId = null) {
         udise, pen, apaar,
         birth_cert_reg_no, birth_cert_reg_date,
         address, pincode, room_plot_no, society, landmark, area,
-        student_documents(status, document_types(name)),
+        student_documents(id, status, file_url, uploaded_at, reason, document_types(id, name)),
         student_previous_school(school_name, grno, class, medium, place, attendance_days, last_exam_given, percentage)
       ),
       student_inventory_assignments(id, status, given_date, inventory_items(name)),
@@ -1059,7 +1061,43 @@ export async function addFeePayment(enrollmentId, studentId, amount, date, recei
   return data;
 }
 
-// ── Document Update ───────────────────────────────────────────────────────────
+// ── Document Operations ───────────────────────────────────────────────────────
+
+export async function getDocumentTypes() {
+  const { data, error } = await supabase
+    .from("document_types")
+    .select("id, name")
+    .order("name", { ascending: true });
+  if (error) throw error;
+  return data || [];
+}
+
+export async function markDocumentDone(studentId, documentTypeId, reason = "Marked as Done") {
+  const { error } = await supabase
+    .from("student_documents")
+    .upsert({
+      student_id:       studentId,
+      document_type_id: documentTypeId,
+      status:           "Uploaded",
+      reason:           reason,
+      uploaded_at:      new Date().toISOString(),
+    }, { onConflict: "student_id,document_type_id" });
+  if (error) throw error;
+}
+
+export async function markDocumentPending(studentId, documentTypeId) {
+  const { error } = await supabase
+    .from("student_documents")
+    .upsert({
+      student_id:       studentId,
+      document_type_id: documentTypeId,
+      status:           "Pending",
+      file_url:         null,
+      reason:           null,
+      uploaded_at:      null,
+    }, { onConflict: "student_id,document_type_id" });
+  if (error) throw error;
+}
 
 export async function updateStudentDocument(studentId, documentTypeId, fileUrl) {
   const { error } = await supabase
@@ -1069,6 +1107,7 @@ export async function updateStudentDocument(studentId, documentTypeId, fileUrl) 
       document_type_id: documentTypeId,
       status:           "Uploaded",
       file_url:         fileUrl,
+      reason:           null,
       uploaded_at:      new Date().toISOString(),
     }, { onConflict: "student_id,document_type_id" });
   if (error) throw error;
