@@ -8,14 +8,15 @@ import {
   ExternalLink, RotateCcw, Plus, MoreHorizontal, ShieldCheck,
   Filter, Table, CheckSquare, Sparkles, ChevronDown, Layers,
   Phone, Users, MapPin, Calendar, HelpCircle, ArrowUpDown,
-  CheckCircle, MinusCircle, FileCheck
+  CheckCircle, MinusCircle, FileCheck, Edit3, AlertTriangle
 } from "lucide-react";
 import {
   getDocumentTypes,
   markDocumentDone,
   markDocumentPending,
   markDocumentNotRequired,
-  updateStudentDocument
+  updateStudentDocument,
+  updateStudentGrNo
 } from "@/lib/studentService";
 import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile } from "@/lib/fileCompression";
@@ -147,6 +148,12 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const [otherDropdownOpen, setOtherDropdownOpen] = useState(null); // studentId of open popover
   const [activeCellInfo, setActiveCellInfo] = useState(null); // Spreadsheet active cell tooltip
   const [cellMenuOpen, setCellMenuOpen] = useState(null); // `${studentId}_${category}`
+
+  // GR Inline Editing & Confirmation States
+  const [editingGrStudentId, setEditingGrStudentId] = useState(null);
+  const [editingGrValue, setEditingGrValue] = useState("");
+  const [confirmGrModal, setConfirmGrModal] = useState(null); // { student, newGr, oldGr }
+  const [savingGr, setSavingGr] = useState(false);
 
   // Sync Modal State
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
@@ -284,6 +291,52 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
       columnCounts,
     };
   }, [localStudents, PRIMARY_COLUMNS]);
+
+  // Handle Request Save GR (opens confirmation modal)
+  const handleRequestSaveGr = (student, value) => {
+    const clean = (value || "").trim().toUpperCase();
+    if (!clean) {
+      alert("Please enter a valid GR Number.");
+      return;
+    }
+    if (student.grNo && student.grNo.trim().toUpperCase() === clean) {
+      setEditingGrStudentId(null);
+      return;
+    }
+    setConfirmGrModal({
+      student,
+      newGr: clean,
+      oldGr: student.grNo || "",
+    });
+  };
+
+  // Handle Confirm Save GR (writes to Supabase)
+  const handleConfirmSaveGr = async () => {
+    if (!confirmGrModal || !confirmGrModal.student) return;
+    const { student, newGr } = confirmGrModal;
+
+    setSavingGr(true);
+    try {
+      await updateStudentGrNo(student._studentId, newGr);
+
+      // Optimistically update localStudents state
+      setLocalStudents(prev => prev.map(s => {
+        if (s._studentId === student._studentId) {
+          return { ...s, grNo: newGr };
+        }
+        return s;
+      }));
+
+      setConfirmGrModal(null);
+      setEditingGrStudentId(null);
+      onRefresh?.();
+    } catch (err) {
+      console.error("Failed to update GR:", err);
+      alert("Failed to save GR Number: " + (err.message || "Unknown error"));
+    } finally {
+      setSavingGr(false);
+    }
+  };
 
   // Handle Mark Done (optimistic update + DB call)
   const handleMarkDone = async (student, category, docTypeOverride = null) => {
@@ -1515,9 +1568,9 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                         {student.enrollment || "—"}
                       </td>
 
-                      {/* Column D: GR NO (Frozen) */}
+                      {/* Column D: GR NO (Frozen - Editable if not already saved, with confirmation) */}
                       <td
-                        className={`sticky z-20 border-r border-b border-slate-200 text-center whitespace-nowrap transition-colors py-1.5 px-1 ${
+                        className={`sticky z-20 border-r border-b border-slate-200 text-center whitespace-nowrap transition-colors py-1 px-1 ${
                           isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
                         }`}
                         style={{
@@ -1527,12 +1580,67 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           maxWidth: COL_WIDTHS.gr,
                         }}
                       >
-                        {student.grNo ? (
-                          <span className="px-1.5 py-0.5 rounded font-mono font-bold text-[11px] bg-slate-100 text-slate-800 border border-slate-300">
-                            {student.grNo}
-                          </span>
+                        {editingGrStudentId === student._studentId ? (
+                          <div className="flex items-center justify-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              autoFocus
+                              value={editingGrValue}
+                              onChange={(e) => setEditingGrValue(e.target.value.toUpperCase())}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  handleRequestSaveGr(student, editingGrValue);
+                                } else if (e.key === "Escape") {
+                                  setEditingGrStudentId(null);
+                                }
+                              }}
+                              placeholder="GR..."
+                              className="w-14 px-1 py-0.5 text-[10.5px] font-mono font-bold text-center border border-school-navy rounded bg-white shadow-2xs focus:outline-none focus:ring-1 focus:ring-school-navy"
+                            />
+                            <button
+                              onClick={() => handleRequestSaveGr(student, editingGrValue)}
+                              className="p-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] shadow-2xs transition-colors"
+                              title="Save GR (Enter)"
+                            >
+                              <Check className="w-2.5 h-2.5" />
+                            </button>
+                            <button
+                              onClick={() => setEditingGrStudentId(null)}
+                              className="p-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[10px] transition-colors"
+                              title="Cancel (Esc)"
+                            >
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        ) : student.grNo ? (
+                          <div className="inline-flex items-center gap-0.5 group/gr justify-center">
+                            <span className="px-1.5 py-0.5 rounded font-mono font-bold text-[11px] bg-slate-100 text-slate-800 border border-slate-300">
+                              {student.grNo}
+                            </span>
+                            <button
+                              onClick={() => {
+                                setEditingGrStudentId(student._studentId);
+                                setEditingGrValue(student.grNo);
+                              }}
+                              className="opacity-0 group-hover/gr:opacity-100 p-0.5 text-slate-400 hover:text-school-navy hover:bg-slate-200 rounded transition-all cursor-pointer"
+                              title="Edit GR Number"
+                            >
+                              <Edit3 className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
                         ) : (
-                          <span className="text-slate-300 font-mono">—</span>
+                          <button
+                            onClick={() => {
+                              setEditingGrStudentId(student._studentId);
+                              setEditingGrValue("");
+                            }}
+                            className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 border border-dashed border-amber-400 hover:border-amber-600 shadow-2xs transition-all cursor-pointer group/add"
+                            title="GR not saved — click to enter and save with confirmation"
+                          >
+                            <Plus className="w-2.5 h-2.5 text-amber-600 group-hover/add:scale-110 transition-transform" />
+                            <span>+ Set GR</span>
+                          </button>
                         )}
                       </td>
 
@@ -1843,6 +1951,93 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                 className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-bold transition-colors"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm GR Assignment Modal ─────────────────────────────────── */}
+      {confirmGrModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-slate-200 animate-in fade-in zoom-in-95">
+            {/* Modal Header */}
+            <div className="bg-school-navy px-5 py-3.5 flex items-center justify-between text-white">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-amber-400" />
+                <h3 className="font-bold text-sm">Confirm GR Number Assignment</h3>
+              </div>
+              <button
+                onClick={() => setConfirmGrModal(null)}
+                className="p-1 text-white/80 hover:text-white rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 text-xs text-slate-700">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-semibold">Student Name:</span>
+                  <span className="font-bold text-slate-900 text-sm uppercase">{confirmGrModal.student.name}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-semibold">Class / Section:</span>
+                  <span className="font-bold text-school-navy">
+                    {confirmGrModal.student.std} {confirmGrModal.student.section ? `(${confirmGrModal.student.section})` : ""}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500 font-semibold">Form No / Enrollment:</span>
+                  <span className="font-mono font-bold text-slate-700">#{confirmGrModal.student.enrollment}</span>
+                </div>
+                {confirmGrModal.oldGr && (
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                    <span className="text-amber-700 font-semibold">Previous GR:</span>
+                    <span className="font-mono font-bold text-amber-800 line-through">{confirmGrModal.oldGr}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                  <span className="text-emerald-700 font-bold">New GR to Save:</span>
+                  <span className="px-2.5 py-1 rounded-md font-mono font-extrabold text-sm bg-emerald-100 text-emerald-900 border border-emerald-300">
+                    {confirmGrModal.newGr}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-900 text-[11.5px] leading-relaxed">
+                <strong>Confirmation Notice:</strong> Are you sure you want to save GR No <strong>{confirmGrModal.newGr}</strong> for <strong>{confirmGrModal.student.name}</strong>? This GR Number will be updated in the school records.
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmGrModal(null)}
+                disabled={savingGr}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSaveGr}
+                disabled={savingGr}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white rounded-xl text-xs font-bold transition-colors disabled:opacity-50 shadow-xs"
+              >
+                {savingGr ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving GR...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Confirm & Save GR</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

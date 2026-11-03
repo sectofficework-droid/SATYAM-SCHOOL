@@ -906,6 +906,33 @@ export async function updateStudentGovId(studentId, { grNo, udise, pen, apaar, r
   }
 }
 
+// ── Update Student GR Number ──────────────────────────────────────────────────
+export async function updateStudentGrNo(studentId, grNo) {
+  if (!studentId) throw new Error("Student ID is required");
+  const cleanGr = grNo ? String(grNo).trim().toUpperCase() : null;
+
+  try {
+    const res = await fetch("/api/student/update-gr", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ studentId, grNo: cleanGr }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success) return cleanGr;
+    }
+  } catch (apiErr) {
+    console.warn("API update-gr error, falling back to direct client update:", apiErr);
+  }
+
+  const { data, error } = await supabase
+    .from("students")
+    .update({ grno: cleanGr, updated_at: new Date().toISOString() })
+    .eq("id", studentId);
+  if (error) throw error;
+  return cleanGr;
+}
+
 // ── Deactivate Student ────────────────────────────────────────────────────────
 
 export async function deactivateStudent(studentId, enrollmentId, reason, date) {
