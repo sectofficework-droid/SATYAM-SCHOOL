@@ -1874,27 +1874,18 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
         {/* Spreadsheet Status Footer (Compact) */}
         <div className="px-2.5 py-1 bg-slate-100 border-t border-slate-300 flex items-center justify-between text-[10px] text-slate-600 font-mono select-none">
-          <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1 font-sans font-bold text-slate-700">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Aligned with School Report
-            </span>
-            <span className="text-slate-300">|</span>
-            <span>Freeze Panes: Cols A-D (SR, Class, GR, Name)</span>
+          <div className="font-sans">
+            <span>Showing <strong>{filteredStudents.length}</strong> students</span>
           </div>
 
-          <div className="flex items-center gap-2 font-sans">
-            <span>Showing <strong>{filteredStudents.length}</strong> students</span>
-            <span className="text-slate-300">|</span>
-            <button
-              onClick={() => {
-                tableScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-              }}
-              className="text-school-navy font-bold hover:underline cursor-pointer"
-            >
-              Top ↑
-            </button>
-          </div>
+          <button
+            onClick={() => {
+              tableScrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+            className="text-school-navy font-bold hover:underline cursor-pointer font-sans"
+          >
+            Top ↑
+          </button>
         </div>
       </div>
 
