@@ -5,8 +5,8 @@ import * as XLSX from "xlsx";
 import {
   FileText, Search, Download, Upload, Check, CheckCircle2,
   Clock, AlertCircle, RefreshCw, FileSpreadsheet, Eye, X,
-  ExternalLink, RotateCcw,
-  Plus, MoreHorizontal, ShieldCheck, Filter
+  ExternalLink, RotateCcw, Plus, MoreHorizontal, ShieldCheck,
+  Filter, Table, CheckSquare, Sparkles, ChevronDown, Layers
 } from "lucide-react";
 import {
   getDocumentTypes,
@@ -76,8 +76,6 @@ function findDocTypeByCategory(category, docTypes = []) {
 
 // Helper to identify "Other" documents (non-primary 5)
 function getOtherDocsForStudent(studentDocs = [], allDocTypes = []) {
-  const primaryKeys = ["birth", "transfer", "leaving", "student aadhar", "father", "mother"];
-
   const otherDocs = (studentDocs || []).filter(d => {
     const n = (d.name || "").toLowerCase();
     const isPrimary =
@@ -101,23 +99,43 @@ function getOtherDocsForStudent(studentDocs = [], allDocTypes = []) {
   return { otherDocs, otherDocTypes };
 }
 
+// Fixed column widths for spreadsheet freeze-panes (in pixels)
+const COL_WIDTHS = {
+  sr: 52,
+  class: 92,
+  name: 230,
+  gr: 80,
+  doc: 172,
+  other: 220,
+};
+
+// Left offsets for frozen columns
+const STICKY_OFFSETS = {
+  sr: 0,
+  class: COL_WIDTHS.sr,
+  name: COL_WIDTHS.sr + COL_WIDTHS.class, // 144
+  gr: COL_WIDTHS.sr + COL_WIDTHS.class + COL_WIDTHS.name, // 374
+};
+
 export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const [docTypes, setDocTypes] = useState([]);
   const [loadingDocTypes, setLoadingDocTypes] = useState(true);
 
-  // Filters
+  // Filters & controls
   const [classFilter, setClassFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // "all" | "pending" | "done"
   const [docColumnFilter, setDocColumnFilter] = useState("all"); // specific document filter
+  const [density, setDensity] = useState("compact"); // "compact" | "normal"
 
   // Interactive states
   const [localStudents, setLocalStudents] = useState([]);
   const [uploadingKey, setUploadingKey] = useState(null); // `${studentId}_${docTypeId}`
   const [downloadingKey, setDownloadingKey] = useState(null);
-  const [previewDoc, setPreviewDoc] = useState(null); // { url, name, title }
+  const [previewDoc, setPreviewDoc] = useState(null); // { url, name, title, fileKey }
   const [previewLoading, setPreviewLoading] = useState(false);
   const [otherDropdownOpen, setOtherDropdownOpen] = useState(null); // studentId of open popover
+  const [activeCellInfo, setActiveCellInfo] = useState(null); // Spreadsheet active cell tooltip
 
   // Keep localStudents in sync with parent prop
   useEffect(() => {
@@ -146,11 +164,11 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
   // Primary document columns configuration
   const PRIMARY_COLUMNS = useMemo(() => [
-    { key: "birth",          title: "Birth Certificate",    shortTitle: "Birth Cert",     matchKey: "birth" },
-    { key: "transfer",       title: "Transfer Certificate", shortTitle: "Transfer Cert",  matchKey: "transfer" },
-    { key: "student_aadhar", title: "Student Aadhar",       shortTitle: "Student Aadhar", matchKey: "student_aadhar" },
-    { key: "father_aadhar",  title: "Father Aadhar",        shortTitle: "Father Aadhar",  matchKey: "father_aadhar" },
-    { key: "mother_aadhar",  title: "Mother Aadhar",        shortTitle: "Mother Aadhar",  matchKey: "mother_aadhar" },
+    { key: "birth",          colLetter: "E", title: "BIRTH CERTIFICATE",    shortTitle: "Birth Cert",     matchKey: "birth" },
+    { key: "transfer",       colLetter: "F", title: "TRANSFER CERTIFICATE", shortTitle: "Transfer Cert",  matchKey: "transfer" },
+    { key: "student_aadhar", colLetter: "G", title: "STUDENT AADHAR",       shortTitle: "Student Aadhar", matchKey: "student_aadhar" },
+    { key: "father_aadhar",  colLetter: "H", title: "FATHER AADHAR",        shortTitle: "Father Aadhar",  matchKey: "father_aadhar" },
+    { key: "mother_aadhar",  colLetter: "I", title: "MOTHER AADHAR",        shortTitle: "Mother Aadhar",  matchKey: "mother_aadhar" },
   ], []);
 
   // Filtered students computation
@@ -190,12 +208,20 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     });
   }, [localStudents, classFilter, search, statusFilter, docColumnFilter, PRIMARY_COLUMNS]);
 
-  // Overall statistics
+  // Overall statistics & per-column counts
   const stats = useMemo(() => {
     let totalStudents = localStudents.length;
     let fullyDoneStudents = 0;
     let totalUploadedDocs = 0;
     let totalPendingDocs = 0;
+
+    const columnCounts = {
+      birth:          { done: 0, pending: 0 },
+      transfer:       { done: 0, pending: 0 },
+      student_aadhar: { done: 0, pending: 0 },
+      father_aadhar:  { done: 0, pending: 0 },
+      mother_aadhar:  { done: 0, pending: 0 },
+    };
 
     localStudents.forEach(s => {
       let studentAllDone = true;
@@ -203,9 +229,11 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         const doc = matchDocByCategory(col.matchKey, s.documents);
         if (doc && (doc.uploaded || doc.status === "Uploaded")) {
           totalUploadedDocs++;
+          if (columnCounts[col.key]) columnCounts[col.key].done++;
         } else {
           totalPendingDocs++;
           studentAllDone = false;
+          if (columnCounts[col.key]) columnCounts[col.key].pending++;
         }
       });
       if (studentAllDone) fullyDoneStudents++;
@@ -221,6 +249,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
       totalUploadedDocs,
       totalPendingDocs,
       completionRate,
+      columnCounts,
     };
   }, [localStudents, PRIMARY_COLUMNS]);
 
@@ -316,7 +345,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     const file = event.target.files?.[0];
     if (!file) return;
 
-    // Reset input value so same file can be selected again if needed
     event.target.value = "";
 
     const docType = docTypeOverride || findDocTypeByCategory(category, docTypes);
@@ -400,7 +428,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
       const url = await getS3ViewUrl(fileKey, downloadName);
 
       if (url) {
-        // Trigger download via anchor
         const a = document.createElement("a");
         a.href = url;
         a.download = downloadName;
@@ -469,10 +496,10 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
         return {
           "SR NO": idx + 1,
-          "ENROLLMENT NO": s.enrollment || "",
           "CLASS": s.std ? `${s.std}${s.section ? ` - ${s.section}` : ""}` : "",
           "STUDENT NAME": s.name || "",
           "GR NO": s.grNo || "",
+          "ENROLLMENT NO": s.enrollment || "",
           "BIRTH CERTIFICATE": formatStatus(birthDoc),
           "TRANSFER CERTIFICATE": formatStatus(tcDoc),
           "STUDENT AADHAR": formatStatus(stAadharDoc),
@@ -494,7 +521,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     }
   };
 
-  // Render a single document cell
+  // Render a spreadsheet document cell
   const renderDocCell = (student, category, colConfig) => {
     const doc = matchDocByCategory(category, student.documents);
     const docType = findDocTypeByCategory(category, docTypes);
@@ -507,39 +534,51 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     const isThisDownloading = downloadingKey === `${student._studentId}_${doc?.file}`;
 
     return (
-      <div className="flex flex-col gap-1.5 min-w-[135px] max-w-[165px] p-2 rounded-xl bg-white border border-gray-100 shadow-2xs transition-all hover:border-gray-200">
+      <td
+        key={category}
+        className={`border-r border-b border-slate-200 transition-colors align-middle ${
+          density === "compact" ? "p-1.5" : "p-2"
+        } ${isUploaded ? "bg-emerald-50/40 hover:bg-emerald-100/60" : "bg-amber-50/30 hover:bg-amber-100/50"}`}
+        style={{ width: COL_WIDTHS.doc, minWidth: COL_WIDTHS.doc, maxWidth: COL_WIDTHS.doc }}
+        onMouseEnter={() => setActiveCellInfo({
+          student: student.name,
+          class: student.std,
+          gr: student.grNo,
+          doc: colConfig.title,
+          status: isUploaded ? (hasFile ? "Done (File Uploaded)" : "Done (Manually Marked)") : "Upload Pending"
+        })}
+      >
         {isThisUploading ? (
-          <div className="flex items-center justify-center gap-2 py-2 text-xs font-semibold text-school-navy">
-            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-            <span>Updating...</span>
+          <div className="flex items-center justify-center gap-1.5 py-1 text-[11px] font-semibold text-school-navy">
+            <RefreshCw className="w-3 h-3 animate-spin" />
+            <span>Saving...</span>
           </div>
         ) : isUploaded ? (
-          <>
-            {/* Status Badge: DONE */}
-            <div className="flex items-center justify-between gap-1">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+          /* State: DONE */
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-emerald-800 tracking-tight">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
                 Done
               </span>
 
               {hasFile && (
                 <button
                   onClick={() => handlePreview(student, colConfig.title, doc.file)}
-                  className="p-1 text-gray-400 hover:text-school-navy hover:bg-gray-100 rounded transition-colors"
-                  title="Quick View Document"
+                  className="p-0.5 text-slate-400 hover:text-school-navy hover:bg-slate-200/60 rounded transition-colors"
+                  title="Quick View"
                 >
-                  <Eye className="w-3.5 h-3.5" />
+                  <Eye className="w-3 h-3" />
                 </button>
               )}
             </div>
 
-            {/* Action Buttons: DOWNLOAD if file exists, or ATTACH if marked manually */}
             {hasFile ? (
-              <div className="flex items-center gap-1.5 mt-0.5">
+              <div className="flex items-center gap-1">
                 <button
                   onClick={() => handleDownload(student, colConfig.title, doc.file)}
                   disabled={isThisDownloading}
-                  className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 text-xs font-semibold text-white bg-school-navy hover:bg-school-navy-dark rounded-lg transition-colors shadow-2xs disabled:opacity-50"
+                  className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-1.5 text-[11px] font-semibold text-white bg-school-navy hover:bg-school-navy-dark active:bg-school-navy rounded border border-school-navy-dark shadow-2xs transition-colors disabled:opacity-50"
                   title="Download Document"
                 >
                   {isThisDownloading ? (
@@ -550,12 +589,11 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   <span>Download</span>
                 </button>
 
-                {/* Replace File Option */}
                 <label
-                  className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors"
-                  title="Replace / Re-upload File"
+                  className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded cursor-pointer transition-colors"
+                  title="Replace / Re-upload"
                 >
-                  <Upload className="w-3.5 h-3.5" />
+                  <Upload className="w-3 h-3" />
                   <input
                     type="file"
                     className="hidden"
@@ -565,10 +603,9 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                 </label>
               </div>
             ) : (
-              /* Manually Marked Done (no file uploaded yet) */
-              <div className="flex items-center gap-1 mt-0.5">
-                <label className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 text-[11px] font-semibold text-gray-700 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg cursor-pointer transition-colors">
-                  <Upload className="w-3 h-3 text-gray-500" />
+              <div className="flex items-center gap-1">
+                <label className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-1.5 text-[10px] font-medium text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded cursor-pointer shadow-2xs transition-colors">
+                  <Upload className="w-2.5 h-2.5 text-slate-500" />
                   <span>Attach File</span>
                   <input
                     type="file"
@@ -580,38 +617,37 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
                 <button
                   onClick={() => handleMarkPending(student, category)}
-                  className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                  title="Undo: Mark as Pending"
+                  className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                  title="Revert to Pending"
                 >
-                  <RotateCcw className="w-3 h-3" />
+                  <RotateCcw className="w-2.5 h-2.5" />
                 </button>
               </div>
             )}
-          </>
+          </div>
         ) : (
-          /* Status: UPLOAD PENDING */
-          <>
-            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 w-fit">
-              <Clock className="w-3 h-3 text-amber-500" />
-              <span>Upload Pending</span>
-            </div>
+          /* State: UPLOAD PENDING */
+          <div className="flex flex-col gap-1">
+            <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-800 tracking-tight">
+              <Clock className="w-3 h-3 text-amber-600 flex-shrink-0" />
+              Upload Pending
+            </span>
 
-            {/* Buttons: MARK AS DONE & UPLOAD */}
-            <div className="flex items-center gap-1.5 mt-0.5">
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => handleMarkDone(student, category)}
-                className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors shadow-2xs"
+                className="flex-1 inline-flex items-center justify-center gap-0.5 py-1 px-1 text-[10.5px] font-bold text-emerald-800 bg-white hover:bg-emerald-100/80 active:bg-emerald-200 border border-emerald-300 rounded shadow-2xs transition-colors"
                 title="Mark as Done"
               >
-                <Check className="w-3 h-3" />
+                <Check className="w-2.5 h-2.5 text-emerald-700" />
                 <span>Mark Done</span>
               </button>
 
               <label
-                className="inline-flex items-center justify-center gap-1 px-2 py-1 text-xs font-semibold text-school-navy bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg cursor-pointer transition-colors shadow-2xs"
+                className="flex-1 inline-flex items-center justify-center gap-0.5 py-1 px-1 text-[10.5px] font-bold text-school-navy bg-white hover:bg-blue-100/80 active:bg-blue-200 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors"
                 title="Upload Document"
               >
-                <Upload className="w-3 h-3" />
+                <Upload className="w-2.5 h-2.5 text-school-navy" />
                 <span>Upload</span>
                 <input
                   type="file"
@@ -621,9 +657,9 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                 />
               </label>
             </div>
-          </>
+          </div>
         )}
-      </div>
+      </td>
     );
   };
 
@@ -635,416 +671,584 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     const isOpen = otherDropdownOpen === student._studentId;
 
     return (
-      <div className="flex flex-col gap-1.5 min-w-[170px] max-w-[210px] p-2 rounded-xl bg-white border border-gray-100 shadow-2xs relative">
-        {hasAnyUploaded ? (
-          <div className="space-y-1.5">
-            {uploadedOthers.map((d, idx) => {
-              const hasFile = Boolean(d.file);
-              const isThisDownloading = downloadingKey === `${student._studentId}_${d.file}`;
+      <td
+        key="other_docs"
+        className={`border-r border-b border-slate-200 transition-colors align-middle relative ${
+          density === "compact" ? "p-1.5" : "p-2"
+        } ${hasAnyUploaded ? "bg-emerald-50/30 hover:bg-emerald-100/50" : "bg-amber-50/30 hover:bg-amber-100/40"}`}
+        style={{ width: COL_WIDTHS.other, minWidth: COL_WIDTHS.other, maxWidth: COL_WIDTHS.other }}
+      >
+        <div className="flex flex-col gap-1">
+          {hasAnyUploaded ? (
+            <div className="space-y-1">
+              {uploadedOthers.map((d, idx) => {
+                const hasFile = Boolean(d.file);
+                const isThisDownloading = downloadingKey === `${student._studentId}_${d.file}`;
 
-              return (
-                <div key={d.name || idx} className="flex items-center justify-between gap-1 bg-gray-50/80 p-1.5 rounded-lg border border-gray-100 text-xs">
-                  <div className="flex flex-col min-w-0">
-                    <span className="font-semibold text-gray-800 truncate text-[11px]" title={d.name}>{d.name}</span>
-                    <span className="text-[10px] text-emerald-600 font-bold flex items-center gap-0.5">
-                      <CheckCircle2 className="w-2.5 h-2.5" /> Done
+                return (
+                  <div key={d.name || idx} className="flex items-center justify-between gap-1 bg-white/90 p-1 rounded border border-slate-200 shadow-2xs">
+                    <span className="font-semibold text-slate-800 truncate text-[10.5px] max-w-[110px]" title={d.name}>
+                      {d.name}
                     </span>
+
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <span className="text-[9.5px] text-emerald-700 font-bold px-1 py-0.2 rounded bg-emerald-100">
+                        ✓
+                      </span>
+
+                      {hasFile ? (
+                        <button
+                          onClick={() => handleDownload(student, d.name, d.file)}
+                          disabled={isThisDownloading}
+                          className="p-1 bg-school-navy hover:bg-school-navy-dark text-white rounded text-[10px] transition-colors"
+                          title={`Download ${d.name}`}
+                        >
+                          {isThisDownloading ? <RefreshCw className="w-2.5 h-2.5 animate-spin" /> : <Download className="w-2.5 h-2.5" />}
+                        </button>
+                      ) : (
+                        <label className="p-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded cursor-pointer transition-colors" title={`Attach file for ${d.name}`}>
+                          <Upload className="w-2.5 h-2.5" />
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept=".pdf,.jpg,.jpeg,.png"
+                            onChange={(e) => handleFileUpload(student, "other", e, { id: d.documentTypeId, name: d.name })}
+                          />
+                        </label>
+                      )}
+                    </div>
                   </div>
-
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {hasFile ? (
-                      <button
-                        onClick={() => handleDownload(student, d.name, d.file)}
-                        disabled={isThisDownloading}
-                        className="p-1 bg-school-navy hover:bg-school-navy-dark text-white rounded transition-colors"
-                        title={`Download ${d.name}`}
-                      >
-                        {isThisDownloading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-                      </button>
-                    ) : (
-                      <label className="p-1 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded cursor-pointer transition-colors" title={`Attach file for ${d.name}`}>
-                        <Upload className="w-3 h-3" />
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          onChange={(e) => handleFileUpload(student, "other", e, { id: d.documentTypeId, name: d.name })}
-                        />
-                      </label>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 w-fit">
-            <Clock className="w-3 h-3 text-amber-500" />
-            <span>Upload Pending</span>
-          </div>
-        )}
-
-        {/* Action Button: Add / Upload Other Document */}
-        <div className="relative mt-0.5">
-          <button
-            onClick={() => setOtherDropdownOpen(isOpen ? null : student._studentId)}
-            className="w-full inline-flex items-center justify-center gap-1 px-2 py-1 text-[11px] font-semibold text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors"
-          >
-            <Plus className="w-3 h-3" />
-            <span>Manage Others</span>
-          </button>
-
-          {/* Popover / Dropdown Menu */}
-          {isOpen && (
-            <div className="absolute right-0 top-full mt-1.5 w-64 bg-white rounded-xl shadow-xl border border-gray-200 p-2.5 z-50 space-y-2 text-xs">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-1.5">
-                <span className="font-bold text-gray-700 text-xs">Other Documents</span>
-                <button onClick={() => setOtherDropdownOpen(null)} className="text-gray-400 hover:text-gray-600">
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              {otherDocTypes.length === 0 ? (
-                <p className="text-[11px] text-gray-400 py-1">No other document types registered.</p>
-              ) : (
-                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                  {otherDocTypes.map(dt => {
-                    const existingDoc = (student.documents || []).find(d => d.documentTypeId === dt.id || d.name === dt.name);
-                    const isDone = existingDoc && (existingDoc.uploaded || existingDoc.status === "Uploaded");
-
-                    return (
-                      <div key={dt.id} className="p-2 bg-gray-50 rounded-lg border border-gray-100 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-gray-800 text-[11px] truncate">{dt.name}</span>
-                          {isDone ? (
-                            <span className="text-[10px] text-emerald-600 font-bold">✓ Done</span>
-                          ) : (
-                            <span className="text-[10px] text-amber-600 font-bold">Pending</span>
-                          )}
-                        </div>
-
-                        <div className="flex items-center gap-1.5 pt-0.5">
-                          {isDone ? (
-                            existingDoc?.file ? (
-                              <button
-                                onClick={() => {
-                                  setOtherDropdownOpen(null);
-                                  handleDownload(student, dt.name, existingDoc.file);
-                                }}
-                                className="flex-1 inline-flex items-center justify-center gap-1 py-0.5 px-1.5 text-[10px] font-semibold bg-school-navy text-white rounded"
-                              >
-                                <Download className="w-2.5 h-2.5" /> Download
-                              </button>
-                            ) : (
-                              <span className="text-[10px] text-gray-400">Marked Done</span>
-                            )
-                          ) : (
-                            <>
-                              <button
-                                onClick={() => {
-                                  setOtherDropdownOpen(null);
-                                  handleMarkDone(student, "other", dt);
-                                }}
-                                className="flex-1 py-0.5 px-1.5 text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 rounded hover:bg-emerald-100"
-                              >
-                                Mark Done
-                              </button>
-                              <label className="flex-1 inline-flex items-center justify-center gap-1 py-0.5 px-1.5 text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded cursor-pointer hover:bg-blue-100">
-                                <Upload className="w-2.5 h-2.5" /> Upload
-                                <input
-                                  type="file"
-                                  className="hidden"
-                                  accept=".pdf,.jpg,.jpeg,.png"
-                                  onChange={(e) => {
-                                    setOtherDropdownOpen(null);
-                                    handleFileUpload(student, "other", e, dt);
-                                  }}
-                                />
-                              </label>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                );
+              })}
             </div>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-800 tracking-tight">
+              <Clock className="w-3 h-3 text-amber-600 flex-shrink-0" />
+              Upload Pending
+            </span>
           )}
+
+          {/* Manage Others Button */}
+          <div className="relative">
+            <button
+              onClick={() => setOtherDropdownOpen(isOpen ? null : student._studentId)}
+              className="w-full inline-flex items-center justify-center gap-1 py-0.5 px-1.5 text-[10px] font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded shadow-2xs transition-colors"
+            >
+              <Plus className="w-2.5 h-2.5" />
+              <span>Manage Others</span>
+              <ChevronDown className="w-2.5 h-2.5 text-slate-400" />
+            </button>
+
+            {/* Popover Menu */}
+            {isOpen && (
+              <div className="absolute right-0 top-full mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-300 p-2 z-50 space-y-1.5 text-xs">
+                <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+                  <span className="font-bold text-slate-800 text-[11px]">Other Documents</span>
+                  <button onClick={() => setOtherDropdownOpen(null)} className="text-slate-400 hover:text-slate-600">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+
+                {otherDocTypes.length === 0 ? (
+                  <p className="text-[10px] text-slate-400 py-1">No other document types registered.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
+                    {otherDocTypes.map(dt => {
+                      const existingDoc = (student.documents || []).find(d => d.documentTypeId === dt.id || d.name === dt.name);
+                      const isDone = existingDoc && (existingDoc.uploaded || existingDoc.status === "Uploaded");
+
+                      return (
+                        <div key={dt.id} className="p-1.5 bg-slate-50 rounded border border-slate-200 space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-slate-800 text-[10.5px] truncate">{dt.name}</span>
+                            {isDone ? (
+                              <span className="text-[9.5px] text-emerald-700 font-bold">✓ Done</span>
+                            ) : (
+                              <span className="text-[9.5px] text-amber-700 font-bold">Pending</span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-1 pt-0.5">
+                            {isDone ? (
+                              existingDoc?.file ? (
+                                <button
+                                  onClick={() => {
+                                    setOtherDropdownOpen(null);
+                                    handleDownload(student, dt.name, existingDoc.file);
+                                  }}
+                                  className="flex-1 inline-flex items-center justify-center gap-1 py-0.5 px-1 text-[10px] font-semibold bg-school-navy text-white rounded"
+                                >
+                                  <Download className="w-2.5 h-2.5" /> Download
+                                </button>
+                              ) : (
+                                <span className="text-[9.5px] text-slate-400">Marked Done</span>
+                              )
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setOtherDropdownOpen(null);
+                                    handleMarkDone(student, "other", dt);
+                                  }}
+                                  className="flex-1 py-0.5 px-1 text-[9.5px] font-bold bg-white text-emerald-700 border border-emerald-300 rounded hover:bg-emerald-50"
+                                >
+                                  Mark Done
+                                </button>
+                                <label className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[9.5px] font-bold bg-white text-school-navy border border-blue-300 rounded cursor-pointer hover:bg-blue-50">
+                                  <Upload className="w-2.5 h-2.5" /> Upload
+                                  <input
+                                    type="file"
+                                    className="hidden"
+                                    accept=".pdf,.jpg,.jpeg,.png"
+                                    onChange={(e) => {
+                                      setOtherDropdownOpen(null);
+                                      handleFileUpload(student, "other", e, dt);
+                                    }}
+                                  />
+                                </label>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      </td>
     );
   };
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* ── KPI Statistics Cards ────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Students */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center justify-between">
+    <div className="flex flex-col gap-3 font-sans">
+      {/* ── Spreadsheet KPI Metric Cards ────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Students</p>
-            <p className="text-2xl font-bold text-school-navy mt-1">{stats.totalStudents}</p>
-            <p className="text-xs text-gray-400 mt-0.5">Enrolled Students</p>
+            <p className="text-[10.5px] font-bold text-slate-500 uppercase tracking-wider">Total Students</p>
+            <p className="text-xl font-extrabold text-slate-900 mt-0.5">{stats.totalStudents}</p>
+            <p className="text-[10px] text-slate-400">Enrolled Roster</p>
           </div>
-          <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center text-school-navy">
-            <FileText className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-school-navy">
+            <Table className="w-4 h-4" />
           </div>
         </div>
 
-        {/* Fully Completed */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center justify-between">
+        <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">All Docs Done</p>
-            <p className="text-2xl font-bold text-emerald-600 mt-1">{stats.fullyDoneStudents}</p>
-            <p className="text-xs text-emerald-600 mt-0.5">100% verified</p>
+            <p className="text-[10.5px] font-bold text-emerald-700 uppercase tracking-wider">All Docs Done</p>
+            <p className="text-xl font-extrabold text-emerald-700 mt-0.5">{stats.fullyDoneStudents}</p>
+            <p className="text-[10px] text-emerald-600">100% verified students</p>
           </div>
-          <div className="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <ShieldCheck className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-600">
+            <ShieldCheck className="w-4 h-4" />
           </div>
         </div>
 
-        {/* Total Uploaded / Done */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center justify-between">
+        <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Docs Completed</p>
-            <p className="text-2xl font-bold text-blue-600 mt-1">{stats.totalUploadedDocs}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{stats.completionRate}% completion rate</p>
+            <p className="text-[10.5px] font-bold text-blue-700 uppercase tracking-wider">Docs Completed</p>
+            <p className="text-xl font-extrabold text-blue-700 mt-0.5">{stats.totalUploadedDocs}</p>
+            <p className="text-[10px] text-blue-600">{stats.completionRate}% completion rate</p>
           </div>
-          <div className="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
-            <CheckCircle2 className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600">
+            <CheckCircle2 className="w-4 h-4" />
           </div>
         </div>
 
-        {/* Pending Documents */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center justify-between">
+        <div className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between shadow-2xs">
           <div>
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Upload Pending</p>
-            <p className="text-2xl font-bold text-amber-600 mt-1">{stats.totalPendingDocs}</p>
-            <p className="text-xs text-amber-600 mt-0.5">Requires submission</p>
+            <p className="text-[10.5px] font-bold text-amber-700 uppercase tracking-wider">Upload Pending</p>
+            <p className="text-xl font-extrabold text-amber-700 mt-0.5">{stats.totalPendingDocs}</p>
+            <p className="text-[10px] text-amber-600">Action required</p>
           </div>
-          <div className="w-11 h-11 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
-            <Clock className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-lg bg-amber-50 flex items-center justify-center text-amber-600">
+            <Clock className="w-4 h-4" />
           </div>
         </div>
       </div>
 
-      {/* ── Filters & Search Control Bar ───────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2.5 flex-1">
-          {/* Search Input */}
-          <div className="relative min-w-[220px] max-w-xs flex-1">
-            <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+      {/* ── Spreadsheet Toolbar ────────────────────────────────────────── */}
+      <div className="bg-slate-100 rounded-xl border border-slate-300 p-2.5 flex flex-col md:flex-row md:items-center justify-between gap-2 shadow-2xs">
+        {/* Left Toolbar Controls */}
+        <div className="flex flex-wrap items-center gap-2 flex-1">
+          {/* Search Box */}
+          <div className="relative min-w-[210px] max-w-xs flex-1">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search name, GR or enrollment..."
-              className="w-full pl-9 pr-3.5 py-2 text-xs border border-gray-200 rounded-xl focus:outline-none focus:border-school-navy focus:ring-1 focus:ring-school-navy transition-all"
+              placeholder="Filter by name, GR, enrollment..."
+              className="w-full pl-8 pr-7 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:border-school-navy focus:ring-1 focus:ring-school-navy"
             />
             {search && (
               <button
                 onClick={() => setSearch("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-3 h-3" />
               </button>
             )}
           </div>
 
-          {/* Class Filter */}
-          <select
-            value={classFilter}
-            onChange={(e) => setClassFilter(e.target.value)}
-            className="px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white text-gray-700 font-medium focus:outline-none focus:border-school-navy cursor-pointer"
-          >
-            <option value="All">All Classes ({localStudents.length})</option>
-            {CLASSES_LIST.map((cls) => {
-              const count = localStudents.filter(s => s.std === cls).length;
-              return (
+          {/* Class Selector */}
+          <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1">
+            <span className="text-[11px] font-bold text-slate-500 uppercase">Class:</span>
+            <select
+              value={classFilter}
+              onChange={(e) => setClassFilter(e.target.value)}
+              className="text-xs bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+            >
+              <option value="All">All ({localStudents.length})</option>
+              {CLASSES_LIST.map((cls) => (
                 <option key={cls} value={cls}>
-                  {cls} ({count})
+                  {cls} ({localStudents.filter(s => s.std === cls).length})
                 </option>
-              );
-            })}
-          </select>
+              ))}
+            </select>
+          </div>
 
           {/* Status Filter */}
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white text-gray-700 font-medium focus:outline-none focus:border-school-navy cursor-pointer"
-          >
-            <option value="all">All Statuses</option>
-            <option value="pending">Has Pending Docs</option>
-            <option value="done">All Docs Completed</option>
-          </select>
+          <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1">
+            <span className="text-[11px] font-bold text-slate-500 uppercase">Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="text-xs bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+            >
+              <option value="all">All Rows</option>
+              <option value="pending">Pending Only</option>
+              <option value="done">Completed Only</option>
+            </select>
+          </div>
 
-          {/* Document Specific Filter */}
-          <select
-            value={docColumnFilter}
-            onChange={(e) => setDocColumnFilter(e.target.value)}
-            className="px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white text-gray-700 font-medium focus:outline-none focus:border-school-navy cursor-pointer hidden sm:block"
-          >
-            <option value="all">All Document Types</option>
-            <option value="birth">Pending Birth Certificate</option>
-            <option value="transfer">Pending Transfer Certificate</option>
-            <option value="student_aadhar">Pending Student Aadhar</option>
-            <option value="father_aadhar">Pending Father Aadhar</option>
-            <option value="mother_aadhar">Pending Mother Aadhar</option>
-          </select>
+          {/* Missing Document Filter */}
+          <div className="hidden lg:flex items-center gap-1 bg-white border border-slate-300 rounded-lg px-2 py-1">
+            <span className="text-[11px] font-bold text-slate-500 uppercase">Missing:</span>
+            <select
+              value={docColumnFilter}
+              onChange={(e) => setDocColumnFilter(e.target.value)}
+              className="text-xs bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
+            >
+              <option value="all">Any</option>
+              <option value="birth">Birth Certificate</option>
+              <option value="transfer">Transfer Certificate</option>
+              <option value="student_aadhar">Student Aadhar</option>
+              <option value="father_aadhar">Father Aadhar</option>
+              <option value="mother_aadhar">Mother Aadhar</option>
+            </select>
+          </div>
         </div>
 
-        {/* Action Buttons: Excel Export & Refresh */}
-        <div className="flex items-center gap-2 self-end md:self-auto flex-shrink-0">
+        {/* Right Toolbar Controls */}
+        <div className="flex items-center gap-1.5 self-end md:self-auto flex-shrink-0">
+          {/* Density Switch */}
+          <div className="flex items-center bg-white border border-slate-300 rounded-lg p-0.5 text-[11px]">
+            <button
+              onClick={() => setDensity("compact")}
+              className={`px-2 py-1 rounded font-semibold transition-colors ${density === "compact" ? "bg-slate-200 text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"}`}
+              title="Compact spreadsheet view"
+            >
+              Compact
+            </button>
+            <button
+              onClick={() => setDensity("normal")}
+              className={`px-2 py-1 rounded font-semibold transition-colors ${density === "normal" ? "bg-slate-200 text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-800"}`}
+              title="Comfortable view"
+            >
+              Normal
+            </button>
+          </div>
+
+          {/* Export to Excel (.xlsx) */}
           <button
             onClick={handleExportExcel}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold shadow-xs transition-colors"
-            title="Download Excel Document Register"
+            className="inline-flex items-center gap-1 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 active:bg-emerald-900 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors"
+            title="Download Excel Spreadsheet"
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>Export Excel</span>
+            <span>Excel (.xlsx)</span>
           </button>
 
+          {/* Refresh Data */}
           <button
             onClick={() => onRefresh?.()}
-            className="inline-flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-semibold transition-colors"
-            title="Reload from server"
+            className="p-1.5 bg-white hover:bg-slate-200 active:bg-slate-300 text-slate-700 border border-slate-300 rounded-lg transition-colors"
+            title="Refresh from database"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Refresh</span>
           </button>
         </div>
       </div>
 
-      {/* ── Main Data Table ────────────────────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
-        {/* Table Top Bar */}
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-gray-700 uppercase tracking-wider">
-              Student Document Registry
-            </span>
-            <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-school-navy/10 text-school-navy">
-              All {filteredStudents.length} student{filteredStudents.length !== 1 ? "s" : ""}
-            </span>
-          </div>
-
-          <span className="text-xs text-gray-400 hidden sm:inline">
-            All students listed continuously
+      {/* ── Spreadsheet Formula / Active Cell Indicator ───────────────── */}
+      <div className="bg-white border border-slate-300 px-3 py-1.5 rounded-lg flex items-center justify-between text-xs text-slate-600 shadow-2xs">
+        <div className="flex items-center gap-2 overflow-hidden text-ellipsis whitespace-nowrap">
+          <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 border border-slate-300 text-slate-700">
+            fx
           </span>
+          {activeCellInfo ? (
+            <span className="text-slate-800">
+              <strong className="text-school-navy font-bold">{activeCellInfo.student}</strong>
+              <span className="text-slate-400 mx-1">|</span>
+              Class: <strong>{activeCellInfo.class || "—"}</strong>
+              <span className="text-slate-400 mx-1">|</span>
+              GR: <strong>{activeCellInfo.gr || "—"}</strong>
+              <span className="text-slate-400 mx-1">|</span>
+              <span className="text-slate-700">{activeCellInfo.doc}:</span>{" "}
+              <strong className={activeCellInfo.status.startsWith("Done") ? "text-emerald-700 font-bold" : "text-amber-700 font-bold"}>
+                {activeCellInfo.status}
+              </strong>
+            </span>
+          ) : (
+            <span className="text-slate-400 italic">
+              Hover over any document cell to inspect details
+            </span>
+          )}
         </div>
 
-        {/* Scrollable Table Content */}
-        <div className="overflow-x-auto w-full">
-          <table className="w-full text-left border-collapse min-w-[1250px]">
-            <thead>
-              <tr className="border-b border-gray-200 bg-gray-50/70 text-[11px] font-bold text-gray-500 uppercase tracking-wider select-none">
-                <th className="py-3 px-3 text-center w-12">SR NO</th>
-                <th className="py-3 px-3 w-28">CLASS</th>
-                <th className="py-3 px-3 w-48">NAME</th>
-                <th className="py-3 px-3 text-center w-20">GR</th>
-                <th className="py-3 px-3">BIRTH CERTIFICATE</th>
-                <th className="py-3 px-3">TRANSFER CERTIFICATE</th>
-                <th className="py-3 px-3">STUDENT AADHAR</th>
-                <th className="py-3 px-3">FATHER AADHAR</th>
-                <th className="py-3 px-3">MOTHER AADHAR</th>
-                <th className="py-3 px-3">OTHER DOCUMENTS</th>
+        <div className="flex items-center gap-3 text-[11px] font-medium text-slate-500 flex-shrink-0">
+          <span>Rows: <strong className="text-slate-800">{filteredStudents.length}</strong> / {localStudents.length}</span>
+          <span className="text-slate-300">|</span>
+          <span>Columns: <strong className="text-slate-800">10</strong></span>
+        </div>
+      </div>
+
+      {/* ── Spreadsheet Grid with Freeze Panes ────────────────────────── */}
+      <div className="border-2 border-slate-300 rounded-xl overflow-hidden bg-white shadow-xs max-h-[76vh] flex flex-col">
+        <div className="overflow-auto flex-1 relative">
+          <table className="border-separate border-spacing-0 w-full text-left text-xs">
+            {/* Table Header (Sticky Top) */}
+            <thead className="sticky top-0 z-30 select-none">
+              <tr className="bg-slate-200/95 backdrop-blur-xs text-[11px] font-bold text-slate-700 uppercase tracking-wider">
+                {/* Column A: SR NO (Frozen 1) */}
+                <th
+                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 text-center py-2 px-1 text-slate-700"
+                  style={{
+                    left: STICKY_OFFSETS.sr,
+                    width: COL_WIDTHS.sr,
+                    minWidth: COL_WIDTHS.sr,
+                    maxWidth: COL_WIDTHS.sr,
+                  }}
+                >
+                  <div className="text-[9px] text-slate-400 font-mono font-normal">A</div>
+                  <span>SR NO</span>
+                </th>
+
+                {/* Column B: CLASS (Frozen 2) */}
+                <th
+                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 py-2 px-2 text-slate-700"
+                  style={{
+                    left: STICKY_OFFSETS.class,
+                    width: COL_WIDTHS.class,
+                    minWidth: COL_WIDTHS.class,
+                    maxWidth: COL_WIDTHS.class,
+                  }}
+                >
+                  <div className="text-[9px] text-slate-400 font-mono font-normal">B</div>
+                  <span>CLASS</span>
+                </th>
+
+                {/* Column C: NAME (Frozen 3) */}
+                <th
+                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 py-2 px-2.5 text-slate-700"
+                  style={{
+                    left: STICKY_OFFSETS.name,
+                    width: COL_WIDTHS.name,
+                    minWidth: COL_WIDTHS.name,
+                    maxWidth: COL_WIDTHS.name,
+                  }}
+                >
+                  <div className="text-[9px] text-slate-400 font-mono font-normal">C</div>
+                  <span>STUDENT NAME</span>
+                </th>
+
+                {/* Column D: GR (Frozen 4 - Right Border Separator) */}
+                <th
+                  className="sticky z-40 bg-slate-200 border-r-2 border-r-slate-400 border-b-2 border-slate-300 text-center py-2 px-1 text-slate-700 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)]"
+                  style={{
+                    left: STICKY_OFFSETS.gr,
+                    width: COL_WIDTHS.gr,
+                    minWidth: COL_WIDTHS.gr,
+                    maxWidth: COL_WIDTHS.gr,
+                  }}
+                >
+                  <div className="text-[9px] text-slate-400 font-mono font-normal">D</div>
+                  <span>GR</span>
+                </th>
+
+                {/* Columns E to I: Primary Documents */}
+                {PRIMARY_COLUMNS.map((col) => {
+                  const counts = stats.columnCounts[col.key] || { done: 0, pending: 0 };
+                  return (
+                    <th
+                      key={col.key}
+                      className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
+                      style={{ width: COL_WIDTHS.doc, minWidth: COL_WIDTHS.doc, maxWidth: COL_WIDTHS.doc }}
+                    >
+                      <div className="flex items-center justify-between text-[9px] font-mono text-slate-400 font-normal">
+                        <span>{col.colLetter}</span>
+                        <span className="font-sans font-semibold text-emerald-700">{counts.done} ✓ / <span className="text-amber-700">{counts.pending} ⌛</span></span>
+                      </div>
+                      <span className="text-[11px] block truncate" title={col.title}>
+                        {col.title}
+                      </span>
+                    </th>
+                  );
+                })}
+
+                {/* Column J: OTHER DOCUMENTS */}
+                <th
+                  className="border-r border-b-2 border-slate-300 py-2 px-2 text-slate-800 bg-slate-100"
+                  style={{ width: COL_WIDTHS.other, minWidth: COL_WIDTHS.other, maxWidth: COL_WIDTHS.other }}
+                >
+                  <div className="text-[9px] text-slate-400 font-mono font-normal">J</div>
+                  <span className="text-[11px] block">OTHER DOCUMENTS</span>
+                </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-100 text-xs">
+
+            {/* Table Body */}
+            <tbody>
               {filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-16 text-center text-gray-400">
-                    <FileText className="w-10 h-10 mx-auto text-gray-300 mb-2" />
-                    <p className="font-medium text-gray-600">No students found matching your filters</p>
-                    <p className="text-xs text-gray-400 mt-1">Try resetting search or filter criteria</p>
+                  <td colSpan={10} className="py-20 text-center text-slate-400 bg-white">
+                    <Table className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                    <p className="font-bold text-slate-700 text-sm">No student records match the active criteria</p>
+                    <p className="text-xs text-slate-400 mt-1">Try resetting the class or status filter above</p>
                   </td>
                 </tr>
               ) : (
                 filteredStudents.map((student, idx) => {
                   const serialNo = idx + 1;
+                  const isEven = idx % 2 === 0;
 
                   return (
                     <tr
                       key={student._studentId || student.enrollment || idx}
-                      className="hover:bg-blue-50/20 transition-colors"
+                      className={`group transition-colors ${isEven ? "bg-white" : "bg-slate-50/60"} hover:bg-sky-50/60`}
                     >
-                      {/* SR NO */}
-                      <td className="py-3 px-3 text-center font-bold text-gray-500 text-xs">
+                      {/* Column A: SR NO (Frozen) */}
+                      <td
+                        className={`sticky z-20 border-r border-b border-slate-200 text-center font-mono font-bold text-slate-600 transition-colors ${
+                          isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
+                        } ${density === "compact" ? "py-1.5 px-1 text-[11px]" : "py-2 px-1 text-xs"}`}
+                        style={{
+                          left: STICKY_OFFSETS.sr,
+                          width: COL_WIDTHS.sr,
+                          minWidth: COL_WIDTHS.sr,
+                          maxWidth: COL_WIDTHS.sr,
+                        }}
+                      >
                         {serialNo}
                       </td>
 
-                      {/* CLASS */}
-                      <td className="py-3 px-3 whitespace-nowrap">
-                        <span className="font-semibold text-school-navy">
+                      {/* Column B: CLASS (Frozen) */}
+                      <td
+                        className={`sticky z-20 border-r border-b border-slate-200 whitespace-nowrap transition-colors ${
+                          isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
+                        } ${density === "compact" ? "py-1.5 px-2" : "py-2 px-2"}`}
+                        style={{
+                          left: STICKY_OFFSETS.class,
+                          width: COL_WIDTHS.class,
+                          minWidth: COL_WIDTHS.class,
+                          maxWidth: COL_WIDTHS.class,
+                        }}
+                      >
+                        <span className="font-bold text-school-navy text-xs">
                           {student.std || "—"}
                         </span>
                         {student.section && (
-                          <span className="text-gray-400 font-normal ml-1">
-                            - {student.section}
+                          <span className="text-[10px] text-slate-500 font-semibold ml-0.5">
+                            -{student.section}
                           </span>
                         )}
                       </td>
 
-                      {/* NAME */}
-                      <td className="py-3 px-3">
-                        <div className="flex flex-col">
-                          <span className="font-bold text-gray-900 leading-tight">
+                      {/* Column C: NAME (Frozen) */}
+                      <td
+                        className={`sticky z-20 border-r border-b border-slate-200 transition-colors ${
+                          isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
+                        } ${density === "compact" ? "py-1.5 px-2.5" : "py-2 px-2.5"}`}
+                        style={{
+                          left: STICKY_OFFSETS.name,
+                          width: COL_WIDTHS.name,
+                          minWidth: COL_WIDTHS.name,
+                          maxWidth: COL_WIDTHS.name,
+                        }}
+                      >
+                        <div className="flex flex-col min-w-0">
+                          <span className="font-bold text-slate-900 truncate leading-tight text-xs" title={student.name}>
                             {student.name || "—"}
                           </span>
-                          <span className="text-[11px] text-gray-400 font-mono mt-0.5">
+                          <span className="text-[10px] text-slate-400 font-mono mt-0.5">
                             #{student.enrollment}
                           </span>
                         </div>
                       </td>
 
-                      {/* GR */}
-                      <td className="py-3 px-3 text-center whitespace-nowrap">
+                      {/* Column D: GR (Frozen - Right Border Separator) */}
+                      <td
+                        className={`sticky z-20 border-r-2 border-r-slate-400 border-b border-slate-200 text-center whitespace-nowrap shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)] transition-colors ${
+                          isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
+                        } ${density === "compact" ? "py-1.5 px-1" : "py-2 px-1"}`}
+                        style={{
+                          left: STICKY_OFFSETS.gr,
+                          width: COL_WIDTHS.gr,
+                          minWidth: COL_WIDTHS.gr,
+                          maxWidth: COL_WIDTHS.gr,
+                        }}
+                      >
                         {student.grNo ? (
-                          <span className="px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-gray-100 text-gray-700 border border-gray-200">
+                          <span className="px-1.5 py-0.5 rounded font-mono font-bold text-[11px] bg-slate-100 text-slate-800 border border-slate-300">
                             {student.grNo}
                           </span>
                         ) : (
-                          <span className="text-gray-300 font-mono">—</span>
+                          <span className="text-slate-300 font-mono">—</span>
                         )}
                       </td>
 
-                      {/* BIRTH CERTIFICATE */}
-                      <td className="py-2.5 px-3">
-                        {renderDocCell(student, "birth", PRIMARY_COLUMNS[0])}
-                      </td>
+                      {/* Columns E to I: Primary Documents */}
+                      {PRIMARY_COLUMNS.map(col => renderDocCell(student, col.matchKey, col))}
 
-                      {/* TRANSFER CERTIFICATE */}
-                      <td className="py-2.5 px-3">
-                        {renderDocCell(student, "transfer", PRIMARY_COLUMNS[1])}
-                      </td>
-
-                      {/* STUDENT AADHAR */}
-                      <td className="py-2.5 px-3">
-                        {renderDocCell(student, "student_aadhar", PRIMARY_COLUMNS[2])}
-                      </td>
-
-                      {/* FATHER AADHAR */}
-                      <td className="py-2.5 px-3">
-                        {renderDocCell(student, "father_aadhar", PRIMARY_COLUMNS[3])}
-                      </td>
-
-                      {/* MOTHER AADHAR */}
-                      <td className="py-2.5 px-3">
-                        {renderDocCell(student, "mother_aadhar", PRIMARY_COLUMNS[4])}
-                      </td>
-
-                      {/* OTHER DOCUMENTS */}
-                      <td className="py-2.5 px-3">
-                        {renderOtherDocsCell(student)}
-                      </td>
+                      {/* Column J: OTHER DOCUMENTS */}
+                      {renderOtherDocsCell(student)}
                     </tr>
                   );
                 })
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Spreadsheet Status Footer */}
+        <div className="px-3 py-1.5 bg-slate-100 border-t-2 border-slate-300 flex items-center justify-between text-[11px] text-slate-600 font-mono select-none">
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5 font-sans font-bold text-slate-700">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Spreadsheet View Ready
+            </span>
+            <span className="text-slate-300">|</span>
+            <span>Freeze Panes Active: Cols A-D (SR, Class, Name, GR)</span>
+          </div>
+
+          <div className="flex items-center gap-3 font-sans">
+            <span>Showing all <strong>{filteredStudents.length}</strong> students</span>
+            <span className="text-slate-300">|</span>
+            <button
+              onClick={() => {
+                const el = document.querySelector(".max-h-\\[76vh\\] > div");
+                if (el) el.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              className="text-school-navy font-bold hover:underline"
+            >
+              Back to Top ↑
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1053,7 +1257,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden flex flex-col max-h-[90vh]">
             {/* Modal Header */}
-            <div className="bg-school-navy px-5 py-3.5 flex items-center justify-between text-white">
+            <div className="bg-school-navy px-5 py-3 flex items-center justify-between text-white">
               <div>
                 <h3 className="font-bold text-sm flex items-center gap-2">
                   <FileText className="w-4 h-4" />
@@ -1071,7 +1275,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                    title="Open in new window"
+                    title="Open in new tab"
                   >
                     <ExternalLink className="w-4 h-4" />
                   </a>
@@ -1079,7 +1283,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                 <button
                   onClick={() => setPreviewDoc(null)}
                   className="p-1.5 text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
-                  title="Close"
+                  title="Close preview"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -1087,18 +1291,18 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-gray-50 min-h-[350px]">
+            <div className="flex-1 overflow-auto p-4 flex items-center justify-center bg-slate-50 min-h-[350px]">
               {previewLoading ? (
-                <div className="flex flex-col items-center gap-3 text-gray-500">
+                <div className="flex flex-col items-center gap-3 text-slate-500">
                   <RefreshCw className="w-8 h-8 animate-spin text-school-navy" />
-                  <span className="text-xs font-semibold">Loading document preview...</span>
+                  <span className="text-xs font-semibold">Loading document...</span>
                 </div>
               ) : previewDoc.url ? (
                 previewDoc.fileKey?.toLowerCase().endsWith(".pdf") ? (
                   <iframe
                     src={previewDoc.url}
                     title={previewDoc.title}
-                    className="w-full h-[65vh] rounded-lg border border-gray-200"
+                    className="w-full h-[65vh] rounded-lg border border-slate-200"
                   />
                 ) : (
                   <img
@@ -1108,15 +1312,15 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   />
                 )
               ) : (
-                <div className="text-center text-gray-400 py-8">
+                <div className="text-center text-slate-400 py-8">
                   <AlertCircle className="w-8 h-8 mx-auto text-amber-500 mb-2" />
-                  <p className="text-sm font-semibold text-gray-600">Preview not available</p>
+                  <p className="text-sm font-semibold text-slate-600">Preview not available</p>
                 </div>
               )}
             </div>
 
             {/* Modal Footer */}
-            <div className="px-5 py-3 border-t border-gray-100 bg-white flex items-center justify-end gap-2">
+            <div className="px-5 py-3 border-t border-slate-200 bg-white flex items-center justify-end gap-2">
               {previewDoc.url && (
                 <a
                   href={previewDoc.url}
@@ -1129,7 +1333,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               )}
               <button
                 onClick={() => setPreviewDoc(null)}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-colors"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
               >
                 Close
               </button>
