@@ -773,68 +773,57 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             <span>Saving...</span>
           </div>
         ) : isUploaded ? (
-          /* State 1: OK / DONE - OK IS BIG MAIN FOCUS, DOWNLOAD IS SMALL LIKE UPLOAD */
-          <div className="flex items-center justify-between gap-1 w-full">
-            {/* Big Main Focus OK Badge */}
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-100 text-emerald-900 border border-emerald-400 font-black tracking-wider shadow-2xs">
-              <CheckCircle2 className="w-4 h-4 text-emerald-700 flex-shrink-0 stroke-[2.5]" />
-              <span className="text-xs sm:text-[13px]">OK</span>
-              {!hasFile && (
-                <span className="text-[9px] font-semibold text-emerald-700/80 uppercase font-sans border-l border-emerald-300 pl-1 ml-0.5 hidden sm:inline">
-                  Report
-                </span>
-              )}
-            </div>
+          /* State 1: OK / DONE - OK ENLARGED BIG, ACTIONS FULLY RESTORED, DOWNLOAD SMALL LIKE UPLOAD */
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 text-emerald-800 tracking-wide">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                <span className="text-sm font-black">OK</span>
+                {!hasFile && <span className="text-[9.5px] font-semibold text-emerald-700 font-sans ml-0.5">(Verified)</span>}
+              </span>
 
-            {/* Small Action Buttons: Download (small like upload), Preview, Upload, More */}
-            <div className="flex items-center gap-0.5 flex-shrink-0">
-              {hasFile ? (
-                <>
-                  {/* Small Download button - same compact size as small upload button */}
-                  <button
-                    onClick={() => handleDownload(student, colConfig.title, doc.file)}
-                    disabled={isThisDownloading}
-                    className="p-1.5 bg-school-navy hover:bg-school-navy-dark active:bg-school-navy text-white rounded-md border border-school-navy shadow-2xs transition-colors disabled:opacity-50 cursor-pointer flex items-center justify-center"
-                    title="Download Document"
-                  >
-                    {isThisDownloading ? (
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Download className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-
-                  {/* Quick Preview */}
+              <div className="flex items-center gap-0.5">
+                {hasFile && (
                   <button
                     onClick={() => handlePreview(student, colConfig.title, doc.file)}
-                    className="p-1.5 text-slate-500 hover:text-school-navy hover:bg-slate-200/70 rounded-md transition-colors cursor-pointer flex items-center justify-center"
+                    className="p-1 text-slate-400 hover:text-school-navy hover:bg-slate-200/60 rounded transition-colors cursor-pointer"
                     title="Quick Preview"
                   >
                     <Eye className="w-3.5 h-3.5" />
                   </button>
+                )}
+                <button
+                  onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+                  title="More actions"
+                >
+                  <MoreHorizontal className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
 
-                  {/* Small Upload / Replace button */}
-                  <label
-                    className="p-1.5 text-slate-500 hover:text-school-navy hover:bg-slate-200/70 rounded-md cursor-pointer transition-colors flex items-center justify-center"
-                    title="Replace / Re-upload File"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept=".pdf,.jpg,.jpeg,.png"
-                      onChange={(e) => handleFileUpload(student, category, e)}
-                    />
-                  </label>
-                </>
-              ) : (
-                /* Verified without physical file: Small Attach / Upload button */
+            {hasFile ? (
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => handleDownload(student, colConfig.title, doc.file)}
+                  disabled={isThisDownloading}
+                  className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-1 text-[10.5px] font-bold text-white bg-school-navy hover:bg-school-navy-dark active:bg-school-navy rounded border border-school-navy shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
+                  title="Download Document"
+                >
+                  {isThisDownloading ? (
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Download className="w-3 h-3" />
+                  )}
+                  <span>Download</span>
+                </button>
+
                 <label
-                  className="inline-flex items-center gap-1 px-1.5 py-1 text-[10px] font-bold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded-md cursor-pointer shadow-2xs transition-colors"
-                  title="Attach file (PDF / Image)"
+                  className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-1 text-[10.5px] font-bold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors"
+                  title="Replace / Re-upload File"
                 >
                   <Upload className="w-3 h-3 text-school-navy" />
-                  <span className="hidden sm:inline">Attach</span>
+                  <span>Upload</span>
                   <input
                     type="file"
                     className="hidden"
@@ -842,17 +831,21 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                     onChange={(e) => handleFileUpload(student, category, e)}
                   />
                 </label>
-              )}
-
-              {/* Context menu toggle */}
-              <button
-                onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
-                className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-md transition-colors cursor-pointer"
-                title="More actions"
-              >
-                <MoreHorizontal className="w-3 h-3" />
-              </button>
-            </div>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <label className="flex-1 inline-flex items-center justify-center gap-1 py-1 px-1 text-[10.5px] font-bold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors">
+                  <Upload className="w-3 h-3 text-slate-500" />
+                  <span>Attach File</span>
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.jpg,.jpeg,.png"
+                    onChange={(e) => handleFileUpload(student, category, e)}
+                  />
+                </label>
+              </div>
+            )}
 
             {/* Cell Context Menu */}
             {isMenuOpen && (
@@ -874,26 +867,38 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
           </div>
         ) : isNotRequired ? (
           /* State 2: NOT REQUIRED / EXEMPT (—) */
-          <div className="flex items-center justify-between gap-1 w-full">
-            <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-100 text-slate-700 border border-slate-300 font-bold text-xs shadow-2xs">
-              <span className="font-mono text-slate-400 font-extrabold text-sm leading-none">—</span>
-              <span className="text-[10px] text-slate-500 font-medium">Exempt</span>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 tracking-tight">
+                <span className="font-mono text-slate-400 font-bold text-xs">—</span>
+                <span>Not Required</span>
+              </span>
+
+              <button
+                onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
+                className="p-0.5 text-slate-400 hover:text-slate-600 rounded cursor-pointer"
+                title="Change status"
+              >
+                <MoreHorizontal className="w-3.5 h-3.5" />
+              </button>
             </div>
 
-            <div className="flex items-center gap-0.5 flex-shrink-0">
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => handleMarkDone(student, category)}
-                className="p-1.5 text-emerald-700 hover:text-emerald-900 hover:bg-emerald-100/70 rounded-md transition-colors cursor-pointer flex items-center justify-center border border-emerald-300 bg-white shadow-2xs"
-                title="Mark as OK"
+                className="flex-1 inline-flex items-center justify-center gap-0.5 py-1 px-1 text-[10.5px] font-semibold text-emerald-800 bg-white hover:bg-emerald-50 border border-emerald-300 rounded shadow-2xs transition-colors cursor-pointer"
+                title="Mark as OK / Submitted"
               >
-                <Check className="w-3.5 h-3.5" />
+                <Check className="w-2.5 h-2.5 text-emerald-700" />
+                <span>Mark OK</span>
               </button>
 
               <label
-                className="p-1.5 text-school-navy hover:text-school-navy-dark hover:bg-blue-100/70 rounded-md cursor-pointer transition-colors flex items-center justify-center border border-blue-300 bg-white shadow-2xs"
+                className="flex-1 inline-flex items-center justify-center gap-0.5 py-1 px-1 text-[10.5px] font-semibold text-school-navy bg-white hover:bg-blue-50 border border-blue-300 rounded cursor-pointer shadow-2xs transition-colors"
                 title="Upload Document"
               >
-                <Upload className="w-3.5 h-3.5" />
+                <Upload className="w-2.5 h-2.5 text-school-navy" />
+                <span>Upload</span>
                 <input
                   type="file"
                   className="hidden"
@@ -901,14 +906,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   onChange={(e) => handleFileUpload(student, category, e)}
                 />
               </label>
-
-              <button
-                onClick={() => setCellMenuOpen(isMenuOpen ? null : `${student._studentId}_${category}`)}
-                className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-200/50 rounded-md"
-                title="Change status"
-              >
-                <MoreHorizontal className="w-3 h-3" />
-              </button>
             </div>
 
             {/* Cell Context Menu */}
