@@ -26,6 +26,18 @@ const pageTitles = {
   "/inventory": { title: "Inventory Management", sub: "Stock, vendors & purchase tracking" },
   "/report": { title: "Reports", sub: "Attendance, fee & student reports" },
   "/government-entry": { title: "Government Entry", sub: "UDISE / PEN portal filing" },
+  "/documents": { title: "Documents", sub: "Student documents, ID cards, marksheets & certificates" },
+  "/documents/marksheet-edit": { title: "Marksheet Edit", sub: "Edit & customize marksheets" },
+  "/tasks": { title: "Task Management", sub: "Assign, monitor and review staff tasks" },
+  "/gr-book": { title: "GR Book", sub: "General register & student record history" },
+  "/attendance": { title: "Attendance", sub: "Daily employee attendance & biometric logs" },
+  "/syllabus": { title: "Syllabus Management", sub: "Class-wise curriculum & topic progress" },
+  "/expenses": { title: "Expenses", sub: "Track operational expenses & vouchers" },
+  "/notice": { title: "Notice Board", sub: "Publish & broadcast school notices" },
+  "/queries": { title: "Queries & Suggestions", sub: "Parent questions, requests & complaints" },
+  "/question-papers": { title: "Question Bank", sub: "Generate & print exam question papers" },
+  "/super-admin": { title: "Super Admin", sub: "Privileged administrative actions & overrides" },
+  "/diagnostics": { title: "Diagnostics", sub: "System health & environment checks" },
   "/settings": { title: "Settings", sub: "System configuration & preferences" },
   "/sef/dashboard": { title: "SEF Dashboard", sub: "Satyam Education Foundation overview" },
   "/sef/student": { title: "SEF Students", sub: "Tuition student records" },
@@ -59,7 +71,13 @@ export default function Header() {
   const setActiveOrg = useStore((state) => state.setActiveOrg);
   const idleSecondsLeft = useIdleTimer();
 
-  const page = pageTitles[pathname] || pageTitles["/dashboard"];
+  const page =
+    pageTitles[pathname] ||
+    Object.keys(pageTitles)
+      .filter((k) => k !== "/dashboard" && pathname?.startsWith(k))
+      .sort((a, b) => b.length - a.length)
+      .map((k) => pageTitles[k])[0] ||
+    pageTitles["/dashboard"];
 
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [alerts, setAlerts] = useState([]);
