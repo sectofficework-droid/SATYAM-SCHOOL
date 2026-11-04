@@ -3001,6 +3001,34 @@ function studentToReplaceRow(s) {
 // - only roll no / join date (via enrollmentId) and all personal/contact/ID
 // fields are touched; Class/Section columns are still validated (must
 // resolve to a real class) for consistency with the shared template shape.
+// Deterministic natural sorting so students in the picker and downloaded
+// templates are never listed with text-collation randomness (e.g. 1, 10, 100, 2).
+function sortStudentsNaturally(a, b) {
+  const ea = String(a?.enrollment || a?.enrollNo || "").trim();
+  const eb = String(b?.enrollment || b?.enrollNo || "").trim();
+  if (!ea && eb) return 1;
+  if (ea && !eb) return -1;
+  if (ea && eb) {
+    const na = parseInt(ea, 10);
+    const nb = parseInt(eb, 10);
+    const aIsDigits = /^\d+$/.test(ea);
+    const bIsDigits = /^\d+$/.test(eb);
+    if (aIsDigits && bIsDigits && na !== nb) {
+      return na - nb;
+    }
+    const cmp = ea.localeCompare(eb, undefined, { numeric: true, sensitivity: "base" });
+    if (cmp !== 0) return cmp;
+  }
+  const ca = String(a?.std || a?.cls || "");
+  const cb = String(b?.std || b?.cls || "");
+  const cmpC = ca.localeCompare(cb, undefined, { numeric: true });
+  if (cmpC !== 0) return cmpC;
+  const ra = Number(a?.rollNo || a?.roll) || 0;
+  const rb = Number(b?.rollNo || b?.roll) || 0;
+  if (ra !== rb) return ra - rb;
+  return String(a?.name || "").localeCompare(String(b?.name || ""));
+}
+
 function FullDetailsReplaceImportPanel({ students, onImportDone }) {
   const { authUser } = useStore();
   const [batchId, setBatchId] = useState("none"); // REQ-FEAT-021: default "no batch"
@@ -3017,8 +3045,11 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
   // overwriting a student that wasn't meant to change in this batch.
   const [templateMode, setTemplateMode] = useState("all");
   const [pickSearch,   setPickSearch]   = useState("");
-  const [pickedNos,    setPickedNos]    = useState(new Set());
-  const [replaceStatusFilter, setReplaceStatusFilter] = useState("all"); // "all" | "completed" | "not_completed"
+  const [pickedOrder,  setPickedOrder]  = useState([]);
+  const [showSelectedFirst, setShowSelectedFirst] = useState(false);
+  const [replaceStatusFilter, setReplaceStatusFilter] = useState("all"); // "all" | "completed" | "not_completed" | "selected"
+  const pickedSet = useMemo(() => new Set(pickedOrder), [pickedOrder]);
+  const pickedIndexMap = useMemo(() => new Map(pickedOrder.map((enr, i) => [enr, i + 1])), [pickedOrder]);
   const [replacedStudents, setReplacedStudents] = useState([]);
 
   const loadReplaced = useCallback(() => {
@@ -3085,13 +3116,28 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
       all: list.length,
       completed,
       not_completed: list.length - completed,
+      selected: pickedOrder.length,
     };
-  }, [students, getBatchInfo]);
+  }, [students, getBatchInfo, pickedOrder.length]);
 
   const pickFiltered = useMemo(() => {
     const q = pickSearch.trim().toLowerCase();
-    const list = students || [];
-    return list.filter(s => {
+    const studentMap = new Map((students || []).map(s => [s.enrollment, s]));
+
+    if (replaceStatusFilter === "selected") {
+      const selectedList = pickedOrder.map(enr => studentMap.get(enr)).filter(Boolean);
+      if (!q) return selectedList;
+      return selectedList.filter(s => {
+        const basic =
+          (s.name||"").toLowerCase().includes(q) ||
+          (s.enrollment||"").toLowerCase().includes(q) ||
+          (s.fatherName||"").toLowerCase().includes(q);
+        return basic;
+      });
+    }
+
+    const list = (students || []).slice().sort(sortStudentsNaturally);
+    const filtered = list.filter(s => {
       const batchInfo = getBatchInfo(s);
       const isCompleted = Boolean(batchInfo && batchInfo.length > 0);
 
@@ -3115,22 +3161,69 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
       }
       return false;
     });
-  }, [students, pickSearch, replaceStatusFilter, getBatchInfo]);
+
+    if (showSelectedFirst && pickedOrder.length > 0) {
+      const filteredMap = new Map(filtered.map(s => [s.enrollment, s]));
+      const selectedInFiltered = [];
+      const unselectedInFiltered = [];
+
+      for (const enr of pickedOrder) {
+        if (filteredMap.has(enr)) {
+          selectedInFiltered.push(filteredMap.get(enr));
+        }
+      }
+      for (const s of filtered) {
+        if (!pickedSet.has(s.enrollment)) {
+          unselectedInFiltered.push(s);
+        }
+      }
+      return [...selectedInFiltered, ...unselectedInFiltered];
+    }
+
+    return filtered;
+  }, [students, pickSearch, replaceStatusFilter, getBatchInfo, pickedOrder, showSelectedFirst, pickedSet]);
 
   function togglePicked(enrollNo) {
-    setPickedNos(prev => {
-      const next = new Set(prev);
-      if (next.has(enrollNo)) next.delete(enrollNo); else next.add(enrollNo);
+    if (!enrollNo) return;
+    setPickedOrder(prev => {
+      if (prev.includes(enrollNo)) {
+        return prev.filter(e => e !== enrollNo);
+      } else {
+        return [...prev, enrollNo];
+      }
+    });
+  }
+
+  function selectAllFiltered() {
+    setPickedOrder(prev => {
+      const next = [...prev];
+      const existing = new Set(prev);
+      pickFiltered.forEach(s => {
+        if (s.enrollment && !existing.has(s.enrollment)) {
+          next.push(s.enrollment);
+          existing.add(s.enrollment);
+        }
+      });
       return next;
     });
   }
 
+  function clearPicked() {
+    setPickedOrder([]);
+  }
+
   function downloadTemplate(onlySelected) {
-    if (onlySelected && pickedNos.size === 0) { alert("Select at least one student first."); return; }
+    if (onlySelected && pickedOrder.length === 0) { alert("Select at least one student first."); return; }
 
     const headerRow = REPLACE_FIELDS.map(f => f.label);
     const reqRow     = REPLACE_FIELDS.map(f => f.required ? "Required *" : "Optional");
-    const source     = onlySelected ? (students || []).filter(s => pickedNos.has(s.enrollment)) : (students || []);
+    let source;
+    if (onlySelected) {
+      const studentMap = new Map((students || []).map(s => [s.enrollment, s]));
+      source = pickedOrder.map(enr => studentMap.get(enr)).filter(Boolean);
+    } else {
+      source = (students || []).slice().sort(sortStudentsNaturally);
+    }
     const dataRows   = source.length ? source.map(studentToReplaceRow) : [REPLACE_EXAMPLE_ROW];
     const ws = XLSX.utils.aoa_to_sheet([headerRow, reqRow, ...dataRows]);
 
@@ -3362,8 +3455,8 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
 
   function reset() {
     setParsed([]); setRowErrors([]); setStep("idle"); setImportLog([]);
-    setTemplateMode("all"); setPickSearch(""); setPickedNos(new Set());
-    setReplaceStatusFilter("all");
+    setTemplateMode("all"); setPickSearch(""); setPickedOrder([]);
+    setReplaceStatusFilter("all"); setShowSelectedFirst(false);
   }
 
   const valid   = parsed.filter(s => s._errors.length === 0);
@@ -3419,12 +3512,12 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
 
             {templateMode === "pick" && (
               <div className="space-y-2">
-                <p className="text-xs text-blue-700">Safer for everyday use — only the students you pick below go into the sheet.</p>
-                <div className="flex gap-1 bg-white/70 border border-blue-200 rounded-lg p-0.5">
+                <p className="text-xs text-blue-700">Safer for everyday use — only the students you pick below go into the sheet (in your exact selection order).</p>
+                <div className="grid grid-cols-4 gap-1 bg-white/70 border border-blue-200 rounded-lg p-0.5">
                   <button
                     type="button"
                     onClick={() => setReplaceStatusFilter("all")}
-                    className={`flex-1 text-[11px] font-semibold py-1 rounded-md transition-colors ${
+                    className={`text-[11px] font-semibold py-1 rounded-md transition-colors ${
                       replaceStatusFilter === "all"
                         ? "bg-blue-600 text-white shadow-xs"
                         : "text-blue-700 hover:bg-blue-100"
@@ -3435,7 +3528,7 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
                   <button
                     type="button"
                     onClick={() => setReplaceStatusFilter("completed")}
-                    className={`flex-1 text-[11px] font-semibold py-1 rounded-md transition-colors ${
+                    className={`text-[11px] font-semibold py-1 rounded-md transition-colors ${
                       replaceStatusFilter === "completed"
                         ? "bg-emerald-600 text-white shadow-xs"
                         : "text-emerald-700 hover:bg-emerald-100"
@@ -3446,7 +3539,7 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
                   <button
                     type="button"
                     onClick={() => setReplaceStatusFilter("not_completed")}
-                    className={`flex-1 text-[11px] font-semibold py-1 rounded-md transition-colors ${
+                    className={`text-[11px] font-semibold py-1 rounded-md transition-colors ${
                       replaceStatusFilter === "not_completed"
                         ? "bg-amber-600 text-white shadow-xs"
                         : "text-amber-700 hover:bg-amber-100"
@@ -3454,24 +3547,86 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
                   >
                     Not Completed ({statusCounts.not_completed})
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setReplaceStatusFilter("selected")}
+                    className={`text-[11px] font-semibold py-1 rounded-md transition-colors ${
+                      replaceStatusFilter === "selected"
+                        ? "bg-indigo-600 text-white shadow-xs"
+                        : "text-indigo-700 hover:bg-indigo-100"
+                    }`}
+                  >
+                    Selected ({statusCounts.selected})
+                  </button>
                 </div>
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-blue-400"/>
-                  <input type="text" placeholder="Search by name, enrollment, father…" value={pickSearch}
-                    onChange={e=>setPickSearch(e.target.value)}
-                    className="w-full pl-8 pr-2 py-1.5 border border-blue-200 rounded-lg text-xs focus:outline-none focus:border-blue-500 bg-white"/>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-blue-400"/>
+                    <input type="text" placeholder="Search by name, enrollment, father…" value={pickSearch}
+                      onChange={e=>setPickSearch(e.target.value)}
+                      className="w-full pl-8 pr-2 py-1.5 border border-blue-200 rounded-lg text-xs focus:outline-none focus:border-blue-500 bg-white"/>
+                  </div>
+                  {pickFiltered.length > 0 && replaceStatusFilter !== "selected" && (
+                    <button
+                      type="button"
+                      onClick={selectAllFiltered}
+                      className="text-[11px] font-semibold text-blue-700 hover:text-blue-900 hover:underline whitespace-nowrap px-1"
+                    >
+                      Select all
+                    </button>
+                  )}
+                  {pickedOrder.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearPicked}
+                      className="text-[11px] font-semibold text-red-600 hover:text-red-800 hover:underline whitespace-nowrap px-1"
+                    >
+                      Clear ({pickedOrder.length})
+                    </button>
+                  )}
                 </div>
+                {pickedOrder.length > 0 && (
+                  <div className="flex items-center justify-between text-[11px] text-blue-900 bg-blue-100/70 border border-blue-200 rounded-lg px-2.5 py-1">
+                    <span className="font-semibold flex items-center gap-1.5">
+                      <Check className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                      {pickedOrder.length} student{pickedOrder.length !== 1 ? "s" : ""} selected in order
+                    </span>
+                    <label className="flex items-center gap-1.5 text-blue-800 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={showSelectedFirst}
+                        onChange={(e) => setShowSelectedFirst(e.target.checked)}
+                        className="w-3 h-3 accent-blue-600 rounded"
+                      />
+                      <span>Show selected first</span>
+                    </label>
+                  </div>
+                )}
                 <div className="max-h-52 overflow-y-auto border border-blue-200 rounded-lg bg-white divide-y divide-blue-50">
-                  {pickFiltered.length === 0 && <p className="text-xs text-gray-400 p-3 text-center">No students match</p>}
+                  {pickFiltered.length === 0 && (
+                    <p className="text-xs text-gray-400 p-3 text-center">
+                      {replaceStatusFilter === "selected" ? "No students selected yet" : "No students match"}
+                    </p>
+                  )}
                   {pickFiltered.map(s => {
                     const batchInfo = getBatchInfo(s);
                     const isCompleted = Boolean(batchInfo && batchInfo.length > 0);
+                    const isChecked = pickedSet.has(s.enrollment);
+                    const selectionIdx = pickedIndexMap.get(s.enrollment);
                     const batchDesc = isCompleted
                       ? batchInfo.map(b => b.label || `Batch ${b.phaseNumber}`).join(", ")
                       : "";
                     return (
-                      <label key={s.enrollment} className={`flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-blue-50 cursor-pointer ${isCompleted ? "bg-emerald-50/40" : ""}`}>
-                        <input type="checkbox" checked={pickedNos.has(s.enrollment)} onChange={()=>togglePicked(s.enrollment)} className="w-3.5 h-3.5 accent-blue-600 flex-shrink-0"/>
+                      <label key={s.enrollment} className={`flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-blue-50 cursor-pointer ${isChecked ? "bg-blue-50/70" : isCompleted ? "bg-emerald-50/40" : ""}`}>
+                        <input type="checkbox" checked={isChecked} onChange={()=>togglePicked(s.enrollment)} className="w-3.5 h-3.5 accent-blue-600 flex-shrink-0"/>
+                        {selectionIdx && (
+                          <span
+                            className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-blue-600 text-white flex-shrink-0"
+                            title={`Selected #${selectionIdx} in download order`}
+                          >
+                            #{selectionIdx}
+                          </span>
+                        )}
                         <span className="font-mono text-blue-500 flex-shrink-0">#{s.enrollment}</span>
                         <span className="text-gray-700 font-medium truncate">{s.name}</span>
                         <span className="text-gray-400 flex-shrink-0">{s.std}{s.section?" - "+s.section:""}</span>
@@ -3488,9 +3643,9 @@ function FullDetailsReplaceImportPanel({ students, onImportDone }) {
                     );
                   })}
                 </div>
-                <button onClick={() => downloadTemplate(true)} disabled={pickedNos.size === 0}
+                <button onClick={() => downloadTemplate(true)} disabled={pickedOrder.length === 0}
                   className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 disabled:cursor-not-allowed text-white py-2.5 rounded-xl text-sm font-bold transition-colors shadow-sm">
-                  <Download className="w-4 h-4"/> Download Selected ({pickedNos.size})
+                  <Download className="w-4 h-4"/> Download Selected ({pickedOrder.length})
                 </button>
               </div>
             )}
