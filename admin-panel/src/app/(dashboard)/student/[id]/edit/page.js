@@ -53,8 +53,14 @@ function findOptionCaseInsensitive(options, value, fallback = "") {
 // ── Map DB student to EditForm format ─────────────────────────
 function mapToEditForm(student) {
   const uploadedDocs = {};
+  const verifiedDocNames = [];
   (student.documents || []).filter(d => d.uploaded).forEach(d => {
-    uploadedDocs[d.name] = d.file || d.name;
+    verifiedDocNames.push(d.name);
+    // Only record a real file key here - a document can be "uploaded"
+    // (verified) with no file at all, and that must stay distinguishable
+    // from an actual file, or it gets saved back as a bogus file_url
+    // (see checkedDocs/uploadedFiles below).
+    if (d.file) uploadedDocs[d.name] = d.file;
   });
   return {
     _studentId:    student._studentId,
@@ -117,6 +123,7 @@ function mapToEditForm(student) {
       studentId: sib.studentId || "",
     })) || [],
     uploadedDocs,
+    verifiedDocNames,
     photo: student.photo || null,
   };
 }
@@ -282,7 +289,7 @@ function EditForm({ existing, router }) {
   const photoRef     = useRef(null);
   const [aadharDisplay, setAadharDisplay] = useState(existing.aadhar || "");
   const [checkedDocs, setCheckedDocs]   = useState(
-    Object.fromEntries(Object.keys(existing.uploadedDocs).map((k) => [k, true]))
+    Object.fromEntries((existing.verifiedDocNames || []).map((k) => [k, true]))
   );
   const [uploadedFiles, setUploadedFiles] = useState({ ...existing.uploadedDocs });
   const [customDocs, setCustomDocs]     = useState([]);
@@ -1204,13 +1211,17 @@ function EditForm({ existing, router }) {
                 </div>
                 <FileText className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 <span className="text-sm font-medium text-gray-700">{docName}</span>
-                {uploadedFiles[docName] && (
+                {uploadedFiles[docName] ? (
                   <span className="ml-auto text-xs text-green-600 font-medium truncate max-w-[160px]">
                     {typeof uploadedFiles[docName] === "object"
                       ? (uploadedFiles[docName].uploading
                           ? "Uploading…"
                           : `✓ ${uploadedFiles[docName].fileName}${uploadedFiles[docName].size ? ` (${formatFileSize(uploadedFiles[docName].size)})` : ""}`)
                       : `✓ ${uploadedFiles[docName]}`}
+                  </span>
+                ) : checkedDocs[docName] && (
+                  <span className="ml-auto text-xs text-green-600 font-medium">
+                    Verified (no file)
                   </span>
                 )}
               </div>
