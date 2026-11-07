@@ -292,12 +292,12 @@ function DocumentsTab({ docs, s, onRefresh }) {
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-800">{doc.name}</p>
               <p className="text-xs text-gray-400 mt-0.5 truncate">
-                {doc.uploaded ? (doc.file?.split("/").pop() || "Uploaded")
+                {doc.uploaded ? (doc.file ? (doc.file.split("/").pop() || "Uploaded") : "Verified (no file uploaded)")
                   : doc.notRequired ? `Not required — ${doc.reason || "no reason given"}`
                   : "Not uploaded yet"}
               </p>
             </div>
-            {doc.uploaded ? (
+            {doc.uploaded && doc.file ? (
               <button
                 onClick={async () => {
                   // Open the tab synchronously (inside the tap gesture) — iOS
@@ -315,6 +315,13 @@ function DocumentsTab({ docs, s, onRefresh }) {
               >
                 <Download className="w-3.5 h-3.5" /> View
               </button>
+            ) : doc.uploaded ? (
+              <span
+                className="text-xs text-green-600 font-medium flex-shrink-0"
+                title="Marked done manually — no file was uploaded"
+              >
+                Verified
+              </span>
             ) : doc.notRequired ? (
               <button
                 onClick={() => undoNotRequired(doc)}

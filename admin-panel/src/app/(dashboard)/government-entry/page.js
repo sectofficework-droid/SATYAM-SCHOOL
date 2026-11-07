@@ -910,7 +910,13 @@ export default function GovernmentEntryPage() {
       String(x.lastSchoolName || "").trim() ||
       String(x.lastSchoolGrNo || "").trim()
     );
-    const hasCert = x => Boolean(String(x.birthCertRegNo || "").trim()) || hasTc(x);
+    const hasBirthCertDoc = x => Boolean(
+      (x.studentDocuments || x.student_documents || []).some(
+        d => d.document_types?.name === "Birth Certificate" &&
+             (d.status === "Uploaded" || Boolean(d.file_url))
+      )
+    );
+    const hasCert = x => Boolean(String(x.birthCertRegNo || "").trim()) || hasBirthCertDoc(x) || hasTc(x);
     const aadharAvailable = x => !!String(x.aadharNo || "").trim();
 
     const getUdiseEligibility = x => {
@@ -918,10 +924,7 @@ export default function GovernmentEntryPage() {
       if (x.udiseStatus === "Done" || x.udiseStatus === "Active in other school") return { eligible: true, reason: "" };
       if (!inAnyBatch(x)) return { eligible: false, reason: "Not in any Entry Batch" };
       const missing = [];
-      if (!hasCert(x)) missing.push("Birth Cert Reg No or Transfer Certificate");
-      if (!String(x.birthState || "").trim()) missing.push("Birth State");
-      if (!String(x.birthDistrict || "").trim()) missing.push("Birth District");
-      if (!String(x.birthCity || "").trim()) missing.push("Birth City");
+      if (!hasCert(x)) missing.push("Birth Certificate (Reg No / Uploaded) or Transfer Certificate");
       if (missing.length > 0) return { eligible: false, reason: `Missing ${missing.join(", ")}` };
       return { eligible: true, reason: "" };
     };
@@ -931,10 +934,7 @@ export default function GovernmentEntryPage() {
       if (x.penStatus === "Done" || x.penStatus === "Not Defined" || x.penStatus === "Active in other school") return { eligible: true, reason: "" };
       if (!inAnyBatch(x)) return { eligible: false, reason: "Not in any Entry Batch" };
       const missing = [];
-      if (!hasCert(x)) missing.push("Birth Cert Reg No or Transfer Certificate");
-      if (!String(x.birthState || "").trim()) missing.push("Birth State");
-      if (!String(x.birthDistrict || "").trim()) missing.push("Birth District");
-      if (!String(x.birthCity || "").trim()) missing.push("Birth City");
+      if (!hasCert(x)) missing.push("Birth Certificate (Reg No / Uploaded) or Transfer Certificate");
       if (!aadharAvailable(x)) missing.push("Aadhar Card No");
       if (missing.length > 0) return { eligible: false, reason: `Missing ${missing.join(", ")}` };
       return { eligible: true, reason: "" };
