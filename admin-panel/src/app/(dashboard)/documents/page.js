@@ -1293,7 +1293,7 @@ function TcPreview({ row }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function DocumentsPage() {
-  const [activeTab, setActiveTab]     = useState("idcard");
+  const [activeTab, setActiveTab]     = useState("student_docs");
   const [students, setStudents]       = useState([]);
   const [loading, setLoading]         = useState(false);
   const [classFilter, setClassFilter] = useState("All");
