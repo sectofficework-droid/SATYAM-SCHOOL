@@ -1799,9 +1799,14 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                         }}
                       >
                         <div className="flex flex-col min-w-0">
-                          <span className="font-bold text-slate-900 truncate leading-tight text-[11px] uppercase" title={student.name}>
+                          <button
+                            type="button"
+                            onClick={() => window.open(`/government-entry?studentId=${student._studentId}`, "_blank")}
+                            className="font-bold text-slate-900 truncate leading-tight text-[11px] uppercase text-left hover:text-school-navy hover:underline cursor-pointer"
+                            title={`${student.name} — open Government Entry form to copy details`}
+                          >
                             {student.name || "—"}
-                          </span>
+                          </button>
                           {student.fatherName && !showContactDetails && (
                             <span className="text-[9px] text-slate-400 truncate leading-tight mt-0.5" title={`Father: ${student.fatherName}`}>
                               C/O {student.fatherName}

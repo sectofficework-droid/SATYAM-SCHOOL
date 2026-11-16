@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Landmark, IdCard, RefreshCw, CheckCircle2, AlertTriangle, X,
   Loader2, HelpCircle, Search, Maximize2, Minimize2, Download, BookOpen,
@@ -783,8 +783,9 @@ function StatusPill({ status }) {
   return <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold whitespace-nowrap ${cls}`}>{status}</span>;
 }
 
-export default function GovernmentEntryPage() {
+function GovernmentEntryPageInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [mainTab, setMainTab] = useState("onlineGr"); // "onlineGr" | "udise" | "pen" | "import" | "mismatch"
   const [grSubTab, setGrSubTab] = useState("primary"); // "primary" | "general"
   const [importSubTab, setImportSubTab] = useState("udise"); // "udise" | "pen" | "all"
@@ -878,6 +879,25 @@ export default function GovernmentEntryPage() {
   }, []);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  // Deep-link from Documents > Student Documents: /government-entry?studentId=...
+  // opens the full "Add New Student" entry wizard pre-pinned to that student
+  // (same complete form used for filing UDISE/PEN/Online GR), instead of
+  // making the admin hunt for the right tab/row first.
+  const autoOpenStudentIdRef = useRef(null);
+  useEffect(() => {
+    if (loading) return;
+    const studentId = searchParams.get("studentId");
+    if (!studentId || autoOpenStudentIdRef.current === studentId) return;
+    autoOpenStudentIdRef.current = studentId;
+    const student = dbStudents.find(s => String(s.studentId) === String(studentId));
+    if (!student) {
+      alert("This student does not have a Government Entry record yet.");
+      return;
+    }
+    openAddModal();
+    selectAddStudent(decorate(student));
+  }, [loading, dbStudents, searchParams]);
 
   // Reset filters on tab switch
   useEffect(() => {
@@ -6469,5 +6489,13 @@ export default function GovernmentEntryPage() {
         className="hidden"
       />
     </div>
+  );
+}
+
+export default function GovernmentEntryPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-20 text-sm text-gray-400">Loading…</div>}>
+      <GovernmentEntryPageInner />
+    </Suspense>
   );
 }
