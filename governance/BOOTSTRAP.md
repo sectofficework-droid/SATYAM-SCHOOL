@@ -450,7 +450,85 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-10-25 — REQ-SEC-022 + REQ-BUG-078 FIXED
+**Current — Session 2026-11-17 — REQ-FEAT-025 (recurring reminder/call-back
+system, whole-admin-panel popup) CODED + BROWSER-VERIFIED - 3rd feature
+shipped this session, after REQ-FEAT-023/024.** New table
+`student_reminders` (same RLS pattern as the other two new tables today).
+Two sources feed one active-reminder list: automatic (a Follow-up's
+promised date lapsed, student not yet Submitted/Uploaded) and manual (a
+checkbox in the Note popover). `ReminderProvider`/`useReminders()`
+(`src/contexts/ReminderContext.jsx`) re-checks on every route change via
+`usePathname()` and auto-pops a modal (`ReminderPopup.jsx`) when the list
+isn't empty; mounted once in `(dashboard)/layout.js` so it fires from any
+page, not just Documents. "Dismiss" is local-only (closes now, no DB
+write, so the very next navigation re-triggers it - that's the "nag again
+and again" behavior by design); "Resolve" writes a permanent DB state and
+removes it for good. A small bell badge (`ReminderBell.jsx`) sits in
+`Header.jsx` next to - not replacing - the existing unrelated Notifications
+bell. A banner at the top of the Documents spreadsheet satisfies "at the
+top of the sheets" by reusing the same global popup rather than building a
+second list UI. `upsertDocumentFollowup()` now clears any `resolved`
+reminder row when a new `promisedDate` is set, so a fresh promise that
+also lapses can nag again even if the old one was resolved (confirmed with
+user). **Verified live**: created a manual reminder via the Note
+checkbox, watched the bell badge and Documents banner appear immediately;
+opened the popup, Dismissed it, navigated to `/student` - popup
+auto-reappeared on the new page, proving the whole-panel + re-nag
+behavior; Resolved it - bell/banner/popup all disappeared and stayed gone
+after a full reload. Zero console errors. Cleared the test note
+afterward. `npm run lint` clean; Supabase security advisor shows no new
+finding. Full detail: `ai-context\SESSION-2026-11-17-1.md`,
+`work-log\LOG-2026-11-17.md`.
+
+**Prior — Session 2026-11-17 — REQ-FEAT-024 (shared General-purpose Admin
+Note across Student list / Government Entry / Documents / Student Report)
+CODED + BROWSER-VERIFIED, same session as REQ-FEAT-023.** New table
+`student_admin_notes` (RLS, same pattern as REQ-FEAT-023's table); new
+reusable `StudentNoteBadge.jsx` component (badge + popover, self-contained
+auth lookup) wired into all 3 editable pages plus the Report page's
+previously-always-blank "Follow Up" column (now reads real data). Mid-build
+the user asked for a quick-select preset dropdown ("Govt Entry: age not
+valid", "TC received but not released", etc.) that appends plain text into
+the note - added to `StudentNoteBadge`. **Verified live**: saved a note via
+quick-select+free-text on Documents, confirmed it round-tripped through the
+DB, confirmed the *same* note shows on Student list (click doesn't navigate
+the card away) and Government Entry's UDISE tab, confirmed the Report
+page's Follow Up column shows it too; reverted the test note afterward.
+`npm run lint` clean throughout. Full detail:
+`ai-context\SESSION-2026-11-17-1.md`, `work-log\LOG-2026-11-17.md`.
+
+**Prior — Session 2026-11-17 — REQ-FEAT-023 (Document Collection
+Follow-up Tracker) CODED + BROWSER-VERIFIED; same-session follow-on removed
+the pre-existing OTHER DOCS column (user: "remove other docs").** User
+asked (plain chat) for a per-student call/follow-up tracker on the Students
+Documents page — called?/reply/promised date/submitted/uploaded, plus a
+`tel:` Call button. Clarified scope via Q&A (one record per student,
+latest-state only, sequential status pipeline, call button dials primary
+mobile with a second icon when `mobile2` exists), recorded as
+`planning/TODO.md` REQ-FEAT-023, then user said "code it". **Files:**
+`mobile-app/SUPABASE_STUDENT_DOCUMENT_FOLLOWUPS.sql` (NEW table
+`student_document_followups`, applied live via Supabase MCP — RLS +
+`is_admin_user()` policy copied from `student_documents`, grants limited to
+`authenticated`/`service_role`), `admin-panel/src/lib/studentService.js`
+(`getDocumentFollowups`/`upsertDocumentFollowup`),
+`admin-panel/src/app/(dashboard)/documents/StudentDocumentsSection.jsx` (new
+FOLLOW-UP spreadsheet column: status badge popover + `tel:` call icon(s)).
+**Verified live** in a real logged-in browser session: set a test student's
+status/note/date, saved, reloaded, confirmed it persisted to the DB, then
+reverted the test data so nothing fake was left in production; zero console
+errors. Mid-session the user then said "remove other docs" — clarified via
+`AskUserQuestion` to mean hide the OTHER DOCS column only (DB data stays).
+Since that column's `renderOtherDocsCell()`/`getOtherDocsForStudent()`/
+`otherDropdownOpen` were the only UI anywhere exposing non-primary
+"other document type" uploads (confirmed via repo-wide grep), they were
+deleted outright rather than left as dead code — any already-uploaded
+"other" document rows stay in `student_documents`, just with no UI to
+manage them now; flag if that needs restoring elsewhere. Spreadsheet is
+back to 10/15 columns. **Verified:** `npm run lint` clean both times; dev
+server HMR-recompiled `/documents` with the column gone. Detail:
+`ai-context\SESSION-2026-11-17-1.md`, `work-log\LOG-2026-11-17.md`.
+
+**Prior — Session 2026-10-25 — REQ-SEC-022 + REQ-BUG-078 FIXED
 (user: "start coding").** Files: `admin-panel/src/app/api/online-general-register/route.js`
 (admin-session guard on all 3 handlers via shared local `authorizeAdmin()` +
 `pickSectionList()` + `UPDATABLE_FIELDS` whitelist),
@@ -1507,6 +1585,14 @@ Earlier checkpoints, one line each (full detail in the linked files):
 ## Next step
 Open items, most recent first (superseded/completed items removed — see
 the checkpoint list above for what already shipped):
+
+00000. **REQ-FEAT-023 (Document Collection Follow-up Tracker) — real-device
+      dial test still open.** Everything else is browser-verified
+      2026-11-17 (popover save/reload round-trip, column layout after the
+      OTHER DOCS removal). Only remaining gap: the `tel:` call icon(s) were
+      never tapped on an actual phone/device that can dial — this desktop
+      session could only confirm the link targets the right number(s), not
+      that it launches a real dialer. See `planning/TODO.md` REQ-FEAT-023.
 
 0000. **RUN `mobile-app/SUPABASE_ONLINE_GENERAL_REGISTER.sql` (user,
      Supabase Dashboard → SQL Editor) + then click-through** — the OGR

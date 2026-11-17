@@ -9,7 +9,7 @@ import {
   Filter, Table, CheckSquare, Sparkles, ChevronDown, Layers,
   Phone, Users, MapPin, Calendar, HelpCircle, ArrowUpDown,
   CheckCircle, MinusCircle, FileCheck, Edit3, AlertTriangle,
-  Maximize2, Minimize2
+  Maximize2, Minimize2, Bell
 } from "lucide-react";
 import {
   getDocumentTypes,
@@ -17,10 +17,16 @@ import {
   markDocumentPending,
   markDocumentNotRequired,
   updateStudentDocument,
-  updateStudentGrNo
+  updateStudentGrNo,
+  getDocumentFollowups,
+  upsertDocumentFollowup,
+  getStudentAdminNotes
 } from "@/lib/studentService";
 import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile } from "@/lib/fileCompression";
+import useStore from "@/lib/store";
+import StudentNoteBadge from "@/components/StudentNoteBadge";
+import { useReminders } from "@/contexts/ReminderContext";
 
 // Standard classes list matching the documents page
 const CLASSES_LIST = [
@@ -79,31 +85,6 @@ function findDocTypeByCategory(category, docTypes = []) {
   }) || null;
 }
 
-// Helper to identify "Other" documents (non-primary 5)
-function getOtherDocsForStudent(studentDocs = [], allDocTypes = []) {
-  const otherDocs = (studentDocs || []).filter(d => {
-    const n = (d.name || "").toLowerCase();
-    const isPrimary =
-      n.includes("birth") ||
-      n.includes("transfer") ||
-      n.includes("leaving") ||
-      (n.includes("aadhar") && (n.includes("student") || n.includes("father") || n.includes("mother")));
-    return !isPrimary;
-  });
-
-  const otherDocTypes = (allDocTypes || []).filter(dt => {
-    const n = (dt.name || "").toLowerCase();
-    const isPrimary =
-      n.includes("birth") ||
-      n.includes("transfer") ||
-      n.includes("leaving") ||
-      (n.includes("aadhar") && (n.includes("student") || n.includes("father") || n.includes("mother")));
-    return !isPrimary;
-  });
-
-  return { otherDocs, otherDocTypes };
-}
-
 // Column widths for spreadsheet freeze-panes (Ultra-compact spreadsheet layout)
 const COL_WIDTHS = {
   sr: 38,
@@ -116,7 +97,18 @@ const COL_WIDTHS = {
   mobile: 125,
   address: 160,
   doc: 136,
-  other: 140,
+  followup: 150,
+  note: 160,
+};
+
+// Document Collection Follow-up Tracker (REQ-FEAT-023) - status pipeline + styles
+const FOLLOWUP_STATUSES = ["Not Called", "Called", "Date Promised", "Submitted", "Uploaded"];
+const FOLLOWUP_STYLES = {
+  "Not Called":    { badge: "bg-slate-100 text-slate-600 border-slate-300",      dot: "bg-slate-400" },
+  "Called":        { badge: "bg-amber-50 text-amber-800 border-amber-300",       dot: "bg-amber-500" },
+  "Date Promised": { badge: "bg-blue-50 text-school-navy border-blue-300",       dot: "bg-blue-500" },
+  "Submitted":     { badge: "bg-indigo-50 text-indigo-800 border-indigo-300",    dot: "bg-indigo-500" },
+  "Uploaded":      { badge: "bg-emerald-50 text-emerald-800 border-emerald-300", dot: "bg-emerald-500" },
 };
 
 // Left offsets for frozen columns
@@ -128,8 +120,19 @@ const STICKY_OFFSETS = {
 };
 
 export default function StudentDocumentsSection({ students = [], onRefresh }) {
+  const authUser = useStore(s => s.authUser);
+  const { reminders, openPopup: openReminderPopup } = useReminders(); // REQ-FEAT-025
   const [docTypes, setDocTypes] = useState([]);
   const [loadingDocTypes, setLoadingDocTypes] = useState(true);
+
+  // Document Collection Follow-up Tracker (REQ-FEAT-023)
+  const [followups, setFollowups] = useState({}); // studentId -> { status, reply_note, promised_date }
+  const [followupPopoverOpen, setFollowupPopoverOpen] = useState(null); // studentId
+  const [followupDraft, setFollowupDraft] = useState(null); // { studentId, status, replyNote, promisedDate }
+  const [savingFollowupId, setSavingFollowupId] = useState(null);
+
+  // General-purpose Admin Note (REQ-FEAT-024) - studentId -> note text
+  const [notes, setNotes] = useState({});
 
   // Filters & controls
   const [classFilter, setClassFilter] = useState("All");
@@ -144,7 +147,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const [downloadingKey, setDownloadingKey] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null); // { url, name, title, fileKey }
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [otherDropdownOpen, setOtherDropdownOpen] = useState(null); // studentId of open popover
   const [activeCellInfo, setActiveCellInfo] = useState(null); // Spreadsheet active cell tooltip
   const [cellMenuOpen, setCellMenuOpen] = useState(null); // `${studentId}_${category}`
 
@@ -213,6 +215,42 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         console.error("Failed to fetch document types:", err);
       } finally {
         if (!cancelled) setLoadingDocTypes(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Load document collection follow-ups (REQ-FEAT-023)
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const rows = await getDocumentFollowups();
+        if (cancelled) return;
+        const map = {};
+        (rows || []).forEach(r => { map[r.student_id] = r; });
+        setFollowups(map);
+      } catch (err) {
+        console.error("Failed to fetch document follow-ups:", err);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Load general-purpose admin notes (REQ-FEAT-024)
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const rows = await getStudentAdminNotes();
+        if (cancelled) return;
+        const map = {};
+        (rows || []).forEach(r => { map[r.student_id] = r.note || ""; });
+        setNotes(map);
+      } catch (err) {
+        console.error("Failed to fetch student admin notes:", err);
       }
     }
     load();
@@ -507,6 +545,57 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     }
   };
 
+  // Open the Follow-up popover, seeding the draft from the latest saved state
+  const openFollowupPopover = (student) => {
+    const existing = followups[student._studentId];
+    setFollowupDraft({
+      studentId:    student._studentId,
+      status:       existing?.status || "Not Called",
+      replyNote:    existing?.reply_note || "",
+      promisedDate: existing?.promised_date || "",
+    });
+    setFollowupPopoverOpen(student._studentId);
+  };
+
+  const closeFollowupPopover = () => {
+    setFollowupPopoverOpen(null);
+    setFollowupDraft(null);
+  };
+
+  // Handle Save Follow-up (call status / reply / promised date)
+  const handleSaveFollowup = async () => {
+    if (!followupDraft) return;
+    const { studentId, status, replyNote, promisedDate } = followupDraft;
+
+    setSavingFollowupId(studentId);
+    try {
+      await upsertDocumentFollowup(studentId, {
+        status,
+        replyNote,
+        promisedDate: promisedDate || null,
+        updatedBy: authUser?.id,
+      });
+
+      setFollowups(prev => ({
+        ...prev,
+        [studentId]: {
+          student_id:    studentId,
+          status,
+          reply_note:    replyNote,
+          promised_date: promisedDate || null,
+          updated_at:    new Date().toISOString(),
+        },
+      }));
+
+      closeFollowupPopover();
+    } catch (err) {
+      console.error("Failed to save follow-up:", err);
+      alert("Failed to save follow-up: " + (err.message || "Unknown error"));
+    } finally {
+      setSavingFollowupId(null);
+    }
+  };
+
   // Handle File Upload from Input
   const handleFileUpload = async (student, category, event, docTypeOverride = null) => {
     const file = event.target.files?.[0];
@@ -788,7 +877,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             ) : isNotRequired ? (
               <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-slate-600 tracking-tight flex-shrink-0">
                 <span className="font-mono text-slate-400 font-extrabold text-[11px]">—</span>
-                <span>Exempt</span>
+                {category !== "transfer" && <span>Exempt</span>}
               </span>
             ) : (
               <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-800 tracking-tight flex-shrink-0">
@@ -1004,189 +1093,120 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     );
   };
 
-  // Render "OTHER DOCUMENTS" column
-  const renderOtherDocsCell = (student) => {
-    const { otherDocs, otherDocTypes } = getOtherDocsForStudent(student.documents, docTypes);
-    const uploadedOthers = otherDocs.filter(d => d.uploaded || d.status === "Uploaded");
-    const hasAnyUploaded = uploadedOthers.length > 0;
-    const firstDocWithFile = uploadedOthers.find(d => Boolean(d.file));
-    const isOpen = otherDropdownOpen === student._studentId;
+  // Render "FOLLOW-UP" column - call/reply/promised-date status + Call button (REQ-FEAT-023)
+  const renderFollowupCell = (student) => {
+    const fu = followups[student._studentId];
+    const status = fu?.status || "Not Called";
+    const style = FOLLOWUP_STYLES[status] || FOLLOWUP_STYLES["Not Called"];
+    const isOpen = followupPopoverOpen === student._studentId;
+    const isSaving = savingFollowupId === student._studentId;
+    const mobile = (student.mobile || "").replace(/[^\d+]/g, "");
+    const mobile2 = (student.mobile2 || "").replace(/[^\d+]/g, "");
 
     return (
       <td
-        key="other_docs"
-        className={`border-r border-b border-slate-200 transition-colors align-middle relative px-1 py-0.5 ${
-          hasAnyUploaded ? "bg-emerald-50/40 hover:bg-emerald-100/60" : "bg-amber-50/30 hover:bg-amber-100/50"
-        }`}
-        style={{ width: COL_WIDTHS.other, minWidth: COL_WIDTHS.other, maxWidth: COL_WIDTHS.other }}
+        key="followup"
+        className="border-r border-b border-slate-200 align-middle relative px-1 py-0.5"
+        style={{ width: COL_WIDTHS.followup, minWidth: COL_WIDTHS.followup, maxWidth: COL_WIDTHS.followup }}
       >
         <div className="flex items-center justify-between gap-1 w-full">
-          {/* Status on left */}
-          {hasAnyUploaded ? (
-            <span
-              className="inline-flex items-center gap-1 text-emerald-800 tracking-tight"
-              title={`${uploadedOthers.length} other document(s) uploaded: ${uploadedOthers.map(d => d.name).join(", ")}`}
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
-              <span className="text-xs font-black">OK</span>
-              <span className="text-[9.5px] font-bold text-emerald-700/80">({uploadedOthers.length})</span>
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 text-[10.5px] font-bold text-amber-800 tracking-tight">
-              <Clock className="w-3 h-3 text-amber-600 flex-shrink-0" />
-              <span>Pending</span>
-            </span>
-          )}
+          <button
+            onClick={() => openFollowupPopover(student)}
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border cursor-pointer transition-colors ${style.badge}`}
+            title={fu?.reply_note ? `Note: ${fu.reply_note}` : "Click to update call/follow-up status"}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${style.dot}`} />
+            <span className="truncate max-w-[74px]">{status}</span>
+          </button>
 
-          {/* Right side: View button + 3-dots */}
           <div className="flex items-center gap-0.5 flex-shrink-0">
-            {firstDocWithFile ? (
-              <button
-                onClick={() => handlePreview(student, firstDocWithFile.name, firstDocWithFile.file)}
-                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-bold text-school-navy bg-blue-50 hover:bg-blue-100 active:bg-blue-200 border border-blue-200 rounded shadow-2xs transition-colors cursor-pointer"
-                title={`View ${firstDocWithFile.name}`}
+            {mobile && (
+              <a
+                href={`tel:${mobile}`}
+                onClick={(e) => e.stopPropagation()}
+                className="p-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded transition-colors"
+                title={`Call ${student.mobile}`}
               >
-                <Eye className="w-3 h-3 text-school-navy" />
-                <span>View</span>
-              </button>
-            ) : (
-              <button
-                disabled
-                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-semibold text-slate-400 bg-slate-100/70 border border-slate-200 rounded cursor-not-allowed opacity-50"
-                title="No other file uploaded yet"
-              >
-                <Eye className="w-3 h-3 text-slate-400" />
-                <span>View</span>
-              </button>
+                <Phone className="w-3 h-3" />
+              </a>
             )}
-
-            <button
-              onClick={() => setOtherDropdownOpen(isOpen ? null : student._studentId)}
-              className="p-1 text-slate-500 hover:text-slate-800 hover:bg-slate-200/70 rounded cursor-pointer transition-colors"
-              title="Other Documents Actions"
-            >
-              <MoreHorizontal className="w-3.5 h-3.5" />
-            </button>
+            {mobile2 && (
+              <a
+                href={`tel:${mobile2}`}
+                onClick={(e) => e.stopPropagation()}
+                className="p-1 bg-emerald-50/60 hover:bg-emerald-100 text-emerald-600 border border-emerald-200 rounded transition-colors"
+                title={`Call alternate number ${student.mobile2}`}
+              >
+                <Phone className="w-2.5 h-2.5" />
+              </a>
+            )}
           </div>
         </div>
 
-        {/* Popover Menu for Other Documents */}
-        {isOpen && (
+        {fu?.promised_date && (
+          <div className="text-[9px] text-slate-500 font-medium mt-0.5 flex items-center gap-0.5 truncate">
+            <Calendar className="w-2.5 h-2.5 flex-shrink-0" />
+            <span className="truncate">Promised: {fu.promised_date}</span>
+          </div>
+        )}
+
+        {isOpen && followupDraft && (
           <>
+            <div className="fixed inset-0 z-40" onClick={closeFollowupPopover} />
+
             <div
-              className="fixed inset-0 z-40"
-              onClick={(e) => {
-                e.stopPropagation();
-                setOtherDropdownOpen(null);
-              }}
-            />
-            <div
-              className="absolute right-1 top-full mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-300 p-2 z-50 space-y-1.5 text-xs select-none"
+              className="absolute right-1 top-full mt-1 w-60 bg-white rounded-lg shadow-xl border border-slate-300 p-2.5 z-50 space-y-2 text-xs select-none"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between border-b border-slate-200 pb-1">
-                <span className="font-bold text-slate-800 text-[11px]">Other Documents</span>
-                <button
-                  onClick={() => setOtherDropdownOpen(null)}
-                  className="text-slate-400 hover:text-slate-600 p-0.5"
-                >
+                <span className="font-bold text-slate-800 text-[11px]">Document Follow-up</span>
+                <button onClick={closeFollowupPopover} className="text-slate-400 hover:text-slate-600 p-0.5">
                   <X className="w-3 h-3" />
                 </button>
               </div>
 
-              {otherDocTypes.length === 0 ? (
-                <p className="text-[10px] text-slate-400 py-1">No other document types registered.</p>
-              ) : (
-                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-0.5">
-                  {otherDocTypes.map(dt => {
-                    const existingDoc = (student.documents || []).find(d => d.documentTypeId === dt.id || d.name === dt.name);
-                    const isDone = existingDoc && (existingDoc.uploaded || existingDoc.status === "Uploaded");
-                    const hasDocFile = Boolean(existingDoc?.file);
-                    const isThisDown = downloadingKey === `${student._studentId}_${existingDoc?.file}`;
+              <div>
+                <label className="block text-[9.5px] font-bold text-slate-500 uppercase mb-0.5">Status</label>
+                <select
+                  value={followupDraft.status}
+                  onChange={(e) => setFollowupDraft(d => ({ ...d, status: e.target.value }))}
+                  className="w-full text-[11px] border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:border-school-navy cursor-pointer"
+                >
+                  {FOLLOWUP_STATUSES.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
 
-                    return (
-                      <div key={dt.id} className="p-1.5 bg-slate-50 rounded border border-slate-200 space-y-1">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-slate-800 text-[10.5px] truncate max-w-[140px]" title={dt.name}>
-                            {dt.name}
-                          </span>
-                          {isDone ? (
-                            <span className="text-[9.5px] text-emerald-700 font-bold bg-emerald-100 px-1 rounded">✓ OK</span>
-                          ) : (
-                            <span className="text-[9.5px] text-amber-700 font-bold bg-amber-100 px-1 rounded">Pending</span>
-                          )}
-                        </div>
+              <div>
+                <label className="block text-[9.5px] font-bold text-slate-500 uppercase mb-0.5">Reply / Notes</label>
+                <textarea
+                  value={followupDraft.replyNote}
+                  onChange={(e) => setFollowupDraft(d => ({ ...d, replyNote: e.target.value }))}
+                  placeholder="What did they say on the call?"
+                  rows={2}
+                  className="w-full text-[11px] border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:border-school-navy resize-none"
+                />
+              </div>
 
-                        <div className="flex items-center gap-1 pt-0.5">
-                          {isDone ? (
-                            <>
-                              {hasDocFile && (
-                                <button
-                                  onClick={() => {
-                                    setOtherDropdownOpen(null);
-                                    handlePreview(student, dt.name, existingDoc.file);
-                                  }}
-                                  className="flex-1 inline-flex items-center justify-center gap-1 py-0.5 px-1 text-[10px] font-semibold bg-blue-50 text-school-navy border border-blue-200 rounded hover:bg-blue-100"
-                                >
-                                  <Eye className="w-2.5 h-2.5" /> View
-                                </button>
-                              )}
-                              {hasDocFile && (
-                                <button
-                                  onClick={() => {
-                                    setOtherDropdownOpen(null);
-                                    handleDownload(student, dt.name, existingDoc.file);
-                                  }}
-                                  disabled={isThisDown}
-                                  className="flex-1 inline-flex items-center justify-center gap-1 py-0.5 px-1 text-[10px] font-semibold bg-school-navy text-white rounded hover:bg-school-navy-dark"
-                                >
-                                  <Download className="w-2.5 h-2.5" /> Download
-                                </button>
-                              )}
-                              <label className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[9.5px] font-bold bg-white text-school-navy border border-blue-300 rounded cursor-pointer hover:bg-blue-50">
-                                <Upload className="w-2.5 h-2.5" /> {hasDocFile ? "Replace" : "Attach"}
-                                <input
-                                  type="file"
-                                  className="hidden"
-                                  accept=".pdf,.jpg,.jpeg,.png"
-                                  onChange={(e) => {
-                                    setOtherDropdownOpen(null);
-                                    handleFileUpload(student, "other", e, dt);
-                                  }}
-                                />
-                              </label>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                onClick={() => {
-                                  setOtherDropdownOpen(null);
-                                  handleMarkDone(student, "other", dt);
-                                }}
-                                className="flex-1 py-0.5 px-1 text-[9.5px] font-bold bg-white text-emerald-700 border border-emerald-300 rounded hover:bg-emerald-50"
-                              >
-                                Mark OK
-                              </button>
-                              <label className="flex-1 inline-flex items-center justify-center gap-0.5 py-0.5 px-1 text-[9.5px] font-bold bg-white text-school-navy border border-blue-300 rounded cursor-pointer hover:bg-blue-50">
-                                <Upload className="w-2.5 h-2.5" /> Upload
-                                <input
-                                  type="file"
-                                  className="hidden"
-                                  accept=".pdf,.jpg,.jpeg,.png"
-                                  onChange={(e) => {
-                                    setOtherDropdownOpen(null);
-                                    handleFileUpload(student, "other", e, dt);
-                                  }}
-                                />
-                              </label>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+              <div>
+                <label className="block text-[9.5px] font-bold text-slate-500 uppercase mb-0.5">Promised Date</label>
+                <input
+                  type="date"
+                  value={followupDraft.promisedDate || ""}
+                  onChange={(e) => setFollowupDraft(d => ({ ...d, promisedDate: e.target.value }))}
+                  className="w-full text-[11px] border border-slate-300 rounded px-1.5 py-1 focus:outline-none focus:border-school-navy"
+                />
+              </div>
+
+              <button
+                onClick={handleSaveFollowup}
+                disabled={isSaving}
+                className="w-full inline-flex items-center justify-center gap-1 py-1 bg-school-navy hover:bg-school-navy-dark text-white rounded text-[11px] font-bold transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {isSaving ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                <span>Save</span>
+              </button>
             </div>
           </>
         )}
@@ -1202,6 +1222,20 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
           : "flex flex-col gap-1.5"
       }`}
     >
+      {/* ── Reminder Banner (REQ-FEAT-025) - "at the top of the sheets" ── */}
+      {reminders.length > 0 && (
+        <button
+          onClick={openReminderPopup}
+          className="flex items-center justify-between gap-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg px-3 py-1.5 text-left transition-colors flex-shrink-0 cursor-pointer"
+        >
+          <span className="inline-flex items-center gap-1.5 text-[11.5px] font-bold text-amber-800">
+            <Bell className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 animate-pulse" />
+            {reminders.length} student{reminders.length !== 1 ? "s" : ""} need a call back / reminder
+          </span>
+          <span className="text-[10.5px] font-bold text-amber-700 underline underline-offset-2">View</span>
+        </button>
+      )}
+
       {/* ── Dedicated Full Screen Header Bar (Only in Full Screen) ─────── */}
       {isFullscreen && (
         <div className="bg-white rounded-lg border border-slate-300 px-3 py-1.5 flex items-center justify-between shadow-2xs flex-shrink-0">
@@ -1502,7 +1536,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         <div className="flex items-center gap-2 text-[10.5px] font-medium text-slate-500 flex-shrink-0">
           <span>Rows: <strong className="text-slate-800">{filteredStudents.length}</strong> / {localStudents.length}</span>
           <span className="text-slate-300">|</span>
-          <span>Cols: <strong className="text-slate-800">{showContactDetails ? "15" : "10"}</strong></span>
+          <span>Cols: <strong className="text-slate-800">{showContactDetails ? "16" : "11"}</strong></span>
         </div>
       </div>
 
@@ -1640,15 +1674,26 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   );
                 })}
 
-                {/* OTHER DOCUMENTS Column */}
+                {/* FOLLOW-UP Column (REQ-FEAT-023) */}
                 <th
                   className="border-r border-b-2 border-slate-300 py-1 px-1.5 text-slate-800 bg-slate-100"
-                  style={{ width: COL_WIDTHS.other, minWidth: COL_WIDTHS.other, maxWidth: COL_WIDTHS.other }}
+                  style={{ width: COL_WIDTHS.followup, minWidth: COL_WIDTHS.followup, maxWidth: COL_WIDTHS.followup }}
                 >
                   <div className="text-[8.5px] text-slate-400 font-mono font-normal">
                     {String.fromCharCode(65 + 4 + (showContactDetails ? 5 : 0) + 5)}
                   </div>
-                  <span className="text-[10.5px] block font-bold text-slate-900 truncate">OTHER DOCS</span>
+                  <span className="text-[10.5px] block font-bold text-slate-900 truncate">FOLLOW-UP</span>
+                </th>
+
+                {/* NOTE Column (REQ-FEAT-024) */}
+                <th
+                  className="border-r border-b-2 border-slate-300 py-1 px-1.5 text-slate-800 bg-slate-100"
+                  style={{ width: COL_WIDTHS.note, minWidth: COL_WIDTHS.note, maxWidth: COL_WIDTHS.note }}
+                >
+                  <div className="text-[8.5px] text-slate-400 font-mono font-normal">
+                    {String.fromCharCode(65 + 4 + (showContactDetails ? 5 : 0) + 6)}
+                  </div>
+                  <span className="text-[10.5px] block font-bold text-slate-900 truncate">NOTE</span>
                 </th>
               </tr>
             </thead>
@@ -1657,7 +1702,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             <tbody>
               {filteredStudents.length === 0 ? (
                 <tr>
-                  <td colSpan={showContactDetails ? 15 : 10} className="py-12 text-center text-slate-400 bg-white">
+                  <td colSpan={showContactDetails ? 16 : 11} className="py-12 text-center text-slate-400 bg-white">
                     <Table className="w-8 h-8 mx-auto text-slate-300 mb-1.5" />
                     <p className="font-bold text-slate-700 text-xs">No student records match the active criteria</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">Try resetting the class or status filter above</p>
@@ -1867,8 +1912,21 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                       {/* Primary Document Columns */}
                       {PRIMARY_COLUMNS.map(col => renderDocCell(student, col.matchKey, col))}
 
-                      {/* Column: OTHER DOCUMENTS */}
-                      {renderOtherDocsCell(student)}
+                      {/* Column: FOLLOW-UP (REQ-FEAT-023) */}
+                      {renderFollowupCell(student)}
+
+                      {/* Column: NOTE (REQ-FEAT-024) */}
+                      <td
+                        className="border-r border-b border-slate-200 align-middle px-1 py-0.5"
+                        style={{ width: COL_WIDTHS.note, minWidth: COL_WIDTHS.note, maxWidth: COL_WIDTHS.note }}
+                      >
+                        <StudentNoteBadge
+                          studentId={student._studentId}
+                          note={notes[student._studentId]}
+                          onSaved={(id, note) => setNotes(prev => ({ ...prev, [id]: note }))}
+                          align="right"
+                        />
+                      </td>
                     </tr>
                   );
                 })

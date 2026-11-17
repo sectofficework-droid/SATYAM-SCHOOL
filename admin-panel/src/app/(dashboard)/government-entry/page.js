@@ -12,7 +12,8 @@ import * as XLSX from "xlsx";
 import supabase from "@/lib/supabase";
 import { getStudentsForReport, getAcademicYearLabels } from "@/lib/reportService";
 import { getPhases, getAllPhaseEntryEnrollments } from "@/lib/studentPhaseService";
-import { updateStudentGovId } from "@/lib/studentService";
+import { updateStudentGovId, getStudentAdminNotes } from "@/lib/studentService";
+import StudentNoteBadge from "@/components/StudentNoteBadge";
 import { getOnlineGrData, updateOnlineGrRow, deleteOnlineGrRow } from "@/lib/onlineGrService";
 import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, fileExt } from "@/lib/s3Upload";
 import { compressFile } from "@/lib/fileCompression";
@@ -819,6 +820,17 @@ function GovernmentEntryPageInner() {
   const [addPinnedEnrollNo, setAddPinnedEnrollNo] = useState(null); // Add New Student wizard: pin table to exactly one student
   const [showRules, setShowRules] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [adminNotes, setAdminNotes] = useState({}); // REQ-FEAT-024: studentId -> note text
+
+  useEffect(() => {
+    getStudentAdminNotes()
+      .then(rows => {
+        const map = {};
+        (rows || []).forEach(r => { map[r.student_id] = r.note || ""; });
+        setAdminNotes(map);
+      })
+      .catch(err => console.error("Failed to fetch student admin notes:", err));
+  }, []);
 
   useEffect(() => {
     if (!fullscreen) return;
@@ -4952,6 +4964,14 @@ function GovernmentEntryPageInner() {
                                   className="inline-flex items-center justify-center p-1 rounded text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors cursor-pointer">
                                   <Trash2 className="w-2.5 h-2.5"/>
                                 </button>
+                              )}
+                              {/* Admin Note (REQ-FEAT-024) - only for rows linked to a real student record */}
+                              {row.studentId && (
+                                <StudentNoteBadge
+                                  studentId={row.studentId}
+                                  note={adminNotes[row.studentId]}
+                                  onSaved={(id, note) => setAdminNotes(prev => ({ ...prev, [id]: note }))}
+                                />
                               )}
                             </div>
                           );

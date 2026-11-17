@@ -4135,6 +4135,280 @@ pattern), it is noted as already-known and not re-filed as new.
       (2) Rules Modal (`showRules`): update UDISE and PEN rule text to state that either Birth Cert Reg No OR Transfer Certificate is accepted.
       (3) Table rows & Add Student wizard: support viewing/downloading Transfer Certificate alongside Birth Certificate, and display TC availability badge.
       **Verified**: `npm run lint` clean (0 warnings, 0 errors). Level 1 verified.
+- [x] **REQ-FEAT-023 — Document Collection Follow-up Tracker (call log) on
+      Students Documents page. CODED + BROWSER-VERIFIED 2026-11-17.**
+      User: "add note into each student rows to check
+      whether i have called to student for their docuemnt collection and
+      what their reply when they will give on which particular date they
+      will give whether they suubmitted and after submit document uploaded
+      or not a call button to press that call will be gone to caller app
+      and entry status as well."
+      **Scope (clarified via Q&A 2026-11-17):**
+      (1) **Granularity — one record per student**, not per document type.
+      A single follow-up status covering document collection overall for
+      that student, not separate tracking per Birth Cert/TC/Aadhar etc.
+      (2) **Latest-state only** — no multi-attempt call history log. Each
+      update overwrites the current state (status, reply note, promised
+      date); no "call 1 / call 2" timeline.
+      (3) **Status is a sequential pipeline**, one field:
+      `Not Called → Called (Awaiting Reply) → Date Promised → Submitted →
+      Uploaded`. "Submitted" and "Uploaded" are stages in this one
+      sequence, not independent flags — reaching "Uploaded" implies
+      "Submitted" already happened.
+      (4) **Fields per student:** current status (above), reply/notes
+      (free text), promised date, plus the implied submitted/uploaded
+      state from the status stage.
+      (5) **Call button** opens a `tel:` link to dial the parent directly
+      from the browser/device. Dials the primary `mobile` by default; if a
+      student also has `mobile2`, show two small call icons so staff can
+      choose which number to dial, rather than defaulting silently to one.
+      (6) **UI placement** — a popover per student row (same interaction
+      pattern as the existing "Other Documents" popover already in
+      `StudentDocumentsSection.jsx`), not new spreadsheet columns, since
+      that table is already very wide. Row shows a compact status badge
+      (e.g. "Called — Promised 20 Nov") with an icon to open the popover
+      and edit it.
+      **Data model (not yet built):** needs a new Supabase table, e.g.
+      `student_document_followups` (student_id, status, reply_note,
+      promised_date, updated_at, updated_by) — nothing like this exists on
+      `students` or elsewhere today. RLS/grants need the same
+      `anon`-vs-`authenticated` care called out in `CLAUDE.md` (admin panel
+      writes as `authenticated`).
+      **Shipped 2026-11-17**: migration applied live via Supabase MCP
+      (`mobile-app/SUPABASE_STUDENT_DOCUMENT_FOLLOWUPS.sql` — new table
+      `student_document_followups`, RLS enabled, `is_admin_user()`-gated
+      policy for all ops, grants to `authenticated`/`service_role` only,
+      matching `student_documents`' existing pattern; Supabase security
+      advisor shows no new finding for this table). `studentService.js`
+      gained `getDocumentFollowups()` (bulk fetch, no student filter — list
+      is already loaded client-side) and `upsertDocumentFollowup()`
+      (`onConflict: "student_id"`, stamps `updated_by` from `authUser?.id`
+      the same way `EntryBatchesTab.js`/`createEmptyBatch` does).
+      `StudentDocumentsSection.jsx` gained a `FOLLOW-UP` column (same
+      popover interaction pattern as the existing `OTHER DOCS` column) with
+      a status badge (color-coded per pipeline stage), `tel:` call icon(s)
+      (one per phone number on file), and a popover to edit
+      status/reply-note/promised-date, backed by its own `useEffect` load
+      on mount and local optimistic state.
+      **Verified**: `npm run lint` clean (0 warnings/errors); dev server
+      compiled `/documents` with zero errors (1322 modules, 200 response).
+      **Verified live** in a real logged-in browser session (senior_admin):
+      opened `/documents` → Student Documents, scrolled to the FOLLOW-UP
+      column, set a test student's status to "Called" with a reply note and
+      promised date, saved, reloaded the page and confirmed the value
+      persisted in `student_document_followups` (not just local state), then
+      reverted the test row back to "Not Called" with no note/date so no
+      fake data was left in production. Zero console errors. Call icon(s)
+      render correctly (two for a student with `mobile`+`mobile2`, one
+      otherwise) — the OS dialer launch itself wasn't testable from this
+      desktop session (no telephony), only that the `tel:` link is wired to
+      the right number(s).
+      **Same-session follow-on (user: "remove other docs")**: the
+      pre-existing **OTHER DOCS** column (tracking non-primary document
+      types - Caste Certificate etc.) was removed from this spreadsheet per
+      explicit user request, confirmed via `AskUserQuestion` to mean "hide
+      the column, underlying document_types/student_documents data stays
+      intact" rather than a DB-level delete. Since this was the only UI
+      surface in the whole admin panel exposing that "other documents"
+      upload/view/mark-done flow (confirmed via repo-wide grep before
+      removing), the dead code was deleted outright rather than left
+      unreachable: `getOtherDocsForStudent()` helper, `renderOtherDocsCell()`,
+      the `otherDropdownOpen` state, and the column's `<th>`/`<td>` -
+      nothing else in the codebase referenced any of them. Spreadsheet is
+      back to 10/15 columns (10 base + 5 with Contact Info, same as before
+      REQ-FEAT-023 added FOLLOW-UP) instead of 11/16. **Note for later:**
+      any already-uploaded "other" document type files/rows in
+      `student_documents` are untouched in the DB - there is just currently
+      no UI anywhere to view/manage them; flag if that needs restoring
+      elsewhere.
+      **Verified**: `npm run lint` clean; dev server HMR-recompiled
+      `/documents` with the column gone and FOLLOW-UP sitting right after
+      MOTHER AADHAR, confirmed visually.
+- [x] **REQ-FEAT-024 — General-purpose Admin Note per student, shared across
+      the Student list, Government Entry, Documents, and Student Report
+      pages. CODED + BROWSER-VERIFIED 2026-11-17.** User: "add a note
+      into every student row; if i wanna a note something about that
+      student about governmen entry or something else like age not valid ;
+      only for study or tc received but student not yet released like
+      this." Distinct from REQ-FEAT-023's Follow-up Tracker — that one is
+      specifically about document-collection call status; this one is a
+      free-form sticky note for anything staff want to remember about a
+      student (eligibility quirks, enrollment-status caveats, etc).
+      **Scope (clarified via Q&A 2026-11-17):**
+      (1) **Shared across three pages, one source of truth** — the Student
+      list page (`student/page.js`), the Government Entry page
+      (`government-entry/page.js`), and the Documents page
+      (`StudentDocumentsSection.jsx`) all read/write the *same* per-student
+      note, not three separate notes. Editing it from any one page must be
+      reflected on the others (next load - no realtime sync required).
+      (2) **One current note per student** — no dated history, overwritten
+      in place each time it's edited (same latest-state-only shape as
+      REQ-FEAT-023's follow-up tracker).
+      (3) **Plain free text** — no category/tag selector, just a text box.
+      **Data model (not yet built):** new table, e.g.
+      `student_admin_notes` (student_id uuid UNIQUE references
+      `students(id)` ON DELETE CASCADE, `note text`, `updated_by` references
+      `admin_users(id)`, `updated_at`) — a dedicated table rather than a new
+      column on `students` itself, matching REQ-FEAT-023's pattern (avoids
+      an ALTER on the core table; RLS/grants copied from
+      `student_documents`/`student_document_followups`).
+      (4) **Also wire the dormant Report-page column (confirmed
+      2026-11-17)** — `reportService.js`'s `getStudentsForReport()`
+      currently returns a hardcoded `followUp: ""` field (line ~104) that
+      `report/page.js` already renders as a toggleable "Follow Up" column
+      (`dflt:false`) in the Student Report, always blank since nothing
+      ever writes to it. User confirmed: make it show the real note too —
+      so this touches a 4th page (`report/page.js` / `reportService.js`)
+      as a read-only surface (no edit popover needed there - that report
+      is a read/export view, not a row-editing UI like the other three).
+      **UI (not yet built):** a small note icon/badge per row on the three
+      editable pages (same popover-on-click pattern as REQ-FEAT-023's
+      FOLLOW-UP column: textarea + Save, truncated preview of the current
+      note when one exists) — each page gets its own `useEffect` load of
+      `getStudentAdminNotes()` on mount, same shape as `followups` in
+      `StudentDocumentsSection.jsx`.
+      **Shipped 2026-11-17**: migration applied live via Supabase MCP
+      (`mobile-app/SUPABASE_STUDENT_ADMIN_NOTES.sql` — new table
+      `student_admin_notes`, RLS + `is_admin_user()` policy, same pattern as
+      `student_document_followups`). New reusable component
+      `admin-panel/src/components/StudentNoteBadge.jsx` (badge + popover,
+      self-contained — reads `authUser` itself via `useStore`, takes
+      `studentId`/`note`/`onSaved`) used on all three editable pages:
+      `StudentDocumentsSection.jsx` (new NOTE column, same pattern as
+      FOLLOW-UP), `student/page.js` (Alerts column on desktop grid + action
+      area on mobile card), `government-entry/page.js` (Action column,
+      gated on `row.studentId` being present so onlineGr rows with no
+      linked student never attempt a write that would violate the table's
+      FK). `reportService.js`'s `getStudentsForReport()` now fetches
+      `student_admin_notes` once and fills the previously-hardcoded
+      `followUp: ""` with the real note (read-only there - confirmed with
+      user before touching this 4th page).
+      **Mid-build addition (user: "also provide dropdown for quick select
+      of notes")**: `StudentNoteBadge` got a `QUICK_NOTES` preset dropdown
+      above the textarea (Government Entry: age not valid / documents
+      mismatch, Only for study, TC received but not released, Awaiting
+      parent response, Follow up next cycle) - picking one appends plain
+      text into the note rather than setting a separate category field, so
+      storage stays exactly the free-text shape already agreed.
+      **Verified live** in a real logged-in browser session: set a note via
+      the quick-select + free text on the Documents page, saved, confirmed
+      it persisted after reload; confirmed the *same* note appears on the
+      Student list page (Alerts column) without navigating away when
+      clicked (popover correctly stops click propagation on a
+      whole-card-clickable row); confirmed "Add note" renders in Government
+      Entry's UDISE tab Action column for real student rows; confirmed the
+      Student Report's "Follow Up" column (toggled on via its column
+      picker) shows the same text. Cleared the test note back to empty
+      afterward so no fake data was left in production. `npm run lint`
+      clean throughout.
+- [x] **REQ-FEAT-025 — Recurring reminder/call-back system: overdue
+      Follow-up promised dates + manual reminders from the Note popover,
+      nagging via a popup across the whole admin panel until dismissed or
+      resolved. CODED + BROWSER-VERIFIED 2026-11-17.**
+      User: "there should be a remainder section to call back again if
+      submit date passes away ; at the top of the sheets also in note
+      section give remainder button if that clicked it will remind again
+      and again with pop up unless remainder dismissed or resolved
+      permanately."
+      **Scope (clarified via Q&A 2026-11-17):**
+      (1) **Automatic trigger, no setup** — as soon as a
+      `student_document_followups.promised_date` is in the past AND that
+      student's status is not yet `Submitted`/`Uploaded`, it becomes an
+      active reminder on its own ("call back - promised date passed").
+      (2) **Manual trigger** — a "Set Reminder" button added to
+      `StudentNoteBadge`'s popover, so staff can flag a reminder on any
+      student's note directly (custom message, not tied to a document
+      promised date).
+      (3) **Popup scope: whole admin panel.** Not just the Documents page -
+      mounted at the dashboard layout level so it can fire no matter which
+      page staff are on.
+      (4) **Popup trigger: on page load/navigation**, not a background
+      timer. Each time a dashboard route loads, if active reminders exist,
+      show them. No polling/interval while idle on one page.
+      (5) **Dismiss vs. Resolve, precisely:**
+          - **Dismiss** = closes the popup for right now, no DB write. It
+            will reappear the very next time a reminder-bearing condition
+            is re-checked (next navigation/page load) - matches "remind
+            again and again" by design, not a bug.
+          - **Resolve (permanent)** = writes a resolved state for that
+            student's reminder; never nags again for it, even though the
+            underlying overdue condition may still technically be true.
+      (6) **"At the top of the sheets"** - in addition to the global popup,
+      add a small reminders banner at the top of the Documents > Student
+      Documents spreadsheet (and a bell/badge in the shared `Header.jsx`
+      used across all dashboard pages) summarizing the active count, with
+      a click-through to the same list the popup shows.
+      **Data model (not yet built):** new table `student_reminders` - one
+      row per student (unique `student_id`, same latest-state-only pattern
+      as REQ-FEAT-023/024's tables): `message` (nullable - null means
+      "derive display text from the overdue follow-up's promised date" at
+      render time, used for the automatic case; set means a manual
+      reminder's custom text), `status` (`active`/`resolved`),
+      `created_at`, `resolved_at`, `resolved_by`, `updated_by`. RLS +
+      `is_admin_user()` policy, same shape as the other two new tables this
+      session.
+      (7) **Auto-reactivation (confirmed 2026-11-17):** if a student's
+      reminder was resolved, then their Follow-up's `promised_date` is
+      later changed again (a new promise made) and THAT date also lapses,
+      the reminder reactivates automatically - resolving doesn't silence
+      the student forever, only that specific lapsed promise.
+      Implementation: `upsertDocumentFollowup` clears/resets any resolved
+      `student_reminders` row for that student whenever `promisedDate`
+      changes, so the next overdue check can re-flag it.
+      **UI (not yet built):** `admin-panel/src/components/
+      ReminderPopup.jsx` mounted in `(dashboard)/layout.js`, fetching
+      active reminders (overdue follow-ups joined with
+      `student_reminders`, same join shape as `getDocumentFollowups`) on
+      every route change; per-item Dismiss/Resolve buttons plus a quick
+      `tel:` call icon (reuses the same pattern as REQ-FEAT-023's call
+      button) since the whole point is calling the parent back. Bell/badge
+      in `Header.jsx` opens the same list on demand. Documents-page banner
+      is a lighter version of the same list, scoped to just that page's
+      visible roster.
+      **Shipped 2026-11-17**: migration applied live via Supabase MCP
+      (`mobile-app/SUPABASE_STUDENT_REMINDERS.sql` — new table
+      `student_reminders`, RLS + `is_admin_user()` policy, same pattern as
+      the other two new tables this session). `studentService.js` gained
+      `getActiveReminders()` (combines overdue `student_document_followups`
+      with `student_reminders`, fetching student display fields in one
+      follow-up `.in()` query rather than a nested join), `resolveReminder()`,
+      `setManualReminder()`; `upsertDocumentFollowup()` now deletes any
+      `resolved` reminder row for that student whenever a `promisedDate` is
+      set, implementing the agreed auto-reactivation rule.
+      New `admin-panel/src/contexts/ReminderContext.jsx`
+      (`ReminderProvider`/`useReminders()`) re-fetches on every
+      `usePathname()` change and auto-opens the popup when the list is
+      non-empty; "dismiss" only flips local `popupOpen` state (no DB write,
+      so the very next navigation re-triggers it); "resolve" calls the
+      service function and removes the item from local state immediately.
+      `ReminderPopup.jsx` (the modal: per-item `tel:` call icon + Resolve,
+      plus a bottom "Dismiss for now") and `ReminderBell.jsx` (header badge,
+      renders nothing when the list is empty) both just consume the
+      context. Mounted once in `(dashboard)/layout.js` (wraps the whole
+      shell, so it fires from any route); bell added to `Header.jsx` next
+      to - not replacing - the existing unrelated Notifications bell
+      (different semantics: read/unread vs. recurring-nag/resolve, kept
+      deliberately separate). `StudentNoteBadge.jsx` gained an "Also set as
+      a reminder" checkbox that calls `setManualReminder` with the note
+      text as the message. `StudentDocumentsSection.jsx` gained the
+      "at the top of the sheets" banner (amber bar, only rendered when
+      `reminders.length > 0`, "View" opens the same global popup via
+      context rather than building a second list UI).
+      **Verified live**: checked "Also set as a reminder" on a test note +
+      saved → header bell badge appeared immediately (same render, via
+      `refresh()` after save) and the Documents-page banner appeared
+      ("1 student need a call back / reminder"). Opened the popup via the
+      banner's "View" link, clicked "Dismiss for now", then navigated to
+      `/student` (a different page) - the popup auto-reappeared
+      unprompted, confirming the whole-admin-panel + dismiss-doesn't-
+      persist behavior. Clicked "Resolve" - popup closed, bell badge
+      disappeared; reloaded `/documents` from scratch and confirmed it
+      stayed gone (banner, bell, and popup all absent) - resolve really is
+      permanent. Checked console - zero errors throughout. Cleared the test
+      note content afterward (left the resolved reminder row in place,
+      harmless since status='resolved') so no fake data was left on the
+      real student record. `npm run lint` clean; `get_advisors(security)`
+      showed no new finding for `student_reminders`.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

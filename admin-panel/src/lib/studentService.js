@@ -1141,6 +1141,161 @@ export async function updateStudentDocument(studentId, documentTypeId, fileUrl) 
   if (error) throw error;
 }
 
+// ── Document Collection Follow-up Tracker (REQ-FEAT-023) ──────────────────────
+// One row per student, latest-state only (no call-attempt history).
+
+export async function getDocumentFollowups() {
+  const { data, error } = await supabase
+    .from("student_document_followups")
+    .select("student_id, status, reply_note, promised_date, updated_at");
+  if (error) throw error;
+  return data || [];
+}
+
+export async function upsertDocumentFollowup(studentId, { status, replyNote, promisedDate, updatedBy }) {
+  const { error } = await supabase
+    .from("student_document_followups")
+    .upsert({
+      student_id:    studentId,
+      status:        status,
+      reply_note:    replyNote ?? null,
+      promised_date: promisedDate || null,
+      updated_by:    updatedBy || null,
+      updated_at:    new Date().toISOString(),
+    }, { onConflict: "student_id" });
+  if (error) throw error;
+
+  // REQ-FEAT-025: a (re)promised date is a materially new situation - if this
+  // student's reminder was already resolved, let it become eligible to nag
+  // again once (if) the new date also lapses, rather than staying silenced
+  // forever for a promise that was never actually kept.
+  if (promisedDate) {
+    await supabase
+      .from("student_reminders")
+      .delete()
+      .eq("student_id", studentId)
+      .eq("status", "resolved");
+  }
+}
+
+// ── General-purpose Admin Note (REQ-FEAT-024) ──────────────────────────────────
+// One free-text note per student, latest-state only. Shared across the
+// Student list, Government Entry, Documents, and Student Report pages.
+
+export async function getStudentAdminNotes() {
+  const { data, error } = await supabase
+    .from("student_admin_notes")
+    .select("student_id, note, updated_at");
+  if (error) throw error;
+  return data || [];
+}
+
+export async function upsertStudentAdminNote(studentId, { note, updatedBy }) {
+  const { error } = await supabase
+    .from("student_admin_notes")
+    .upsert({
+      student_id: studentId,
+      note:       note || null,
+      updated_by: updatedBy || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "student_id" });
+  if (error) throw error;
+}
+
+// ── Reminder / Call-back System (REQ-FEAT-025) ─────────────────────────────────
+// One row per student, latest-state only. Surfaces two kinds of active
+// reminder: (1) automatic - a Follow-up's promised_date has passed and the
+// student still isn't Submitted/Uploaded; (2) manual - staff explicitly set
+// one from the Note popover. "Resolved" permanently silences a reminder
+// unless upsertDocumentFollowup later clears it (see above - a fresh
+// promised date re-opens the possibility of nagging again).
+
+function todayIso() {
+  return new Date().toISOString().slice(0, 10); // YYYY-MM-DD, matches a `date` column
+}
+
+export async function getActiveReminders() {
+  const [{ data: reminderRows, error: remErr }, { data: followupRows, error: fuErr }] = await Promise.all([
+    supabase.from("student_reminders").select("student_id, status, message"),
+    supabase.from("student_document_followups").select("student_id, status, promised_date").not("promised_date", "is", null),
+  ]);
+  if (remErr) throw remErr;
+  if (fuErr) throw fuErr;
+
+  const remindersByStudent = {};
+  (reminderRows || []).forEach(r => { remindersByStudent[r.student_id] = r; });
+
+  const today = todayIso();
+  const overdue = (followupRows || []).filter(f =>
+    f.promised_date < today && f.status !== "Submitted" && f.status !== "Uploaded"
+  );
+
+  const activeMap = {};
+  overdue.forEach(f => {
+    const existing = remindersByStudent[f.student_id];
+    if (existing?.status === "resolved") return; // permanently silenced for this promise
+    activeMap[f.student_id] = {
+      studentId: f.student_id,
+      isManual:  false,
+      message:   existing?.message || `Call back — promised date (${f.promised_date}) has passed`,
+    };
+  });
+  Object.values(remindersByStudent).forEach(r => {
+    if (r.status !== "active") return;
+    activeMap[r.student_id] = {
+      studentId: r.student_id,
+      isManual:  !activeMap[r.student_id],
+      message:   r.message || activeMap[r.student_id]?.message || "Reminder",
+    };
+  });
+
+  const studentIds = Object.keys(activeMap);
+  if (studentIds.length === 0) return [];
+
+  const { data: students, error: stuErr } = await supabase
+    .from("students")
+    .select("id, first_name, last_name, grno, mobile1, mobile2")
+    .in("id", studentIds);
+  if (stuErr) throw stuErr;
+
+  return (students || []).map(s => ({
+    ...activeMap[s.id],
+    name:    `${s.first_name} ${s.last_name}`.trim(),
+    grNo:    s.grno || "",
+    mobile:  s.mobile1 || "",
+    mobile2: s.mobile2 || "",
+  }));
+}
+
+export async function resolveReminder(studentId, resolvedBy) {
+  const { error } = await supabase
+    .from("student_reminders")
+    .upsert({
+      student_id:  studentId,
+      status:      "resolved",
+      resolved_at: new Date().toISOString(),
+      resolved_by: resolvedBy || null,
+      updated_by:  resolvedBy || null,
+      updated_at:  new Date().toISOString(),
+    }, { onConflict: "student_id" });
+  if (error) throw error;
+}
+
+export async function setManualReminder(studentId, message, updatedBy) {
+  const { error } = await supabase
+    .from("student_reminders")
+    .upsert({
+      student_id:  studentId,
+      status:      "active",
+      message:     message || null,
+      resolved_at: null,
+      resolved_by: null,
+      updated_by:  updatedBy || null,
+      updated_at:  new Date().toISOString(),
+    }, { onConflict: "student_id" });
+  if (error) throw error;
+}
+
 // ── Transfer Certificate ──────────────────────────────────────────────────────
 // Routed through the admin_issue_tc RPC (TODO.md REQ-SEC-008, fixed
 // 2026-09-19) instead of direct table writes - the old version had zero

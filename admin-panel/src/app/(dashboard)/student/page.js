@@ -16,7 +16,9 @@ import {
   readmitStudent as svcReadmit,
   promoteStudent as svcPromote,
   resetStudentPassword as svcResetPassword,
+  getStudentAdminNotes,
 } from "@/lib/studentService";
+import StudentNoteBadge from "@/components/StudentNoteBadge";
 import { createImpersonationCode } from "@/lib/impersonationService";
 import { getFeatureFlag } from "@/lib/featureFlagsService";
 import { getActiveClasses, getCurrentYearPromotionConfig } from "@/lib/settingsService";
@@ -771,9 +773,21 @@ export default function StudentPage() {
   const [basicImportEnabled, setBasicImportEnabled] = useState(false);
   const [basicDetailsModal, setBasicDetailsModal]     = useState(null);
   const [detailsFilter, setDetailsFilter]     = useState("All");
+  const [adminNotes, setAdminNotes]           = useState({}); // REQ-FEAT-024: studentId -> note text
 
   useEffect(() => {
     getFeatureFlag("import_basic_details").then(setBasicImportEnabled).catch(() => {});
+  }, []);
+
+  // Load general-purpose admin notes (REQ-FEAT-024)
+  useEffect(() => {
+    getStudentAdminNotes()
+      .then(rows => {
+        const map = {};
+        (rows || []).forEach(r => { map[r.student_id] = r.note || ""; });
+        setAdminNotes(map);
+      })
+      .catch(err => console.error("Failed to fetch student admin notes:", err));
   }, []);
 
   // Load academic years + active classes on mount
@@ -1447,6 +1461,12 @@ export default function StudentPage() {
                       );
                     })()}
                     <div className="flex flex-col gap-1.5 px-3 pb-3 pt-1.5 border-t border-gray-50" onClick={(e) => e.stopPropagation()}>
+                      {/* Admin Note (REQ-FEAT-024) */}
+                      <StudentNoteBadge
+                        studentId={student._studentId}
+                        note={adminNotes[student._studentId]}
+                        onSaved={(id, note) => setAdminNotes(prev => ({ ...prev, [id]: note }))}
+                      />
                       {isPromoted ? (
                         <Link href={`/student/${student.enrollment}?session=${student.session}`}
                           className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold bg-school-navy text-white">
@@ -1684,6 +1704,18 @@ export default function StudentPage() {
                           <span className="text-[10px] font-semibold text-green-600">All Given</span>
                         </div>
                       )}
+
+                      <div className="w-full h-px bg-gray-100" />
+
+                      {/* Admin Note (REQ-FEAT-024) */}
+                      <div>
+                        <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wide mb-1">Note</p>
+                        <StudentNoteBadge
+                          studentId={student._studentId}
+                          note={adminNotes[student._studentId]}
+                          onSaved={(id, note) => setAdminNotes(prev => ({ ...prev, [id]: note }))}
+                        />
+                      </div>
                     </div>
 
                     {/* ── Column 5: Fee Summary ── */}

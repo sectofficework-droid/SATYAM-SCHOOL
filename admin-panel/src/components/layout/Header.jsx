@@ -7,6 +7,7 @@ import useStore from "@/lib/store";
 import supabase from "@/lib/supabase";
 import { useIdleTimer } from "@/lib/idleTimerContext";
 import { getRecentAdminAlerts, getUnreadAdminAlertCount, markAdminAlertRead, markAllAdminAlertsRead } from "@/lib/adminAlertsService";
+import ReminderBell from "@/components/ReminderBell";
 
 function timeAgo(iso) {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -192,6 +193,9 @@ export default function Header() {
           <TimerReset className="w-3.5 h-3.5 flex-shrink-0" />
           <span>{formatMMSS(idleSecondsLeft)}</span>
         </div>
+
+        {/* Reminder / Call-back System (REQ-FEAT-025) */}
+        <ReminderBell />
 
         {/* Notifications */}
         <div className="relative" ref={alertsRef}>

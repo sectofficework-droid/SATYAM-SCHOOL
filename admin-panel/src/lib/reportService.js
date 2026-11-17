@@ -17,6 +17,14 @@ export async function getStudentsForReport() {
 
   if (!years?.length) return [];
 
+  // REQ-FEAT-024: shared admin note, surfaced here as the (previously
+  // always-blank) "Follow Up" column - read-only in this report.
+  const { data: noteRows } = await supabase
+    .from("student_admin_notes")
+    .select("student_id, note");
+  const notesByStudentId = {};
+  (noteRows || []).forEach(r => { notesByStudentId[r.student_id] = r.note || ""; });
+
   const { data, error } = await supabase
     .from("student_enrollments")
     .select(`
@@ -101,7 +109,7 @@ export async function getStudentsForReport() {
       grNo:               s.grno || "",
       hasBirthCert,
       remarks:            row.deactivate_reason || "",
-      followUp:           "",
+      followUp:           notesByStudentId[s.id] || "",
       enrollmentId:       row.id,
       deactivateDate:     row.deactivate_date || "",
       transferCertificates: s.transfer_certificates || [],
