@@ -484,6 +484,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
   const [form,     setForm]     = useState({});
   const [saved,    setSaved]    = useState(false);
   const [errors,   setErrors]   = useState({});
+  const [batchId,  setBatchId]  = useState("none"); // default "no batch" - matches Add Student
 
   const [deleteModal,       setDeleteModal]       = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
@@ -509,6 +510,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
   }
   function selectStudent(st) {
     setSelected(st); setForm({...st}); setSaved(false); setErrors({}); resetMedia();
+    setBatchId("none");
     setDeleteModal(false); setDeleteConfirmText(""); setDeleteError("");
     if (st.photo) {
       getS3ViewUrl(st.photo).then(url => { if (url) setPhotoPreview(url); }).catch(() => {});
@@ -553,11 +555,23 @@ function SingleStudentTool({ students, onStudentUpdated }) {
         enrollmentId: selected._enrollmentId,
       };
       await dbUpdateStudent(selected._studentId, updatePayload);
-      // REQ-FEAT-021 (2026-10-22): this single-student update tool no
-      // longer records a phase at all (was "single_student_update",
-      // REQ-FEAT-019) - a routine edit to an existing record was never
-      // the "physical document batch" workflow that feature models, and
-      // was the actual source of a new 1-student batch on every save.
+      // REQ-FEAT-021 (2026-10-22) removed phase recording from this tool
+      // entirely (every save was silently minting a 1-student batch).
+      // Restored on explicit request, batch-optional this time: only
+      // recorded when the admin picks a batch - stays "no batch" by
+      // default, same as Add Student.
+      if (batchId !== "none") {
+        try {
+          await recordPhase({
+            type: "Added", source: "single_student_update", createdBy: authUser?.id, existingBatchId: batchId || null,
+            entries: [{
+              studentId: selected._studentId,
+              enrollmentNo: selected.enrollNo,
+              snapshot: buildPhaseSnapshot(updatePayload, selected.enrollNo),
+            }],
+          });
+        } catch {}
+      }
 
       const { data: docTypes } = await supabase.from("document_types").select("id, name");
       if (docTypes?.length) {
@@ -797,6 +811,8 @@ function SingleStudentTool({ students, onStudentUpdated }) {
           </button>
         </div>
       </div>
+
+      <BatchSelector phaseType="Added" value={batchId} onChange={setBatchId} className="mt-3 max-w-xs" />
 
       <div className="mt-3 flex items-center gap-3">
         <button onClick={handleSave} disabled={saving} className="flex items-center gap-2 bg-school-navy text-white px-6 py-2.5 rounded-lg text-sm font-semibold disabled:opacity-60"><Save className="w-4 h-4"/>{saving ? "Saving..." : "Save Changes"}</button>

@@ -11,12 +11,15 @@ import {
   isValidPercentage, isNonNegativeNumber, isValidUploadFile,
 } from "@/lib/validators";
 import { getStudentByEnrollment, updateStudent as svcUpdate, searchStudentsForSibling } from "@/lib/studentService";
+import { recordPhase, buildPhaseSnapshot } from "@/lib/studentPhaseService";
 import { fmtDMY } from "@/lib/utils";
 import { getActiveClasses } from "@/lib/settingsService";
 import { uploadFileToS3, getS3ViewUrl, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile, formatFileSize } from "@/lib/fileCompression";
 import supabase from "@/lib/supabase";
+import useStore from "@/lib/store";
 import DateInputDMY from "@/components/DateInputDMY";
+import BatchSelector from "@/components/BatchSelector";
 
 // ── Options ────────────────────────────────────────────────────
 function getCurrentSession() {
@@ -223,6 +226,8 @@ function ReadOnlyField({ label, value }) {
 
 // ── Edit Form — receives pre-loaded student ────────────────────
 function EditForm({ existing, router }) {
+  const { authUser } = useStore();
+  const [batchId, setBatchId] = useState("none"); // default "no batch" - matches Add Student
   const [standards, setStandards] = useState([]);
 
   useEffect(() => {
@@ -569,11 +574,23 @@ function EditForm({ existing, router }) {
         siblings: hasSibling ? siblings.filter(s => s.name) : [],
       };
       await svcUpdate(existing._studentId, updatePayload);
-      // REQ-FEAT-021 (2026-10-22): this single-student edit form no
-      // longer records a phase at all (was "edit_student_form",
-      // REQ-FEAT-019) - a routine edit to an existing record was never
-      // the "physical document batch" workflow that feature models, and
-      // was the actual source of a new 1-student batch on every save.
+      // REQ-FEAT-021 (2026-10-22) removed phase recording from this form
+      // entirely (every save was silently minting a 1-student batch).
+      // Restored on explicit request, batch-optional this time: only
+      // recorded when the admin picks a batch - stays "no batch" by
+      // default, same as Add Student.
+      if (batchId !== "none") {
+        try {
+          await recordPhase({
+            type: "Added", source: "edit_student_form", createdBy: authUser?.id, existingBatchId: batchId || null,
+            entries: [{
+              studentId: existing._studentId,
+              enrollmentNo: existing.enrollment,
+              snapshot: buildPhaseSnapshot({ ...updatePayload, std: existing.std }, existing.enrollment),
+            }],
+          });
+        } catch {}
+      }
 
       // Save document statuses to DB
       const { data: docTypes } = await supabase.from("document_types").select("id, name");
@@ -1282,6 +1299,7 @@ function EditForm({ existing, router }) {
       </div>
 
       {/* ══ Submit ══ */}
+      <BatchSelector phaseType="Added" value={batchId} onChange={setBatchId} className="max-w-xs" />
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
           type="button" onClick={() => router.back()}

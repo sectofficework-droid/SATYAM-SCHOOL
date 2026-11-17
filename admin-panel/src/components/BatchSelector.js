@@ -17,12 +17,13 @@ import { getPhases } from "@/lib/studentPhaseService";
 // is recorded unless the admin explicitly picks either "+ Start New Batch"
 // or an existing one. (2) per the user's own follow-up ("the selection was
 // mainly for import / replacement or new entry so batch selection should
-// be show there"), this component is now only rendered on the
-// import/replacement/new-entry tools (Add Student, Import Students,
-// Replace Full Details, Basic Details Import) - the single-student Edit
-// Student / Super-Admin Update Student tools dropped it entirely and no
-// longer record phases at all, since a routine edit to an existing record
-// was never part of the "physical document batch" workflow this models.
+// be show there"), this component was removed from the single-student Edit
+// Student / Super-Admin Update Student tools entirely.
+//
+// Restored to both single-student update paths 2026-11-17, still
+// defaulting to "— No Batch —" - the user explicitly asked for batch
+// selection "when i do student update or new student entry", so an update
+// can now optionally join the same batch a related Add Student save used.
 //
 // value contract: "none" (default, don't record) | "" (start a new batch)
 // | an existing student_import_phases.id.

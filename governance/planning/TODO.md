@@ -4125,6 +4125,20 @@ pattern), it is noted as already-known and not re-filed as new.
       "No Batch" and "pick a batch" paths on all 4 kept tools, single-edit
       paths recording nothing, and Government Entry's "Not in any batch"
       list reflecting the 13 deleted entries).
+      **PARTIAL REVERSAL 2026-11-17**: user asked for batch selection back
+      on "student update" too ("when i do student update or new student
+      entry there should be way to select batch ; but by default it should
+      be kept no batch"). `BatchSelector` (still defaulting to `"none"`)
+      restored to both single-edit call sites this line removed
+      (`student/[id]/edit/page.js`'s `EditForm`, super-admin's
+      `SingleStudentTool`), `recordPhase()` reusing `type: "Added"` and
+      each tool's original pre-removal `source` string
+      (`edit_student_form` / `single_student_update`). The "single-edit
+      paths recording nothing" line above is no longer accurate — they now
+      record exactly like Add Student when (and only when) a batch is
+      explicitly picked. Verified live end-to-end via Supabase MCP (a real
+      phase row + entry was created on save, then deleted as test
+      cleanup) — see `ai-context/SESSION-2026-11-17-1.md` for detail.
 - [x] **REQ-FEAT-022 - Government Entry UDISE & PEN eligibility: accept Transfer Certificate (TC) as alternative to Birth Certificate Reg No. CODED 2026-10-31.** User: "WITH BIRTH CERTIFICATE INCLUDE TRANSFER CERTIFICATE EITHER BIRTH CERTIFICATE OR TRANSFER CERTIFICATE".
       **Scope (MINOR CHANGE under §J12B):**
       (1) In `admin-panel/src/app/(dashboard)/government-entry/page.js`, update `eligibilityFns` (`getUdiseEligibility`, `getPenEligibility`):
