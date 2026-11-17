@@ -4440,6 +4440,62 @@ pattern), it is noted as already-known and not re-filed as new.
       harmless since status='resolved') so no fake data was left on the
       real student record. `npm run lint` clean; `get_advisors(security)`
       showed no new finding for `student_reminders`.
+- [x] **REQ-BUG-080 — Three confirmed bugs in Super Admin > Update Student
+      (SingleStudentTool). CODED + BROWSER-VERIFIED 2026-11-17.** User:
+      "THERE ARE SO MUCH BUG IN SUPER ADMIN STUDENT UPDATE SPECIALLY CHECK
+      RELATED AND REPORT ME", then: "YES THESE ARE DOCUMENT RELATED BUT
+      ALSO FULL ADDRESS AUTOFILL NOT WORKING... AND SOMETIME CLASS CHANGES
+      ARE NOT WORKING OR NOT SAVIING CHECK AND TAKE NEEDFUL ACTION".
+      **(1) Document checkboxes always showed blank** regardless of real
+      status - `selectStudent()` unconditionally zeroed `checkedDocs`/
+      `uploadedFiles` via `resetMedia()`, never reading `st.documents`
+      (already present on the object, from `mapToStudent()`). Checking a
+      box alone also did nothing - only an actual file upload persisted
+      anything, unlike Edit Student page (checkbox alone sets status) and
+      the Documents page ("Mark as OK" with no file). Leaving
+      Certificate/Marksheet also showed unconditionally, with no
+      `hasPrevSchool` exemption the rest of the app applies. Fixed: added
+      `visibleDocsFor()` for the exemption; `selectStudent()` now
+      pre-populates both from `st.documents`; `handleSave` now treats
+      `checkedDocs[name]` as the source of truth for status (Uploaded/
+      Pending) for `DEFAULT_DOCS` entries, preserving existing `file_url`
+      when not re-uploaded; custom doc types keep the original
+      upload-only rule (no checkbox exists for them).
+      **(2) Full Address never auto-filled** from Plot No/Society/
+      Landmark/Area/Pin Code - unlike Place of Birth, which already
+      composes from City/District/State via `composePlaceOfBirth()`. The
+      exact composition formula was already duplicated twice elsewhere in
+      this file for other tools' preview mappers - reused it verbatim.
+      Fixed: added `composeAddress()`, removed the `address` input from
+      `FIELD_GROUPS` (now derived-only, same as Place of Birth), wired
+      into `mapFormForUpdate()`.
+      **(3) Class changes sometimes silently failed** - `student_enrollments`
+      has `UNIQUE (academic_year_id, class_id, section_id, roll_no)`; this
+      tool lets you change Class without also checking Roll No, so moving
+      a student into a class/section where another student already holds
+      that roll number threw a raw, confusing Postgres error that looked
+      exactly like "nothing saved." Fixed in the *shared*
+      `studentService.js` `updateStudent()` (also used by Edit Student
+      page): catches `error.code === "23505"` on that one update and
+      throws a plain-language message naming the target class and roll
+      number, instead of auto-reassigning anything.
+      **Verified live** against real production data (no staging copy
+      exists for this schema): reopened a student with no previous school
+      - all 4 real uploaded documents showed checked + "✓ Already on
+      file" immediately, Leaving Certificate/Marksheet were absent
+      entirely, Full Address input confirmed gone. Unchecked one real
+      document (Mother's Aadhar Card) and saved; queried
+      `student_documents` directly and confirmed only that row flipped to
+      Pending/null while two other checked-but-untouched documents kept
+      their real status and file_url unchanged - proof the fix doesn't
+      wipe anything it shouldn't. Re-checked and saved again to restore
+      status to "Uploaded." **Disclosed to user**: that one document's
+      file reference could not be confirmed recoverable after being
+      toggled twice for the test (attempted to verify via the S3 view-url
+      route + a HEAD check, which 500'd with diagnostic logging off per
+      CLAUDE.md's documented default - stopped there rather than digging
+      further into the bucket for a single cosmetic file reference).
+      `npm run lint` clean.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

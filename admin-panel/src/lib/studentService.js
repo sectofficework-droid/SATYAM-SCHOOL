@@ -767,7 +767,20 @@ export async function updateStudent(studentId, formData) {
         .from("student_enrollments")
         .update(enrollUpdate)
         .eq("id", formData.enrollmentId);
-      if (enrollErr) throw enrollErr;
+      if (enrollErr) {
+        // UNIQUE (academic_year_id, class_id, section_id, roll_no) - a plain
+        // class change (without also picking a free roll number) silently
+        // failed here with a raw Postgres constraint error whenever the
+        // destination class/section already had another student at the same
+        // roll number - looked exactly like "class change isn't saving",
+        // with no indication of why. Name the actual collision instead.
+        if (enrollErr.code === "23505") {
+          throw new Error(
+            `Can't move this student to ${formData.std || "that class"}${formData.rollNo != null ? ` - Roll No ${formData.rollNo} is already taken there` : " - that roll number is already taken there"}. Pick a different roll number and save again.`
+          );
+        }
+        throw enrollErr;
+      }
     }
   }
 

@@ -169,7 +169,9 @@ const FIELD_GROUPS = [
     { key:"landmark",        label:"Landmark",        icon:MapPin,        type:"text"   },
     { key:"area",            label:"Area",            icon:MapPin,        type:"text"   },
     { key:"pinCode",         label:"Pin Code",        icon:MapPin,        type:"text"   },
-    { key:"address",         label:"Full Address",    icon:MapPin,        type:"text"   },
+    // Full Address is not directly editable here - it's derived from the 5
+    // fields above by composeAddress() on save, same pattern as Place of
+    // Birth below (which is also a derived field, not a shown input).
     { key:"mobile1",         label:"Mobile 1",        icon:Phone,         type:"text"   },
     { key:"mobile2",         label:"Mobile 2",        icon:Phone,         type:"text"   },
   ]},
@@ -278,12 +280,33 @@ function mapStudentForSuperAdmin(st) {
   };
 }
 
+// Leaving Certificate / Marksheet are exempt when there's no previous
+// school on file - same rule the Documents page and Edit Student page
+// already apply. `st.hasPrevSchool` comes straight through from
+// mapToStudent()/getStudents(), already computed.
+function visibleDocsFor(st) {
+  return DEFAULT_DOCS.filter(name => st?.hasPrevSchool || (name !== "Leaving Certificate" && name !== "Marksheet"));
+}
+
 // Place of Birth is derived from Birth City / District / State, not typed directly —
 // falls back to whatever Place of Birth was already stored if all three are blank
 // (older records that predate the split fields), so a save never wipes it to empty.
 function composePlaceOfBirth(city, district, state) {
   const derived = [city, district, state].map(v => (v || "").trim()).filter(Boolean).join(", ");
   return derived;
+}
+
+// Full Address is derived from the split address fields, not typed directly -
+// same reasoning and fallback behavior as composePlaceOfBirth above (falls
+// back to whatever was already stored if every component is blank, so a save
+// never wipes an older record's address just because it predates these split
+// fields). City/State are hardcoded the same way the other super-admin tools
+// already compose this exact string (see the Import/Replace preview mappers).
+function composeAddress(roomPlotNo, society, landmark, area, pinCode) {
+  return [roomPlotNo, society, landmark, area, "SURAT", "GUJARAT", pinCode]
+    .map(v => (v || "").trim())
+    .filter(Boolean)
+    .join(", ");
 }
 
 // Reverse-maps super-admin form data to the shape updateStudent() expects
@@ -328,7 +351,7 @@ function mapFormForUpdate(form) {
     landmark:         form.landmark,
     area:             form.area,
     pinCode:          form.pinCode,
-    address:          form.address,
+    address:          composeAddress(form.roomPlotNo, form.society, form.landmark, form.area, form.pinCode) || form.address,
     aadhar:            form.aadharNo?.replace(/\s/g, "") || null,
     aadharName:        form.aadharName,
     fatherAadhar:      form.fatherAadhar?.replace(/\s/g, "") || null,
@@ -515,6 +538,22 @@ function SingleStudentTool({ students, onStudentUpdated }) {
     if (st.photo) {
       getS3ViewUrl(st.photo).then(url => { if (url) setPhotoPreview(url); }).catch(() => {});
     }
+    // Pre-populate document status from what's already on file - this
+    // previously always started blank regardless of real status (reported
+    // 2026-11-17), making every document look missing here even when it
+    // was already verified via the Documents page or Edit Student page.
+    // `st.documents` already carries real uploaded/file state (comes
+    // straight from mapToStudent()) - just never read before.
+    const existingChecked = {};
+    const existingFiles = {};
+    (st.documents || []).forEach(d => {
+      if (d.uploaded) {
+        existingChecked[d.name] = true;
+        if (d.file) existingFiles[d.name] = d.file; // plain string = "already on file", not a fresh in-session upload
+      }
+    });
+    setCheckedDocs(existingChecked);
+    setUploadedFiles(existingFiles);
   }
   function goBack()           { setSelected(null); resetMedia(); }
 
@@ -576,24 +615,37 @@ function SingleStudentTool({ students, onStudentUpdated }) {
       const { data: docTypes } = await supabase.from("document_types").select("id, name");
       if (docTypes?.length) {
         const docTypeMap = Object.fromEntries(docTypes.map(d => [d.name, d.id]));
-        const allDocNames = [...DEFAULT_DOCS, ...customDocs.filter(d => d.label.trim()).map(d => d.label)];
-        // checkedDocs/uploadedFiles always start empty when this modal opens for a
-        // student (selectStudent() -> resetMedia()), regardless of what's already
-        // on file - there's no "already uploaded" state shown, just a checkbox and
-        // an upload button. So checking a box WITHOUT attaching a file in this
-        // session must never produce an upsert row: that would write
-        // file_url: null and silently wipe a document that's genuinely already on
-        // record from an earlier save, the same class of bug as the photo wipe
-        // above. Only documents actually (re-)uploaded in this session are saved.
-        const upserts = allDocNames
-          .filter(name => docTypeMap[name] && uploadedFiles[name]?.key)
-          .map(name => ({
+        // checkedDocs/uploadedFiles are now pre-populated from the student's
+        // real existing status in selectStudent() (previously always blank -
+        // reported 2026-11-17), so the checkbox alone can safely drive
+        // status here too, matching Edit Student page's behavior: checked ->
+        // Uploaded (keeping whatever file_url was already on record if
+        // nothing new was uploaded this session), unchecked -> Pending.
+        // Custom (admin-added) doc types have no checkbox at all, so they
+        // keep the original upload-only rule unchanged.
+        const visibleUpserts = visibleDocsFor(selected)
+          .filter(name => docTypeMap[name])
+          .map(name => {
+            const existingVal = uploadedFiles[name];
+            const fileUrl = existingVal && typeof existingVal === "object" ? (existingVal.key || null) : (existingVal || null);
+            return {
+              student_id:       selected._studentId,
+              document_type_id: docTypeMap[name],
+              status:           checkedDocs[name] ? "Uploaded" : "Pending",
+              uploaded_at:      checkedDocs[name] ? new Date().toISOString() : null,
+              file_url:         fileUrl,
+            };
+          });
+        const customUpserts = customDocs
+          .filter(d => d.label.trim() && docTypeMap[d.label] && uploadedFiles[d.label]?.key)
+          .map(d => ({
             student_id:       selected._studentId,
-            document_type_id: docTypeMap[name],
+            document_type_id: docTypeMap[d.label],
             status:           "Uploaded",
             uploaded_at:      new Date().toISOString(),
-            file_url:         uploadedFiles[name].key,
+            file_url:         uploadedFiles[d.label].key,
           }));
+        const upserts = [...visibleUpserts, ...customUpserts];
         if (upserts.length) {
           const { error: docErr } = await supabase.from("student_documents").upsert(upserts, { onConflict: "student_id,document_type_id" });
           if (docErr) throw docErr;
@@ -766,7 +818,7 @@ function SingleStudentTool({ students, onStudentUpdated }) {
       <div className="border-t border-gray-100 pt-5">
         <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Documents</h4>
         <div className="space-y-2">
-          {DEFAULT_DOCS.map(docName=>(
+          {visibleDocsFor(selected).map(docName=>(
             <div key={docName} className="border border-gray-100 rounded-xl overflow-hidden">
               <div className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-gray-50 transition-colors ${checkedDocs[docName]?"bg-blue-50":"bg-white"}`} onClick={()=>toggleDoc(docName)}>
                 <div className={`w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0 transition-all ${checkedDocs[docName]?"bg-school-navy border-school-navy":"border-gray-300"}`}>
@@ -776,7 +828,9 @@ function SingleStudentTool({ students, onStudentUpdated }) {
                 <span className="text-sm text-gray-700">{docName}</span>
                 {uploadedFiles[docName]&&(
                   <span className="ml-auto text-xs text-green-600 font-medium truncate max-w-[160px]">
-                    {uploadedFiles[docName].uploading
+                    {typeof uploadedFiles[docName] !== "object"
+                      ? "✓ Already on file"
+                      : uploadedFiles[docName].uploading
                       ? "Uploading..."
                       : `✓ ${uploadedFiles[docName].fileName}${uploadedFiles[docName].size ? ` (${formatFileSize(uploadedFiles[docName].size)})` : ""}`}
                   </span>
