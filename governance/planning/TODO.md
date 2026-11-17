@@ -4139,6 +4139,23 @@ pattern), it is noted as already-known and not re-filed as new.
       explicitly picked. Verified live end-to-end via Supabase MCP (a real
       phase row + entry was created on save, then deleted as test
       cleanup) — see `ai-context/SESSION-2026-11-17-1.md` for detail.
+      **Follow-up 2026-11-17**: that first real batch landed as "Batch
+      20" (the plain `nextval()` sequence backing `phase_number` never
+      reuses a number after a delete, and 19 had already been consumed by
+      the 13 deleted junk batches + a test batch). Renumbered it to 6
+      (direct `UPDATE` + `setval`) as an immediate cosmetic fix, then the
+      user asked for the underlying behavior to change permanently:
+      "if any batch deleted then next batch should continue from where
+      it is not used... we are not giving enrollment number here."
+      Shipped `mobile-app/SUPABASE_PHASE_NUMBER_GAP_FILL.sql` — replaced
+      the column's sequence-backed default with a
+      `next_student_import_phase_number()` function that always returns
+      the smallest unused positive integer (advisory-locked against a
+      concurrent-insert race). Deleting a batch now frees its number for
+      the very next one created, instead of numbers only ever climbing.
+      Verified live by inserting/deleting/re-inserting test rows directly
+      (confirmed reuse), no code changes needed (every insert call site
+      already omits `phase_number`, relying on the column default).
 - [x] **REQ-FEAT-022 - Government Entry UDISE & PEN eligibility: accept Transfer Certificate (TC) as alternative to Birth Certificate Reg No. CODED 2026-10-31.** User: "WITH BIRTH CERTIFICATE INCLUDE TRANSFER CERTIFICATE EITHER BIRTH CERTIFICATE OR TRANSFER CERTIFICATE".
       **Scope (MINOR CHANGE under §J12B):**
       (1) In `admin-panel/src/app/(dashboard)/government-entry/page.js`, update `eligibilityFns` (`getUdiseEligibility`, `getPenEligibility`):
