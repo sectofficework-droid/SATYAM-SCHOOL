@@ -298,6 +298,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
       if (statusFilter === "pending" && !hasPending) return false;
       if (statusFilter === "done" && !allDone) return false;
       if (statusFilter === "not_required" && !hasNotRequired) return false;
+      if (statusFilter === "gr_pending" && (s.grNo || "").trim()) return false;
 
       // Specific doc filter
       if (docColumnFilter !== "all") {
@@ -1339,6 +1340,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               <option value="pending">Pending Only</option>
               <option value="done">OK Only</option>
               <option value="not_required">Exempt (—) Only</option>
+              <option value="gr_pending">GR Pending Only</option>
             </select>
           </div>
 
