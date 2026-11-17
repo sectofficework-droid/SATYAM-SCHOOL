@@ -3,8 +3,21 @@
 // General-purpose Admin Note per student (REQ-FEAT-024) - shared, reusable
 // badge+popover used on the Student list, Government Entry, and Documents
 // pages. One free-text note per student, latest-state only.
+//
+// The popover is rendered through a portal into document.body and
+// positioned with `position: fixed` from the trigger button's own
+// bounding rect, NOT with a CSS-relative `absolute` wrapper. All three
+// mount points sit inside an `overflow-hidden`/`overflow-auto` ancestor
+// (the Student list's card, Government Entry's scrollable table, the
+// Documents spreadsheet's scrollable table) - a relatively-positioned
+// popover would get silently clipped by those ancestors depending on the
+// row's position, which is what made the note popover "not behave well"
+// (Save button invisible/cut off) on the Student list and Government
+// Entry pages. Rendering outside the DOM subtree entirely sidesteps this
+// regardless of which page mounts it.
 
-import { useState } from "react";
+import { useState, useRef } from "react";
+import { createPortal } from "react-dom";
 import { StickyNote, X, Check, RefreshCw, ChevronDown, BellRing } from "lucide-react";
 import { upsertStudentAdminNote, setManualReminder } from "@/lib/studentService";
 import { useReminders } from "@/contexts/ReminderContext";
@@ -21,15 +34,32 @@ const QUICK_NOTES = [
   "Follow up next admission cycle",
 ];
 
-export default function StudentNoteBadge({ studentId, note, onSaved, align = "left" }) {
+const POPOVER_WIDTH = 256; // px, matches w-64
+const ESTIMATED_HEIGHT = 280; // px, rough - just enough to decide whether to flip above
+
+export default function StudentNoteBadge({ studentId, note, onSaved }) {
   const authUser = useStore(s => s.authUser);
   const { refresh: refreshReminders } = useReminders();
+  const buttonRef = useRef(null);
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState({ top: 0, left: 0 });
   const [draft, setDraft] = useState("");
   const [alsoRemind, setAlsoRemind] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const openPopover = () => {
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (rect) {
+      let left = rect.left;
+      if (left + POPOVER_WIDTH > window.innerWidth - 8) {
+        left = Math.max(8, window.innerWidth - POPOVER_WIDTH - 8);
+      }
+      let top = rect.bottom + 4;
+      if (top + ESTIMATED_HEIGHT > window.innerHeight - 8) {
+        top = Math.max(8, rect.top - ESTIMATED_HEIGHT - 4);
+      }
+      setCoords({ top, left });
+    }
     setDraft(note || "");
     setAlsoRemind(false);
     setOpen(true);
@@ -65,9 +95,10 @@ export default function StudentNoteBadge({ studentId, note, onSaved, align = "le
   const hasNote = Boolean(note && note.trim());
 
   return (
-    <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
+    <>
       <button
-        onClick={openPopover}
+        ref={buttonRef}
+        onClick={(e) => { e.stopPropagation(); openPopover(); }}
         className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] font-bold rounded border cursor-pointer transition-colors max-w-[140px] ${
           hasNote
             ? "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
@@ -79,11 +110,15 @@ export default function StudentNoteBadge({ studentId, note, onSaved, align = "le
         <span className="truncate">{hasNote ? note : "Add note"}</span>
       </button>
 
-      {open && (
+      {open && createPortal(
         <>
-          <div className="fixed inset-0 z-40" onClick={close} />
           <div
-            className={`absolute ${align === "right" ? "right-0" : "left-0"} top-full mt-1 w-64 bg-white rounded-lg shadow-xl border border-slate-300 p-2.5 z-50 space-y-2 text-xs select-none`}
+            className="fixed inset-0 z-[300]"
+            onClick={(e) => { e.stopPropagation(); close(); }}
+          />
+          <div
+            style={{ position: "fixed", top: coords.top, left: coords.left, width: POPOVER_WIDTH }}
+            className="bg-white rounded-lg shadow-xl border border-slate-300 p-2.5 z-[301] space-y-2 text-xs select-none"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-slate-200 pb-1">
@@ -136,8 +171,9 @@ export default function StudentNoteBadge({ studentId, note, onSaved, align = "le
               <span>Save</span>
             </button>
           </div>
-        </>
+        </>,
+        document.body
       )}
-    </div>
+    </>
   );
 }

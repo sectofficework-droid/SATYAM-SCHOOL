@@ -1865,7 +1865,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           studentId={student._studentId}
                           note={notes[student._studentId]}
                           onSaved={(id, note) => setNotes(prev => ({ ...prev, [id]: note }))}
-                          align="right"
                         />
                       </td>
                     </tr>
