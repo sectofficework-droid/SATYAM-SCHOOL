@@ -1570,11 +1570,6 @@ export default function DocumentsPage() {
 
   return (
     <div className="flex flex-col gap-5 max-w-7xl mx-auto">
-      <div>
-        <h1 className="text-2xl font-bold text-school-navy">Documents</h1>
-        <p className="text-sm text-gray-500 mt-0.5">Generate ID cards, certificates and official documents</p>
-      </div>
-
       {/* Sub-tabs */}
       <div className="flex gap-1 flex-wrap border-b border-gray-200">
         {SUB_TABS.map(({ key, label, icon:Icon }) => (

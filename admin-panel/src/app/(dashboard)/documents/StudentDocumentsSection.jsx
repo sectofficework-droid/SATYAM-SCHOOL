@@ -1285,65 +1285,6 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         </div>
       )}
 
-      {/* ── Spreadsheet KPI Metric Cards (Only in Normal Embedded Mode - Compact) ─── */}
-      {!isFullscreen && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
-          <div className="bg-white rounded-lg border border-slate-200 px-2.5 py-1.5 flex items-center justify-between shadow-2xs">
-            <div>
-              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Total Students</p>
-              <p className="text-base font-extrabold text-slate-900 leading-tight">{stats.totalStudents}</p>
-              <p className="text-[9px] text-slate-400">Enrolled Roster</p>
-            </div>
-            <div className="w-7 h-7 rounded-md bg-slate-100 flex items-center justify-center text-school-navy">
-              <Table className="w-3.5 h-3.5" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg border border-slate-200 px-2.5 py-1.5 flex items-center justify-between shadow-2xs">
-            <div>
-              <p className="text-[9px] font-bold text-emerald-700 uppercase tracking-wider">Fully Collected</p>
-              <p className="text-base font-extrabold text-emerald-700 leading-tight">{stats.fullyDoneStudents}</p>
-              <p className="text-[9px] text-emerald-600">All docs verified</p>
-            </div>
-            <div className="w-7 h-7 rounded-md bg-emerald-50 flex items-center justify-center text-emerald-600">
-              <ShieldCheck className="w-3.5 h-3.5" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg border border-slate-200 px-2.5 py-1.5 flex items-center justify-between shadow-2xs">
-            <div>
-              <p className="text-[9px] font-bold text-blue-700 uppercase tracking-wider">Documents OK</p>
-              <p className="text-base font-extrabold text-blue-700 leading-tight">{stats.totalUploadedDocs}</p>
-              <p className="text-[9px] text-blue-600">{stats.completionRate}% completion</p>
-            </div>
-            <div className="w-7 h-7 rounded-md bg-blue-50 flex items-center justify-center text-blue-600">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg border border-slate-200 px-2.5 py-1.5 flex items-center justify-between shadow-2xs">
-            <div>
-              <p className="text-[9px] font-bold text-slate-600 uppercase tracking-wider">Not Required (—)</p>
-              <p className="text-base font-extrabold text-slate-700 leading-tight">{stats.totalNotRequiredDocs}</p>
-              <p className="text-[9px] text-slate-500">Exempt</p>
-            </div>
-            <div className="w-7 h-7 rounded-md bg-slate-100 flex items-center justify-center text-slate-600">
-              <MinusCircle className="w-3.5 h-3.5" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-lg border border-slate-200 px-2.5 py-1.5 flex items-center justify-between shadow-2xs col-span-2 sm:col-span-1">
-            <div>
-              <p className="text-[9px] font-bold text-amber-700 uppercase tracking-wider">Upload Pending</p>
-              <p className="text-base font-extrabold text-amber-700 leading-tight">{stats.totalPendingDocs}</p>
-              <p className="text-[9px] text-amber-600">Action required</p>
-            </div>
-            <div className="w-7 h-7 rounded-md bg-amber-50 flex items-center justify-center text-amber-600">
-              <Clock className="w-3.5 h-3.5" />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── Spreadsheet Toolbar (Compact) ─────────────────────────── */}
       <div className="bg-slate-100 rounded-lg border border-slate-300 p-1.5 sm:p-2 flex flex-col md:flex-row md:items-center justify-between gap-1.5 shadow-2xs">
