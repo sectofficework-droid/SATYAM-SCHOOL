@@ -29,10 +29,10 @@ import StudentNoteBadge from "@/components/StudentNoteBadge";
 import { useReminders } from "@/contexts/ReminderContext";
 
 // Standard classes list matching the documents page
-const CLASSES_LIST = [
-  "JR.KG", "SR.KG", "Balvatika",
-  "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th",
-  "11th - Commerce", "12th - Commerce",
+// Class filter groups - "Jr - 5th" (junior section) vs "6th+" (senior section)
+const CLASS_GROUPS = [
+  { label: "Jr - 5th", classes: ["JR.KG", "SR.KG", "Balvatika", "1st", "2nd", "3rd", "4th", "5th"] },
+  { label: "6th+",     classes: ["6th", "7th", "8th", "9th", "10th", "11th - Commerce", "12th - Commerce"] },
 ];
 
 // Helper to match document by category
@@ -1320,10 +1320,14 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               className="text-[11px] bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
             >
               <option value="All">All ({localStudents.length})</option>
-              {CLASSES_LIST.map((cls) => (
-                <option key={cls} value={cls}>
-                  {cls} ({localStudents.filter(s => s.std === cls).length})
-                </option>
+              {CLASS_GROUPS.map(group => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.classes.map((cls) => (
+                    <option key={cls} value={cls}>
+                      {cls} ({localStudents.filter(s => s.std === cls).length})
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
