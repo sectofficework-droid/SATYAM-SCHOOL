@@ -135,6 +135,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const [notes, setNotes] = useState({});
 
   // Filters & controls
+  const [classGroupTab, setClassGroupTab] = useState(CLASS_GROUPS[0].label); // "Jr - 5th" | "6th+"
   const [classFilter, setClassFilter] = useState("All");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all"); // "all" | "pending" | "done" | "not_required"
@@ -203,6 +204,12 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     }
   }, [students]);
 
+  // Switching the Jr-5th / 6th+ tab can leave an incompatible single-class
+  // selection behind (e.g. "5th" picked while on 6th+) - reset to "All".
+  useEffect(() => {
+    setClassFilter("All");
+  }, [classGroupTab]);
+
   // Load document types
   useEffect(() => {
     let cancelled = false;
@@ -266,9 +273,18 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     { key: "mother_aadhar",  title: "MOTHER AADHAR",        shortTitle: "Mother Aadhar",  matchKey: "mother_aadhar" },
   ], []);
 
+  // Active Jr-5th / 6th+ group (tab)
+  const activeClassGroup = useMemo(
+    () => CLASS_GROUPS.find(g => g.label === classGroupTab) || CLASS_GROUPS[0],
+    [classGroupTab]
+  );
+
   // Filtered students computation
   const filteredStudents = useMemo(() => {
     return localStudents.filter(s => {
+      // Class group tab (Jr - 5th / 6th+)
+      if (!activeClassGroup.classes.includes(s.std)) return false;
+
       // Class filter
       if (classFilter !== "All" && s.std !== classFilter) return false;
 
@@ -309,7 +325,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
       return true;
     });
-  }, [localStudents, classFilter, search, statusFilter, docColumnFilter, PRIMARY_COLUMNS]);
+  }, [localStudents, activeClassGroup, classFilter, search, statusFilter, docColumnFilter, PRIMARY_COLUMNS]);
 
   // Overall statistics & per-column counts
   const stats = useMemo(() => {
@@ -1286,6 +1302,31 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         </div>
       )}
 
+      {/* ── Class Group Tabs: Jr - 5th / 6th+ ─────────────────────── */}
+      <div className="flex gap-1 bg-white border border-gray-200 rounded-xl p-1 self-start w-fit shadow-xs flex-shrink-0">
+        {CLASS_GROUPS.map(group => {
+          const count = localStudents.filter(s => group.classes.includes(s.std)).length;
+          const isActive = classGroupTab === group.label;
+          return (
+            <button
+              key={group.label}
+              type="button"
+              onClick={() => setClassGroupTab(group.label)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                isActive ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>{group.label}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                isActive ? "bg-white/20 text-white" : "bg-purple-100 text-purple-700 border border-purple-200"
+              }`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       {/* ── Spreadsheet Toolbar (Compact) ─────────────────────────── */}
       <div className="bg-slate-100 rounded-lg border border-slate-300 p-1.5 sm:p-2 flex flex-col md:flex-row md:items-center justify-between gap-1.5 shadow-2xs">
@@ -1311,7 +1352,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
             )}
           </div>
 
-          {/* Class Selector */}
+          {/* Class Selector - scoped to the active Jr-5th / 6th+ tab */}
           <div className="flex items-center gap-1 bg-white border border-slate-300 rounded-md px-1.5 py-0.5">
             <span className="text-[10px] font-bold text-slate-500 uppercase">Class:</span>
             <select
@@ -1319,15 +1360,13 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               onChange={(e) => setClassFilter(e.target.value)}
               className="text-[11px] bg-transparent font-semibold text-slate-800 focus:outline-none cursor-pointer"
             >
-              <option value="All">All ({localStudents.length})</option>
-              {CLASS_GROUPS.map(group => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.classes.map((cls) => (
-                    <option key={cls} value={cls}>
-                      {cls} ({localStudents.filter(s => s.std === cls).length})
-                    </option>
-                  ))}
-                </optgroup>
+              <option value="All">
+                All ({localStudents.filter(s => activeClassGroup.classes.includes(s.std)).length})
+              </option>
+              {activeClassGroup.classes.map((cls) => (
+                <option key={cls} value={cls}>
+                  {cls} ({localStudents.filter(s => s.std === cls).length})
+                </option>
               ))}
             </select>
           </div>
@@ -1481,7 +1520,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         </div>
 
         <div className="flex items-center gap-2 text-[10.5px] font-medium text-slate-500 flex-shrink-0">
-          <span>Rows: <strong className="text-slate-800">{filteredStudents.length}</strong> / {localStudents.length}</span>
+          <span>Rows: <strong className="text-slate-800">{filteredStudents.length}</strong> / {localStudents.filter(s => activeClassGroup.classes.includes(s.std)).length}</span>
           <span className="text-slate-300">|</span>
           <span>Cols: <strong className="text-slate-800">{showContactDetails ? "16" : "11"}</strong></span>
         </div>
