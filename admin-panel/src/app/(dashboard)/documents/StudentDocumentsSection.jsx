@@ -415,10 +415,19 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
       setEditingGrStudentId(null);
       return;
     }
+    // REQ-BUG-081: GR Number has no uniqueness constraint, which is
+    // exactly how two "Piyush Nayak"/"Mahi Pandey" duplicate student
+    // records ended up sharing one GR this session. Soft warning only
+    // (not a hard block) - legitimate GR formats vary enough that a hard
+    // block could wrongly stop a real correction.
+    const duplicateWith = localStudents.find(
+      (s) => s._studentId !== student._studentId && (s.grNo || "").trim().toUpperCase() === clean
+    ) || null;
     setConfirmGrModal({
       student,
       newGr: clean,
       oldGr: student.grNo || "",
+      duplicateWith,
     });
   };
 
@@ -2288,6 +2297,14 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   </span>
                 </div>
               </div>
+
+              {confirmGrModal.duplicateWith && (
+                <div className="bg-red-50 border border-red-300 rounded-xl p-3 text-red-900 text-[11.5px] leading-relaxed">
+                  <strong>⚠ Already in use:</strong> GR No <strong>{confirmGrModal.newGr}</strong> is currently assigned to{" "}
+                  <strong className="uppercase">{confirmGrModal.duplicateWith.name}</strong> ({confirmGrModal.duplicateWith.std}). Saving
+                  anyway means two students will share one GR Number - double-check this isn't a duplicate student record before continuing.
+                </div>
+              )}
 
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-amber-900 text-[11.5px] leading-relaxed">
                 <strong>Confirmation Notice:</strong> Are you sure you want to save GR No <strong>{confirmGrModal.newGr}</strong> for <strong>{confirmGrModal.student.name}</strong>? This GR Number will be updated in the school records.

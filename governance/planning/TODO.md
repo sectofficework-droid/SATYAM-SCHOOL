@@ -4526,6 +4526,32 @@ pattern), it is noted as already-known and not re-filed as new.
       the shared `authedFetch` helper instead of a bare `fetch`. `npm run
       lint` clean. **NOT VERIFIED end-to-end** - same caveat as
       REQ-SEC-024.
+- [x] **REQ-BUG-081 — GR Number has no uniqueness check. CODED 2026-11-18.**
+      Same full-system review. `students.grno` has no `UNIQUE` constraint
+      and nothing checked for an existing GR before saving - this is
+      exactly how the "PIYUSH NAYAK"/"MAHI PANDEY" duplicate student
+      records (found and merged earlier this session) ended up sharing a
+      GR with another real student. Fixed with a **soft** warning (not a
+      hard block - legitimate GR formats vary enough that blocking
+      outright could wrongly stop a real correction) at the two places
+      staff actually set this field day to day: **(1)** `AddStudentForm.js`
+      - on blur, queries for an existing Active student with the same GR
+      (case-insensitive) and shows an inline red warning naming them.
+      **(2)** Documents page's dedicated GR editor
+      (`StudentDocumentsSection.jsx`) - the existing confirm-before-save
+      modal now also checks `localStudents` (already loaded, no extra
+      query needed) and shows the same warning before the user confirms.
+      **Known gap, not covered:** Super Admin's bulk `SingleStudentTool`
+      also exposes GR editing through a generic field-renderer
+      (`super-admin/page.js`, 4010 lines, already flagged as monolithic in
+      this file's tech-debt list) - didn't thread the check through that
+      architecture this pass; still open if that tool is the one actually
+      used to create a duplicate again. `npm run lint` clean on both
+      touched files. **NOT VERIFIED against a live DB** (no browser
+      session exercised) - the query shape mirrors proven patterns
+      elsewhere (`studentService.js`'s disambiguated
+      `classes!student_enrollments_class_id_fkey` embed), but worth a
+      manual click-through next time someone's in Add Student.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

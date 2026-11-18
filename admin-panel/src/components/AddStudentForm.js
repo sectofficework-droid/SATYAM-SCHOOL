@@ -273,6 +273,25 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
   const set      = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value.toUpperCase() }));
   const setExact = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
 
+  // REQ-BUG-081: GR Number has no uniqueness constraint - this is exactly
+  // how two real duplicate student records (same child, two GR-bearing
+  // rows) were created and found this session. Soft warning only, shown
+  // on blur - not a hard block, since legitimate GR formats vary enough
+  // that blocking outright could wrongly stop a real correction.
+  const [grDuplicate, setGrDuplicate] = useState(null); // { name, std } | null
+  async function checkGrDuplicate() {
+    const gr = form.grNo.trim();
+    if (!gr) { setGrDuplicate(null); return; }
+    const { data } = await supabase
+      .from("students")
+      .select("first_name, last_name, student_enrollments(class:classes!student_enrollments_class_id_fkey(name))")
+      .ilike("grno", gr)
+      .eq("status", "Active")
+      .limit(1)
+      .maybeSingle();
+    setGrDuplicate(data ? { name: `${data.first_name} ${data.last_name}`, std: data.student_enrollments?.[0]?.class?.name || "" } : null);
+  }
+
   useEffect(() => {
     const parts = [form.roomPlotNo, form.society, form.landmark, form.area, "SURAT", form.pinCode]
       .filter(Boolean);
@@ -678,8 +697,16 @@ export default function AddStudentForm({ variant = "page", onCancel, onSaved }) 
                 placeholder="e.g. GR-006"
                 value={form.grNo}
                 onChange={set("grNo")}
+                onBlur={checkGrDuplicate}
               />
-              <p className="text-xs text-gray-400 mt-1">General Register number (optional at admission)</p>
+              {grDuplicate ? (
+                <p className="text-xs text-red-600 mt-1 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                  Already assigned to {grDuplicate.name}{grDuplicate.std ? ` (${grDuplicate.std})` : ""} - double-check this isn't a duplicate.
+                </p>
+              ) : (
+                <p className="text-xs text-gray-400 mt-1">General Register number (optional at admission)</p>
+              )}
             </div>
           </div>
         </div>
