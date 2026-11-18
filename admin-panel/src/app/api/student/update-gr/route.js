@@ -1,12 +1,18 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getAdminClient, requireAdminSession } from "@/lib/apiAuth";
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
-
+// REQ-SEC-024: this route used a bare service_role client with no caller
+// check at all - anyone who could reach the deployed URL could overwrite
+// any student's GR number, no login required. Same bug class as
+// REQ-SEC-012/013, just added after that 2026-10-04 sweep so it was never
+// caught. No mobile caller (grepped mobile-app/lib for "update-gr" -
+// none), so gating this is safe.
 export async function POST(req) {
+  const supabaseAdmin = getAdminClient();
+  if (!supabaseAdmin) return NextResponse.json({ error: "Server configuration error: missing service key" }, { status: 500 });
+  const { errorResponse } = await requireAdminSession(req, supabaseAdmin);
+  if (errorResponse) return errorResponse;
+
   try {
     const body = await req.json().catch(() => ({}));
     const { studentId, grNo } = body;

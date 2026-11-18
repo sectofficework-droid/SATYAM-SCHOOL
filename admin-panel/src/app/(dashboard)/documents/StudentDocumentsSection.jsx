@@ -26,6 +26,7 @@ import {
 import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile } from "@/lib/fileCompression";
 import useStore from "@/lib/store";
+import authedFetch from "@/lib/authedFetch";
 import StudentNoteBadge from "@/components/StudentNoteBadge";
 import { useReminders } from "@/contexts/ReminderContext";
 
@@ -868,16 +869,10 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         payload = { csvText: text };
       }
 
-      const res = await fetch("/api/documents/sync-collection-report", {
+      const data = await authedFetch("/api/documents/sync-collection-report", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || "Sync request failed");
-      }
 
       setSyncResult(data.stats);
       onRefresh?.();

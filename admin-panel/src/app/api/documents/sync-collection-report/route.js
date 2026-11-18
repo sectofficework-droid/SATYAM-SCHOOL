@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
 import path from "path";
+import { getAdminClient, requireAdminSession } from "@/lib/apiAuth";
 
-// Initialize Supabase admin client with service role
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
+// REQ-SEC-025: this route used a bare service_role client with no caller
+// check at all, and a bare POST with no body still ran a bulk upsert
+// across every student's document status by falling back to a hardcoded
+// local-disk path. Same bug class as REQ-SEC-012/013/024, added
+// 2026-11-03 - after the 2026-10-04 sweep, so never caught. No mobile
+// caller (grepped mobile-app/lib - none), so gating this is safe.
 
 function parseCsv(content) {
   const lines = content.split(/\r?\n/).filter(l => l.trim().length > 0);
@@ -38,6 +39,11 @@ function cleanStr(s) {
 }
 
 export async function POST(req) {
+  const supabaseAdmin = getAdminClient();
+  if (!supabaseAdmin) return NextResponse.json({ error: "Server configuration error: missing service key" }, { status: 500 });
+  const { errorResponse } = await requireAdminSession(req, supabaseAdmin);
+  if (errorResponse) return errorResponse;
+
   try {
     const body = await req.json().catch(() => ({}));
     let csvContent = body.csvText;

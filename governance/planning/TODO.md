@@ -4496,6 +4496,36 @@ pattern), it is noted as already-known and not re-filed as new.
       CLAUDE.md's documented default - stopped there rather than digging
       further into the bucket for a single cosmetic file reference).
       `npm run lint` clean.
+- [x] **REQ-SEC-024 — `api/student/update-gr/route.js` had zero
+      authentication. CODED 2026-11-18.** Found during a full-system
+      review the user asked for ("go through all features... find any
+      bug/vulnerabilities"). `POST {studentId, grNo}` from anyone silently
+      overwrote any student's GR number - bare `service_role` client, no
+      caller check, same bug class as REQ-SEC-012/013 but added after that
+      2026-10-04 sweep so never caught. No mobile caller (grepped
+      `mobile-app/lib` for the route path - none), so gating it is safe.
+      Fixed: swapped the bare `createClient()` for
+      `getAdminClient()`/`requireAdminSession()` (`src/lib/apiAuth.js`,
+      the exact helper already proven on REQ-SEC-012's routes); updated
+      the one caller (`studentService.js:updateStudentGrNo`) to attach the
+      caller's session token. `npm run lint` clean. **NOT VERIFIED
+      end-to-end against a live login** (no browser session exercised
+      this session) - structurally identical to the already-verified
+      REQ-SEC-012 pattern, but flag as a quick manual check next time
+      someone's in the Documents page.
+- [x] **REQ-SEC-025 — `api/documents/sync-collection-report/route.js` had
+      zero authentication, plus a hardcoded dev-machine fallback path.
+      CODED 2026-11-18.** Same review as REQ-SEC-024. Worse blast radius:
+      a bare POST with no body at all still ran a bulk upsert across every
+      student's document status, falling back to reading
+      `D:\Project\SSIS SCHOOL\Document Collection Report - Classwise - ALL
+      CLASSES.csv` (or a relative path) off local disk. Added 2026-11-03,
+      after the 2026-10-04 sweep, so never caught either. No mobile
+      caller. Fixed: same `requireAdminSession` pattern; updated the one
+      caller (`StudentDocumentsSection.jsx`'s `handlePerformSync`) to use
+      the shared `authedFetch` helper instead of a bare `fetch`. `npm run
+      lint` clean. **NOT VERIFIED end-to-end** - same caveat as
+      REQ-SEC-024.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to
