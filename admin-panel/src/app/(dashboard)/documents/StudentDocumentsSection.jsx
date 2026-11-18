@@ -321,17 +321,23 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
         const doc = matchDocByCategory(col.matchKey, s.documents);
         const isUploaded = Boolean(doc && (doc.uploaded || doc.status === "Uploaded"));
         const isNotReq = Boolean(doc && (doc.notRequired || (doc.reason && doc.reason.toLowerCase().includes("not required")) || doc.reason === "-" || (col.key === "transfer" && s.hasPrevSchool === false)));
-        return { isUploaded, isNotReq, isPending: !isUploaded && !isNotReq };
+        // "Verified" (Mark Done, or the one-time Collection Report import)
+        // with no real file attached yet - staff confirmed it's in hand but
+        // haven't scanned/typed it in for real. See maybePromptProfileSync.
+        const isVerifiedNoFile = isUploaded && !doc?.file;
+        return { isUploaded, isNotReq, isVerifiedNoFile, isPending: !isUploaded && !isNotReq };
       });
 
       const allDone = primaryStatuses.every(st => st.isUploaded || st.isNotReq);
       const hasPending = primaryStatuses.some(st => st.isPending);
       const hasNotRequired = primaryStatuses.some(st => st.isNotReq);
+      const hasVerifiedNoFile = primaryStatuses.some(st => st.isVerifiedNoFile);
 
       if (statusFilter === "pending" && !hasPending) return false;
       if (statusFilter === "done" && !allDone) return false;
       if (statusFilter === "not_required" && !hasNotRequired) return false;
       if (statusFilter === "gr_pending" && (s.grNo || "").trim()) return false;
+      if (statusFilter === "verified_no_file" && !hasVerifiedNoFile) return false;
 
       // Specific doc filter
       if (docColumnFilter !== "all") {
@@ -1438,6 +1444,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
               <option value="done">OK Only</option>
               <option value="not_required">Exempt (—) Only</option>
               <option value="gr_pending">GR Pending Only</option>
+              <option value="verified_no_file">Verified, No File Yet</option>
             </select>
           </div>
 
