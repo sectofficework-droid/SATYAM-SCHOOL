@@ -646,6 +646,9 @@ export async function addStudent(formData) {
     );
   }
 
+  // 10. Sync any Aadhar/birth-cert numbers given above into student_documents
+  await syncDocumentsFromProfile(student.id, formData);
+
   return { student, enrollment, enrollmentNo, rollNo };
 }
 
@@ -821,6 +824,9 @@ export async function updateStudent(studentId, formData) {
       );
     }
   }
+
+  // Sync any Aadhar/birth-cert numbers saved above into student_documents
+  await syncDocumentsFromProfile(studentId, formData);
 }
 
 // ── Update Siblings Only ─────────────────────────────────────────────────────
@@ -1111,6 +1117,68 @@ export async function getDocumentTypes() {
     .order("name", { ascending: true });
   if (error) throw error;
   return data || [];
+}
+
+// Document categories whose data also lives directly on the student's own
+// profile (Student Edit form) - kept in sync both ways (REQ-FEAT: smart
+// document/profile sync) so student_documents and students never drift
+// apart like the one-time "Collection Report" CSV import left them.
+const PROFILE_DOC_SYNC_FIELDS = [
+  { value: (f) => f.aadhar,         match: (n) => n.includes("student") && n.includes("aadhar") },
+  { value: (f) => f.fatherAadhar,   match: (n) => n.includes("father") && n.includes("aadhar") },
+  { value: (f) => f.motherAadhar,   match: (n) => n.includes("mother") && n.includes("aadhar") },
+  { value: (f) => f.birthCertRegNo, match: (n) => n.includes("birth") },
+];
+
+// Profile -> Documents direction: whenever a student's Aadhar/birth-cert
+// number is saved with a value, mark the matching document "Uploaded" if
+// it isn't already. Never flips an existing "Uploaded" row back and never
+// clears a document just because a profile field was cleared - this only
+// ever fills gaps, in one direction, so a real uploaded file/reason is
+// never overwritten.
+export async function syncDocumentsFromProfile(studentId, formData) {
+  const toSync = PROFILE_DOC_SYNC_FIELDS.filter(({ value }) => (value(formData) || "").toString().trim());
+  if (toSync.length === 0) return;
+
+  const [docTypes, existingRes] = await Promise.all([
+    getDocumentTypes(),
+    supabase.from("student_documents").select("document_type_id, status").eq("student_id", studentId),
+  ]);
+  const existingByType = new Map((existingRes.data || []).map((d) => [d.document_type_id, d.status]));
+
+  const rows = [];
+  for (const { match } of toSync) {
+    const docType = docTypes.find((dt) => match((dt.name || "").toLowerCase()));
+    if (!docType || existingByType.get(docType.id) === "Uploaded") continue;
+    rows.push({
+      student_id:        studentId,
+      document_type_id:  docType.id,
+      status:            "Uploaded",
+      reason:            "Synced from student profile",
+      file_url:          null,
+      uploaded_at:       new Date().toISOString(),
+    });
+  }
+  if (rows.length === 0) return;
+  const { error } = await supabase.from("student_documents").upsert(rows, { onConflict: "student_id,document_type_id" });
+  if (error) throw error;
+}
+
+// Documents -> Profile direction: fills one govt-id/birth-cert field on the
+// student's profile, but only if it's currently empty - never overwrites a
+// value that's already there, so this can't clobber real data even in a
+// race with the Student Edit form.
+export async function fillStudentProfileFieldIfEmpty(studentId, field, value) {
+  const ALLOWED = ["aadhar", "father_aadhar", "mother_aadhar", "birth_cert_reg_no"];
+  if (!ALLOWED.includes(field)) throw new Error("Field not allowed: " + field);
+  const clean = (value || "").toString().trim();
+  if (!clean) return;
+  const { error } = await supabase
+    .from("students")
+    .update({ [field]: clean })
+    .eq("id", studentId)
+    .or(`${field}.is.null,${field}.eq.`);
+  if (error) throw error;
 }
 
 export async function markDocumentDone(studentId, documentTypeId, reason = "Marked as Done") {

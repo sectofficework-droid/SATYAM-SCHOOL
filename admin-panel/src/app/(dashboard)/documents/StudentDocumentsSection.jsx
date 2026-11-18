@@ -20,7 +20,8 @@ import {
   updateStudentGrNo,
   getDocumentFollowups,
   upsertDocumentFollowup,
-  getStudentAdminNotes
+  getStudentAdminNotes,
+  fillStudentProfileFieldIfEmpty
 } from "@/lib/studentService";
 import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile } from "@/lib/fileCompression";
@@ -84,6 +85,17 @@ function findDocTypeByCategory(category, docTypes = []) {
     return false;
   }) || null;
 }
+
+// Doc categories whose value also lives directly on the student's own
+// profile (Student Edit form) - marking one of these "Uploaded" here
+// prompts to fill the matching profile field too, if it's still empty, so
+// the two never drift apart the way the one-time CSV import left them.
+const PROFILE_FIELD_BY_CATEGORY = {
+  student_aadhar: { studentField: "aadhar",         dbField: "aadhar",            label: "Student's Aadhar Number" },
+  father_aadhar:  { studentField: "fatherAadhar",   dbField: "father_aadhar",     label: "Father's Aadhar Number" },
+  mother_aadhar:  { studentField: "motherAadhar",   dbField: "mother_aadhar",     label: "Mother's Aadhar Number" },
+  birth:          { studentField: "birthCertRegNo", dbField: "birth_cert_reg_no", label: "Birth Certificate Registration Number" },
+};
 
 // Column widths for spreadsheet freeze-panes (Ultra-compact spreadsheet layout)
 const COL_WIDTHS = {
@@ -155,6 +167,11 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const [editingGrStudentId, setEditingGrStudentId] = useState(null);
   const [editingGrValue, setEditingGrValue] = useState("");
   const [confirmGrModal, setConfirmGrModal] = useState(null); // { student, newGr, oldGr }
+
+  // Profile/Document smart-sync prompt - shown after marking a doc Uploaded
+  // when the matching Aadhar/birth-cert field is still blank on the profile
+  const [syncFieldPrompt, setSyncFieldPrompt] = useState(null); // { studentId, dbField, label, value }
+  const [savingSyncField, setSavingSyncField] = useState(false);
   const [savingGr, setSavingGr] = useState(false);
 
   // Sync Modal State
@@ -466,12 +483,48 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
     try {
       await markDocumentDone(student._studentId, docType.id, "Verified (Done)");
       onRefresh?.();
+      maybePromptProfileSync(student, category);
     } catch (err) {
       console.error("Mark Done failed:", err);
       alert("Failed to mark document as done: " + (err.message || "Unknown error"));
       onRefresh?.();
     } finally {
       setUploadingKey(null);
+    }
+  };
+
+  // Shows the "fill the matching profile field" prompt after a document is
+  // marked Uploaded, but only for the 4 categories backed by a real field
+  // on the student's profile, and only when that field is still blank -
+  // keeps student_documents and students in sync going forward without
+  // ever overwriting a value that's already there.
+  const maybePromptProfileSync = (student, category) => {
+    const meta = PROFILE_FIELD_BY_CATEGORY[category];
+    if (!meta) return;
+    const current = (student[meta.studentField] || "").toString().trim();
+    if (current) return;
+    setSyncFieldPrompt({ studentId: student._studentId, dbField: meta.dbField, label: meta.label, value: "" });
+  };
+
+  const handleSaveSyncField = async () => {
+    if (!syncFieldPrompt) return;
+    const { studentId, dbField, value } = syncFieldPrompt;
+    const clean = value.trim();
+    if (!clean) { setSyncFieldPrompt(null); return; }
+    setSavingSyncField(true);
+    try {
+      await fillStudentProfileFieldIfEmpty(studentId, dbField, clean);
+      setLocalStudents(prev => prev.map(s => {
+        if (s._studentId !== studentId) return s;
+        const camelField = Object.values(PROFILE_FIELD_BY_CATEGORY).find(m => m.dbField === dbField)?.studentField;
+        return camelField ? { ...s, [camelField]: clean } : s;
+      }));
+      setSyncFieldPrompt(null);
+    } catch (err) {
+      console.error("Failed to save synced field:", err);
+      alert("Failed to save: " + (err.message || "Unknown error"));
+    } finally {
+      setSavingSyncField(false);
     }
   };
 
@@ -678,6 +731,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
       }));
 
       onRefresh?.();
+      maybePromptProfileSync(student, category);
     } catch (err) {
       console.error("Upload error:", err);
       alert("Document upload failed: " + (err.message || "Unknown error"));
@@ -2018,6 +2072,51 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                 className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Profile/Document Smart-Sync Prompt ────────────────────────── */}
+      {syncFieldPrompt && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col">
+            <div className="bg-school-navy px-5 py-4 flex items-center justify-between text-white">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                <Sparkles className="w-4 h-4" />
+                Keep the profile in sync
+              </h3>
+              <button onClick={() => setSyncFieldPrompt(null)} className="p-1 text-white/80 hover:text-white rounded-lg transition-colors">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3 text-xs text-slate-700">
+              <p>
+                This document is marked Uploaded, but <strong>{syncFieldPrompt.label}</strong> isn't on the student's profile yet.
+                Enter it now so the two stay in sync - or skip and fill it in later.
+              </p>
+              <input
+                autoFocus
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-school-navy/20 focus:border-school-navy"
+                placeholder={syncFieldPrompt.label}
+                value={syncFieldPrompt.value}
+                onChange={(e) => setSyncFieldPrompt(prev => ({ ...prev, value: e.target.value }))}
+              />
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 bg-white flex items-center justify-end gap-2">
+              <button
+                onClick={() => setSyncFieldPrompt(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors"
+              >
+                Skip for now
+              </button>
+              <button
+                onClick={handleSaveSyncField}
+                disabled={savingSyncField || !syncFieldPrompt.value.trim()}
+                className="px-4 py-2 bg-school-navy hover:bg-school-navy-dark text-white rounded-xl text-xs font-bold transition-colors disabled:opacity-40"
+              >
+                {savingSyncField ? "Saving..." : "Save to Profile"}
               </button>
             </div>
           </div>
