@@ -4552,6 +4552,52 @@ pattern), it is noted as already-known and not re-filed as new.
       elsewhere (`studentService.js`'s disambiguated
       `classes!student_enrollments_class_id_fkey` embed), but worth a
       manual click-through next time someone's in Add Student.
+- [x] **REQ-BUG-082 — `markInventoryGiven` could double-deduct stock on a
+      repeated call. CODED 2026-11-18.** Same full-system review.
+      `feesService.js:181` fetched assignments by ID and unconditionally
+      marked them "Given" + deducted stock, with no check that they
+      weren't already "Given" - a slow network plus a double-click, or a
+      retried request after a timeout that actually succeeded, deducted
+      stock twice for one real hand-out. Fixed: now selects `status` too,
+      filters to only assignments not already "Given" before both the
+      status update and the stock deduction, and returns early if nothing
+      is left to do. `npm run lint` clean. **NOT VERIFIED against a live
+      DB** - logic change only, same query shape as before.
+- [x] **REQ-SEC-029 — No server-side role check on fee discount/payment
+      edits. CODED 2026-11-18.** Same full-system review.
+      `updateFeesForEnrollment` (`feesService.js:119`, called from Super
+      Admin's `FeesPanel`) changes `student_enrollments.fee_discount`/
+      `discount_reason` and can UPDATE/DELETE `fee_payments` rows via a
+      plain client Supabase call. The Super Admin page already restricts
+      this to senior_admin/management **client-side**
+      (`if (authUser.role === "normal_admin") return (...)`,
+      `super-admin/page.js:3878`), but confirmed live that RLS on both
+      tables is only `is_admin_user()` (any admin tier, no role check) -
+      a `normal_admin` could call the same query directly (e.g. browser
+      console) and grant themselves/anyone an arbitrary discount, or
+      edit/delete a recorded payment, with no trail of who did it.
+      **Fixed at the database, not just the UI** (the only reliable layer
+      - client-side checks are bypassable by construction): two `BEFORE`
+      triggers, not a blanket RLS tightening, since `student_enrollments`
+      has many other columns (`roll_no`, `class_id`, etc.) normal_admin
+      legitimately edits every day via Edit Student -
+      `enforce_fee_discount_role()` only fires when `fee_discount`/
+      `discount_reason` actually changes;
+      `enforce_fee_payment_edit_role()` only fires on UPDATE/DELETE of an
+      existing `fee_payments` row, leaving INSERT (routine payment
+      collection via `fees/page.js`'s `saveFeePayment`, used by every
+      admin tier) untouched. Both require `admin_users.role IN
+      ('senior_admin','management')`, same tier the UI already uses.
+      Confirmed no mobile-app grant on either table first (`GRANT.*
+      fee_payments|student_enrollments` across `mobile-app/*.sql` -
+      none), so this can't break a mobile caller. Applied live via
+      Supabase MCP and tracked at
+      `admin-panel/database/SUPABASE_REQ_SEC_029_FEE_DISCOUNT_ROLE.sql`;
+      verified both triggers registered correctly
+      (`information_schema.triggers`). **NOT VERIFIED with an actual
+      normal_admin login attempting the blocked action** - confirmed the
+      triggers exist and the RLS gap they close, but didn't exercise a
+      real session.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

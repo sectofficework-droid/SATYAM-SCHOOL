@@ -179,23 +179,31 @@ export async function markInventoryPending(assignmentIds) {
 }
 
 export async function markInventoryGiven(assignmentIds, givenDate) {
-  // Fetch item_id + name for each assignment so we can deduct stock
+  // Fetch item_id + name + current status for each assignment so we can
+  // deduct stock
   const { data: assignments, error: fetchErr } = await supabase
     .from("student_inventory_assignments")
-    .select("id, item_id, inventory_items(name)")
+    .select("id, item_id, status, inventory_items(name)")
     .in("id", assignmentIds);
   if (fetchErr) throw fetchErr;
 
-  // Mark assignments as Given
+  // REQ-BUG-082: a repeated call (slow network + double-click, or a
+  // retried request after a timeout that actually succeeded server-side)
+  // used to re-deduct stock for assignments already marked "Given" -
+  // restrict both the status update and the stock deduction below to
+  // only the ones not already given.
+  const toGive = (assignments || []).filter(a => a.status !== "Given");
+  if (toGive.length === 0) return;
+
   const { error } = await supabase
     .from("student_inventory_assignments")
     .update({ status: "Given", given_date: givenDate })
-    .in("id", assignmentIds);
+    .in("id", toGive.map(a => a.id));
   if (error) throw error;
 
   // Books and notebooks are deducted manually via the Inventory module — skip them here
   const MANUAL_ITEMS = ["book set", "notebook set"];
-  const deductible = (assignments || []).filter(a => {
+  const deductible = toGive.filter(a => {
     if (!a.item_id) return false;
     const name = (a.inventory_items?.name || "").toLowerCase().trim();
     return !name.includes("notebook") && !MANUAL_ITEMS.includes(name);
