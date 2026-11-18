@@ -4598,6 +4598,17 @@ pattern), it is noted as already-known and not re-filed as new.
       normal_admin login attempting the blocked action** - confirmed the
       triggers exist and the RLS gap they close, but didn't exercise a
       real session.
+- [x] **REQ-BUG-083 — Teacher app's Profile page leaked 4+3
+      `TextEditingController`s every time Edit Profile/Change Password
+      was opened. CODED 2026-11-18.** Same full-system review.
+      `teacher_profile_page.dart`'s `_openEditProfile`/
+      `_openChangePassword` create their controllers as plain local
+      variables passed into `showModalBottomSheet`, with nothing ever
+      calling `.dispose()` on them when the sheet closes. Fixed: both
+      calls now chain `.whenComplete(() => ...dispose())` - fires once
+      the sheet closes however it closes (pop, swipe-down, back button),
+      so disposal happens exactly once regardless of path.
+      `flutter analyze` on the file: **No issues found!**
 - [x] **REQ-SEC-030 — TC issuance had no role gate at all. CODED
       2026-11-18.** Same full-system review. `admin_issue_tc` (the RPC
       `saveTransferCertificate` calls) only checked `is_admin_user()` -

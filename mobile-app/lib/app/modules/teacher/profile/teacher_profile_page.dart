@@ -239,6 +239,10 @@ void _openEditProfile(BuildContext context) {
   bool obscurePassword = true;
   String? error;
 
+  // REQ-BUG-083: none of the 4 controllers below were ever disposed -
+  // .whenComplete() fires once the sheet closes however it closes (pop,
+  // swipe-down, back button), so it's the right place to dispose exactly
+  // once regardless of which path was taken.
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -357,7 +361,12 @@ void _openEditProfile(BuildContext context) {
         ),
       ),
     ),
-  );
+  ).whenComplete(() {
+    nameCtrl.dispose();
+    phoneCtrl.dispose();
+    emailCtrl.dispose();
+    passwordCtrl.dispose();
+  });
 }
 
 // ── Change Password sheet ───────────────────────────────────────────────────
@@ -531,7 +540,11 @@ void _openChangePassword(BuildContext context) {
         ),
       ),
     ),
-  );
+  ).whenComplete(() {
+    oldCtrl.dispose();
+    newCtrl.dispose();
+    confirmCtrl.dispose();
+  });
 }
 
 class _Row extends StatelessWidget {
