@@ -840,7 +840,7 @@ export default function InventoryPage() {
   const [resetBusy, setResetBusy]         = useState(false);
 
   const authUser = useStore(s => s.authUser);
-  const isManagement = authUser?.role === "management";
+  const canResetInventory = authUser && authUser.role !== "normal_admin"; // senior_admin & management only
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -1022,7 +1022,7 @@ export default function InventoryPage() {
             className="flex items-center gap-2 bg-school-navy hover:bg-school-navy-dark text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm">
             <Plus className="w-4 h-4" /> Add Stock
           </button>
-          {isManagement && (
+          {canResetInventory && (
             <button onClick={() => setResetOpen(true)}
               className="flex items-center gap-2 bg-white hover:bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm">
               <RotateCcw className="w-4 h-4" /> Reset Inventory

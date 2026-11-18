@@ -108,8 +108,9 @@ export async function deleteInventoryItem(id) {
 
 // Wipes inventory_items/inventory_batches/inventory_usages/
 // student_inventory_assignments after snapshotting them into
-// inventory_reset_backups. Server-side enforces management-role only and
-// the "RESET" confirm phrase - see admin-panel/database/SUPABASE_INVENTORY_RESET.sql.
+// inventory_reset_backups. Server-side enforces senior_admin/management
+// only and the "RESET" confirm phrase - see
+// admin-panel/database/SUPABASE_INVENTORY_RESET.sql.
 export async function resetCoreInventoryData() {
   const { data, error } = await supabase.rpc("reset_core_inventory_data", { p_confirm: "RESET" });
   if (error) throw error;

@@ -1,6 +1,8 @@
--- Inventory reset feature: lets a "management"-role admin wipe core
+-- Inventory reset feature: lets a senior_admin/management admin wipe core
 -- inventory data to start fresh, after snapshotting it for recovery.
--- Applied directly to the live DB via Supabase MCP on 2026-11-18.
+-- Applied directly to the live DB via Supabase MCP on 2026-11-18; the role
+-- check was broadened from management-only to senior_admin+management the
+-- same day (CREATE OR REPLACE FUNCTION, grants unaffected).
 
 CREATE TABLE IF NOT EXISTS inventory_reset_backups (
   id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -32,9 +34,9 @@ DECLARE
   v_backup_id   UUID;
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM admin_users WHERE id = auth.uid() AND role = 'management'
+    SELECT 1 FROM admin_users WHERE id = auth.uid() AND role <> 'normal_admin'
   ) THEN
-    RAISE EXCEPTION 'Only management can reset inventory data';
+    RAISE EXCEPTION 'Only senior_admin/management can reset inventory data';
   END IF;
 
   IF p_confirm IS DISTINCT FROM 'RESET' THEN
