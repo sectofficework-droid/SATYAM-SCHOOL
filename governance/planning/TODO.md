@@ -4552,6 +4552,20 @@ pattern), it is noted as already-known and not re-filed as new.
       elsewhere (`studentService.js`'s disambiguated
       `classes!student_enrollments_class_id_fkey` embed), but worth a
       manual click-through next time someone's in Add Student.
+- [x] **REQ-SEC-031 — `lookup_punch_code`/`redeem_punch_code` had no rate
+      limiting. CODED 2026-11-19.** Found during today's full-system
+      review. Neither function takes an employee-identity parameter at
+      all (the 6-digit code is the only proof), and with no attempt
+      throttling, a scripted brute force against the Supabase REST
+      endpoint could try all 1,000,000 combinations well within a code's
+      15-minute validity window. Fixed with a 1-second `pg_sleep` on
+      every failed lookup/redeem - a standard tar-pit that caps a remote
+      brute force at ~900 guesses in that window, invisible to a
+      legitimate user entering one correct code. Applied live via
+      Supabase MCP, tracked at
+      `mobile-app/SUPABASE_REQ_SEC_031_PUNCH_CODE_BRUTEFORCE_DELAY.sql`.
+      **NOT VERIFIED against a live kiosk** - logic-only change, same
+      query shape as before.
 - [x] **REQ-BUG-082 — `markInventoryGiven` could double-deduct stock on a
       repeated call. CODED 2026-11-18.** Same full-system review.
       `feesService.js:181` fetched assignments by ID and unconditionally
