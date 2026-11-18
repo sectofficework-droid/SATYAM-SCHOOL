@@ -4598,6 +4598,21 @@ pattern), it is noted as already-known and not re-filed as new.
       normal_admin login attempting the blocked action** - confirmed the
       triggers exist and the RLS gap they close, but didn't exercise a
       real session.
+- [x] **REQ-SEC-030 — TC issuance had no role gate at all. CODED
+      2026-11-18.** Same full-system review. `admin_issue_tc` (the RPC
+      `saveTransferCertificate` calls) only checked `is_admin_user()` -
+      any `normal_admin` could issue a Transfer Certificate (a legally
+      significant document that also marks the student "Left") with the
+      same access as marking attendance; `student/[id]/tc/page.js` had no
+      UI gate either. Fixed: the RPC now requires `admin_users.role IN
+      ('senior_admin','management')`, same tier as
+      `admin_delete_student_permanently`/REQ-SEC-005's pattern. Added a
+      matching client-side check on the TC page too, so a normal_admin
+      sees a clear message instead of filling out the whole form and
+      hitting a raw RPC error. Applied live via Supabase MCP, tracked at
+      `admin-panel/database/SUPABASE_REQ_SEC_030_TC_ISSUANCE_ROLE.sql`.
+      `npm run lint` clean. **NOT VERIFIED with an actual normal_admin
+      login** - same caveat as REQ-SEC-029.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

@@ -13,6 +13,7 @@ import {
   getStudentByEnrollment,
   saveTransferCertificate,
 } from "@/lib/studentService";
+import useStore from "@/lib/store";
 
 const todayStr = new Date().toISOString().split("T")[0];
 
@@ -126,6 +127,7 @@ function generateTcHTML(student, tcData) {
 export default function TcPage() {
   const { id }  = useParams();
   const router  = useRouter();
+  const authUser = useStore((s) => s.authUser);
 
   const [rawStudent, setRawStudent] = useState(null);
   const [loading, setLoading]       = useState(true);
@@ -167,6 +169,21 @@ export default function TcPage() {
       <div className="flex flex-col items-center justify-center h-64 gap-4">
         <GraduationCap className="w-12 h-12 text-gray-200" />
         <p className="text-gray-500 font-medium">{loadError || "Student not found"}</p>
+        <button onClick={() => router.back()} className="text-school-navy text-sm font-medium hover:underline">
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
+  // REQ-SEC-030: server-side RPC (admin_issue_tc) now enforces this too -
+  // this is just so a normal_admin sees a clear message instead of a raw
+  // RPC error after filling out the whole form.
+  if (authUser && authUser.role === "normal_admin") {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <Lock className="w-10 h-10 text-gray-300" />
+        <p className="text-gray-500 font-medium">Only senior_admin/management can issue a Transfer Certificate.</p>
         <button onClick={() => router.back()} className="text-school-navy text-sm font-medium hover:underline">
           Go Back
         </button>
