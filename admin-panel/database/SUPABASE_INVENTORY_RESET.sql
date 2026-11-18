@@ -2,7 +2,11 @@
 -- inventory data to start fresh, after snapshotting it for recovery.
 -- Applied directly to the live DB via Supabase MCP on 2026-11-18; the role
 -- check was broadened from management-only to senior_admin+management the
--- same day (CREATE OR REPLACE FUNCTION, grants unaffected).
+-- same day (CREATE OR REPLACE FUNCTION, grants unaffected), then the two
+-- DELETEs below were given no-op "WHERE ... IS NOT NULL" filters because
+-- Supabase's safeupdate guard rejects any UPDATE/DELETE with no WHERE
+-- clause at all, even inside a SECURITY DEFINER function - same issue and
+-- fix already used in mobile-app/SUPABASE_FIX_SAVE_KIOSK_SETTINGS.sql.
 
 CREATE TABLE IF NOT EXISTS inventory_reset_backups (
   id           UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -60,10 +64,10 @@ BEGIN
   -- must be cleared before inventory_items or this hits a 23503 FK
   -- violation (same constraint deleteInventoryItem() works around today).
   DELETE FROM student_inventory_assignments
-  WHERE item_id IN (SELECT id FROM inventory_items);
+  WHERE item_id IS NOT NULL;
 
   -- inventory_batches/inventory_usages cascade via their own FK.
-  DELETE FROM inventory_items;
+  DELETE FROM inventory_items WHERE id IS NOT NULL;
 
   RETURN jsonb_build_object('backup_id', v_backup_id, 'items_deleted', v_items_count);
 END;
