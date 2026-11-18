@@ -20,7 +20,9 @@ a formal "approve plan"/"code it", given it carries no production risk and
 directly serves the stated goal. The six open questions below were
 answered with the stated defaults instead of being asked again.
 
-**What exists now:** `D:\Project\SSIS SCHOOL\SEF-SCHOOL\` — a complete,
+**What exists now:** `D:\Project\SSIS SCHOOL\SEF-COACHING\` (renamed from
+`SEF-SCHOOL` 2026-11-18 — more accurate name, it's a tuition-coaching
+business, not a school) — a complete,
 independent Next.js project (own git repo, initialized and staged, not
 committed), with:
 - Every real/working SEF page ported and adapted: Dashboard, Student,
@@ -156,7 +158,7 @@ once the new one is verified working — I can do once they're provisioned.
 
 ## Open questions — resolved with defaults 2026-11-18
 
-1. **New repo name and host**: `SEF-SCHOOL`, same GitHub account
+1. **New repo name and host**: `SEF-COACHING`, same GitHub account
    (`sectofficework-droid`) as SATYAM-SCHOOL — git initialized locally,
    staged, not yet pushed (no remote created — needs the user to create
    it, see "What I can't provision myself").
