@@ -3,6 +3,7 @@ import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import s3, { S3_BUCKET } from "@/lib/s3";
 import { withDiagnostics } from "@/lib/apiDiagnostics";
+import { getAdminClient, requireAdminOrMobileSession } from "@/lib/apiAuth";
 
 const CORS = {
   "Access-Control-Allow-Origin":  "*",
@@ -18,10 +19,22 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS });
 }
 
+// REQ-SEC-013: had zero authentication - anyone who knew or guessed a key
+// got a working presigned URL to that file. Mobile (s3_upload_service.dart)
+// calls this with no Supabase Auth session, so employeeId/sessionToken
+// query params are accepted as an alternative to the Bearer header - see
+// requireAdminOrMobileSession.
 export const GET = withDiagnostics(async function GET(request) {
   const params = new URL(request.url).searchParams;
   const key = params.get("key");
   const filename = params.get("filename");
+
+  const supabaseAdmin = getAdminClient();
+  if (!supabaseAdmin) return NextResponse.json({ error: "Server configuration error: missing service key" }, { status: 500, headers: CORS });
+  const { errorResponse } = await requireAdminOrMobileSession(request, supabaseAdmin, {
+    subjectType: "teacher", subjectId: params.get("employeeId"), sessionToken: params.get("sessionToken"),
+  });
+  if (errorResponse) return errorResponse;
 
   if (!isAllowedKey(key)) {
     return NextResponse.json({ error: "Invalid key" }, { status: 400, headers: CORS });

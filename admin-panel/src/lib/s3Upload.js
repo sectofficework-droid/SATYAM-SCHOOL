@@ -1,5 +1,15 @@
 // Client-side helpers — all S3 traffic goes through Next.js API routes so
 // AWS credentials never reach the browser and no S3 CORS policy is needed.
+// REQ-SEC-013: these routes now require a logged-in admin session (or, for
+// the 2 mobile also calls directly, a mobile session) - every call here
+// attaches the caller's own token.
+
+import supabase from "./supabase";
+
+async function authHeader() {
+  const { data: { session } } = await supabase.auth.getSession();
+  return { Authorization: "Bearer " + (session?.access_token || "") };
+}
 
 export async function uploadFileToS3(file, key) {
   const form = new FormData();
@@ -8,6 +18,7 @@ export async function uploadFileToS3(file, key) {
 
   const res = await fetch("/api/s3/upload", {
     method: "POST",
+    headers: await authHeader(),
     body: form,
   });
 
@@ -26,7 +37,7 @@ export async function uploadFileToS3(file, key) {
 export async function uploadFileToS3Presigned(file, key) {
   const res = await fetch("/api/s3/upload-url", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(await authHeader()) },
     body: JSON.stringify({ key, contentType: file.type || "application/octet-stream" }),
   });
   if (!res.ok) {
@@ -49,7 +60,7 @@ export async function getS3ViewUrl(key, filename) {
   if (!key) return null;
   let url = `/api/s3/view-url?key=${encodeURIComponent(key)}`;
   if (filename) url += `&filename=${encodeURIComponent(filename)}`;
-  const res = await fetch(url);
+  const res = await fetch(url, { headers: await authHeader() });
   if (!res.ok) return null;
   const { viewUrl } = await res.json();
   return viewUrl;

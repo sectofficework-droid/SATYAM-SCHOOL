@@ -2542,7 +2542,7 @@ pattern), it is noted as already-known and not re-filed as new.
       `senior_admin` session (`efcbf898-...`, role-simulated via
       `request.jwt.claim.sub`) successfully reads
       `get_kiosk_admin_settings` unchanged.
-- [ ] **REQ-SEC-013 — All four `admin-panel/src/app/api/s3/*` routes
+- [x] **REQ-SEC-013 — All four `admin-panel/src/app/api/s3/*` routes
       (`upload-url`, `upload`, `photo`, `view-url`) have no authentication at
       all — the only gate is a key-prefix string check
       (`students/`,`employees/`,`gr-book/`,`sef-students/`,`sef-employees/`,
@@ -2557,6 +2557,32 @@ pattern), it is noted as already-known and not re-filed as new.
       browser. This handles minors' photos in a live production school
       system — treat as the single most severe item in this audit pass until
       you've reviewed it yourself.
+      **FIXED 2026-11-19** (re-surfaced and finally closed during today's
+      full-system review). Confirmed live which routes mobile actually
+      calls first (grepped `mobile-app/lib` for each path):
+      `upload`/`view-url` are called directly by
+      `s3_upload_service.dart` with no Supabase Auth session; `upload-url`
+      and `photo` have **zero** callers anywhere, admin-panel or mobile.
+      **`upload`/`view-url`** (mobile-reachable): new
+      `requireAdminOrMobileSession()` helper in `apiAuth.js` accepts
+      *either* a real admin session (existing `requireAdminSession`
+      logic) *or* a mobile caller's own `employeeId`+`sessionToken`
+      verified via `verify_mobile_session` - the exact RPC already used
+      by ~60 other mobile endpoints (see REQ-SEC-026). Updated
+      `s3_upload_service.dart` to send both as form fields
+      (`uploadToS3`)/query params (`getS3ViewUrl`), pulled from
+      `AuthService.to.profile.value?['id']`/`AuthService.to.sessionToken`
+      - no caller-side changes needed, the identity lookup moved inside
+      the service. **`upload-url`/`photo`** (no mobile caller): plain
+      `requireAdminSession`, same as REQ-SEC-012/024/025.
+      `admin-panel/src/lib/s3Upload.js` (the admin-panel's own client)
+      updated to attach its session token on all three of its calls.
+      `npm run lint` clean on all 6 touched admin-panel files;
+      `flutter analyze` clean on the 3 touched mobile files. **NOT
+      VERIFIED end-to-end** - no live Supabase connection or real mobile
+      session was exercised this session; the dual-mode check mirrors an
+      already-proven pattern but hasn't been clicked through on either
+      platform.
 - [x] **REQ-SEC-014 — `admin-panel/src/app/api/reports/{attendance,bonafide,
       id-card,marksheet,salary,tc}/route.js` + `src/lib/reportsServerAuth.js`
       authorized solely on client-supplied employeeId. FIXED 2026-10-04.**

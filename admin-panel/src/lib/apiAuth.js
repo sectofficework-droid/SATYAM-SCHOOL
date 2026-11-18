@@ -68,6 +68,35 @@ export async function requireAdminSession(request, supabaseAdmin, allowedTiers) 
   return { caller };
 }
 
+// REQ-SEC-013: for the handful of routes BOTH the admin panel AND a mobile
+// flavor call (confirmed via grep - mobile-app/lib's s3_upload_service.dart
+// hits /api/s3/upload and /api/s3/view-url directly). requireAdminSession
+// alone can't gate these - mobile has no Supabase Auth session to send as
+// a Bearer token - so this accepts either: a real admin session (same
+// check as requireAdminSession), OR a mobile caller's own
+// {subjectType, subjectId, sessionToken} verified against the
+// mobile_sessions table via the same verify_mobile_session RPC the rest of
+// the mobile app's RPCs already use (see fetch_my_homework and friends).
+export async function requireAdminOrMobileSession(request, supabaseAdmin, mobileIdentity) {
+  const token = (request.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+  if (token) {
+    const adminResult = await requireAdminSession(request, supabaseAdmin);
+    if (!adminResult.errorResponse) return adminResult;
+  }
+
+  const { subjectType, subjectId, sessionToken } = mobileIdentity || {};
+  if (subjectType && subjectId && sessionToken) {
+    const { data: ok } = await supabaseAdmin.rpc("verify_mobile_session", {
+      p_subject_type: subjectType,
+      p_subject_id: subjectId,
+      p_token: sessionToken,
+    });
+    if (ok) return { caller: { mobile: true, subjectType, subjectId } };
+  }
+
+  return { errorResponse: errJson("Not authenticated", 401) };
+}
+
 function errJson(error, status) {
   return Response.json ? Response.json({ error }, { status }) : new Response(JSON.stringify({ error }), { status });
 }
