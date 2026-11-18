@@ -6,14 +6,14 @@ import { createPortal } from "react-dom";
 import { isPositiveAmount, isValidLength } from "@/lib/validators";
 import {
   getInventoryItems, addInventoryItem, updateItemAddress, addBatch, addUsage,
-  getAssets, addAsset, takeAsset, returnAsset,
+  getAssets, addAsset, takeAsset, returnAsset, resetCoreInventoryData,
 } from "@/lib/inventoryService";
 import { bagItemAllowedForClass } from "@/lib/studentService";
 import supabase from "@/lib/supabase";
 import {
   Package, Plus, AlertTriangle, Search, TrendingDown,
   Users, Archive, X, ArrowUpCircle, MinusCircle, Info,
-  MapPin, LogOut, LogIn, Cpu, Clock, ChevronRight,
+  MapPin, LogOut, LogIn, Cpu, Clock, ChevronRight, RotateCcw,
 } from "lucide-react";
 import DateInputDMY from "@/components/DateInputDMY";
 
@@ -772,6 +772,52 @@ function ReturnAssetModal({ asset, onClose, onSave }) {
   return createPortal(modal, document.body);
 }
 
+// ── Reset Inventory Modal (management only) ───────────────────────────────────
+// Permanently clears inventory_items/inventory_batches/inventory_usages/
+// student_inventory_assignments. The server snapshots the data first (see
+// resetCoreInventoryData), but this is still a one-way action from the UI's
+// point of view, so it's gated behind typing the confirm phrase below.
+function ResetInventoryModal({ itemCount, onClose, onConfirm, busy }) {
+  const [confirm, setConfirm] = useState("");
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const canConfirm = confirm.trim() === "RESET" && !busy;
+
+  const modal = (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <h3 className="text-base font-bold text-gray-800">Reset Inventory</h3>
+          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"><X className="w-4 h-4 text-gray-500" /></button>
+        </div>
+        <div className="px-6 py-5 space-y-4">
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-red-700">
+              This permanently deletes all {itemCount} inventory item{itemCount === 1 ? "" : "s"},
+              their stock batches, usage records, and student assignments. A backup snapshot is
+              kept on the server, but there is no undo button in this UI.
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Type RESET to confirm</label>
+            <input className={IPT} placeholder="RESET" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          </div>
+        </div>
+        <div className="px-6 py-4 border-t border-gray-100 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors">Cancel</button>
+          <button onClick={onConfirm} disabled={!canConfirm}
+            className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition-colors disabled:opacity-40 flex items-center justify-center gap-1.5">
+            <RotateCcw className="w-4 h-4" /> {busy ? "Resetting…" : "Reset Inventory"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+  if (!mounted) return null;
+  return createPortal(modal, document.body);
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function InventoryPage() {
   // Student-facing items are just inventory_items rows with category "student" -
@@ -790,6 +836,11 @@ export default function InventoryPage() {
   const [expanded, setExpanded]           = useState({});
   const [addOpen, setAddOpen]             = useState(false);
   const [useOpen, setUseOpen]             = useState(false);
+  const [resetOpen, setResetOpen]         = useState(false);
+  const [resetBusy, setResetBusy]         = useState(false);
+
+  const authUser = useStore(s => s.authUser);
+  const isManagement = authUser?.role === "management";
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -858,6 +909,20 @@ export default function InventoryPage() {
       const created = await addAsset(data);
       setAssets(prev => [...prev, created]);
     } catch (err) { alert("Failed to add asset: " + err.message); }
+  };
+
+  const handleResetInventory = async () => {
+    setResetBusy(true);
+    try {
+      await resetCoreInventoryData();
+      setItems([]);
+      setResetOpen(false);
+      alert("Inventory has been reset. A backup snapshot was saved on the server.");
+    } catch (err) {
+      alert("Failed to reset inventory: " + err.message);
+    } finally {
+      setResetBusy(false);
+    }
   };
 
   const handleTake = async (assetId, checkout) => {
@@ -957,6 +1022,12 @@ export default function InventoryPage() {
             className="flex items-center gap-2 bg-school-navy hover:bg-school-navy-dark text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm">
             <Plus className="w-4 h-4" /> Add Stock
           </button>
+          {isManagement && (
+            <button onClick={() => setResetOpen(true)}
+              className="flex items-center gap-2 bg-white hover:bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-xl text-sm font-semibold transition-colors shadow-sm">
+              <RotateCcw className="w-4 h-4" /> Reset Inventory
+            </button>
+          )}
         </div>
       </div>
 
@@ -1293,6 +1364,14 @@ export default function InventoryPage() {
       {/* ── Modals ── */}
       {addOpen && <AddStockModal items={items} onClose={() => setAddOpen(false)} onSave={handleAddStock} />}
       {useOpen && <UseStockModal items={items} onClose={() => setUseOpen(false)} onSave={handleUseStock} />}
+      {resetOpen && (
+        <ResetInventoryModal
+          itemCount={items.length}
+          busy={resetBusy}
+          onClose={() => setResetOpen(false)}
+          onConfirm={handleResetInventory}
+        />
+      )}
       {assetPanelOpen && (
         <AssetManagementModal
           assets={assets}
