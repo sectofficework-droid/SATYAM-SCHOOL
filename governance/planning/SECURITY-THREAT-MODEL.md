@@ -236,6 +236,14 @@ buckets" rule)
   s3/view-url` — reusable); or, if performance/simplicity is the deliberate
   tradeoff, formally record it as an accepted risk exception (§J0E) with an
   owner and review date instead of leaving it undocumented.
+- **DECIDED 2026-09-04, as `REQ-SEC-003` — keep as-is.** User confirmed the
+  public-bucket approach should stand as the deliberate tradeoff it
+  already was (per `PROJECT_CONTEXT.md:67`'s CORS/photo-loading history
+  above) — no code change, closed on that decision rather than a fix.
+  This entry's "not yet chosen" framing above was never updated to match;
+  corrected 2026-11-19 while working through the audit's "still open"
+  list. The "Abuse cases considered" line below ("currently unmitigated")
+  is similarly stale for the same reason.
 
 ## Abuse cases considered
 - Credential stuffing against `teacher_login`/`student_login` — currently

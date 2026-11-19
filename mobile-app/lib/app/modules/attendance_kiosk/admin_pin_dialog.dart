@@ -72,7 +72,18 @@ class _AdminPinDialogState extends State<_AdminPinDialog> {
       token = await KioskPinService.verifyPin(pin);
     } catch (e) {
       if (!mounted) return;
-      setState(() { _busy = false; _error = 'Could not verify PIN - check your connection.'; });
+      // REQ-BUG-068: the server already locks out after 5 failed attempts
+      // (15 min) - this surfaces that clearly instead of showing the same
+      // generic "Incorrect PIN" a wrong guess gets, which gave no
+      // indication anything was being throttled at all.
+      final msg = e.toString();
+      final lockedMatch = RegExp(r'locked_out:(\d+)').firstMatch(msg);
+      setState(() {
+        _busy = false;
+        _error = lockedMatch != null
+            ? 'Too many incorrect attempts. Try again in ${lockedMatch.group(1)} minute(s).'
+            : 'Could not verify PIN - check your connection.';
+      });
       return;
     }
     if (!mounted) return;

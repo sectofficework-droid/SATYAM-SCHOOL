@@ -2767,9 +2767,29 @@ pattern), it is noted as already-known and not re-filed as new.
 - [x] **REQ-BUG-067 — Undisposed `TextEditingController` map leak. FIXED 2026-10-04.**
       Controllers are now explicitly disposed before clearing and on page dispose in
       `teacher_marks_page.dart` and `teacher_official_exams_page.dart`.
-- [ ] **REQ-BUG-068 — Kiosk admin PIN dialog has no attempt throttling.**
+- [x] **REQ-BUG-068 — Kiosk admin PIN dialog has no attempt throttling.**
       `admin_pin_dialog.dart:63-84` — anyone with physical access to the
       unattended kiosk can retry a 4-6 digit PIN indefinitely.
+      **Re-checked 2026-11-19 while working through the audit's "still
+      open" list: the throttling already existed server-side**
+      (`verify_kiosk_admin_pin` - 5 failed attempts locks `kiosk_settings`
+      for 15 minutes, confirmed live with a real `pin_fail_count` already
+      at 1). This finding (and the original audit's restatement of it)
+      only looked at the client dialog, which had no throttling of its
+      own - but doesn't need any, since the server already enforces it;
+      a client-side counter would just be security theater duplicating a
+      check the server does for real. **The actual gap, fixed now:** a
+      locked-out attempt returned `NULL` identically to a wrong PIN, so
+      the dialog showed "Incorrect PIN" with no indication anything was
+      being throttled or for how long. `verify_kiosk_admin_pin` now
+      raises a distinguishable exception carrying the remaining minutes;
+      `admin_pin_dialog.dart` catches it and shows "Too many incorrect
+      attempts. Try again in N minute(s)." instead. Applied live via
+      Supabase MCP, tracked at
+      `mobile-app/SUPABASE_REQ_BUG_068_KIOSK_PIN_LOCKOUT_UX.sql`.
+      `flutter analyze`: no issues found. **NOT VERIFIED on a real
+      kiosk device** - logic-only change, didn't trigger 5 real failed
+      attempts against a live session.
 - [x] **REQ-BUG-069 — Missing try/catch on initial page load across most
       student pages and several teacher mutation handlers. FIXED 2026-10-04.**
       Added try/catch, error states, retry UI, and optimistic state rollback
