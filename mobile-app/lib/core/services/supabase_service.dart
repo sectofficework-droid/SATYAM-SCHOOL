@@ -589,10 +589,14 @@ class SupabaseService {
     };
   }
 
-  static Future<Map<String, dynamic>> redeemQrSession(String code, String employeeId, String date, DateTime checkInAt) async {
+  // REQ-SEC-026: redeem_qr_session used to trust p_employee_id with no
+  // proof the caller actually is that employee - now requires the
+  // caller's real session token too, same as the Category 3 RPCs above.
+  static Future<Map<String, dynamic>> redeemQrSession(String code, String employeeId, String sessionToken, String date, DateTime checkInAt) async {
     final res = await client.rpc('redeem_qr_session', params: {
       'p_code': code,
       'p_employee_id': employeeId,
+      'p_session_token': sessionToken,
       'p_date': date,
       'p_check_in_at': checkInAt.toUtc().toIso8601String(),
     }) as List;

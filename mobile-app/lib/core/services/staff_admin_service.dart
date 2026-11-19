@@ -1,4 +1,5 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'auth_service.dart';
 
 // Admin Workspace data layer — Staff App Unification, phase 1
 // (governance\planning\STAFF-APP-DESIGN-FIXED.md,
@@ -31,13 +32,13 @@ class StaffAdminService {
 
   // ── Dashboard ────────────────────────────────────────────────────────────
   static Future<Map<String, dynamic>> dashboardSummary(String employeeId) async {
-    final res = await client.rpc('staff_admin_dashboard_summary', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_dashboard_summary', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return Map<String, dynamic>.from(res as Map);
   }
 
   // ── Attendance ───────────────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> classList(String employeeId) async {
-    final res = await client.rpc('staff_admin_classes', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_classes', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
@@ -48,27 +49,27 @@ class StaffAdminService {
 
   static Future<void> markAttendance(String employeeId, List<Map<String, dynamic>> records) async {
     await client.rpc('staff_admin_mark_attendance', params: {
-      'p_employee_id': employeeId,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken,
       'p_records': records,
     });
   }
 
   static Future<List<Map<String, dynamic>>> classAttendance(String employeeId, String className, String date) async {
     final res = await client.rpc('staff_admin_class_attendance', params: {
-      'p_employee_id': employeeId, 'p_class': className, 'p_date': date,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_class': className, 'p_date': date,
     });
     return _list(res);
   }
 
   static Future<List<Map<String, dynamic>>> attendanceEditRequests(String employeeId) async {
-    final res = await client.rpc('staff_admin_attendance_edit_requests', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_attendance_edit_requests', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
   static Future<void> respondAttendanceEditRequest(
     String employeeId, String requestId, {required bool approve, String? adminNote}) async {
     await client.rpc('staff_admin_attendance_edit_request_respond', params: {
-      'p_employee_id': employeeId, 'p_request_id': requestId,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_request_id': requestId,
       'p_approve': approve, 'p_admin_note': adminNote,
     });
   }
@@ -76,7 +77,7 @@ class StaffAdminService {
   static Future<void> sendAttendanceReminder(
     String employeeId, String teacherId, String className, String? sectionName, String message) async {
     await client.rpc('staff_admin_send_attendance_reminder', params: {
-      'p_employee_id': employeeId, 'p_teacher_id': teacherId,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_teacher_id': teacherId,
       'p_class_name': className, 'p_section_name': sectionName, 'p_message': message,
     });
   }
@@ -84,21 +85,21 @@ class StaffAdminService {
   // ── Employee — punch code ───────────────────────────────────────────────
   static Future<Map<String, dynamic>> generatePunchCode(String employeeId, String targetEmployeeId) async {
     final res = await client.rpc('staff_generate_punch_code', params: {
-      'p_employee_id': employeeId, 'p_target_employee_id': targetEmployeeId,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_target_employee_id': targetEmployeeId,
     }) as List;
     return Map<String, dynamic>.from(_firstRow(res, 'staff_generate_punch_code'));
   }
 
   static Future<List<Map<String, dynamic>>> searchEmployees(String employeeId, String query) async {
     final res = await client.rpc('staff_admin_employee_search', params: {
-      'p_employee_id': employeeId, 'p_query': query,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_query': query,
     });
     return _list(res);
   }
 
   // ── Inventory ────────────────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> inventoryItems(String employeeId) async {
-    final res = await client.rpc('staff_admin_inventory_items', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_inventory_items', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
@@ -107,13 +108,13 @@ class StaffAdminService {
     String? purpose, String? usedBy, String? note,
   }) async {
     await client.rpc('staff_admin_record_inventory_usage', params: {
-      'p_employee_id': employeeId, 'p_item_id': itemId, 'p_qty': qty,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_item_id': itemId, 'p_qty': qty,
       'p_usage_date': usageDate, 'p_purpose': purpose, 'p_used_by': usedBy, 'p_note': note,
     });
   }
 
   static Future<List<Map<String, dynamic>>> assets(String employeeId) async {
-    final res = await client.rpc('staff_admin_assets', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_assets', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
@@ -121,20 +122,20 @@ class StaffAdminService {
     required String assetId, required String takenBy, required String purpose, required String takenDate,
   }) async {
     await client.rpc('staff_admin_asset_checkout', params: {
-      'p_employee_id': employeeId, 'p_asset_id': assetId,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_asset_id': assetId,
       'p_taken_by': takenBy, 'p_purpose': purpose, 'p_taken_date': takenDate,
     });
   }
 
   static Future<void> returnAsset(String employeeId, String checkoutId, String returnDate) async {
     await client.rpc('staff_admin_asset_return', params: {
-      'p_employee_id': employeeId, 'p_checkout_id': checkoutId, 'p_return_date': returnDate,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_checkout_id': checkoutId, 'p_return_date': returnDate,
     });
   }
 
   // ── Notices ──────────────────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> notices(String employeeId) async {
-    final res = await client.rpc('staff_admin_notices', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_notices', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
@@ -144,7 +145,7 @@ class StaffAdminService {
     bool pinned = false, String? postedBy,
   }) async {
     await client.rpc('staff_admin_notice_create', params: {
-      'p_employee_id': employeeId, 'p_title': title, 'p_content': content,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_title': title, 'p_content': content,
       'p_type': type, 'p_audience': audience, 'p_posted_date': postedDate,
       'p_expiry_date': expiryDate, 'p_pinned': pinned, 'p_posted_by': postedBy,
     });
@@ -154,60 +155,60 @@ class StaffAdminService {
     required String title, required String content, String? expiryDate,
   }) async {
     await client.rpc('staff_admin_notice_update', params: {
-      'p_employee_id': employeeId, 'p_notice_id': noticeId,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_notice_id': noticeId,
       'p_title': title, 'p_content': content, 'p_expiry_date': expiryDate,
     });
   }
 
   static Future<void> setNoticeFlags(String employeeId, String noticeId, {required bool pinned, required bool archived}) async {
     await client.rpc('staff_admin_notice_set_flags', params: {
-      'p_employee_id': employeeId, 'p_notice_id': noticeId, 'p_pinned': pinned, 'p_archived': archived,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_notice_id': noticeId, 'p_pinned': pinned, 'p_archived': archived,
     });
   }
 
   // ── Queries ──────────────────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> queries(String employeeId) async {
-    final res = await client.rpc('staff_admin_queries', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_queries', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
   static Future<void> replyToQuery(String employeeId, String queryId, String reply) async {
     await client.rpc('staff_admin_query_reply', params: {
-      'p_employee_id': employeeId, 'p_query_id': queryId, 'p_reply': reply,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_query_id': queryId, 'p_reply': reply,
     });
   }
 
   static Future<void> setQueryResolved(String employeeId, String queryId, bool resolved) async {
     await client.rpc('staff_admin_query_set_status', params: {
-      'p_employee_id': employeeId, 'p_query_id': queryId, 'p_resolved': resolved,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_query_id': queryId, 'p_resolved': resolved,
     });
   }
 
   // ── Question Papers / teacher-uploaded documents (read-only) ───────────────
   static Future<List<Map<String, dynamic>>> teacherDocuments(String employeeId, {String? section}) async {
     final res = await client.rpc('staff_admin_teacher_documents', params: {
-      'p_employee_id': employeeId, 'p_section': section,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_section': section,
     });
     return _list(res);
   }
 
   // ── Syllabus edit-requests (senior_admin/management only — server-enforced) ─
   static Future<List<Map<String, dynamic>>> syllabusEditRequests(String employeeId) async {
-    final res = await client.rpc('staff_admin_syllabus_edit_requests', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_syllabus_edit_requests', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
   static Future<void> respondSyllabusEditRequest(
     String employeeId, String requestId, {required bool approve, String? adminNote}) async {
     await client.rpc('staff_admin_syllabus_edit_request_respond', params: {
-      'p_employee_id': employeeId, 'p_request_id': requestId,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_request_id': requestId,
       'p_approve': approve, 'p_admin_note': adminNote,
     });
   }
 
   // ── Tasks ────────────────────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> tasks(String employeeId) async {
-    final res = await client.rpc('staff_admin_tasks', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_tasks', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
@@ -216,48 +217,48 @@ class StaffAdminService {
     String priority = 'Medium', required List<String> assigneeIds,
   }) async {
     await client.rpc('staff_admin_task_create', params: {
-      'p_employee_id': employeeId, 'p_title': title, 'p_description': description,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_title': title, 'p_description': description,
       'p_deadline_date': deadlineDate, 'p_priority': priority, 'p_assignee_ids': assigneeIds,
     });
   }
 
   static Future<void> updateTaskStatus(String employeeId, String taskId, String status) async {
     await client.rpc('staff_admin_task_update_status', params: {
-      'p_employee_id': employeeId, 'p_task_id': taskId, 'p_status': status,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_task_id': taskId, 'p_status': status,
     });
   }
 
   static Future<void> deleteTask(String employeeId, String taskId) async {
-    await client.rpc('staff_admin_task_delete', params: {'p_employee_id': employeeId, 'p_task_id': taskId});
+    await client.rpc('staff_admin_task_delete', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_task_id': taskId});
   }
 
   // ── Phase 2 (full admin-web parity, 2026-09-19) ─────────────────────────
 
   static Future<Map<String, dynamic>?> currentAcademicYear(String employeeId) async {
-    final res = await client.rpc('staff_admin_current_academic_year', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_current_academic_year', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return res == null ? null : Map<String, dynamic>.from(res as Map);
   }
 
   static Future<List<Map<String, dynamic>>> classListWithIds(String employeeId) async {
-    final res = await client.rpc('staff_admin_class_list', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_class_list', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
   static Future<List<Map<String, dynamic>>> sectionList(String employeeId, String classId) async {
-    final res = await client.rpc('staff_admin_section_list', params: {'p_employee_id': employeeId, 'p_class_id': classId});
+    final res = await client.rpc('staff_admin_section_list', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_class_id': classId});
     return _list(res);
   }
 
   // ── Students ─────────────────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> students(String employeeId, {String? search, String? classId}) async {
     final res = await client.rpc('staff_admin_students', params: {
-      'p_employee_id': employeeId, 'p_search': search, 'p_class_id': classId,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_search': search, 'p_class_id': classId,
     });
     return _list(res);
   }
 
   static Future<Map<String, dynamic>> studentDetails(String employeeId, String studentId) async {
-    final res = await client.rpc('staff_admin_student_details', params: {'p_employee_id': employeeId, 'p_student_id': studentId});
+    final res = await client.rpc('staff_admin_student_details', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_student_id': studentId});
     return Map<String, dynamic>.from(res as Map);
   }
 
@@ -266,7 +267,7 @@ class StaffAdminService {
     required String dob, String? mobile1, String? mobile2, String? address,
   }) async {
     await client.rpc('staff_admin_student_update_basic', params: {
-      'p_employee_id': employeeId, 'p_student_id': studentId, 'p_first_name': firstName, 'p_last_name': lastName,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_student_id': studentId, 'p_first_name': firstName, 'p_last_name': lastName,
       'p_father_name': fatherName, 'p_mother_name': motherName, 'p_dob': dob,
       'p_mobile1': mobile1, 'p_mobile2': mobile2, 'p_address': address,
     });
@@ -305,7 +306,7 @@ class StaffAdminService {
     int? prevAttendanceDays, bool? lastExamGiven, num? prevPercentage,
   }) async {
     final res = await client.rpc('staff_admin_student_add', params: {
-      'p_employee_id': employeeId, 'p_first_name': firstName, 'p_last_name': lastName, 'p_dob': dob,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_first_name': firstName, 'p_last_name': lastName, 'p_dob': dob,
       'p_gender': gender, 'p_father_name': fatherName, 'p_mother_name': motherName, 'p_mobile1': mobile1,
       'p_class_id': classId, 'p_section_id': sectionId, 'p_address': address,
       'p_mobile2': mobile2,
@@ -329,7 +330,7 @@ class StaffAdminService {
   }
 
   static Future<void> deleteStudentPermanently(String employeeId, String studentId) async {
-    await client.rpc('staff_admin_student_delete_permanently', params: {'p_employee_id': employeeId, 'p_student_id': studentId});
+    await client.rpc('staff_admin_student_delete_permanently', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_student_id': studentId});
   }
 
   static Future<void> issueTc(String employeeId, {
@@ -337,7 +338,7 @@ class StaffAdminService {
     required String leavingDate, required String reason, String? conduct, bool duesCleared = false, String? remarks,
   }) async {
     await client.rpc('staff_admin_issue_tc', params: {
-      'p_employee_id': employeeId, 'p_student_id': studentId, 'p_enrollment_id': enrollmentId,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_student_id': studentId, 'p_enrollment_id': enrollmentId,
       'p_tc_number': tcNumber, 'p_issue_date': issueDate, 'p_leaving_date': leavingDate, 'p_reason': reason,
       'p_conduct': conduct, 'p_dues_cleared': duesCleared, 'p_remarks': remarks,
     });
@@ -345,19 +346,19 @@ class StaffAdminService {
 
   static Future<Map<String, dynamic>> createImpersonationCode(String employeeId, String targetType, String targetId) async {
     final res = await client.rpc('staff_create_impersonation_code', params: {
-      'p_employee_id': employeeId, 'p_target_type': targetType, 'p_target_id': targetId,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_target_type': targetType, 'p_target_id': targetId,
     });
     return Map<String, dynamic>.from(res as Map);
   }
 
   // ── Employees (full CRUD) ────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> employees(String employeeId, {String? search}) async {
-    final res = await client.rpc('staff_admin_employees', params: {'p_employee_id': employeeId, 'p_search': search});
+    final res = await client.rpc('staff_admin_employees', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_search': search});
     return _list(res);
   }
 
   static Future<Map<String, dynamic>> employeeDetails(String employeeId, String targetId) async {
-    final res = await client.rpc('staff_admin_employee_details', params: {'p_employee_id': employeeId, 'p_target_id': targetId});
+    final res = await client.rpc('staff_admin_employee_details', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_target_id': targetId});
     return Map<String, dynamic>.from(res as Map);
   }
 
@@ -367,7 +368,7 @@ class StaffAdminService {
     String? joiningDate, String? employmentType,
   }) async {
     final res = await client.rpc('staff_admin_employee_add', params: {
-      'p_employee_id': employeeId, 'p_emp_code': empCode, 'p_name': name, 'p_type': type, 'p_designation': designation,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_emp_code': empCode, 'p_name': name, 'p_type': type, 'p_designation': designation,
       'p_department': department, 'p_gender': gender, 'p_dob': dob, 'p_phone': phone, 'p_email': email,
       'p_address': address, 'p_joining_date': joiningDate, 'p_employment_type': employmentType,
     });
@@ -379,32 +380,32 @@ class StaffAdminService {
     String? address, String? status,
   }) async {
     await client.rpc('staff_admin_employee_update', params: {
-      'p_employee_id': employeeId, 'p_target_id': targetId, 'p_name': name, 'p_designation': designation,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_target_id': targetId, 'p_name': name, 'p_designation': designation,
       'p_department': department, 'p_phone': phone, 'p_email': email, 'p_address': address, 'p_status': status,
     });
   }
 
   static Future<bool> resetEmployeePassword(String employeeId, String targetId, String newPassword) async {
     final res = await client.rpc('staff_admin_employee_reset_password', params: {
-      'p_employee_id': employeeId, 'p_target_id': targetId, 'p_new_password': newPassword,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_target_id': targetId, 'p_new_password': newPassword,
     });
     return res == true;
   }
 
   // ── Fees ─────────────────────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> feeStructures(String employeeId) async {
-    final res = await client.rpc('staff_admin_fee_structures', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_fee_structures', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
   static Future<void> upsertFeeStructure(String employeeId, String classId, num tuition, num uniform) async {
     await client.rpc('staff_admin_fee_structure_upsert', params: {
-      'p_employee_id': employeeId, 'p_class_id': classId, 'p_tuition': tuition, 'p_uniform': uniform,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_class_id': classId, 'p_tuition': tuition, 'p_uniform': uniform,
     });
   }
 
   static Future<List<Map<String, dynamic>>> studentsFees(String employeeId, {String? search}) async {
-    final res = await client.rpc('staff_admin_students_fees', params: {'p_employee_id': employeeId, 'p_search': search});
+    final res = await client.rpc('staff_admin_students_fees', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_search': search});
     return _list(res);
   }
 
@@ -412,14 +413,14 @@ class StaffAdminService {
     required String enrollmentId, required String studentId, required num amount, required String date, String? receivedBy,
   }) async {
     await client.rpc('staff_admin_record_fee_payment', params: {
-      'p_employee_id': employeeId, 'p_enrollment_id': enrollmentId, 'p_student_id': studentId,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_enrollment_id': enrollmentId, 'p_student_id': studentId,
       'p_amount': amount, 'p_date': date, 'p_received_by': receivedBy,
     });
   }
 
   // ── Expenses ─────────────────────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> expenses(String employeeId) async {
-    final res = await client.rpc('staff_admin_expenses', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_expenses', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
@@ -427,13 +428,13 @@ class StaffAdminService {
     required String title, String? category, required num amount, required String date, String? paidBy, String? note,
   }) async {
     await client.rpc('staff_admin_expense_add', params: {
-      'p_employee_id': employeeId, 'p_title': title, 'p_category': category, 'p_amount': amount,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_title': title, 'p_category': category, 'p_amount': amount,
       'p_date': date, 'p_paid_by': paidBy, 'p_note': note,
     });
   }
 
   static Future<void> deleteExpense(String employeeId, String expenseId) async {
-    await client.rpc('staff_admin_expense_delete', params: {'p_employee_id': employeeId, 'p_expense_id': expenseId});
+    await client.rpc('staff_admin_expense_delete', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_expense_id': expenseId});
   }
 
   // ── Inventory (full item/batch CRUD) ────────────────────────────────────
@@ -441,28 +442,28 @@ class StaffAdminService {
     required String name, String? category, String unit = 'Pcs', int lowStockAt = 10, String? storageAddress,
   }) async {
     final res = await client.rpc('staff_admin_inventory_item_add', params: {
-      'p_employee_id': employeeId, 'p_name': name, 'p_category': category, 'p_unit': unit,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_name': name, 'p_category': category, 'p_unit': unit,
       'p_low_stock_at': lowStockAt, 'p_storage_address': storageAddress,
     });
     return Map<String, dynamic>.from(res as Map);
   }
 
   static Future<void> deleteInventoryItem(String employeeId, String itemId) async {
-    await client.rpc('staff_admin_inventory_item_delete', params: {'p_employee_id': employeeId, 'p_item_id': itemId});
+    await client.rpc('staff_admin_inventory_item_delete', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_item_id': itemId});
   }
 
   static Future<void> addInventoryBatch(String employeeId, {
     required String itemId, required int qty, required String receivedDate, String? receivedBy, String? note,
   }) async {
     await client.rpc('staff_admin_inventory_batch_add', params: {
-      'p_employee_id': employeeId, 'p_item_id': itemId, 'p_qty': qty,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_item_id': itemId, 'p_qty': qty,
       'p_received_date': receivedDate, 'p_received_by': receivedBy, 'p_note': note,
     });
   }
 
   // ── Syllabus (full chapter CRUD) ─────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> syllabus(String employeeId) async {
-    final res = await client.rpc('staff_admin_syllabus', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_syllabus', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
@@ -470,57 +471,57 @@ class StaffAdminService {
     required String teacherId, required String className, required String subject, required String chapter,
   }) async {
     await client.rpc('staff_admin_syllabus_chapter_add', params: {
-      'p_employee_id': employeeId, 'p_teacher_id': teacherId, 'p_class': className,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_teacher_id': teacherId, 'p_class': className,
       'p_subject': subject, 'p_chapter': chapter,
     });
   }
 
   static Future<void> setSyllabusChapterStatus(String employeeId, String chapterId, String status) async {
     await client.rpc('staff_admin_syllabus_chapter_set_status', params: {
-      'p_employee_id': employeeId, 'p_chapter_id': chapterId, 'p_status': status,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_chapter_id': chapterId, 'p_status': status,
     });
   }
 
   static Future<void> deleteSyllabusChapter(String employeeId, String chapterId) async {
-    await client.rpc('staff_admin_syllabus_chapter_delete', params: {'p_employee_id': employeeId, 'p_chapter_id': chapterId});
+    await client.rpc('staff_admin_syllabus_chapter_delete', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_chapter_id': chapterId});
   }
 
   static Future<List<Map<String, dynamic>>> teachingStaff(String employeeId) async {
-    final res = await client.rpc('staff_admin_employees', params: {'p_employee_id': employeeId, 'p_search': null});
+    final res = await client.rpc('staff_admin_employees', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_search': null});
     return _list(res).where((e) => e['type'] == 'teaching').toList();
   }
 
   // ── GR Book (register view) ─────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> grBook(String employeeId, {String? search}) async {
-    final res = await client.rpc('staff_admin_gr_book', params: {'p_employee_id': employeeId, 'p_search': search});
+    final res = await client.rpc('staff_admin_gr_book', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_search': search});
     return _list(res);
   }
 
   // ── Settings: Users & Roles ──────────────────────────────────────────────
   static Future<List<Map<String, dynamic>>> adminUsers(String employeeId) async {
-    final res = await client.rpc('staff_admin_users_list', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_users_list', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
   static Future<void> createAdminUser(String employeeId, String name, String initials, String role) async {
     await client.rpc('staff_admin_user_create', params: {
-      'p_employee_id': employeeId, 'p_name': name, 'p_initials': initials, 'p_role': role,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_name': name, 'p_initials': initials, 'p_role': role,
     });
   }
 
   static Future<void> updateAdminUser(String employeeId, String targetId, String name, String initials, String role) async {
     await client.rpc('staff_admin_user_update', params: {
-      'p_employee_id': employeeId, 'p_target_id': targetId, 'p_name': name, 'p_initials': initials, 'p_role': role,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_target_id': targetId, 'p_name': name, 'p_initials': initials, 'p_role': role,
     });
   }
 
   static Future<void> deleteAdminUser(String employeeId, String targetId) async {
-    await client.rpc('staff_admin_user_delete', params: {'p_employee_id': employeeId, 'p_target_id': targetId});
+    await client.rpc('staff_admin_user_delete', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_target_id': targetId});
   }
 
   // ── Super-Admin: Salary (management only) ────────────────────────────────
   static Future<List<Map<String, dynamic>>> salaryPayments(String employeeId, {String? from, String? to}) async {
-    final res = await client.rpc('staff_admin_salary_payments', params: {'p_employee_id': employeeId, 'p_from': from, 'p_to': to});
+    final res = await client.rpc('staff_admin_salary_payments', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_from': from, 'p_to': to});
     return _list(res);
   }
 
@@ -528,14 +529,14 @@ class StaffAdminService {
     required String targetEmployeeId, required String month, required num amount, required String paidOn, String? paidBy,
   }) async {
     await client.rpc('staff_admin_record_salary_payment', params: {
-      'p_employee_id': employeeId, 'p_target_employee_id': targetEmployeeId, 'p_month': month,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_target_employee_id': targetEmployeeId, 'p_month': month,
       'p_amount': amount, 'p_paid_on': paidOn, 'p_paid_by': paidBy,
     });
   }
 
   // ── Kiosk Settings (senior_admin/management only) ─────────────────────────
   static Future<Map<String, dynamic>> kioskGetSettings(String employeeId) async {
-    final res = await client.rpc('staff_admin_kiosk_get_settings', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_kiosk_get_settings', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return Map<String, dynamic>.from(_firstRow(res as List, 'staff_admin_kiosk_get_settings'));
   }
 
@@ -543,7 +544,7 @@ class StaffAdminService {
     required String? expectedStartTime, required int lateGraceMinutes, required String? absentCutoffTime, required String? shiftEndTime,
   }) async {
     await client.rpc('staff_admin_kiosk_save_settings', params: {
-      'p_employee_id': employeeId,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken,
       'p_expected_start_time': expectedStartTime,
       'p_late_grace_minutes': lateGraceMinutes,
       'p_absent_cutoff_time': absentCutoffTime,
@@ -552,11 +553,11 @@ class StaffAdminService {
   }
 
   static Future<void> kioskSetPin(String employeeId, String pin) async {
-    await client.rpc('staff_admin_kiosk_set_pin', params: {'p_employee_id': employeeId, 'p_pin': pin});
+    await client.rpc('staff_admin_kiosk_set_pin', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_pin': pin});
   }
 
   static Future<List<Map<String, dynamic>>> kioskListSpecialDays(String employeeId) async {
-    final res = await client.rpc('staff_admin_kiosk_list_special_days', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_kiosk_list_special_days', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
@@ -564,7 +565,7 @@ class StaffAdminService {
     required String date, String? expectedStartTime, int? lateGraceMinutes, String? absentCutoffTime, String? shiftEndTime, String? reason,
   }) async {
     await client.rpc('staff_admin_kiosk_save_special_day', params: {
-      'p_employee_id': employeeId,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken,
       'p_date': date,
       'p_expected_start_time': expectedStartTime,
       'p_late_grace_minutes': lateGraceMinutes,
@@ -575,13 +576,13 @@ class StaffAdminService {
   }
 
   static Future<void> kioskDeleteSpecialDay(String employeeId, String date) async {
-    await client.rpc('staff_admin_kiosk_delete_special_day', params: {'p_employee_id': employeeId, 'p_date': date});
+    await client.rpc('staff_admin_kiosk_delete_special_day', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_date': date});
   }
 
   // ── Staff Attendance (Kiosk) report, date-range scoped ────────────────────
   static Future<List<Map<String, dynamic>>> kioskAttendanceReport(String employeeId, {required String fromDate, required String toDate}) async {
     final res = await client.rpc('staff_admin_kiosk_attendance_report', params: {
-      'p_employee_id': employeeId, 'p_from_date': fromDate, 'p_to_date': toDate,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_from_date': fromDate, 'p_to_date': toDate,
     });
     return _list(res);
   }
@@ -600,7 +601,7 @@ class StaffAdminService {
 
   static Future<void> saveSchoolRules(String employeeId, String audience, String content) async {
     await client.rpc('staff_admin_save_school_rules', params: {
-      'p_employee_id': employeeId, 'p_audience': audience, 'p_content': content,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_audience': audience, 'p_content': content,
     });
   }
 
@@ -617,7 +618,7 @@ class StaffAdminService {
     required String date, required String category, required String label, String? icon, List<String>? classes,
   }) async {
     await client.rpc('staff_admin_calendar_add_event', params: {
-      'p_employee_id': employeeId, 'p_date': date, 'p_category': category, 'p_label': label, 'p_icon': icon, 'p_classes': classes,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_date': date, 'p_category': category, 'p_label': label, 'p_icon': icon, 'p_classes': classes,
     });
   }
 
@@ -625,17 +626,17 @@ class StaffAdminService {
     required String date, required String category, required String label, String? icon,
   }) async {
     await client.rpc('staff_admin_calendar_update_event', params: {
-      'p_employee_id': employeeId, 'p_id': id, 'p_date': date, 'p_category': category, 'p_label': label, 'p_icon': icon,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_id': id, 'p_date': date, 'p_category': category, 'p_label': label, 'p_icon': icon,
     });
   }
 
   static Future<void> deleteCalendarEvent(String employeeId, String id) async {
-    await client.rpc('staff_admin_calendar_delete_event', params: {'p_employee_id': employeeId, 'p_id': id});
+    await client.rpc('staff_admin_calendar_delete_event', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_id': id});
   }
 
   // ── Impersonation audit log (senior_admin/management only) ─────────────────
   static Future<List<Map<String, dynamic>>> impersonationLog(String employeeId, {int limit = 200}) async {
-    final res = await client.rpc('staff_admin_impersonation_log', params: {'p_employee_id': employeeId, 'p_limit': limit});
+    final res = await client.rpc('staff_admin_impersonation_log', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_limit': limit});
     return _list(res);
   }
 
@@ -646,17 +647,17 @@ class StaffAdminService {
   }
 
   static Future<void> saveMonthlyTestMaxMarks(String employeeId, int maxMarks) async {
-    await client.rpc('staff_admin_save_monthly_test_max_marks', params: {'p_employee_id': employeeId, 'p_max_marks': maxMarks});
+    await client.rpc('staff_admin_save_monthly_test_max_marks', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_max_marks': maxMarks});
   }
 
   // ── Exams: Monthly Tests, read-only visibility ──────────────────────────────
   static Future<List<Map<String, dynamic>>> monthlyTests(String employeeId) async {
-    final res = await client.rpc('staff_admin_monthly_tests', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_monthly_tests', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
   static Future<List<Map<String, dynamic>>> monthlyTestMarks(String employeeId, String examId) async {
-    final res = await client.rpc('staff_admin_monthly_test_marks', params: {'p_employee_id': employeeId, 'p_exam_id': examId});
+    final res = await client.rpc('staff_admin_monthly_test_marks', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_exam_id': examId});
     return _list(res);
   }
 
@@ -667,7 +668,7 @@ class StaffAdminService {
   }
 
   static Future<List<Map<String, dynamic>>> getActiveClasses(String employeeId) async {
-    final res = await client.rpc('staff_admin_class_list', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_class_list', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
@@ -687,7 +688,7 @@ class StaffAdminService {
     required String name, required String startDate, required String endDate, String? academicYearId, int sortOrder = 0,
   }) async {
     final res = await client.rpc('staff_admin_official_exam_create', params: {
-      'p_employee_id': employeeId, 'p_name': name, 'p_start_date': startDate, 'p_end_date': endDate,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_name': name, 'p_start_date': startDate, 'p_end_date': endDate,
       'p_academic_year_id': academicYearId, 'p_sort_order': sortOrder,
     });
     return Map<String, dynamic>.from(res as Map);
@@ -697,12 +698,12 @@ class StaffAdminService {
     required String name, required String startDate, required String endDate, required int sortOrder,
   }) async {
     await client.rpc('staff_admin_official_exam_update', params: {
-      'p_employee_id': employeeId, 'p_id': id, 'p_name': name, 'p_start_date': startDate, 'p_end_date': endDate, 'p_sort_order': sortOrder,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_id': id, 'p_name': name, 'p_start_date': startDate, 'p_end_date': endDate, 'p_sort_order': sortOrder,
     });
   }
 
   static Future<void> deleteOfficialExam(String employeeId, String id) async {
-    await client.rpc('staff_admin_official_exam_delete', params: {'p_employee_id': employeeId, 'p_id': id});
+    await client.rpc('staff_admin_official_exam_delete', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_id': id});
   }
 
   static Future<List<Map<String, dynamic>>> getExamSubjectConfig(String examId) async {
@@ -712,76 +713,76 @@ class StaffAdminService {
 
   static Future<void> saveExamSubjectMaxMarks(String employeeId, String examId, String className, String subjectName, int maxMarks) async {
     await client.rpc('staff_admin_exam_subject_max_marks_save', params: {
-      'p_employee_id': employeeId, 'p_exam_id': examId, 'p_class_name': className, 'p_subject_name': subjectName, 'p_max_marks': maxMarks,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_exam_id': examId, 'p_class_name': className, 'p_subject_name': subjectName, 'p_max_marks': maxMarks,
     });
   }
 
   static Future<void> saveExamSubjectMaxMarksBulk(String employeeId, String examId, List<Map<String, dynamic>> rows) async {
     if (rows.isEmpty) return;
-    await client.rpc('staff_admin_exam_subject_max_marks_bulk', params: {'p_employee_id': employeeId, 'p_exam_id': examId, 'p_rows': rows});
+    await client.rpc('staff_admin_exam_subject_max_marks_bulk', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_exam_id': examId, 'p_rows': rows});
   }
 
   static Future<List<Map<String, dynamic>>> officialExamMarksEntered(String employeeId, String examId, String className) async {
     final res = await client.rpc('staff_admin_official_exam_marks_entered', params: {
-      'p_employee_id': employeeId, 'p_exam_id': examId, 'p_class_name': className,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_exam_id': examId, 'p_class_name': className,
     });
     return _list(res);
   }
 
   // ── Attendance Overview + reminders (senior_admin/management only) ─────────
   static Future<List<Map<String, dynamic>>> attendanceOverview(String employeeId, String date) async {
-    final res = await client.rpc('staff_admin_attendance_overview', params: {'p_employee_id': employeeId, 'p_date': date});
+    final res = await client.rpc('staff_admin_attendance_overview', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_date': date});
     return _list(res);
   }
 
   static Future<Map<String, dynamic>> sendAttendanceReminders(String employeeId, String date, {List<String>? sectionIds}) async {
     final res = await client.rpc('staff_admin_send_attendance_reminders', params: {
-      'p_employee_id': employeeId, 'p_date': date, 'p_section_ids': sectionIds,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_date': date, 'p_section_ids': sectionIds,
     });
     return Map<String, dynamic>.from(_firstRow(res as List, 'staff_admin_send_attendance_reminders'));
   }
 
   // ── Diagnostics (senior_admin/management only) ─────────────────────────────
   static Future<List<Map<String, dynamic>>> diagnosticReports(String employeeId) async {
-    final res = await client.rpc('staff_admin_diagnostic_reports', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_diagnostic_reports', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return _list(res);
   }
 
   static Future<void> markDiagnosticReport(String employeeId, String reportId, String status) async {
     await client.rpc('staff_admin_mark_diagnostic_report', params: {
-      'p_employee_id': employeeId, 'p_report_id': reportId, 'p_status': status,
+      'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_report_id': reportId, 'p_status': status,
     });
   }
 
   static Future<bool> getDiagnosticsEnabled(String employeeId) async {
-    final res = await client.rpc('staff_admin_get_diagnostics_enabled', params: {'p_employee_id': employeeId});
+    final res = await client.rpc('staff_admin_get_diagnostics_enabled', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken});
     return res as bool? ?? false;
   }
 
   static Future<void> setDiagnosticsEnabled(String employeeId, bool enabled) async {
-    await client.rpc('staff_admin_set_diagnostics_enabled', params: {'p_employee_id': employeeId, 'p_enabled': enabled});
+    await client.rpc('staff_admin_set_diagnostics_enabled', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken, 'p_enabled': enabled});
   }
 
   // ── Reports (condensed mobile versions; senior_admin/management only,
   // Fees Super Admin is management-only) ─────────────────────────────────────
   static Future<List<Map<String, dynamic>>> reportStudents(String employeeId) async =>
-    _list(await client.rpc('staff_admin_report_students', params: {'p_employee_id': employeeId}));
+    _list(await client.rpc('staff_admin_report_students', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken}));
 
   static Future<List<Map<String, dynamic>>> reportTcIssued(String employeeId) async =>
-    _list(await client.rpc('staff_admin_report_tc_issued', params: {'p_employee_id': employeeId}));
+    _list(await client.rpc('staff_admin_report_tc_issued', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken}));
 
   static Future<List<Map<String, dynamic>>> reportPayments(String employeeId) async =>
-    _list(await client.rpc('staff_admin_report_payments', params: {'p_employee_id': employeeId}));
+    _list(await client.rpc('staff_admin_report_payments', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken}));
 
   static Future<List<Map<String, dynamic>>> reportFees(String employeeId) async =>
-    _list(await client.rpc('staff_admin_report_fees', params: {'p_employee_id': employeeId}));
+    _list(await client.rpc('staff_admin_report_fees', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken}));
 
   static Future<List<Map<String, dynamic>>> reportFeesSuperAdmin(String employeeId) async =>
-    _list(await client.rpc('staff_admin_report_fees_super_admin', params: {'p_employee_id': employeeId}));
+    _list(await client.rpc('staff_admin_report_fees_super_admin', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken}));
 
   static Future<List<Map<String, dynamic>>> reportEmployees(String employeeId) async =>
-    _list(await client.rpc('staff_admin_report_employees', params: {'p_employee_id': employeeId}));
+    _list(await client.rpc('staff_admin_report_employees', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken}));
 
   static Future<List<Map<String, dynamic>>> reportInventory(String employeeId) async =>
-    _list(await client.rpc('staff_admin_report_inventory', params: {'p_employee_id': employeeId}));
+    _list(await client.rpc('staff_admin_report_inventory', params: {'p_employee_id': employeeId, 'p_session_token': AuthService.to.sessionToken}));
 }

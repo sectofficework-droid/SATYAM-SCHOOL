@@ -4578,6 +4578,61 @@ pattern), it is noted as already-known and not re-filed as new.
       elsewhere (`studentService.js`'s disambiguated
       `classes!student_enrollments_class_id_fkey` embed), but worth a
       manual click-through next time someone's in Add Student.
+- [x] **REQ-SEC-026 (CRITICAL) — every RPC in the Teacher app's mobile
+      Admin Workspace trusted a client-supplied `p_employee_id` with no
+      proof the caller actually is that employee. CODED 2026-11-19.**
+      Found during today's full-system review. Mobile apps run as the
+      public `anon` Postgres role with no real Supabase Auth session -
+      the anon key ships inside every installed APK - so anyone holding
+      it who knew or guessed one senior_admin/management employee's UUID
+      could call `staff_admin_service.dart`'s ~95 RPCs (plus
+      `redeem_qr_session`) *as* that admin directly via the REST API,
+      bypassing the app entirely. Worst instance:
+      `staff_create_impersonation_code` minted a real 10-minute login
+      code for any student/employee target with no caller-identity check
+      at all - chainable to full account takeover.
+      **Fixed by extending infrastructure that already existed and was
+      already proven on ~60 other RPCs**
+      (`mint_mobile_session`/`verify_mobile_session`, minted at
+      `teacher_login`) to every target RPC - 101 function signatures in
+      total, including 3 overloads of `staff_admin_student_add`. Each
+      got `p_session_token text` inserted into its signature (right
+      after `p_employee_id`) and
+      `IF NOT verify_mobile_session('teacher', p_employee_id,
+      p_session_token) THEN RAISE EXCEPTION 'Not authorized'; END IF;`
+      as its first statement, preserving every existing line (including
+      pre-existing `staff_admin_tier()` authorization-tier checks -
+      identity and authorization level are different checks, both still
+      needed) - done via a scripted `regexp_replace` transformation
+      applied through `pg_get_functiondef`/dynamic `EXECUTE`, not by hand
+      per function. **A second pass was required**: `CREATE OR REPLACE`
+      with a different signature creates a new overload rather than
+      replacing the function, so the original (unprotected) signatures
+      were still fully callable after the first pass alone - a second
+      migration explicitly dropped every old overload. Verified after
+      both: 101 live signatures, 100% carrying `p_session_token`, 0
+      without it. Dart side: `staff_admin_service.dart`'s 100
+      `p_employee_id` call sites now also send
+      `'p_session_token': AuthService.to.sessionToken` (added inside the
+      service file itself, reading `AuthService.to` directly - a
+      deliberate deviation from this codebase's usual "caller passes
+      sessionToken as an explicit parameter" convention seen in
+      `supabase_service.dart`, chosen because threading a new parameter
+      through this file's ~90 existing call sites across that many
+      Teacher-admin-workspace pages would have been a far larger, riskier
+      change for the same security outcome); `redeem_qr_session`'s one
+      call site (`scan_attendance_qr_page.dart`) was updated to match
+      `supabase_service.dart`'s own existing convention instead, since
+      that file already threads `sessionToken` as an explicit parameter
+      on sibling methods and this is its only call site. `flutter
+      analyze` on every touched file: no issues (a broader analyze of
+      the whole `admin_workspace` directory surfaced only 29 pre-existing
+      style-lint infos, unrelated to this change). Tracked at
+      `mobile-app/SUPABASE_REQ_SEC_026_STAFF_ADMIN_SESSION_TOKENS.sql`.
+      **NOT VERIFIED with an actual mobile client against a live
+      session** - confirmed via live signature introspection and static
+      analysis only; the next real login + admin-workspace click-through
+      on a device should be treated as the first live test of this path.
 - [x] **REQ-SEC-031 — `lookup_punch_code`/`redeem_punch_code` had no rate
       limiting. CODED 2026-11-19.** Found during today's full-system
       review. Neither function takes an employee-identity parameter at

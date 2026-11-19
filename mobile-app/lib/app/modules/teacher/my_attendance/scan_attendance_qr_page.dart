@@ -44,7 +44,8 @@ class _ScanAttendanceQrPageState extends State<ScanAttendanceQrPage> {
 
     final profile = AuthService.to.profile.value ?? {};
     final employeeId = profile['id'] as String?;
-    if (employeeId == null) {
+    final sessionToken = AuthService.to.sessionToken;
+    if (employeeId == null || sessionToken == null) {
       setState(() { _stage = _Stage.error; _message = 'Could not identify your account. Please log in again.'; });
       return;
     }
@@ -52,7 +53,7 @@ class _ScanAttendanceQrPageState extends State<ScanAttendanceQrPage> {
     setState(() => _stage = _Stage.saving);
     try {
       final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-      final result = await SupabaseService.redeemQrSession(code, employeeId, today, DateTime.now());
+      final result = await SupabaseService.redeemQrSession(code, employeeId, sessionToken, today, DateTime.now());
       if (!mounted) return;
       if (result['status'] == 'already_in') {
         final since = DateFormat('h:mm a').format(result['checkInAt'] as DateTime);
