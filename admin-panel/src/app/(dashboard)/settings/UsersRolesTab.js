@@ -253,13 +253,23 @@ export default function UsersRolesTab() {
             <p className="text-xs text-gray-400 mt-0.5">{usersLoading ? "Loading…" : `${users.length} user${users.length !== 1 ? "s" : ""} registered`}</p>
           </div>
           <div className="flex items-center gap-2">
-            {editMode && (
-              <button onClick={openAdd}
-                className="flex items-center gap-2 bg-school-navy hover:bg-school-navy/90 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm">
-                <UserPlus className="w-4 h-4"/> Add User
-              </button>
+            {isManagement ? (
+              <>
+                {editMode && (
+                  <button onClick={openAdd}
+                    className="flex items-center gap-2 bg-school-navy hover:bg-school-navy/90 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-colors shadow-sm">
+                    <UserPlus className="w-4 h-4"/> Add User
+                  </button>
+                )}
+                <EditBar editMode={editMode} saved={saved} onEdit={startEdit} onSave={doneEdit} onCancel={cancel}/>
+              </>
+            ) : (
+              // Previously: this whole section was open to every role, so a
+              // normal_admin could fill out the entire Add/Edit form only
+              // to have the server reject it with a bare "Not authorized" -
+              // explaining the restriction up front instead.
+              <p className="text-xs text-gray-400 italic">View only - only senior_admin/management can add, edit, or remove users.</p>
             )}
-            <EditBar editMode={editMode} saved={saved} onEdit={startEdit} onSave={doneEdit} onCancel={cancel}/>
           </div>
         </div>
 

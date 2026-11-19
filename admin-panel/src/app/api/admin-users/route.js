@@ -42,8 +42,14 @@ async function requireCaller(request, supabaseAdmin) {
   if (userErr || !user) return { errorResponse: NextResponse.json({ error: "Not authenticated" }, { status: 401 }) };
 
   const { data: caller } = await supabaseAdmin.from("admin_users").select("id, role").eq("id", user.id).single();
-  if (!caller || !["senior_admin", "management"].includes(caller.role)) {
+  if (!caller) {
     return { errorResponse: NextResponse.json({ error: "Not authorized" }, { status: 403 }) };
+  }
+  if (!["senior_admin", "management"].includes(caller.role)) {
+    // Explains why, rather than a bare "Not authorized" - the UI already
+    // hides these actions from normal_admin (UsersRolesTab.js), but a
+    // direct API call should still get a clear reason, not just a 403.
+    return { errorResponse: NextResponse.json({ error: "Only senior_admin or management can manage user accounts." }, { status: 403 }) };
   }
   return { caller };
 }

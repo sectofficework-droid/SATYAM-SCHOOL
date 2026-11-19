@@ -4839,6 +4839,27 @@ pattern), it is noted as already-known and not re-filed as new.
       git hooks) - it's a manual check for now; run it before merging any
       new API route, or add it to a pre-commit hook / CI workflow if one
       gets set up later.
+- [x] **REQ-FEAT-027 — Settings > Users & Roles explains why an action is
+      blocked instead of a raw RPC/API error. CODED 2026-11-19.** A
+      suggested feature from the full-system audit. Before: "Add User"
+      and per-row Edit/Delete were visible to every role in
+      `UsersRolesTab.js` (gated only by a local `editMode` toggle, not
+      role), so a `normal_admin` could fill out the whole form and only
+      then get a bare `"Not authorized"` from `/api/admin-users`. Fixed:
+      the Edit/Add-User controls are now only rendered for
+      `senior_admin`/`management`; a `normal_admin` sees "View only -
+      only senior_admin/management can add, edit, or remove users."
+      up front instead (the read-only admin list itself stays visible to
+      everyone, not sensitive). Per-row Edit/Delete buttons were already
+      nested under the same `editMode` gate, so hiding the one entry
+      point into edit mode cascades correctly with no other change
+      needed. Also improved the server-side message itself
+      (`admin-users/route.js`) for defense-in-depth - a direct API call
+      now gets "Only senior_admin or management can manage user
+      accounts." instead of a bare "Not authorized", distinguished from
+      the separate "caller isn't an admin at all" case. `npm run lint`
+      clean. **NOT VERIFIED with an actual normal_admin login** - UI
+      logic change only, not exercised live.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to
