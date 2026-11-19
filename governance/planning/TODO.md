@@ -4814,6 +4814,31 @@ pattern), it is noted as already-known and not re-filed as new.
       `admin-panel/database/SUPABASE_REQ_SEC_030_TC_ISSUANCE_ROLE.sql`.
       `npm run lint` clean. **NOT VERIFIED with an actual normal_admin
       login** - same caveat as REQ-SEC-029.
+- [x] **REQ-FEAT-026 — `npm run check:auth` guards against the
+      unauthenticated-service-role-route bug class recurring a 4th time.
+      CODED 2026-11-19.** This exact mistake (service-role client, no
+      caller check) was found 3 times this project's history
+      (REQ-SEC-012's original routes, the 2026-10-25 online-general-
+      register regression, and REQ-SEC-024/025 found yesterday) - a
+      suggested feature from today's full-system audit. New
+      `admin-panel/scripts/check-api-auth.js` scans every
+      `src/app/api/**/route.js`, flags any file that uses the service-role
+      key (`getAdminClient`/`supabaseServiceClient`/
+      `SUPABASE_SERVICE_ROLE_KEY`) without also containing one of the
+      already-proven guard patterns (`requireAdminSession`/
+      `requireAdminOrMobileSession`, `requireStaffAdminTier`,
+      `admin-users/route.js`'s own `requireCaller`, or a `CRON_SECRET`
+      check) - or an explicit `// check-api-auth: public, because <reason>`
+      opt-out comment for a route that's deliberately public. Wired up as
+      `npm run check:auth`. **Verified it actually catches violations**,
+      not just trivially passing: created a throwaway unguarded route,
+      confirmed the script flagged it and exited non-zero, deleted it,
+      confirmed clean again. Live run against the real codebase: 19
+      routes checked, all guarded, exit 0. No CI pipeline exists in this
+      repo to wire this into automatically (no `.github/workflows`, no
+      git hooks) - it's a manual check for now; run it before merging any
+      new API route, or add it to a pre-commit hook / CI workflow if one
+      gets set up later.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to
