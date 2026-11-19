@@ -197,7 +197,7 @@ evidence the policy itself needed to change. No edit needed to `PLAN.md`.
       attempt.
       **Deferred, not fixed:** REQ-SEC-004 below still needs an app rebuild
       to fix properly — separate from this item either way.
-- [~] **REQ-SEC-002 — `anon`-role over-exposure (scope corrected, larger
+- [x] **REQ-SEC-002 — `anon`-role over-exposure (scope corrected, larger
       than first scoped; `students`/`employees`/`admin_users` LIVE-CONFIRMED
       2026-08-21 as part of this — see below).** **PARTIALLY FIXED
       2026-09-04:** `students` and `admin_users` now have RLS enabled
@@ -4664,6 +4664,45 @@ pattern), it is noted as already-known and not re-filed as new.
       `mobile-app/SUPABASE_REQ_BUG_084_TEACHER_UPDATE_PROFILE_PASSWORD_CHECK.sql`.
       **NOT VERIFIED with a real device/teacher login** - found via direct
       SQL comparison against sibling functions, not exercised live.
+- [x] **REQ-SEC-002 — CLOSED 2026-11-19 (final 8 tables locked down).**
+      Picked back up while working through the audit's "still open" list.
+      Surveyed current state first (live DB queries, not just re-reading
+      the markdown, which this project's own docs warn can drift - see
+      the F1 doc-sync correction above for a real example of that
+      happening): Category 1/2 and Category 3 Group A were already
+      confirmed live and correct. Exactly **8 tables** remained fully
+      open to `anon` - `employees`, `exam_marks`, `exams`, `homework`,
+      `official_exam_marks`, `student_attendance`, `syllabus`,
+      `syllabus_subtopics` (Group B + Group C's `official_exam_marks`).
+      The replacement session-token RPCs for all 8 already existed and
+      were already verified (`flutter analyze` clean, debug APKs built) -
+      the only remaining step was the DB-side switch itself, deliberately
+      deferred since flipping it once before (2026-09-21) broke Mark
+      Attendance for teachers on an old build and had to be rolled back.
+      **Asked the user directly** whether real device adoption of the
+      post-2026-09-22 app build could now be assumed safe, rather than
+      guessing - confirmed yes. Verified first which of the 8 still had a
+      live direct mobile read (`grep` for `.from('<table>')` across
+      `mobile-app/lib`): all 7 non-`employees` tables had zero remaining
+      direct reads (fully RPC-migrated) and got the same fully-closed
+      pattern as Group A's `leave_requests` (one `is_admin_user()` ALL
+      policy, zero anon policy). `employees` still has 2 legitimate
+      direct anon reads (`fetchOtherTeachers`/`fetchPrincipalContact` in
+      `supabase_service.dart`, both already scoped to the same 6
+      non-sensitive columns - `id/name/phone/type/status/designation` -
+      a pre-existing column-level `GRANT` already restricts anon to) -
+      enabling RLS there without an anon policy would have silently
+      broken both, so it got an open-row anon SELECT policy instead
+      (column list stays enforced by the untouched pre-existing GRANT),
+      matching the Category 2 "SELECT-only kept, writes gated" pattern.
+      Applied live via Supabase MCP, tracked at
+      `mobile-app/SUPABASE_REQ_SEC_002_LOCK_CATEGORY3_GROUP_B_C_TABLES.sql`.
+      Re-verified after: RLS enabled and `anon` has zero table-wide
+      grants on all 8; `employees`' column-level grant
+      (`information_schema.column_privileges`) confirmed untouched and
+      still exactly the same 6 columns. **NOT VERIFIED with a real
+      mobile client** - confirmed the grant/policy state directly in
+      Postgres, didn't exercise a live app session against it.
 - [x] **REQ-SEC-031 — `lookup_punch_code`/`redeem_punch_code` had no rate
       limiting. CODED 2026-11-19.** Found during today's full-system
       review. Neither function takes an employee-identity parameter at
