@@ -4633,6 +4633,37 @@ pattern), it is noted as already-known and not re-filed as new.
       session** - confirmed via live signature introspection and static
       analysis only; the next real login + admin-workspace click-through
       on a device should be treated as the first live test of this path.
+- **Doc-sync correction, no code change needed**: `SECURITY-THREAT-MODEL.md`'s
+  F1 (plaintext password) entry still showed its 2026-08-18 "reverted,
+  still live" status, never updated after `REQ-SEC-001` actually shipped
+  2026-08-21 and `REQ-SEC-006` dropped the leftover plaintext backup
+  table 2026-09-19. Re-verified live 2026-11-19 while working through the
+  "still open, needs a product decision" list from today's full-system
+  audit: 426/426 student rows and 29/29 employee rows are proper 60-char
+  bcrypt hashes, 0 plaintext. `TODO.md` itself was already accurate - only
+  the separate threat-model doc had drifted. Corrected in place rather
+  than re-doing already-complete work.
+- [x] **REQ-BUG-084 — `teacher_update_profile`'s password check was
+      broken (stale plain-text comparison against a bcrypt column).
+      CODED 2026-11-19.** Also found working through the audit's "still
+      open" list - specifically `SECURITY-THREAT-MODEL.md` F2b
+      (`teacher_update_profile` has no password check). Checking the live
+      RPC showed F2b was already resolved as `REQ-SEC-004` (2026-09-04,
+      added a required password param + UI field) - but that fix's
+      comparison was `app_password = p_password` (plain equality)
+      instead of `crypt(p_password, app_password)`, a leftover from
+      before `REQ-SEC-001`'s 2026-08-21 bcrypt migration that was never
+      cross-checked against this RPC. Since the column is bcrypt-hashed,
+      that comparison can never succeed for a real password - **fails
+      closed** (not a security hole; nobody could exploit it), but means
+      "Update Profile" has been silently failing for every teacher since
+      2026-09-04. Fixed to match the already-correct
+      `teacher_change_password`/`teacher_verify_password`
+      (`crypt(p_password, app_password)`). Applied live via Supabase MCP,
+      tracked at
+      `mobile-app/SUPABASE_REQ_BUG_084_TEACHER_UPDATE_PROFILE_PASSWORD_CHECK.sql`.
+      **NOT VERIFIED with a real device/teacher login** - found via direct
+      SQL comparison against sibling functions, not exercised live.
 - [x] **REQ-SEC-031 — `lookup_punch_code`/`redeem_punch_code` had no rate
       limiting. CODED 2026-11-19.** Found during today's full-system
       review. Neither function takes an employee-identity parameter at

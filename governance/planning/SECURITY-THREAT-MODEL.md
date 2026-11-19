@@ -62,6 +62,24 @@
   reset-not-view approach and the "no mobile rebuild needed" finding remain
   valid and should carry into whatever plan gets written next; see
   `planning\TODO.md` REQ-SEC-001 for the full note.
+- **RESOLVED 2026-08-21, confirmed still holding 2026-11-19 — this entry was
+  just never updated to say so.** Re-done properly as `REQ-SEC-001` (written
+  up as a real plan this time, approved via "code", shipped): all 75 rows
+  backed up then re-hashed to bcrypt; `teacher_login`/`student_login` now
+  compare via `app_password = crypt(p_password, app_password)`, never plain
+  `=`; the admin-panel password view/copy was replaced with a
+  Reset-Password action (`admin_reset_student_password`/
+  `admin_reset_employee_password` RPCs, hash computed server-side, never in
+  the browser) - `employeeService.js`'s `appPassword` field mapping is now
+  dead code (nothing in the Employee UI reads it). The pre-hash backup table
+  this migration created (`_app_password_backup_20260821`) was itself found
+  wide open to `anon` and dropped (`REQ-SEC-006`, 2026-09-19) once confirmed
+  the real migration was complete and nothing else needed it. **Re-verified
+  live 2026-11-19** during an unrelated full-system review: 426/426 student
+  rows and 29/29 employee rows are 60-char `$2`-prefixed bcrypt hashes, 0
+  non-bcrypt rows on either table. Full detail:
+  `governance/ai-context/SESSION-2026-08-21-3.md`; see `planning\TODO.md`
+  REQ-SEC-001/REQ-SEC-006 for the complete record.
 
 ### F2 — `anon`-role over-exposure (RLS disabled + broad grants + no rate limit)
 - **CORRECTED SCOPE AGAIN (2026-08-21) — `students`/`employees`/
@@ -186,6 +204,20 @@
   one would be a fake fix. Needs a Settings-screen UI change (prompt for
   current password) + app rebuild — bundled into Stage 2/3, not this
   no-rebuild pass. See `planning\TODO.md` REQ-SEC-004.
+- **RESOLVED 2026-09-04 as REQ-SEC-004** — the deferred plan above shipped:
+  `teacher_update_profile` now requires `p_password`, the old no-password
+  4-arg overload was explicitly dropped, and `teacher_profile_page.dart`'s
+  Edit Profile sheet got a required "Current Password" field. **Follow-up
+  bug found and fixed 2026-11-19**: the 2026-09-04 fix's password
+  comparison used stale plain `app_password = p_password` instead of
+  `crypt(p_password, app_password)` - a leftover from before the
+  REQ-SEC-001 bcrypt migration (2026-08-21, which predates this fix but
+  evidently wasn't cross-checked against it). Since the column is a bcrypt
+  hash, that comparison could never succeed for any real password - not a
+  security hole (fails closed), but meant "Update Profile" silently failed
+  for every teacher. Fixed to match the already-correct
+  `teacher_change_password`/`teacher_verify_password`; see `planning\TODO.md`
+  REQ-BUG-084.
 
 ### F3 — Public S3 bucket for mobile photos (contradicts locked "no public
 buckets" rule)
