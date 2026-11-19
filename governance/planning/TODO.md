@@ -1790,7 +1790,7 @@ notices, calendar, birthdays, timetable, help desk, query, profile/
 password-change flows, PDF generation utilities.
 
 ### found 2026-09-17 (attendance kiosk face-match reliability)
-- [ ] **REQ-BUG-014 — Face Punch occasionally matches the wrong enrolled
+- [x] **REQ-BUG-014 — Face Punch occasionally matches the wrong enrolled
       staff member (MINOR CHANGE per J12B — localized change to matching
       behavior, no schema/scope change).** `match_face_embedding`
       (`SUPABASE_FACE_MATCH_RPC.sql`) does a nearest-neighbor search across
@@ -1899,6 +1899,11 @@ password-change flows, PDF generation utilities.
       numbers after re-enrollment to confirm it actually improved before
       considering this closed. EMP013/EMP001/EMP015/EMP021's milder outlier
       shots remain as a smaller optional follow-up, not yet actioned.
+      **CLOSED 2026-11-19 — user confirmed this is working properly now**
+      in real use (while reviewing today's full-system audit's "still
+      open" list). Re-enrollment/verification details not re-checked in
+      this session; taking the user's direct confirmation as closure
+      per their own report.
 
 ### found 2026-09-19 (code review of Cat3 Foundation+Group A, via `ocr delegate` host-agent review)
 - [x] **REQ-BUG-015 — Pre-existing logged-in sessions (anyone logged in
