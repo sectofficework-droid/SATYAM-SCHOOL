@@ -4860,6 +4860,41 @@ pattern), it is noted as already-known and not re-filed as new.
       the separate "caller isn't an admin at all" case. `npm run lint`
       clean. **NOT VERIFIED with an actual normal_admin login** - UI
       logic change only, not exercised live.
+- **Two audit findings re-checked and found already done, no code
+  needed** (while working through the missing-feature list):
+  **(1)** "No export/print for Employee or Inventory & Asset reports" -
+  both are full entries in `report/page.js`'s shared `REPORT_CONFIGS`,
+  already getting the same Export Excel/PDF bar every other report type
+  does (confirmed by reading the config object directly, not just
+  grepping). **(2)** "Inventory low-stock alert on the dashboard" - a
+  complete "Low Stock Alerts" card (progress bars, stock counts, link to
+  Inventory) already exists on `dashboard/page.js`, fed by
+  `getInventoryAlerts()`. Both were presumably checked too shallowly by
+  the original audit pass; no further action needed on either.
+- [x] **REQ-FEAT-028 — Dashboard surfaces overdue tasks automatically,
+      not just manually-pinned ones. CODED 2026-11-19.** A suggested
+      feature from the audit ("Daily Tasks has no due-date reminder tie-in")
+      - checked first and found the Tasks page itself already has solid
+      per-card overdue/due-soon styling (`isOverdue()`,
+      `tasks/page.js:61-68`), but the **Dashboard**'s task section
+      (`getDashboardTasks()`) only ever shows tasks someone manually
+      checked "show on dashboard" for at creation time - a task that
+      blows its deadline without being pinned surfaces nowhere outside
+      the Tasks page itself. Deliberately did **not** reuse
+      `ReminderContext` (the Documents module's follow-up popup system) -
+      it's modeled specifically around student-keyed reminders
+      (`studentId`-based resolve/dismiss), and generalizing it risked the
+      already-working feature for no real benefit here. Instead: new
+      `getOverdueTasks()` in `taskService.js` (date-only
+      `deadline_date < today`, deliberately coarser than the Tasks page's
+      own time-aware `isOverdue()` - a summary widget glanced at once
+      shouldn't flash a task as overdue mid-business-day on its due
+      date), rendered as a new red "Overdue Tasks" card on the dashboard
+      (same visual pattern as the existing Pinned Tasks/Low Stock Alerts
+      cards), showing above Pinned Tasks, capped at 5 with a "+N more"
+      line. `npm run lint` clean. **NOT VERIFIED against live data** - no
+      currently-overdue task existed to visually confirm the card
+      renders correctly.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

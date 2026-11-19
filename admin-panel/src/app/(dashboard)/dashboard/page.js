@@ -11,7 +11,7 @@ import {
   Activity, ClipboardList, Cake, User,
 } from "lucide-react";
 import { getDashboardStats, getRecentNotices, getInventoryAlerts, getRecentActivities, getStudentAttendanceSummary, getTodaysBirthdays } from "@/lib/dashboardService";
-import { getDashboardTasks } from "@/lib/taskService";
+import { getDashboardTasks, getOverdueTasks } from "@/lib/taskService";
 import useStore from "@/lib/store";
 import DateInputDMY from "@/components/DateInputDMY";
 import S3Image from "@/components/S3Image";
@@ -166,6 +166,7 @@ export default function DashboardPage() {
   const [dbExpenses,       setDbExpenses]        = useState([]);
   const [dbNotices,          setDbNotices]          = useState([]);
   const [dbPinnedTasks,      setDbPinnedTasks]      = useState([]);
+  const [dbOverdueTasks,     setDbOverdueTasks]     = useState([]);
   const [dbInventoryAlerts,  setDbInventoryAlerts]  = useState(null);
   const [dbRecentActivities, setDbRecentActivities] = useState(null);
   const [dbStudentAttendance, setDbStudentAttendance] = useState(null);
@@ -180,6 +181,7 @@ export default function DashboardPage() {
     }).catch(() => {});
     getRecentNotices().then(setDbNotices).catch(() => {});
     getDashboardTasks().then(setDbPinnedTasks).catch(() => {});
+    getOverdueTasks().then(setDbOverdueTasks).catch(() => {});
     getInventoryAlerts().then(setDbInventoryAlerts).catch(() => {});
     getRecentActivities().then(setDbRecentActivities).catch(() => {});
     // On failure, resolve to "nobody today" rather than leaving rows===undefined
@@ -305,6 +307,44 @@ export default function DashboardPage() {
           </p>
         </div>
       </div>
+
+      {/* ── Overdue Tasks ── */}
+      {/* REQ-FEAT-028: unlike Pinned Tasks below (which only shows what
+          someone manually checked "show on dashboard" for), this surfaces
+          purely by missed deadline - a task doesn't need to have been
+          pinned to show up here once it's overdue. */}
+      {dbOverdueTasks.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm border border-red-200 overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-red-100 bg-red-50">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-red-600" />
+              <h3 className="font-semibold text-gray-800 text-sm">Overdue Tasks</h3>
+              <span className="bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{dbOverdueTasks.length}</span>
+            </div>
+            <a href="/tasks" className="text-xs text-red-600 hover:text-red-800 font-semibold flex items-center gap-1 transition-colors">
+              View All <ArrowUpRight className="w-3 h-3"/>
+            </a>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {dbOverdueTasks.slice(0, 5).map(task => (
+              <div key={task.id} className="flex items-center gap-4 px-5 py-3 hover:bg-gray-50 transition-colors">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm text-gray-800 font-medium truncate">{task.title}</p>
+                  {task.assignedTo?.length > 0 && (
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">{task.assignedTo.join(", ")}</p>
+                  )}
+                </div>
+                <span className="text-[10px] text-red-600 font-semibold flex-shrink-0 flex items-center gap-1">
+                  <Calendar className="w-3 h-3 inline-block"/> {fmtTaskDeadline(task.deadline, task.deadlineTime)}
+                </span>
+              </div>
+            ))}
+            {dbOverdueTasks.length > 5 && (
+              <p className="px-5 py-2.5 text-xs text-gray-400 text-center">+{dbOverdueTasks.length - 5} more overdue</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Pinned Tasks ── */}
       {dbPinnedTasks.length > 0 && (

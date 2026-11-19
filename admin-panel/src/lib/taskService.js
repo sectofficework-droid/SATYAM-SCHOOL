@@ -139,6 +139,27 @@ export async function getDashboardTasks() {
   return (data || []).map(mapTask);
 }
 
+// Deadline-driven, unlike getDashboardTasks() above which only surfaces
+// tasks someone manually pinned at creation time - a task with a missed
+// deadline should surface on its own, not only if the creator remembered
+// to check "show on dashboard". Deliberately date-only (deadline_date <
+// today), not the Tasks page's own isOverdue() precision (which also
+// weighs deadlineTime) - a task due later today shouldn't flash onto the
+// dashboard as "overdue" mid-business-day; this only surfaces a deadline
+// that's missed an entire day, which is the right bar for a summary
+// widget glanced at once rather than the Tasks page's own detail view.
+export async function getOverdueTasks() {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const { data, error } = await supabase
+    .from("tasks")
+    .select("*, task_assignees(employee:employees(id, name))")
+    .lt("deadline_date", todayStr)
+    .neq("status", "Completed")
+    .order("deadline_date", { ascending: true });
+  if (error) return [];
+  return (data || []).map(mapTask);
+}
+
 export async function getEmployeesForTasks() {
   const { data, error } = await supabase
     .from("employees")
