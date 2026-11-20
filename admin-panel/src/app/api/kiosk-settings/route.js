@@ -79,28 +79,32 @@ export async function POST(request) {
         return { lateMins, isLate };
       };
 
+      // Single batched upsert per table instead of one UPDATE per row
+      // (N+1 pattern flagged by the 2026-11 full-system audit) - `upsert`
+      // with only {id, ...changed columns} translates to
+      // `ON CONFLICT (id) DO UPDATE SET late_minutes=, is_late=`, leaving
+      // every other column on each row untouched, same end state as the
+      // old per-row loop.
       if (todayAtt?.length) {
-        await Promise.all(
-          todayAtt.map((row) => {
-            const { lateMins, isLate } = computeLateness(row.check_in_at);
-            return supabaseAdmin
-              .from("employee_attendance")
-              .update({ late_minutes: lateMins, is_late: isLate })
-              .eq("id", row.id);
-          })
-        );
+        await supabaseAdmin
+          .from("employee_attendance")
+          .upsert(
+            todayAtt.map((row) => {
+              const { lateMins, isLate } = computeLateness(row.check_in_at);
+              return { id: row.id, late_minutes: lateMins, is_late: isLate };
+            })
+          );
       }
 
       if (todayShifts?.length) {
-        await Promise.all(
-          todayShifts.map((row) => {
-            const { lateMins, isLate } = computeLateness(row.check_in_at);
-            return supabaseAdmin
-              .from("employee_shifts")
-              .update({ late_minutes: lateMins, is_late: isLate })
-              .eq("id", row.id);
-          })
-        );
+        await supabaseAdmin
+          .from("employee_shifts")
+          .upsert(
+            todayShifts.map((row) => {
+              const { lateMins, isLate } = computeLateness(row.check_in_at);
+              return { id: row.id, late_minutes: lateMins, is_late: isLate };
+            })
+          );
       }
 
       // Auto-mark absent if absentCutoffTime has passed and today is a working day

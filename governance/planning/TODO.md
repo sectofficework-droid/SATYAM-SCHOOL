@@ -4941,43 +4941,166 @@ pattern), it is noted as already-known and not re-filed as new.
   2026-09-19 instead of being collapsed. Flagged 2026-10-08 while adding
   that session's own checkpoint; not fixed then (out of scope for that
   task) — needs its own dedicated trim pass.
-- Duplicated service-role-key fallback chain
-  (`SUPABASE_SERVICE_ROLE_KEY || SUPABASE_SERVICE_KEY || SUPABASE_SECRET_KEY
-  || SUPABASE_KEY`) copy-pasted identically across 4+ API routes instead of
-  one shared helper — risk of silent drift if one copy is updated and others
-  aren't.
-- `reportsServerAuth.js`'s `supabaseServiceClient()` silently falls back to
-  the **anon key** if no service key is configured, despite its name
-  promising a privileged client — misleading for a future reader of call
-  sites.
-- N+1 query patterns: `kiosk-settings/route.js:89-111` (per-row update
-  instead of batched), `settings/page.js:1704-1711` (sequential awaits in a
-  loop, inconsistent with the `Promise.all` pattern a few lines earlier in
-  the same function), mobile `student_marks_page.dart`/
-  `student_official_results_page.dart` (one RPC round-trip per exam).
-- Large, monolithic files worth splitting if touched again:
-  `report/page.js` (2254 lines), `AddStudentForm.js` (1449 lines),
-  `supabase_service.dart` (1349 lines, also interleaves unprotected
-  `.from()` calls with session-gated RPCs with no naming/organizational
-  marker distinguishing "intentionally public" from "not yet migrated" —
-  likely how REQ-SEC-016 above slipped through).
-- Real, traceable duplication between the Teacher and Student Flutter
-  flavors rather than shared-widget-first design: `teacher_rules_page.dart`/
-  `student_rules_page.dart` are line-for-line identical bar one RPC arg;
-  same shape for the query pages, timetable pages, and syllabus status-color
-  helpers (one of which has its own comment admitting this is unaddressed
-  tech debt).
-- Live Supabase *performance* advisories (informational, no security
-  impact): 45 unindexed foreign keys; `multiple_permissive_policies` —
-  redundant overlapping SELECT policies on `exam_marks`/`student_attendance`
-  (3 each) and `students` (2), an artifact of old `*_all_users_read`/
-  `*_own_*`/`*_teachers` policies never cleaned up after the RPC migration;
-  `auth_rls_initplan` on `students`/`admin_users` (re-evaluates
-  `auth.<fn>()` per row instead of `(select auth.<fn>())`); 8 unused
-  indexes.
-- Inconsistent sign-out UX: `student_home.dart` confirms before sign-out,
-  `student_profile_page.dart` signs out immediately on tap with no
-  confirmation.
+- [x] **Duplicated service-role-key fallback chain, closed 2026-11-20.**
+      `admin-users/route.js` and `reportsServerAuth.js` each kept their own
+      copy of the `SUPABASE_SERVICE_ROLE_KEY || SUPABASE_SERVICE_KEY ||
+      SUPABASE_SECRET_KEY (|| SUPABASE_KEY)` chain instead of sharing
+      `@/lib/apiAuth`'s `getAdminClient()` (already the canonical version
+      used by 10 other routes). Consolidated: `apiAuth.js`'s
+      `getAdminClient()` now carries the union of all 4 env-var names;
+      `admin-users/route.js` imports it instead of defining its own;
+      `reportsServerAuth.js`'s `supabaseServiceClient()` is now `export
+      const supabaseServiceClient = getAdminClient` (kept the export name -
+      6 report routes already import it by that name). `npm run lint`
+      clean.
+- [x] **`reportsServerAuth.js`'s anon-key fallback — already fixed, found
+      stale on re-check 2026-11-20.** This line item described pre-
+      2026-10-04 behavior; the live code already returns `null` on missing
+      service-key config (no anon fallback) per that file's own 2026-10-04
+      comment. No code change needed beyond the consolidation above - the
+      TODO entry itself was the only thing out of date.
+- [x] **N+1 query patterns, fixed 2026-11-20.** `kiosk-settings/route.js`:
+      the two per-row `Promise.all(map(update))` loops (today's attendance/
+      shift lateness recalc) replaced with one batched `upsert([...])` call
+      each - same end state (`ON CONFLICT (id) DO UPDATE SET` touches only
+      the passed columns), 1 round trip instead of N. `settings/page.js`'s
+      `savePeriodsEdit()`: the two sequential `for` loops (day-group
+      renames, then deletes) converted to `Promise.all` - each iteration
+      targets an independent `day_group` value, and the rename-batch vs.
+      delete-batch ordering is preserved. Mobile `student_marks_page.dart`/
+      `student_official_results_page.dart`: converted the sequential
+      per-exam RPC loop to `Future.wait` (official results also
+      parallelizes the 2 independent RPCs within one exam) - same RPC
+      count, now concurrent instead of serial; introducing a new
+      multi-exam RPC to collapse the round-trip count further was ruled
+      out of scope (needs a live migration + real-device verification).
+      `npm run lint` / `flutter analyze` clean.
+- [x] **Live Supabase performance advisories, mostly closed 2026-11-20.**
+      **Unindexed foreign keys**: 52 of 55 fixed with a straight additive
+      `CREATE INDEX IF NOT EXISTS` pass (tracked at
+      `mobile-app/SUPABASE_REQ_HYG_ADD_MISSING_FK_INDEXES.sql`, applied
+      live via Supabase MCP) - zero behavior risk, pure query-plan
+      speedup. The remaining 3 (`timetable_entries` x2, `users` x1) were
+      deliberately skipped - both tables are CLAUDE.md-documented unused
+      legacy drift, superseded by `timetables`; no point indexing dead
+      tables. **`auth_rls_initplan`**: all 12 flagged policies across 7
+      tables (`admin_users`, `employees`, `exam_marks`, `exams`,
+      `homework`, `student_attendance`, `students`) rewritten via `ALTER
+      POLICY ... USING ((select auth.uid()) ...)` - same logic, cached
+      once per query instead of re-evaluated per row; verified via
+      `pg_policies` that every `qual`/`with_check` is byte-identical
+      except for the wrapping (tracked at
+      `mobile-app/SUPABASE_REQ_HYG_FIX_AUTH_RLS_INITPLAN.sql`). Re-ran the
+      advisor after both: `auth_rls_initplan` finding is gone entirely,
+      `unindexed_foreign_keys` down to the 3 intentional skips.
+      **`multiple_permissive_policies` (61 findings) also closed, same
+      day, on the user's explicit go-ahead** ("fix everyting") after
+      first proving the consolidation couldn't narrow access: confirmed
+      `is_admin_user() = EXISTS(admin_users WHERE id = auth.uid())`, so
+      `is_admin_user()` TRUE always implies `auth.uid() IS NOT NULL`
+      (same reasoning for the `employees.app_user_id`/
+      `students.app_user_id = auth.uid()` EXISTS checks - a NULL
+      `auth.uid()` can never satisfy them). That made each table's
+      `*_all_users_read`/`*_own_*` SELECT policy a strict superset of the
+      narrower `is_admin_user()`/teacher-exists/own-row SELECT policies on
+      the same table - dropped the dominated ones outright
+      (`employees_own_profile`, `marks_own_student`,
+      `students_own_attendance`) rather than merging them. For writes,
+      where admin and teacher are genuinely different populations that
+      both need to keep access, merged the 2 overlapping `ALL`-command
+      policies per table (`admin staff manage X` + `X_teachers`/
+      `X_teachers_insert`) into one explicit policy per write command with
+      an OR'd condition, instead of 2 separate always-OR'd policies.
+      `students` was the one case where neither policy dominated
+      (admin-select vs. own-profile-select are different populations) -
+      merged into one `(is_admin_user() OR app_user_id = auth.uid())`
+      policy rather than dropping either. Applied live via Supabase MCP,
+      tracked at
+      `mobile-app/SUPABASE_REQ_HYG_CONSOLIDATE_PERMISSIVE_POLICIES.sql`.
+      **Verified**: re-read every new policy's `qual`/`with_check` via
+      `pg_policies` and confirmed each is exactly the OR of the originals
+      it replaced, not an approximation; confirmed via `grep` that no
+      application code references any RLS policy name (they're
+      Postgres-internal, never called from client code); re-ran the
+      advisor after - `multiple_permissive_policies` is gone entirely (0
+      findings, was 61). **NOT verified** against a real logged-in session
+      of each affected role (admin/teacher/student) - the equivalence is a
+      logical proof against the live policy definitions, not an
+      exercised click-through; flag if `employees`/`exam_marks`/`exams`/
+      `homework`/`student_attendance`/`students` access behaves
+      unexpectedly for any role after this.
+      `unused_index` (58, up from 8) - inflated right now because the 52
+      brand-new FK indexes above have zero query history yet; expect this
+      to self-correct as production traffic uses them, re-check before
+      concluding anything is actually dead weight.
+- [x] **Inconsistent sign-out UX, fixed 2026-11-20.**
+      `student_profile_page.dart`'s "Sign Out" button signed out
+      immediately on tap; `student_home.dart`'s does the same action behind
+      a confirmation dialog ("Are you sure?"). Made the profile page match
+      the home page's confirm-first pattern exactly (same dialog copy/
+      styling). `flutter analyze` clean.
+- [x] **Teacher/Student Flutter duplication, closed 2026-11-20** (user:
+      "fix everyting", after an initial pass flagged this for separate
+      approval). `teacher_rules_page.dart`/`student_rules_page.dart` were
+      byte-identical bar the `'teacher'`/`'student'` string passed to
+      `fetchSchoolRules()` - extracted to a shared `RulesPage` widget
+      (`common/widgets/rules_page.dart`, `subjectType` param); both
+      role-specific files are now one-line wrappers. Same for
+      `teacher_query_page.dart`/`student_query_page.dart` (byte-identical
+      bar `user_type` and how `user_name` is derived) → shared `QueryPage`
+      (`common/widgets/query_page.dart`). Syllabus status-color helpers
+      (`_statusColor`/`_statusBg`, byte-identical in both
+      `teacher_syllabus_page.dart` and `student_syllabus_page.dart`) →
+      shared `syllabusStatusColor`/`syllabusStatusBg`
+      (`core/utils/syllabus_status.dart`). Bonus finds from doing the
+      unification: `teacher_rules_page.dart` was missing the try/catch
+      `student_rules_page.dart` already had (REQ-BUG-069 class gap) - fixed
+      for free by moving onto the shared widget's (already-correct)
+      version; `teacher_timetable_page.dart` had the same gap independently
+      - fixed directly since its differing fetch/render logic from the
+      student version didn't make it a unification candidate (see below).
+      Verified via repo-wide `grep` that both old widget names are only
+      ever referenced via their own `const Constructor()` call in
+      `app_pages_*.dart` route tables (no code touches internal state), so
+      converting them from `StatefulWidget` to thin `StatelessWidget`
+      wrappers is safe. `flutter analyze`: clean on every touched file, 0
+      new issues project-wide (same 29 pre-existing issues, all in
+      untouched files).
+      **Timetable pages deliberately NOT unified** - re-examined and found
+      genuinely different, not "same shape": `teacher_timetable_page.dart`
+      fetches by teacher name and merges multiple classes per slot with a
+      own dedicated "Class X & Y" render; `student_timetable_page.dart`
+      fetches by the student's single class with a single-subject render.
+      Both already share the real duplication (the `TimetableView` grid
+      widget, via `common/widgets/timetable_view.dart`) - forcing the
+      differing fetch/render halves into one shared widget would be
+      refactor-for-its-own-sake on genuinely different business logic, not
+      a duplication fix.
+- **Large, monolithic files — re-assessed 2026-11-20, still NOT split, for
+  a reason beyond just needing approval.** User said "fix everyting" after
+  the duplication items above; before attempting these, checked what
+  "splitting" would actually require for each:
+  - `supabase_service.dart` (1539 lines) - every one of its ~150 methods is
+    `static` and called as `SupabaseService.methodName(...)` from dozens of
+    files app-wide. Dart has no partial-class mechanism (`part`/`part of`
+    splits a *library* into files, not one class's body across files) -
+    splitting this while keeping the existing call syntax everywhere isn't
+    possible; the only real split would rename it to several classes
+    (`AttendanceService`, `ExamService`, ...) and update every call site
+    app-wide, which is a much bigger, far riskier change than "split a
+    file," on a mobile app whose entire user base depends on it working.
+  - `report/page.js` (3358 lines) / `AddStudentForm.js` (1504 lines) - both
+    single stateful React components. `admin-panel/` has zero automated
+    tests (CLAUDE.md, confirmed again this session) and this session has
+    no real admin-panel login credentials, so a structural split of either
+    file could not be verified end-to-end afterward - only by lint/compile,
+    which would catch a broken import but not a subtly wrong prop/closure
+    extraction in a form this large.
+  Given no way to verify correctness on live production files this size,
+  attempting the splits anyway would trade a cosmetic improvement for real,
+  unverifiable regression risk to a system real students/parents/staff use
+  daily. Left open pending the user's call: proceed anyway (and test
+  in-browser themselves afterward), or skip.
 
 ---
 

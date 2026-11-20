@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getAdminClient } from "@/lib/apiAuth";
 
 // Manages admin_users AND its matching Supabase Auth account together.
 // admin_users.id must equal the auth.users.id it logs in as (auth.uid()
@@ -15,17 +15,10 @@ import { createClient } from "@supabase/supabase-js";
 // No hardcoded fallback key here, ever - see REQ-SEC-011 (TODO.md): a
 // leaked service_role key bypasses all RLS on every table. It must come
 // from environment configuration only, and this route fails loudly (not
-// silently) if that configuration is missing.
-function getAdminClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.SUPABASE_SECRET_KEY ||
-    process.env.SUPABASE_KEY;
-  if (!supabaseUrl || !serviceKey) return null;
-  return createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
-}
+// silently) if that configuration is missing. getAdminClient() (shared,
+// `@/lib/apiAuth`) is the same fallback-key chain this file used to define
+// locally - consolidated 2026-11-20 per the full-system audit's drift-risk
+// finding (3 copy-pasted copies of the same env-var chain).
 
 const ROLES = ["normal_admin", "senior_admin", "management"];
 const isNonEmpty = (v) => typeof v === "string" && v.trim().length > 0;

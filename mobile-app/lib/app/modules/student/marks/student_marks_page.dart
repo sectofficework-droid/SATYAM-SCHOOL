@@ -43,16 +43,18 @@ class _StudentMarksPageState extends State<StudentMarksPage> {
       if (sessionToken == null) { if (mounted) setState(() => _loading = false); return; }
 
       final exams = await SupabaseService.fetchExamsForStudent(studentId, sessionToken);
-      // Collect all marks for this student across all exams
-      final List<Map<String, dynamic>> allMarks = [];
-      for (final e in exams) {
-        final myMark = await SupabaseService.fetchMyExamMark(studentId, sessionToken, e['id'] as String);
-        if (myMark.isNotEmpty) {
-          allMarks.add({...e, 'obtained': myMark.first['marks_obtained']});
-        } else {
-          allMarks.add({...e, 'obtained': null});
-        }
-      }
+      // One RPC round trip per exam is unavoidable without a new server-side
+      // multi-exam RPC (not introducing one here - out of scope for this
+      // pass), but the N calls are independent of each other, so run them
+      // concurrently instead of one at a time (N+1 pattern flagged by the
+      // 2026-11 full-system audit).
+      final markLists = await Future.wait(
+        exams.map((e) => SupabaseService.fetchMyExamMark(studentId, sessionToken, e['id'] as String)),
+      );
+      final allMarks = <Map<String, dynamic>>[
+        for (var i = 0; i < exams.length; i++)
+          {...exams[i], 'obtained': markLists[i].isNotEmpty ? markLists[i].first['marks_obtained'] : null},
+      ];
       if (mounted) setState(() { _marks = allMarks; _loading = false; });
     } catch (e) {
       if (mounted) setState(() { _loading = false; _error = 'Failed to load marks.'; });

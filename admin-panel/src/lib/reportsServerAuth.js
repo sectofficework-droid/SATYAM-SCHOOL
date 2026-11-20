@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { getAdminClient } from "./apiAuth";
 
 // Mirrors the mobile Admin Workspace's existing trust model (see
 // mobile-app/SUPABASE_STAFF_APP_ADMIN_WORKSPACE.sql header comment): every
@@ -47,12 +48,8 @@ export async function requireStaffAdminTier(employeeId, sessionToken, allowedTie
 // it would have quietly run every report query RLS-restricted instead of
 // erroring loudly. Returns null on missing config now; callers already
 // check this the same way getAdminClient() in api/admin-users/route.js does.
-export function supabaseServiceClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceKey =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ||
-    process.env.SUPABASE_SERVICE_KEY ||
-    process.env.SUPABASE_SECRET_KEY;
-  if (!supabaseUrl || !serviceKey) return null;
-  return createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
-}
+// Consolidated 2026-11-20 onto the shared `@/lib/apiAuth` helper (this and
+// admin-users/route.js each kept their own copy of the identical
+// service-key fallback chain - flagged as a drift risk by the full-system
+// audit); kept this export name since 6 report routes already import it.
+export const supabaseServiceClient = getAdminClient;

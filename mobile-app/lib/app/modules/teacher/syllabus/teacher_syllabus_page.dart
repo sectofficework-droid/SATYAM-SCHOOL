@@ -8,21 +8,10 @@ import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
 import '../../../../core/utils/teacher_classes.dart';
 import '../../../../core/utils/xlsx_reader.dart';
+import '../../../../core/utils/syllabus_status.dart';
 
 const _statuses = ['Not Started', 'In Progress', 'Completed'];
 const _editWindow = Duration(hours: 24);
-
-Color _statusColor(String status) => switch (status) {
-  'Completed'   => AppColors.green,
-  'In Progress' => AppColors.amber,
-  _             => AppColors.textHint,
-};
-
-Color _statusBg(String status) => switch (status) {
-  'Completed'   => AppColors.greenLight,
-  'In Progress' => AppColors.amberLight,
-  _             => AppColors.border,
-};
 
 // Small radial "% complete" ring used on each subject card - a plain
 // CircularProgressIndicator with the percentage centered on top of it.
@@ -1448,8 +1437,8 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                   opacity: (owned && derived == null) ? 1 : .55,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(color: _statusBg(status), borderRadius: BorderRadius.circular(8)),
-                    child: Text(status, style: TextStyle(color: _statusColor(status), fontSize: 11, fontWeight: FontWeight.w700)),
+                    decoration: BoxDecoration(color: syllabusStatusBg(status), borderRadius: BorderRadius.circular(8)),
+                    child: Text(status, style: TextStyle(color: syllabusStatusColor(status), fontSize: 11, fontWeight: FontWeight.w700)),
                   ),
                 ),
               ),
@@ -1508,9 +1497,9 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
                     opacity: owned ? 1 : .55,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(color: _statusBg(s['status'] ?? 'Not Started'), borderRadius: BorderRadius.circular(6)),
+                      decoration: BoxDecoration(color: syllabusStatusBg(s['status'] ?? 'Not Started'), borderRadius: BorderRadius.circular(6)),
                       child: Text(s['status'] ?? 'Not Started',
-                        style: TextStyle(color: _statusColor(s['status'] ?? 'Not Started'), fontSize: 10, fontWeight: FontWeight.w700)),
+                        style: TextStyle(color: syllabusStatusColor(s['status'] ?? 'Not Started'), fontSize: 10, fontWeight: FontWeight.w700)),
                     ),
                   ),
                 ),

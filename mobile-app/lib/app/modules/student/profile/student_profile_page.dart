@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
@@ -94,7 +95,23 @@ class StudentProfilePage extends StatelessWidget {
               child: ElevatedButton.icon(
                 icon: const Icon(Icons.logout),
                 label: const Text('Sign Out'),
-                onPressed: () => AuthService.to.signOut(),
+                // Confirm first, matching student_home.dart's sign-out
+                // button - this page used to sign out on a single tap with
+                // no confirmation (inconsistent UX flagged by the 2026-11
+                // full-system audit).
+                onPressed: () async {
+                  final confirmed = await Get.dialog<bool>(AlertDialog(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    title: const Text('Sign Out', style: TextStyle(fontWeight: FontWeight.w700)),
+                    content: const Text('Are you sure?'),
+                    actions: [
+                      TextButton(onPressed: () => Get.back(result: false), child: const Text('Cancel')),
+                      TextButton(onPressed: () => Get.back(result: true),
+                        child: const Text('Sign Out', style: TextStyle(color: AppColors.red, fontWeight: FontWeight.w700))),
+                    ],
+                  ));
+                  if (confirmed == true) AuthService.to.signOut();
+                },
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
               ),
             ),

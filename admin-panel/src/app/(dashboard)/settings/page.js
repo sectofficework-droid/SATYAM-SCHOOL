@@ -1733,14 +1733,21 @@ function TimetableTab() {
     // not just the selected one - a schedule name change should stay
     // consistent everywhere) before the group names they reference stop
     // existing in period_defs.
-    for (const [currentName, originalName] of Object.entries(groupRenames)) {
-      if (currentName !== originalName) {
-        await supabase.from("timetables").update({ day_group: currentName }).eq("day_group", originalName);
-      }
-    }
-    for (const originalName of groupDeletes) {
-      await supabase.from("timetables").delete().eq("day_group", originalName);
-    }
+    // Each rename/delete targets a different day_group value - independent
+    // writes, so run them in parallel instead of one round trip at a time
+    // (N+1 pattern flagged by the 2026-11 full-system audit).
+    await Promise.all(
+      Object.entries(groupRenames)
+        .filter(([currentName, originalName]) => currentName !== originalName)
+        .map(([currentName, originalName]) =>
+          supabase.from("timetables").update({ day_group: currentName }).eq("day_group", originalName)
+        )
+    );
+    await Promise.all(
+      Array.from(groupDeletes).map((originalName) =>
+        supabase.from("timetables").delete().eq("day_group", originalName)
+      )
+    );
     await savePeriodDefs(periodsForm);
     await saveDayGroupWeekdays(weekdaysForm);
     setPeriodDefsLocal(periodsForm);

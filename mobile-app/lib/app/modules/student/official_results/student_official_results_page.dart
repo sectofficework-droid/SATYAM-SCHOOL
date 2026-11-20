@@ -42,20 +42,26 @@ class _StudentOfficialResultsPageState extends State<StudentOfficialResultsPage>
     final exams    = await SupabaseService.fetchOfficialExams();
     final subjects = className.isNotEmpty ? await SupabaseService.fetchClassSubjectsDetailed(className) : <Map<String, dynamic>>[];
 
-    final results = <Map<String, dynamic>>[];
-    for (final exam in exams) {
-      if (_isLocked(exam)) { results.add({...exam, 'locked': true, 'subjectRows': <Map<String, dynamic>>[]}); continue; }
-
+    // Locked exams need no fetch at all; unlocked exams each need 2 RPC
+    // calls that are independent across exams AND independent of each
+    // other within one exam - run every one of those concurrently instead
+    // of one at a time (N+1 pattern flagged by the 2026-11 full-system
+    // audit), then assemble in the original exam order.
+    final unlockedResults = await Future.wait(exams.where((exam) => !_isLocked(exam)).map((exam) async {
       final examId = exam['id'] as String;
       // Own marks only, across every subject - fetch_official_exam_marks_for_student
       // resolves this server-side rather than fetching the whole class and
       // filtering client-side (see REQ-SEC-002 Category 3 Group C notes).
-      final marksRows = sessionToken != null
-          ? await SupabaseService.fetchOfficialExamMarksForStudent(studentId, sessionToken, examId)
-          : <Map<String, dynamic>>[];
-      final maxBySubject = className.isNotEmpty
-          ? await SupabaseService.fetchExamSubjectConfigForClass(examId, className)
-          : <String, double>{};
+      final results = await Future.wait([
+        sessionToken != null
+            ? SupabaseService.fetchOfficialExamMarksForStudent(studentId, sessionToken, examId)
+            : Future.value(<Map<String, dynamic>>[]),
+        className.isNotEmpty
+            ? SupabaseService.fetchExamSubjectConfigForClass(examId, className)
+            : Future.value(<String, double>{}),
+      ]);
+      final marksRows = results[0] as List<Map<String, dynamic>>;
+      final maxBySubject = results[1] as Map<String, double>;
 
       final myMarks = <String, double>{};
       for (final m in marksRows) {
@@ -78,15 +84,22 @@ class _StudentOfficialResultsPageState extends State<StudentOfficialResultsPage>
             return {'subject': subject, 'obtained': obtained, 'max': max};
           }).toList();
 
-      results.add({
+      return {
         ...exam,
         'locked': false,
         'subjectRows': subjectRows,
         'totalObtained': totalObtained,
         'totalMax': totalMax,
         'anyMarked': subjectRows.any((r) => r['obtained'] != null),
-      });
-    }
+      };
+    }));
+
+    final unlockedById = {for (final r in unlockedResults) r['id'] as String: r};
+    final results = exams
+        .map((exam) => _isLocked(exam)
+            ? {...exam, 'locked': true, 'subjectRows': <Map<String, dynamic>>[]}
+            : unlockedById[exam['id'] as String]!)
+        .toList();
     if (mounted) setState(() { _results = results; _loading = false; });
     } catch (e) {
       if (mounted) setState(() { _loading = false; _error = 'Failed to load results.'; });

@@ -3,18 +3,7 @@ import 'package:shimmer/shimmer.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
-
-Color _statusColor(String status) => switch (status) {
-  'Completed'   => AppColors.green,
-  'In Progress' => AppColors.amber,
-  _             => AppColors.textHint,
-};
-
-Color _statusBg(String status) => switch (status) {
-  'Completed'   => AppColors.greenLight,
-  'In Progress' => AppColors.amberLight,
-  _             => AppColors.border,
-};
+import '../../../../core/utils/syllabus_status.dart';
 
 // Small radial "% complete" ring - same widget as the teacher app's subject
 // grid, kept as its own copy here since the two pages don't share a common
@@ -310,8 +299,8 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: AppColors.text))),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(color: _statusBg(status), borderRadius: BorderRadius.circular(8)),
-            child: Text(status, style: TextStyle(color: _statusColor(status), fontSize: 11, fontWeight: FontWeight.w700)),
+            decoration: BoxDecoration(color: syllabusStatusBg(status), borderRadius: BorderRadius.circular(8)),
+            child: Text(status, style: TextStyle(color: syllabusStatusColor(status), fontSize: 11, fontWeight: FontWeight.w700)),
           ),
         ]),
         if (subtopics.isNotEmpty) ...[
@@ -324,9 +313,9 @@ class _StudentSyllabusPageState extends State<StudentSyllabusPage> {
               Expanded(child: Text(s['name'] ?? '', style: const TextStyle(fontSize: 12.5, color: AppColors.textLight))),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(color: _statusBg(s['status'] ?? 'Not Started'), borderRadius: BorderRadius.circular(6)),
+                decoration: BoxDecoration(color: syllabusStatusBg(s['status'] ?? 'Not Started'), borderRadius: BorderRadius.circular(6)),
                 child: Text(s['status'] ?? 'Not Started',
-                  style: TextStyle(color: _statusColor(s['status'] ?? 'Not Started'), fontSize: 10, fontWeight: FontWeight.w700)),
+                  style: TextStyle(color: syllabusStatusColor(s['status'] ?? 'Not Started'), fontSize: 10, fontWeight: FontWeight.w700)),
               ),
             ]),
           )),

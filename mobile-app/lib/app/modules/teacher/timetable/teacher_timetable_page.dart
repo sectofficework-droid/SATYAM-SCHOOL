@@ -20,36 +20,45 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
   Map<String, dynamic>? _dayGroupWeekdays;
   Map<String, List<Map<String, dynamic>>> _rowsByGroupSlot = {};
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-10-04): no try/catch at all - any network blip left
+  // this spinning forever with no error/retry shown. Same gap as the
+  // student flavor of this page already had fixed; carried over here
+  // during the 2026-11 full-system audit's duplication pass.
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final profile      = AuthService.to.profile.value ?? {};
-    final teacherName  = profile['name'] as String? ?? '';
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile      = AuthService.to.profile.value ?? {};
+      final teacherName  = profile['name'] as String? ?? '';
 
-    final year = await SupabaseService.fetchCurrentAcademicYearLabel();
-    final defs = await SupabaseService.fetchPeriodDefs();
-    final weekdaysMap = await SupabaseService.fetchDayGroupWeekdays();
-    final rows = (year != null && teacherName.isNotEmpty)
-        ? await SupabaseService.fetchTimetableForTeacher(year, teacherName)
-        : <Map<String, dynamic>>[];
+      final year = await SupabaseService.fetchCurrentAcademicYearLabel();
+      final defs = await SupabaseService.fetchPeriodDefs();
+      final weekdaysMap = await SupabaseService.fetchDayGroupWeekdays();
+      final rows = (year != null && teacherName.isNotEmpty)
+          ? await SupabaseService.fetchTimetableForTeacher(year, teacherName)
+          : <Map<String, dynamic>>[];
 
-    // A merged teacher genuinely has two rows for the same group+slot (one
-    // per merged class) - appending (not overwriting) so both show up
-    // instead of one silently replacing the other.
-    final map = <String, List<Map<String, dynamic>>>{};
-    for (final r in rows) {
-      map.putIfAbsent('${r['day_group']}|${r['slot_id']}', () => []).add(r);
-    }
-    if (mounted) {
-      setState(() {
-      _periodDefs = defs;
-      _dayGroupWeekdays = weekdaysMap;
-      _rowsByGroupSlot = map;
-      _loading = false;
-    });
+      // A merged teacher genuinely has two rows for the same group+slot (one
+      // per merged class) - appending (not overwriting) so both show up
+      // instead of one silently replacing the other.
+      final map = <String, List<Map<String, dynamic>>>{};
+      for (final r in rows) {
+        map.putIfAbsent('${r['day_group']}|${r['slot_id']}', () => []).add(r);
+      }
+      if (mounted) {
+        setState(() {
+          _periodDefs = defs;
+          _dayGroupWeekdays = weekdaysMap;
+          _rowsByGroupSlot = map;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load timetable.'; });
     }
   }
 
@@ -57,6 +66,8 @@ class _TeacherTimetablePageState extends State<TeacherTimetablePage> {
   Widget build(BuildContext context) {
     final body = _loading
         ? const Center(child: CircularProgressIndicator(color: AppColors.navy))
+        : _error != null
+            ? Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)))
         : TimetableView(
             periodDefs: _periodDefs,
             dayGroupWeekdays: _dayGroupWeekdays,
