@@ -111,6 +111,15 @@ class _EnterPunchCodePageState extends State<EnterPunchCodePage> {
         });
         return;
       }
+      if (result['status'] == 'too_soon_after_checkout') {
+        setState(() {
+          _busy = false;
+          _stage = _Stage.error;
+          _employeeName = result['employeeName'] as String;
+          _message = '$_employeeName just checked out. Please wait a couple of minutes before checking in again.';
+        });
+        return;
+      }
       setState(() {
         _stage = _Stage.success;
         _employeeName = result['employeeName'] as String;

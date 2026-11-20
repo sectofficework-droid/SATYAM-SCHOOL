@@ -585,16 +585,21 @@ class _FacePunchPageState extends State<FacePunchPage> with WidgetsBindingObserv
         const Duration(seconds: 10),
         onTimeout: () => throw TimeoutException('recordFacePunch timed out'),
       );
-      final time = result['time'] as DateTime;
+      final time = result['time'] as DateTime?;
       if (result['status'] == 'already_in') {
         await controller.resumePreview();
-        _showError('$bestName is already checked in since ${DateFormat('h:mm a').format(time)}.'
+        _showError('$bestName is already checked in since ${DateFormat('h:mm a').format(time!)}.'
             ' Check out from your app first.', offerCode: false);
+        return;
+      }
+      if (result['status'] == 'too_soon_after_checkout') {
+        await controller.resumePreview();
+        _showError('$bestName just checked out. Please wait a couple of minutes before checking in again.', offerCode: false);
         return;
       }
       final punctuality = punctualityLabel(result['isLate'] as bool?, result['lateMinutes'] as int?);
       final suffix = punctuality != null ? ' - $punctuality' : '';
-      await NativeUiService.showToast('$bestName checked in at ${DateFormat('h:mm a').format(time)}$suffix');
+      await NativeUiService.showToast('$bestName checked in at ${DateFormat('h:mm a').format(time!)}$suffix');
       if (mounted) Get.back();
     } catch (e, st) {
       trace.log('POLL', 'tick $_tick FAILED after ${attempt.elapsedMilliseconds}ms: $e');

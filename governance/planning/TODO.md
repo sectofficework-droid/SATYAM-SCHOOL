@@ -4895,6 +4895,46 @@ pattern), it is noted as already-known and not re-filed as new.
       line. `npm run lint` clean. **NOT VERIFIED against live data** - no
       currently-overdue task existed to visually confirm the card
       renders correctly.
+- [x] **REQ-FEAT-029 — Minimum-interval cooldown between attendance punches,
+      independent of the open-shift check. CODED 2026-11-20.** A suggested
+      feature from the audit: before this, a second check-in was only
+      blocked by "already has an open shift" - an accidental check-out
+      immediately followed by a check-in (a mis-tap sequence on the kiosk,
+      or a fumbled QR/code redemption right after checking out) created a
+      second valid shift with no guard at all. Added a shared
+      `employee_punch_cooldown_active(p_employee_id, p_check_in_at)`
+      SECURITY DEFINER helper (true if the employee's most recent
+      `check_out_at` is less than 2 minutes before the new check-in), wired
+      into all 3 check-in RPCs right after their existing open-shift check,
+      before the `INSERT INTO employee_shifts`: `record_face_punch`,
+      `redeem_punch_code`, `redeem_qr_session` - each returns a new
+      `'too_soon_after_checkout'` status on its own existing column
+      signature (matching the existing `'already_in'` pattern) rather than
+      raising an exception, so the three callers can show a clear message
+      instead of a raw error. Built on the current live definitions of all
+      three functions (re-fetched fresh before editing, confirming
+      `redeem_qr_session`'s REQ-SEC-026 session-token param and
+      `redeem_punch_code`'s REQ-SEC-031 `pg_sleep` tar-pit were both still
+      in place) - `CREATE OR REPLACE` keeps the exact same signatures, so
+      no old-overload cleanup was needed (verified via
+      `pg_get_function_arguments` after applying). 2 minutes was picked as
+      a reasonable placeholder for "clearly a mis-tap, not a deliberate
+      re-punch" - not discussed with the user, revisit if it proves too
+      short/long in practice. Dart side: `supabase_service.dart`'s 3
+      wrapper functions (`recordFacePunch`, `redeemPunchCode`,
+      `redeemQrSession`) now treat their check-in-time field as nullable
+      (null only on the new status, since no shift was actually recorded)
+      instead of force-parsing it; the 3 UI call sites
+      (`face_punch_page.dart`, `enter_punch_code_page.dart`,
+      `scan_attendance_qr_page.dart`) each gained a branch for
+      `'too_soon_after_checkout'` showing "just checked out - wait a
+      couple of minutes" instead of falling through to the success
+      branch. `flutter analyze` clean on all 4 touched files. Tracked copy:
+      `mobile-app/SUPABASE_REQ_FEAT_029_PUNCH_COOLDOWN.sql`. **NOT
+      exercised on a real device** - no way to trigger an actual
+      check-out-then-immediate-check-in in this session to visually
+      confirm the new message renders; logic verified by reading the
+      applied SQL and the Dart branches only.
 - `governance/BOOTSTRAP.md`'s checkpoint history has drifted well past its
   own "current + at most 1 prior, older collapses to a one-line pointer"
   size-discipline rule — 10+ stacked "Prior —" sessions back to

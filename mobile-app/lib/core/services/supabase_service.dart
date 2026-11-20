@@ -439,9 +439,11 @@ class SupabaseService {
   // already behind their own login and doesn't need a face-scan. Goes
   // through the record_face_punch RPC (not a direct table write) so the
   // "one open shift at a time" rule is enforced server-side, where a
-  // tampered kiosk APK can't bypass it - status comes back 'checked_in' or
-  // 'already_in' so the caller can show a block message instead of a
-  // silent no-op.
+  // tampered kiosk APK can't bypass it - status comes back 'checked_in',
+  // 'already_in', or 'too_soon_after_checkout' (REQ-FEAT-029: a minimum
+  // gap after a check-out, independent of the open-shift check, to catch
+  // an accidental double-tap) so the caller can show a block message
+  // instead of a silent no-op.
   static Future<Map<String, dynamic>> recordFacePunch(String employeeId, String date) async {
     final now = DateTime.now();
     final res = await client.rpc('record_face_punch', params: {
@@ -452,9 +454,12 @@ class SupabaseService {
       'p_check_in_at': now.toUtc().toIso8601String(),
     }) as List;
     final row = _firstRow(res, 'record_face_punch');
+    final checkInAt = row['o_check_in_at'] as String?;
     return {
       'status': row['o_status'] as String,
-      'time':   DateTime.parse(row['o_check_in_at'] as String).toLocal(),
+      // Null on 'too_soon_after_checkout' (REQ-FEAT-029) - no shift was
+      // actually recorded, so there's no check-in time to show.
+      'time':   checkInAt != null ? DateTime.parse(checkInAt).toLocal() : null,
       // Only meaningful when status is 'checked_in' - null on 'already_in'
       // and null on any shift after the day's first (see
       // SUPABASE_KIOSK_SETTINGS.sql - lateness is only judged on arrival).
@@ -548,10 +553,12 @@ class SupabaseService {
       'p_check_in_at': checkInAt.toUtc().toIso8601String(),
     }) as List;
     final row = _firstRow(res, 'redeem_punch_code');
+    final checkInAtStr = row['o_check_in_at'] as String?;
     return {
       'employeeName': row['o_employee_name'] as String? ?? 'Staff',
       'status':       row['o_status'] as String,
-      'checkInAt':    DateTime.parse(row['o_check_in_at'] as String).toLocal(),
+      // Null on 'too_soon_after_checkout' (REQ-FEAT-029) - see recordFacePunch above.
+      'checkInAt':    checkInAtStr != null ? DateTime.parse(checkInAtStr).toLocal() : null,
       'isLate':       row['o_is_late'] as bool?,
       'lateMinutes':  row['o_late_minutes'] as int?,
     };
@@ -601,10 +608,12 @@ class SupabaseService {
       'p_check_in_at': checkInAt.toUtc().toIso8601String(),
     }) as List;
     final row = _firstRow(res, 'redeem_qr_session');
+    final checkInAtStr = row['o_check_in_at'] as String?;
     return {
       'status':       row['o_status'] as String,
       'employeeName': row['o_employee_name'] as String? ?? 'Staff',
-      'checkInAt':    DateTime.parse(row['o_check_in_at'] as String).toLocal(),
+      // Null on 'too_soon_after_checkout' (REQ-FEAT-029) - see recordFacePunch above.
+      'checkInAt':    checkInAtStr != null ? DateTime.parse(checkInAtStr).toLocal() : null,
       'isLate':       row['o_is_late'] as bool?,
       'lateMinutes':  row['o_late_minutes'] as int?,
     };

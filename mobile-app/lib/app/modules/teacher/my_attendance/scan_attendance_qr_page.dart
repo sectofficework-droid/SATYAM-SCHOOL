@@ -63,6 +63,13 @@ class _ScanAttendanceQrPageState extends State<ScanAttendanceQrPage> {
         });
         return;
       }
+      if (result['status'] == 'too_soon_after_checkout') {
+        setState(() {
+          _stage = _Stage.error;
+          _message = 'You just checked out. Please wait a couple of minutes before checking in again.';
+        });
+        return;
+      }
       setState(() {
         _stage = _Stage.success;
         _employeeName = result['employeeName'] as String;
