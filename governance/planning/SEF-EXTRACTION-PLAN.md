@@ -11,7 +11,46 @@
 
 ## Status
 
-**Scaffold built and verified 2026-11-18**, same day as the request. User
+**`sef/*` removed from SATYAM-SCHOOL 2026-11-20**, ahead of the standalone
+app being live. User explicitly asked to remove it now ("remove sef out of
+satyam school because that is seperate standalone will be created"), and
+confirmed via `AskUserQuestion` that this means SEF users have **no working
+app at all** until the standalone `SEF-COACHING` project is provisioned and
+deployed (it has no real Supabase/S3/GitHub/Vercel infra yet — see below) —
+chose "remove now anyway" over waiting. This supersedes the original plan's
+sequencing (removal was meant to wait until the new project was verified
+working end-to-end); recorded here since it's a live change in plan, not a
+correction of a mistake.
+
+**What was removed from this repo (code only, nothing in Supabase/S3
+touched):**
+- All 11 pages under `admin-panel/src/app/(dashboard)/sef/*` (dashboard,
+  student, fees, inventory, employee, notice, report, question-papers,
+  tasks, syllabus, super-admin, settings).
+- All 10 `sef*Service.js` files in `admin-panel/src/lib/`.
+- The 3 now-unused schema files in `admin-panel/database/` (`sef_schema.sql`,
+  `sef_settings_schema.sql`, `sef_phase2_schema.sql`) — the standalone
+  project has its own `database/schema.sql` already.
+- The School/SEF org switcher entirely (`activeOrg`/`setActiveOrg` in
+  `store.js`, the switcher UI + SEF page titles in `Header.jsx`, the SEF nav
+  items + per-org filtering in `Sidebar.jsx`) — with only one org left,
+  the concept had nothing left to switch between.
+- `sef-students/`/`sef-employees/` dropped from the allowed S3 key prefixes
+  in all 3 `api/s3/*` routes — any previously-uploaded SEF file under those
+  prefixes is now unreachable through this app's upload/view routes (the
+  S3 objects themselves were not deleted).
+
+**Deliberately NOT touched:** the live `sef_*` Supabase tables (still
+have their 2026-11-18 row counts — mostly empty, `sef_profile`/`sef_rules`/
+`sef_fee_reminder_template` hold seed rows) and the SEF-prefixed S3
+objects — dropping those is a separate, more destructive step with its own
+rollback considerations, not implied by "remove it from the code."
+Revert path if needed: `git log` on this repo for the commit(s) around
+2026-11-20 restores the deleted files; the DB/S3 data was never touched.
+`npm run lint` clean; dev server confirmed `/login`, `/dashboard`,
+`/settings` still compile and serve 200, `/sef/dashboard` now 404s.
+
+**Prior — scaffold built and verified 2026-11-18**, same day as the request. User
 said "make the default calls and proceed" + "make separate possible so
 that when we will work on it we have low workload for setup" — read as
 approval to build the low-risk, reversible part (a new, separate local
@@ -54,10 +93,10 @@ this session has the credentials or tooling to provision itself — see
 "What I can't provision myself" below, unchanged). Once those exist,
 `SETUP.md` is the complete remaining checklist.
 
-**Not yet done, deliberately:** the old `sef/*` code has **not** been
-removed from the SATYAM-SCHOOL repo — that only happens after the new
-project is confirmed working end-to-end against real infrastructure, per
-the original plan below.
+**Update 2026-11-20:** the old `sef/*` code *has* now been removed from the
+SATYAM-SCHOOL repo — see the status note above. The original sequencing
+below (wait for the standalone app first) was superseded by an explicit
+user decision; kept here as the historical plan, not current status.
 
 ## Decisions recorded (2026-11-18)
 
@@ -202,10 +241,9 @@ once the new one is verified working — I can do once they're provisioned.
       Supabase connection has been exercised (none exists yet). Real
       testing happens once phase 2 is unblocked.
 - [ ] RELEASE / OPERATE — not applicable yet.
-- [ ] **Old `sef/*` removal from SATYAM-SCHOOL** — not started, and
-      shouldn't be until the new project is confirmed working end-to-end
-      against real infrastructure. Separate step, needs its own explicit
-      go-ahead when the time comes (it's a deletion from a live repo).
+- [x] **Old `sef/*` removal from SATYAM-SCHOOL** — done 2026-11-20, on
+      explicit user go-ahead, ahead of the standalone app being live (see
+      status note at top).
 
 **Next step:** user provisions Supabase project + S3 bucket + GitHub repo
 (`SETUP.md` has the exact steps) and hands over credentials; this session

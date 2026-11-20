@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Menu, Bell, ChevronDown, Search, LogOut, TimerReset, AlertTriangle, Check } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import useStore from "@/lib/store";
 import supabase from "@/lib/supabase";
 import { useIdleTimer } from "@/lib/idleTimerContext";
@@ -40,18 +40,6 @@ const pageTitles = {
   "/super-admin": { title: "Super Admin", sub: "Privileged administrative actions & overrides" },
   "/diagnostics": { title: "Diagnostics", sub: "System health & environment checks" },
   "/settings": { title: "Settings", sub: "System configuration & preferences" },
-  "/sef/dashboard": { title: "SEF Dashboard", sub: "Satyam Education Foundation overview" },
-  "/sef/student": { title: "SEF Students", sub: "Tuition student records" },
-  "/sef/fees": { title: "SEF Fees", sub: "Tuition fee collection" },
-  "/sef/inventory": { title: "SEF Inventory", sub: "Stock items" },
-  "/sef/employee": { title: "SEF Employee", sub: "Tutors and staff records" },
-  "/sef/notice": { title: "SEF Notice Board", sub: "Post, pin & archive notices" },
-  "/sef/report": { title: "SEF Reports", sub: "Student, fee, employee & inventory reports" },
-  "/sef/question-papers": { title: "SEF Question Papers", sub: "Question bank & paper generator" },
-  "/sef/tasks": { title: "SEF Task Management", sub: "Assign and track staff tasks" },
-  "/sef/syllabus": { title: "SEF Syllabus", sub: "Chapter & subtopic progress" },
-  "/sef/super-admin": { title: "SEF Super Admin", sub: "Privileged bulk tools" },
-  "/sef/settings": { title: "SEF Settings", sub: "Satyam Education Foundation configuration" },
 };
 
 const ROLE_LABELS = { management: "Management Head", senior_admin: "Senior Admin", normal_admin: "Admin" };
@@ -64,12 +52,9 @@ function formatMMSS(totalSeconds) {
 
 export default function Header() {
   const pathname = usePathname();
-  const router = useRouter();
   const toggleSidebar = useStore((state) => state.toggleSidebar);
   const authUser = useStore((state) => state.authUser);
   const clearAuthUser = useStore((state) => state.clearAuthUser);
-  const activeOrg = useStore((state) => state.activeOrg);
-  const setActiveOrg = useStore((state) => state.setActiveOrg);
   const idleSecondsLeft = useIdleTimer();
 
   const page =
@@ -135,12 +120,6 @@ export default function Header() {
     window.location.replace("/login");
   }
 
-  function switchOrg(org) {
-    if (org === activeOrg) return;
-    setActiveOrg(org);
-    router.push(org === "sef" ? "/sef/dashboard" : "/dashboard");
-  }
-
   return (
     <header className="h-16 bg-white border-b border-gray-100 flex items-center px-4 lg:px-6 gap-4 flex-shrink-0 shadow-sm">
 
@@ -169,21 +148,6 @@ export default function Header() {
           <Search className="w-3.5 h-3.5 flex-shrink-0" />
           <span className="text-xs">Search...</span>
         </button>
-
-        {/* Org switcher — School / SEF */}
-        <div className="hidden sm:flex items-center bg-gray-100 rounded-lg p-1 gap-1">
-          {["school", "sef"].map((org) => (
-            <button
-              key={org}
-              onClick={() => switchOrg(org)}
-              className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-colors ${
-                activeOrg === org ? "bg-school-navy text-white shadow" : "text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {org === "school" ? "School" : "SEF"}
-            </button>
-          ))}
-        </div>
 
         {/* Idle auto-logout countdown — resets whenever there's activity */}
         <div

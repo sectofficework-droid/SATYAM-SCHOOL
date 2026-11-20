@@ -6,7 +6,7 @@ import { withDiagnostics } from "@/lib/apiDiagnostics";
 import { getAdminClient, requireAdminSession } from "@/lib/apiAuth";
 
 function isAllowedKey(key) {
-  return typeof key === "string" && (key.startsWith("students/") || key.startsWith("employees/") || key.startsWith("app/") || key.startsWith("gr-book/") || key.startsWith("sef-students/") || key.startsWith("sef-employees/"));
+  return typeof key === "string" && (key.startsWith("students/") || key.startsWith("employees/") || key.startsWith("app/") || key.startsWith("gr-book/"));
 }
 
 // REQ-SEC-013: had zero authentication. No mobile caller (grepped

@@ -23,7 +23,6 @@ import {
   MessageSquareText,
   BookMarked,
   BookOpen,
-  BookOpenCheck,
   Bug,
   Landmark,
 } from "lucide-react";
@@ -31,54 +30,33 @@ import { cn } from "@/lib/utils";
 import useStore from "@/lib/store";
 import supabase from "@/lib/supabase";
 
-// orgs: which org(s) this item applies to.
 const navItems = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, orgs: ["school"] },
-  { href: "/student", label: "Student", icon: GraduationCap, orgs: ["school"] },
-  { href: "/fees", label: "Fees", icon: IndianRupee, orgs: ["school"] },
-  { href: "/report", label: "Report", icon: BarChart3, orgs: ["school"] },
-  { href: "/government-entry", label: "Government Entry", icon: Landmark, orgs: ["school"] },
-  { href: "/documents", label: "Documents", icon: FolderOpen, orgs: ["school"] },
-  { href: "/tasks", label: "Task Management", icon: ClipboardList, orgs: ["school"] },
-  { href: "/gr-book", label: "GR Book", icon: BookMarked, orgs: ["school"] },
-  { href: "/attendance", label: "Attendance", icon: CalendarCheck, orgs: ["school"] },
-  { href: "/syllabus", label: "Syllabus", icon: BookOpen, orgs: ["school"] },
-  { href: "/employee", label: "Employee", icon: Users, orgs: ["school"] },
-  { href: "/inventory", label: "Inventory Management", icon: Package, orgs: ["school"] },
-  { href: "/expenses",  label: "Expenses",             icon: TrendingDown, orgs: ["school"] },
-  { href: "/notice",    label: "Notice Board",         icon: Bell, orgs: ["school"] },
-  { href: "/queries",   label: "Queries & Suggestions",icon: MessageSquareText, orgs: ["school"] },
-  { href: "/question-papers", label: "Question Bank", icon: FileText, orgs: ["school"] },
-  { href: "/super-admin", label: "Super Admin", icon: ShieldCheck, orgs: ["school"] },
-  { href: "/diagnostics", label: "Diagnostics", icon: Bug, orgs: ["school"] },
-
-  // SEF (Satyam Education Foundation)
-  { href: "/sef/dashboard", label: "Dashboard", icon: LayoutDashboard, orgs: ["sef"] },
-  { href: "/sef/student", label: "Student", icon: GraduationCap, orgs: ["sef"] },
-  { href: "/sef/fees", label: "Fees", icon: IndianRupee, orgs: ["sef"] },
-  { href: "/sef/inventory", label: "Inventory Management", icon: Package, orgs: ["sef"] },
-  { href: "/sef/employee", label: "Employee", icon: Users, orgs: ["sef"] },
-  { href: "/sef/notice", label: "Notice Board", icon: Bell, orgs: ["sef"] },
-  { href: "/sef/report", label: "Report", icon: BarChart3, orgs: ["sef"] },
-  { href: "/sef/question-papers", label: "Question Papers", icon: FileText, orgs: ["sef"] },
-  { href: "/sef/tasks", label: "Task Management", icon: ClipboardList, orgs: ["sef"] },
-  { href: "/sef/syllabus", label: "Syllabus", icon: BookOpen, orgs: ["sef"] },
-  { href: "/sef/super-admin", label: "Super Admin", icon: ShieldCheck, orgs: ["sef"] },
-
-  // Always last, for either org - separate hrefs since each org has its own
-  // Settings page/data (school's has 12 tabs, SEF's has 7 much simpler ones).
-  { href: "/settings", label: "Setting", icon: Settings, orgs: ["school"] },
-  { href: "/sef/settings", label: "Setting", icon: Settings, orgs: ["sef"] },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/student", label: "Student", icon: GraduationCap },
+  { href: "/fees", label: "Fees", icon: IndianRupee },
+  { href: "/report", label: "Report", icon: BarChart3 },
+  { href: "/government-entry", label: "Government Entry", icon: Landmark },
+  { href: "/documents", label: "Documents", icon: FolderOpen },
+  { href: "/tasks", label: "Task Management", icon: ClipboardList },
+  { href: "/gr-book", label: "GR Book", icon: BookMarked },
+  { href: "/attendance", label: "Attendance", icon: CalendarCheck },
+  { href: "/syllabus", label: "Syllabus", icon: BookOpen },
+  { href: "/employee", label: "Employee", icon: Users },
+  { href: "/inventory", label: "Inventory Management", icon: Package },
+  { href: "/expenses",  label: "Expenses",             icon: TrendingDown },
+  { href: "/notice",    label: "Notice Board",         icon: Bell },
+  { href: "/queries",   label: "Queries & Suggestions",icon: MessageSquareText },
+  { href: "/question-papers", label: "Question Bank", icon: FileText },
+  { href: "/super-admin", label: "Super Admin", icon: ShieldCheck },
+  { href: "/diagnostics", label: "Diagnostics", icon: Bug },
+  { href: "/settings", label: "Setting", icon: Settings },
 ];
 
-const ORG_BRANDING = {
-  school: { name: "Satyam Stars", sub: "International School", icon: GraduationCap },
-  sef:    { name: "SEF",          sub: "Satyam Education Foundation", icon: BookOpenCheck },
-};
+const BRAND = { name: "Satyam Stars", sub: "International School", icon: GraduationCap };
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { sidebarOpen, closeSidebar, authUser: user, clearAuthUser, activeOrg } = useStore();
+  const { sidebarOpen, closeSidebar, authUser: user, clearAuthUser } = useStore();
 
   // Close sidebar on route change (mobile)
   useEffect(() => {
@@ -98,9 +76,9 @@ export default function Sidebar() {
     window.location.replace("/login");
   }
 
-  const brand = ORG_BRANDING[activeOrg];
+  const brand = BRAND;
   const BrandIcon = brand.icon;
-  const visibleNavItems = navItems.filter((item) => item.orgs.includes(activeOrg));
+  const visibleNavItems = navItems;
 
   return (
     <>

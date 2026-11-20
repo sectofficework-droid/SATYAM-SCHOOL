@@ -13,13 +13,8 @@ import authedFetch from "@/lib/authedFetch";
 // see src/lib/authedFetch.js) attaches the caller's own session token so
 // the route can re-verify who's asking instead of trusting the client.
 
-// Standalone file (not defined inside settings/page.js) so it can be
-// imported from both the school's Settings and SEF's Settings
-// (sef/settings/page.js) without one page.js importing another - Next.js's
-// dev compiler hangs indefinitely on a page.js-to-page.js import, so this
-// has to live in its own module. Manages admin_users, the same shared
-// admin-panel login for both orgs (decided in SEF Phase 1), so the data is
-// identical either place this is rendered.
+// Standalone file (not defined inside settings/page.js), imported from
+// there. Manages admin_users, the shared admin-panel login table.
 
 function FieldError({ msg }) {
   if (!msg) return null;

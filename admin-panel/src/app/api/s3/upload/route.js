@@ -8,7 +8,7 @@ import { getAdminClient, requireAdminOrMobileSession } from "@/lib/apiAuth";
 function isAllowedKey(key) {
   return (
     typeof key === "string" &&
-    (key.startsWith("students/") || key.startsWith("employees/") || key.startsWith("gr-book/") || key.startsWith("sef-students/") || key.startsWith("sef-employees/") || key.startsWith("question-bank/"))
+    (key.startsWith("students/") || key.startsWith("employees/") || key.startsWith("gr-book/") || key.startsWith("question-bank/"))
   );
 }
 
