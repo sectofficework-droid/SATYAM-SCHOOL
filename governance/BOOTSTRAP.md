@@ -450,7 +450,61 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-11-17 — REQ-FEAT-025 (recurring reminder/call-back
+**Current — Session 2026-11-20 — SEF removed from the SATYAM-SCHOOL repo
+(MAJOR per J12B), committed + pushed.** Session opened on a prior,
+unlogged conversation's loose end: user asked to "analyze" a mention of
+renaming "ssis school" — resolved as stale `D:\Project\SSIS SCHOOL\...`
+path references (one live hardcoded fallback path in
+`api/documents/sync-collection-report/route.js`, one comment in
+`government-entry/page.js`, one doc header in
+`documentation\PROJECT_CONTEXT.md`) left over from the project folder's
+earlier rename to `D:\Project\SECT SYSTEM\...` — analysis only, nothing
+changed, user hasn't acted on the fix yet. User then said "remove sef out
+of satyam school because that is seperate standalone will be created."
+Per `planning\SEF-EXTRACTION-PLAN.md` (scaffolded 2026-11-18 as `SEF-
+COACHING`, a separate project), removal was originally meant to wait until
+that standalone app was confirmed working end-to-end against real
+infrastructure — it still has no real Supabase project, S3 bucket,
+GitHub repo, or Vercel deployment. Asked via `AskUserQuestion` whether to
+wait or remove now anyway, given that removing now means SEF access
+disappears entirely from this app until the standalone project is
+provisioned; user chose **"remove now anyway."**
+
+**Removed:** all 11 `sef/*` pages (`admin-panel/src/app/(dashboard)/sef/*`
+— dashboard, student, fees, inventory, employee, notice, report,
+question-papers, tasks, syllabus, super-admin, settings), all 10
+`sef*Service.js` files in `src/lib/`, and the 3 now-orphaned
+`sef_*.sql` schema files in `admin-panel/database/` (the standalone
+project already has its own `database/schema.sql`). Also removed the
+School/SEF org switcher entirely, since one org had nothing left to
+switch to or from: `activeOrg`/`setActiveOrg` in `src/lib/store.js`, the
+switcher UI + SEF page-title map in `Header.jsx`, and the SEF nav items +
+per-org filtering in `Sidebar.jsx`. Dropped `sef-students/`/
+`sef-employees/` from the allowed S3 key prefixes in all 3 `api/s3/*`
+route allowlists (`upload-url`, `upload`, `view-url`). Fixed one stale
+comment in `UsersRolesTab.js` that referenced the now-deleted
+`sef/settings/page.js`.
+
+**Deliberately not touched:** the live `sef_*` Supabase tables (unchanged
+row counts from the 2026-11-18 scaffold session — mostly empty, 3 seed
+rows) and any SEF files already sitting in S3 — this was a code-only
+removal; dropping DB tables or S3 objects is a separate, more destructive
+step with its own rollback story, not implied by removing the code path
+to them. Revert path if ever needed: `git log` around commit `df09180`
+restores the deleted files; no DB/S3 data was touched either way.
+
+**Verified:** `npm run lint` clean; dev server compiled `/login`,
+`/dashboard`, `/settings` with 200s; `/sef/dashboard` now 404s (confirmed
+live, not just by inspection). Committed and pushed to `origin/main`,
+commit `df09180` (`91fe0ab..df09180`).
+
+**Governance note:** no `ai-context\SESSION-*.md`/`work-log\LOG-*.md` was
+written for this session — same gap pattern as the unlogged 2026-11-18
+session (REQ-SEC-024/025) this checkpoint's DISCOVERY leg referenced.
+Full change detail lives in `planning\SEF-EXTRACTION-PLAN.md`'s Status
+section (updated same session), not a dedicated session file.
+
+**Prior — Session 2026-11-17 — REQ-FEAT-025 (recurring reminder/call-back
 system, whole-admin-panel popup) CODED + BROWSER-VERIFIED - 3rd feature
 shipped this session, after REQ-FEAT-023/024.** New table
 `student_reminders` (same RLS pattern as the other two new tables today).
