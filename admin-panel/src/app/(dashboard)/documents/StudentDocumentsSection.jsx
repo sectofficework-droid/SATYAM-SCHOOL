@@ -18,6 +18,7 @@ import {
   markDocumentNotRequired,
   updateStudentDocument,
   updateStudentGrNo,
+  updateStudentGovId,
   getDocumentFollowups,
   upsertDocumentFollowup,
   getStudentAdminNotes,
@@ -172,6 +173,15 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const [editingGrStudentId, setEditingGrStudentId] = useState(null);
   const [editingGrValue, setEditingGrValue] = useState("");
   const [confirmGrModal, setConfirmGrModal] = useState(null); // { student, newGr, oldGr }
+
+  // UID / PEN inline editing (mirrors GR editing, writes via updateStudentGovId
+  // so values stay in sync with the Government Entry module)
+  const [editingUidStudentId, setEditingUidStudentId] = useState(null);
+  const [editingUidValue, setEditingUidValue] = useState("");
+  const [editingPenStudentId, setEditingPenStudentId] = useState(null);
+  const [editingPenValue, setEditingPenValue] = useState("");
+  const [savingUid, setSavingUid] = useState(false);
+  const [savingPen, setSavingPen] = useState(false);
 
   // Profile/Document smart-sync prompt - shown after marking a doc Uploaded
   // when the matching Aadhar/birth-cert field is still blank on the profile
@@ -460,6 +470,52 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
       alert("Failed to save GR Number: " + (err.message || "Unknown error"));
     } finally {
       setSavingGr(false);
+    }
+  };
+
+  const handleSaveUid = async (student, value) => {
+    const clean = (value || "").trim();
+    if (student.udise && student.udise.trim() === clean) {
+      setEditingUidStudentId(null);
+      return;
+    }
+    setSavingUid(true);
+    try {
+      await updateStudentGovId(student._studentId, { udise: clean });
+      setLocalStudents(prev => prev.map(s => {
+        if (s._studentId === student._studentId) return { ...s, udise: clean };
+        return s;
+      }));
+      setEditingUidStudentId(null);
+      onRefresh?.();
+    } catch (err) {
+      console.error("Failed to update UID:", err);
+      alert("Failed to save UID: " + (err.message || "Unknown error"));
+    } finally {
+      setSavingUid(false);
+    }
+  };
+
+  const handleSavePen = async (student, value) => {
+    const clean = (value || "").trim();
+    if (student.pen && student.pen.trim() === clean) {
+      setEditingPenStudentId(null);
+      return;
+    }
+    setSavingPen(true);
+    try {
+      await updateStudentGovId(student._studentId, { pen: clean });
+      setLocalStudents(prev => prev.map(s => {
+        if (s._studentId === student._studentId) return { ...s, pen: clean };
+        return s;
+      }));
+      setEditingPenStudentId(null);
+      onRefresh?.();
+    } catch (err) {
+      console.error("Failed to update PEN:", err);
+      alert("Failed to save PEN: " + (err.message || "Unknown error"));
+    } finally {
+      setSavingPen(false);
     }
   };
 
@@ -1923,12 +1979,55 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                         }`}
                         style={{
                           left: STICKY_OFFSETS.uid,
-                          width: COL_WIDTHS.uid,
+                          width: "max-content",
                           minWidth: COL_WIDTHS.uid,
-                          maxWidth: COL_WIDTHS.uid,
+                          maxWidth: "none",
                         }}
                       >
-                        <span className="font-mono text-[10px] text-slate-700">{student.udise || "—"}</span>
+                        {editingUidStudentId === student._studentId ? (
+                          <div className="flex items-center justify-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              autoFocus
+                              value={editingUidValue}
+                              onChange={(e) => setEditingUidValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") { e.preventDefault(); handleSaveUid(student, editingUidValue); }
+                                else if (e.key === "Escape") { setEditingUidStudentId(null); }
+                              }}
+                              placeholder="UID..."
+                              className="w-24 px-1 py-0.5 text-[10px] font-mono font-bold text-center border border-school-navy rounded bg-white shadow-2xs focus:outline-none focus:ring-1 focus:ring-school-navy"
+                            />
+                            <button onClick={() => handleSaveUid(student, editingUidValue)} disabled={savingUid} className="p-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[9.5px] shadow-2xs transition-colors" title="Save UID (Enter)">
+                              <Check className="w-2.5 h-2.5" />
+                            </button>
+                            <button onClick={() => setEditingUidStudentId(null)} className="p-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[9.5px] transition-colors" title="Cancel (Esc)">
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        ) : student.udise ? (
+                          <div className="inline-flex items-center gap-0.5 group/uid justify-center">
+                            <span className="px-1 py-0.2 rounded font-mono font-bold text-[10.5px] bg-slate-100 text-slate-800 border border-slate-300">
+                              {student.udise}
+                            </span>
+                            <button
+                              onClick={() => { setEditingUidStudentId(student._studentId); setEditingUidValue(student.udise); }}
+                              className="opacity-0 group-hover/uid:opacity-100 p-0.5 text-slate-400 hover:text-school-navy hover:bg-slate-200 rounded transition-all cursor-pointer"
+                              title="Edit UID"
+                            >
+                              <Edit3 className="w-2 h-2" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => { setEditingUidStudentId(student._studentId); setEditingUidValue(""); }}
+                            className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 border border-dashed border-amber-400 hover:border-amber-600 shadow-2xs transition-all cursor-pointer group/add"
+                            title="UID not saved — click to enter"
+                          >
+                            <Plus className="w-2 h-2 text-amber-600 group-hover/add:scale-110 transition-transform" />
+                            <span>+ Set</span>
+                          </button>
+                        )}
                       </td>
 
                       {/* Column C3: PEN (Frozen) */}
@@ -1943,7 +2042,50 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           maxWidth: COL_WIDTHS.pen,
                         }}
                       >
-                        <span className="font-mono text-[10px] text-slate-700">{student.pen || "—"}</span>
+                        {editingPenStudentId === student._studentId ? (
+                          <div className="flex items-center justify-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="text"
+                              autoFocus
+                              value={editingPenValue}
+                              onChange={(e) => setEditingPenValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") { e.preventDefault(); handleSavePen(student, editingPenValue); }
+                                else if (e.key === "Escape") { setEditingPenStudentId(null); }
+                              }}
+                              placeholder="PEN..."
+                              className="w-20 px-1 py-0.5 text-[10px] font-mono font-bold text-center border border-school-navy rounded bg-white shadow-2xs focus:outline-none focus:ring-1 focus:ring-school-navy"
+                            />
+                            <button onClick={() => handleSavePen(student, editingPenValue)} disabled={savingPen} className="p-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[9.5px] shadow-2xs transition-colors" title="Save PEN (Enter)">
+                              <Check className="w-2.5 h-2.5" />
+                            </button>
+                            <button onClick={() => setEditingPenStudentId(null)} className="p-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-[9.5px] transition-colors" title="Cancel (Esc)">
+                              <X className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        ) : student.pen ? (
+                          <div className="inline-flex items-center gap-0.5 group/pen justify-center">
+                            <span className="px-1 py-0.2 rounded font-mono font-bold text-[10.5px] bg-slate-100 text-slate-800 border border-slate-300">
+                              {student.pen}
+                            </span>
+                            <button
+                              onClick={() => { setEditingPenStudentId(student._studentId); setEditingPenValue(student.pen); }}
+                              className="opacity-0 group-hover/pen:opacity-100 p-0.5 text-slate-400 hover:text-school-navy hover:bg-slate-200 rounded transition-all cursor-pointer"
+                              title="Edit PEN"
+                            >
+                              <Edit3 className="w-2 h-2" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => { setEditingPenStudentId(student._studentId); setEditingPenValue(""); }}
+                            className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded text-[9px] font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 active:bg-amber-200 border border-dashed border-amber-400 hover:border-amber-600 shadow-2xs transition-all cursor-pointer group/add"
+                            title="PEN not saved — click to enter"
+                          >
+                            <Plus className="w-2 h-2 text-amber-600 group-hover/add:scale-110 transition-transform" />
+                            <span>+ Set</span>
+                          </button>
+                        )}
                       </td>
 
                       {/* Column D: NAME (Frozen - Right Border Separator) */}
