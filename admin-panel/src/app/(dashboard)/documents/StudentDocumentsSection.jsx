@@ -170,10 +170,19 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const getIncompleteReasons = (student) => {
     const reasons = [];
     const inBatch = assignedStudentIds.has(student._studentId) || assignedEnrollmentNos.has(student.enrollment);
-    if (!inBatch) reasons.push("Not in any batch");
+    if (!inBatch) reasons.push("Not in any Entry Batch");
+
+    // Government Entry eligibility rules (mirrors government-entry page)
+    const hasBirthCertDoc = (student.documents || []).some(d => (d.name || d.document_types?.name || "").toLowerCase().includes("birth") && (d.uploaded || d.status === "Uploaded" || d.file));
+    const hasTcDoc = (student.documents || []).some(d => ((d.name || d.document_types?.name || "").toLowerCase().includes("transfer") || (d.name || d.document_types?.name || "").toLowerCase().includes("leaving")) && (d.uploaded || d.status === "Uploaded" || d.file));
+    const hasCert = Boolean((student.birthCertRegNo || "").trim()) || hasBirthCertDoc || hasTcDoc || Boolean((student.lastSchoolName || "").trim()) || Boolean((student.lastSchoolGrNo || "").trim());
+    const aadharAvailable = Boolean((student.aadhar || "").trim());
+
     if (!(student.grNo || "").trim()) reasons.push("GR No not set");
-    if (!(student.udise || "").trim()) reasons.push("UID not set");
+    if (!(student.udise || "").trim()) reasons.push("UID not set (UDISE pending)");
     if (!(student.pen || "").trim()) reasons.push("PEN not set");
+    if (!hasCert) reasons.push("Missing Birth Certificate (Reg No/Uploaded) or Transfer Certificate (UDISE/PEN eligibility)");
+    if (!aadharAvailable) reasons.push("Missing Aadhar Card No (PEN eligibility)");
     const hasPendingDoc = PRIMARY_COLUMNS.some(col => {
       const doc = matchDocByCategory(col.matchKey, student.documents);
       const isUploaded = Boolean(doc && (doc.uploaded || doc.status === "Uploaded"));
