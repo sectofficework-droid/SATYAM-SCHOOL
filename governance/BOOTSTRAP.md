@@ -450,7 +450,36 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-11-20 — SEF removed from the SATYAM-SCHOOL repo
+**Current — Session 2026-11-20 (continued) — restarted the full-system audit
+from scratch per the user's explicit request ("check each and every single
+feature... note down in detail"), fixes NOT yet applied.** Earlier the same
+day's tech-debt backlog (duplicated service-key chain, N+1s, sign-out UX,
+52 missing indexes, auth_rls_initplan, multiple_permissive_policies, Teacher/
+Student Flutter duplication) was coded, verified, committed, and pushed
+(`3eaf25a`) — see TODO.md's now-closed entries for that batch. This fresh
+audit is a separate, much larger pass: 10 parallel read-only review forks
+covering ~74,000 lines across the admin panel, all 3 mobile flavors, and
+shared services (several forks hit this session's rate limit mid-run and
+were resumed via `SendMessage` — all 10 completed). Full findings, trigger
+scenarios, and fix directions: `planning\FULL-AUDIT-2026-11-20.md`; the
+Critical/High items also got checklist entries in `planning\TODO.md` (new
+header, REQ-SEC-032..036/REQ-BUG-085..089). **Headline findings**: 3 new
+unauthenticated-RPC exposures (`get_student_fees`, `record_check_out`,
+`employee_shifts` direct read) following the same bug-class as the already-
+fixed REQ-SEC-002 Category 3 work but missed on these specific tables/RPCs;
+a mobile TC-issuance role-gate regression (web got REQ-SEC-030, mobile never
+did, and a stale comment claims the opposite); real employee PII/salary data
+hardcoded in `store.js` (client-bundled, repo has a public-visibility
+history); 2 independently-broken "Generate Salary" call sites from the same
+Sept-19 migration, both silently swallowed by generic error handlers; a
+backwards TC date-validation rule; and a Staff-Attendance-Delete feature
+that currently 401s for every real caller (missing auth header) while also
+lacking the tier restriction it'll need once that's fixed. **Next session:
+fix these, Critical first**, per the user's explicit sequencing instruction
+("after audit notedown in detail then execute fix after the note and log") —
+this checkpoint marks the "note and log" step as done, fixing not started.
+
+**Prior — Session 2026-11-20 — SEF removed from the SATYAM-SCHOOL repo
 (MAJOR per J12B), committed + pushed.** Session opened on a prior,
 unlogged conversation's loose end: user asked to "analyze" a mention of
 renaming "ssis school" — resolved as stale `D:\Project\SSIS SCHOOL\...`

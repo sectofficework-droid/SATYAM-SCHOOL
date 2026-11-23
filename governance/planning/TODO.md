@@ -5,6 +5,78 @@
 > expand scope") from the governance audit run earlier this session. None of
 > these have been actioned — all await your explicit decision.
 
+## Full-system audit — found 2026-11-20 (user: "restart the audit from scratch
+## and check each and every single feature")
+
+Full detail (every finding, trigger scenario, fix direction, plus what was
+checked and confirmed fine, plus explicit coverage gaps) lives in
+**`planning\FULL-AUDIT-2026-11-20.md`** — not duplicated here per this file's
+own size-discipline problem (already flagged once below). This section is
+just the Critical/High items as trackable checklist entries; Medium/Low
+findings (hygiene, UX inconsistencies, dead code, systemic-but-non-critical
+disposal/error-handling gaps) are fully written up in that file only.
+
+**Nothing below has been fixed yet** — audit-only pass, fixes come next.
+
+- [ ] **REQ-SEC-032 (Critical) — `get_student_fees` RPC has zero caller-identity
+      check and is granted to `anon`.** Any caller with just the public anon
+      key can fetch any student's complete financial record (fee total,
+      discount + reason, full payment history) by UUID, no login. Same bug
+      class as REQ-SEC-002 Category 3, missed on this RPC. See audit §8 F8.1.
+- [ ] **REQ-SEC-033 (Critical) — Mobile Transfer Certificate issuance has no
+      role gate.** `staff_admin_issue_tc` only checks the caller is *some*
+      linked admin — any `normal_admin` can issue a TC and mark a student
+      "Left" via the Teacher app. The web-side fix (REQ-SEC-030) never
+      propagated to mobile; a stale code comment claims the opposite. See
+      audit §7 F7.1.
+- [ ] **REQ-SEC-034 (Critical) — Real employee PII + salary/expense figures
+      hardcoded in `admin-panel/src/lib/store.js`.** 15 real names/codes/
+      designations (one with phone+email) plus real-looking salary
+      attributions ship in every client JS bundle, in a repo with a
+      documented history of being made public. See audit §6 F6.1.
+- [ ] **REQ-BUG-085 (Critical) — 4 of 6 PDF report routes read non-existent
+      `students` columns, producing blank/placeholder documents** (ID card,
+      Bonafide, Marksheet, TC) via the mobile Admin Workspace's report
+      feature — includes a legally significant document. See audit §5 F5.1.
+- [ ] **REQ-BUG-086 (Critical) — "Generate Salary" (`employee/page.js`) is
+      completely broken** — queries `salary_payments` directly, whose access
+      was revoked from `authenticated` 2026-09-19; fails silently via a
+      generic alert. Confirmed live: only 1 salary row ever recorded, dated
+      before the lockdown. See audit §3 F3.1.
+- [ ] **REQ-SEC-035 (High) — `employee_shifts`: `anon` role can read any
+      employee's full attendance/shift history, unauthenticated.** See audit
+      §10 F10.1.
+- [ ] **REQ-SEC-036 (High) — `record_check_out` RPC has no session-token
+      check at all.** Anyone with the anon key + an employee UUID can
+      force-close their shift at an arbitrary timestamp. See audit §9 F9.1.
+- [ ] **REQ-BUG-087 (High) — TC date-order validation is backwards** on
+      `student/[id]/tc/page.js` — blocks the normal "backdate the leaving
+      date" workflow, silently accepts the nonsensical case. See audit §2
+      F2.1.
+- [ ] **REQ-BUG-088 (High) — Staff Attendance "Delete" is broken for every
+      real admin** — `deleteStaffAttendanceRecord` never attaches the
+      session token its own API route requires (401s every time); that same
+      route also has no tier restriction on an irreversible bulk-delete
+      action — fix needs to restore working auth *with* the tier
+      restriction, not just re-add a header. See audit §5 F5.4 + §6 F6.2.
+- [ ] **REQ-BUG-089 (High) — Admin-panel's own Salary *report*
+      (`reportService.js`) has the identical broken-direct-query bug as
+      REQ-BUG-086, independently** — plus silently swallows the resulting
+      permission error (never checks `salRes.error`). See audit §4 F4.1.
+- [ ] **(Re-confirmed still open, no new ID) REQ-SEC-021/REQ-BUG-077** — the
+      416-student PII JSON (incl. Aadhaar) is still bundled into the server
+      build. See audit §5 F5.2.
+- [ ] **(Re-confirmed still open, no new ID) REQ-SEC-020** — both Vercel cron
+      routes still fail *open* if `CRON_SECRET` is unset. See audit §5 F5.3.
+
+**Cross-cutting pattern flagged by the audit itself:** the "RPC with no
+session-token param" bug recurred independently 4 times (REQ-SEC-032/035/036
++ the `daily_task_targets` join in audit §10 F10.2) across 3 forks that never
+saw each other's work — recommend one more targeted sweep of every remaining
+direct-anon-read call site across the whole mobile codebase before assuming
+these are the only ones, rather than fixing just these 4 in isolation. Full
+reasoning in the audit file's "Cross-cutting patterns" section.
+
 ## Approval gates — current status
 See `governance\BOOTSTRAP.md` "Approvals on record" table for full detail.
 Required by AGENTS.md §E.5 ("phased checklist with approval gates") — this

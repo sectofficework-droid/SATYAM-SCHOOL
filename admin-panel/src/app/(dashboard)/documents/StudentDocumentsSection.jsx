@@ -103,6 +103,8 @@ const COL_WIDTHS = {
   sr: 38,
   class: 66,
   gr: 66,
+  uid: 66,
+  pen: 66,
   name: 185,
   fatherName: 140,
   motherName: 140,
@@ -129,7 +131,9 @@ const STICKY_OFFSETS = {
   sr: 0,
   class: COL_WIDTHS.sr,
   gr: COL_WIDTHS.sr + COL_WIDTHS.class,
-  name: COL_WIDTHS.sr + COL_WIDTHS.class + COL_WIDTHS.gr,
+  uid: COL_WIDTHS.sr + COL_WIDTHS.class + COL_WIDTHS.gr,
+  pen: COL_WIDTHS.sr + COL_WIDTHS.class + COL_WIDTHS.gr + COL_WIDTHS.uid,
+  name: COL_WIDTHS.sr + COL_WIDTHS.class + COL_WIDTHS.gr + COL_WIDTHS.uid + COL_WIDTHS.pen,
 };
 
 export default function StudentDocumentsSection({ students = [], onRefresh }) {
@@ -839,6 +843,8 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
           "Class": s.std || "",
           "Sr": idx + 1,
           "GR No": s.grNo || "",
+          "UID": s.udise || "",
+          "PEN": s.pen || "",
           "Name": (s.name || "").toUpperCase(),
           "Father Name": (s.fatherName || "").toUpperCase(),
           "Mother Name": (s.motherName || "").toUpperCase(),
@@ -1644,6 +1650,34 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   <span>GR NO</span>
                 </th>
 
+                {/* Column C2: UID (Frozen) */}
+                <th
+                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 text-center py-1.5 px-1 text-slate-700"
+                  style={{
+                    left: STICKY_OFFSETS.uid,
+                    width: COL_WIDTHS.uid,
+                    minWidth: COL_WIDTHS.uid,
+                    maxWidth: COL_WIDTHS.uid,
+                  }}
+                >
+                  <div className="text-[8.5px] text-slate-400 font-mono font-normal">C2</div>
+                  <span>UID</span>
+                </th>
+
+                {/* Column C3: PEN (Frozen) */}
+                <th
+                  className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 text-center py-1.5 px-1 text-slate-700"
+                  style={{
+                    left: STICKY_OFFSETS.pen,
+                    width: COL_WIDTHS.pen,
+                    minWidth: COL_WIDTHS.pen,
+                    maxWidth: COL_WIDTHS.pen,
+                  }}
+                >
+                  <div className="text-[8.5px] text-slate-400 font-mono font-normal">C3</div>
+                  <span>PEN</span>
+                </th>
+
                 {/* Column D: NAME (Frozen 4 - Right Border Separator) */}
                 <th
                   className="sticky z-40 bg-slate-200 border-r-2 border-r-slate-400 border-b-2 border-slate-300 py-1.5 px-2 text-slate-700 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)]"
@@ -1880,6 +1914,36 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                             <span>+ Set</span>
                           </button>
                         )}
+                      </td>
+
+                      {/* Column C2: UID (Frozen) */}
+                      <td
+                        className={`sticky z-20 border-r border-b border-slate-200 text-center whitespace-nowrap transition-colors py-0.5 px-0.5 ${
+                          isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
+                        }`}
+                        style={{
+                          left: STICKY_OFFSETS.uid,
+                          width: COL_WIDTHS.uid,
+                          minWidth: COL_WIDTHS.uid,
+                          maxWidth: COL_WIDTHS.uid,
+                        }}
+                      >
+                        <span className="font-mono text-[10px] text-slate-700">{student.udise || "—"}</span>
+                      </td>
+
+                      {/* Column C3: PEN (Frozen) */}
+                      <td
+                        className={`sticky z-20 border-r border-b border-slate-200 text-center whitespace-nowrap transition-colors py-0.5 px-0.5 ${
+                          isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
+                        }`}
+                        style={{
+                          left: STICKY_OFFSETS.pen,
+                          width: COL_WIDTHS.pen,
+                          minWidth: COL_WIDTHS.pen,
+                          maxWidth: COL_WIDTHS.pen,
+                        }}
+                      >
+                        <span className="font-mono text-[10px] text-slate-700">{student.pen || "—"}</span>
                       </td>
 
                       {/* Column D: NAME (Frozen - Right Border Separator) */}
