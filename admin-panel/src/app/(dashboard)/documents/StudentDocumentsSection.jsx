@@ -103,8 +103,8 @@ const COL_WIDTHS = {
   sr: 38,
   class: 66,
   gr: 66,
-  uid: 66,
-  pen: 66,
+  uid: 130,
+  pen: 90,
   name: 185,
   fatherName: 140,
   motherName: 140,
@@ -1655,9 +1655,9 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 text-center py-1.5 px-1 text-slate-700"
                   style={{
                     left: STICKY_OFFSETS.uid,
-                    width: COL_WIDTHS.uid,
+                    width: "max-content",
                     minWidth: COL_WIDTHS.uid,
-                    maxWidth: COL_WIDTHS.uid,
+                    maxWidth: "none",
                   }}
                 >
                   <div className="text-[8.5px] text-slate-400 font-mono font-normal">C2</div>
@@ -1669,9 +1669,9 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   className="sticky z-40 bg-slate-200 border-r border-b-2 border-slate-300 text-center py-1.5 px-1 text-slate-700"
                   style={{
                     left: STICKY_OFFSETS.pen,
-                    width: COL_WIDTHS.pen,
+                    width: "max-content",
                     minWidth: COL_WIDTHS.pen,
-                    maxWidth: COL_WIDTHS.pen,
+                    maxWidth: "none",
                   }}
                 >
                   <div className="text-[8.5px] text-slate-400 font-mono font-normal">C3</div>
