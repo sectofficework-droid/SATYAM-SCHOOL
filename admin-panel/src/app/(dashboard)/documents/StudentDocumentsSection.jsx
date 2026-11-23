@@ -1907,6 +1907,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                 filteredStudents.map((student, idx) => {
                   const serialNo = idx + 1;
                   const isEven = idx % 2 === 0;
+                  const isIncomplete = getIncompleteReasons(student).length > 0;
 
                   return (
                     <tr
@@ -1920,7 +1921,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                       {/* Column A: SR NO (Frozen) */}
                       <td
                         className={`sticky z-20 border-r border-b border-slate-200 text-center font-mono font-bold text-slate-600 transition-colors py-1 px-0.5 text-[10.5px] ${
-                          isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
+                          isIncomplete ? "bg-orange-100 group-hover:bg-orange-200/70 border-l-4 border-l-orange-400" : (isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50")
                         }`}
                         style={{
                           left: STICKY_OFFSETS.sr,
@@ -2149,7 +2150,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                       {/* Column D: NAME (Frozen - Right Border Separator) */}
                       <td
                         className={`sticky z-20 border-r-2 border-r-slate-400 border-b border-slate-200 shadow-[2px_0_4px_-1px_rgba(0,0,0,0.1)] transition-colors py-1 px-1.5 ${
-                          isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50"
+                          isIncomplete ? "bg-orange-50 group-hover:bg-orange-100/70" : (isEven ? "bg-white group-hover:bg-sky-50" : "bg-slate-50 group-hover:bg-sky-50")
                         }`}
                         style={{
                           left: STICKY_OFFSETS.name,
