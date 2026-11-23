@@ -165,6 +165,24 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const [localStudents, setLocalStudents] = useState([]);
   const [assignedStudentIds, setAssignedStudentIds] = useState(new Set());
   const [assignedEnrollmentNos, setAssignedEnrollmentNos] = useState(new Set());
+  const [incompletePopoverStudentId, setIncompletePopoverStudentId] = useState(null);
+
+  const getIncompleteReasons = (student) => {
+    const reasons = [];
+    const inBatch = assignedStudentIds.has(student._studentId) || assignedEnrollmentNos.has(student.enrollment);
+    if (!inBatch) reasons.push("Not in any batch");
+    if (!(student.grNo || "").trim()) reasons.push("GR No not set");
+    if (!(student.udise || "").trim()) reasons.push("UID not set");
+    if (!(student.pen || "").trim()) reasons.push("PEN not set");
+    const hasPendingDoc = PRIMARY_COLUMNS.some(col => {
+      const doc = matchDocByCategory(col.matchKey, student.documents);
+      const isUploaded = Boolean(doc && (doc.uploaded || doc.status === "Uploaded"));
+      const isNotReq = Boolean(doc && (doc.notRequired || (doc.reason && doc.reason.toLowerCase().includes("not required")) || doc.reason === "-" || (col.key === "transfer" && student.hasPrevSchool === false)));
+      return !isUploaded && !isNotReq;
+    });
+    if (hasPendingDoc) reasons.push("Document upload pending");
+    return reasons;
+  };
   const [uploadingKey, setUploadingKey] = useState(null); // `${studentId}_${docTypeId}`
   const [downloadingKey, setDownloadingKey] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null); // { url, name, title, fileKey }
@@ -1902,7 +1920,34 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           maxWidth: COL_WIDTHS.sr,
                         }}
                       >
-                        {serialNo}
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span>{serialNo}</span>
+                          {getIncompleteReasons(student).length > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIncompletePopoverStudentId(incompletePopoverStudentId === student._studentId ? null : student._studentId);
+                              }}
+                              className="px-1 py-0.5 text-[8px] font-bold text-white bg-orange-500 hover:bg-orange-600 rounded cursor-pointer"
+                              title="Click to see incomplete reasons"
+                            >
+                              Incomplete
+                            </button>
+                          )}
+                          {incompletePopoverStudentId === student._studentId && (
+                            <>
+                              <div className="fixed inset-0 z-40" onClick={() => setIncompletePopoverStudentId(null)} />
+                              <div className="absolute z-50 mt-1 w-44 bg-white border border-slate-300 rounded-lg shadow-xl p-2 text-[10px] text-left" onClick={(e) => e.stopPropagation()}>
+                                <div className="font-bold text-slate-800 mb-1">Incomplete reasons:</div>
+                                <ul className="list-disc pl-3 space-y-0.5 text-slate-700">
+                                  {getIncompleteReasons(student).map((r, i) => (
+                                    <li key={i}>{r}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </td>
 
                       {/* Column B: CLASS (Frozen) */}
