@@ -24,6 +24,7 @@ import {
   getStudentAdminNotes,
   fillStudentProfileFieldIfEmpty
 } from "@/lib/studentService";
+import { getAllAssignedPhaseStudents } from "@/lib/studentPhaseService";
 import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile } from "@/lib/fileCompression";
 import useStore from "@/lib/store";
@@ -162,6 +163,8 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
 
   // Interactive states
   const [localStudents, setLocalStudents] = useState([]);
+  const [assignedStudentIds, setAssignedStudentIds] = useState(new Set());
+  const [assignedEnrollmentNos, setAssignedEnrollmentNos] = useState(new Set());
   const [uploadingKey, setUploadingKey] = useState(null); // `${studentId}_${docTypeId}`
   const [downloadingKey, setDownloadingKey] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null); // { url, name, title, fileKey }
@@ -235,6 +238,30 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
       setLocalStudents(students);
     }
   }, [students]);
+
+  // Load the set of students already assigned to at least one batch/phase,
+  // so rows for students not in any batch can be highlighted light orange.
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const rows = await getAllAssignedPhaseStudents();
+        if (cancelled) return;
+        const ids = new Set();
+        const enrs = new Set();
+        (rows || []).forEach(r => {
+          if (r.student_id) ids.add(r.student_id);
+          if (r.enrollment_no) enrs.add(r.enrollment_no);
+        });
+        setAssignedStudentIds(ids);
+        setAssignedEnrollmentNos(enrs);
+      } catch (err) {
+        console.error("Failed to load assigned phase students:", err);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, []);
 
   // Switching the Jr-5th / 6th+ tab can leave an incompatible single-class
   // selection behind (e.g. "5th" picked while on 6th+) - reset to "All".
@@ -1857,7 +1884,11 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                   return (
                     <tr
                       key={student._studentId || student.enrollment || idx}
-                      className={`group transition-colors ${isEven ? "bg-white" : "bg-slate-50/60"} hover:bg-sky-50/60`}
+                      className={`group transition-colors ${
+                        !(assignedStudentIds.has(student._studentId) || assignedEnrollmentNos.has(student.enrollment))
+                          ? "bg-orange-50 hover:bg-orange-100/70"
+                          : (isEven ? "bg-white" : "bg-slate-50/60") + " hover:bg-sky-50/60"
+                      }`}
                     >
                       {/* Column A: SR NO (Frozen) */}
                       <td
