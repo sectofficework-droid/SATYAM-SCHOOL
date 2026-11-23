@@ -1929,34 +1929,7 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           maxWidth: COL_WIDTHS.sr,
                         }}
                       >
-                        <div className="flex flex-col items-center gap-0.5">
-                          <span>{serialNo}</span>
-                          {getIncompleteReasons(student).length > 0 && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setIncompletePopoverStudentId(incompletePopoverStudentId === student._studentId ? null : student._studentId);
-                              }}
-                              className="px-1 py-0.5 text-[8px] font-bold text-white bg-orange-500 hover:bg-orange-600 rounded cursor-pointer"
-                              title="Click to see incomplete reasons"
-                            >
-                              Incomplete
-                            </button>
-                          )}
-                          {incompletePopoverStudentId === student._studentId && (
-                            <>
-                              <div className="fixed inset-0 z-40" onClick={() => setIncompletePopoverStudentId(null)} />
-                              <div className="absolute z-50 mt-1 w-44 bg-white border border-slate-300 rounded-lg shadow-xl p-2 text-[10px] text-left" onClick={(e) => e.stopPropagation()}>
-                                <div className="font-bold text-slate-800 mb-1">Incomplete reasons:</div>
-                                <ul className="list-disc pl-3 space-y-0.5 text-slate-700">
-                                  {getIncompleteReasons(student).map((r, i) => (
-                                    <li key={i}>{r}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            </>
-                          )}
-                        </div>
+                        {serialNo}
                       </td>
 
                       {/* Column B: CLASS (Frozen) */}
@@ -2194,6 +2167,33 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
                           >
                             {student.name || "—"}
                           </button>
+                          {getIncompleteReasons(student).length > 0 && (
+                            <div className="mt-0.5">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setIncompletePopoverStudentId(incompletePopoverStudentId === student._studentId ? null : student._studentId);
+                                }}
+                                className="px-1.5 py-0.5 text-[9px] font-bold text-white bg-orange-500 hover:bg-orange-600 rounded cursor-pointer"
+                                title="Click to see incomplete reasons"
+                              >
+                                Incomplete
+                              </button>
+                              {incompletePopoverStudentId === student._studentId && (
+                                <>
+                                  <div className="fixed inset-0 z-40" onClick={() => setIncompletePopoverStudentId(null)} />
+                                  <div className="absolute z-50 mt-1 w-48 bg-white border border-slate-300 rounded-lg shadow-xl p-2 text-[10px] text-left" onClick={(e) => e.stopPropagation()}>
+                                    <div className="font-bold text-slate-800 mb-1">Incomplete reasons:</div>
+                                    <ul className="list-disc pl-3 space-y-0.5 text-slate-700">
+                                      {getIncompleteReasons(student).map((r, i) => (
+                                        <li key={i}>{r}</li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
                           {student.fatherName && !showContactDetails && (
                             <span className="text-[9px] text-slate-400 truncate leading-tight mt-0.5" title={`Father: ${student.fatherName}`}>
                               C/O {student.fatherName}
