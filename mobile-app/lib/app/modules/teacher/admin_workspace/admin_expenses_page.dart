@@ -48,42 +48,52 @@ class _AdminExpensesPageState extends State<AdminExpensesPage> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): none of these 4 controllers
+  // were ever disposed; .text is read after the sheet closes, so wrapped
+  // in try/finally.
   Future<void> _add() async {
     final titleCtrl = TextEditingController();
     final categoryCtrl = TextEditingController();
     final amountCtrl = TextEditingController();
     final byCtrl = TextEditingController();
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('New Expense', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: categoryCtrl, decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: amountCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: byCtrl, decoration: const InputDecoration(labelText: 'Paid by', border: OutlineInputBorder())),
-          const SizedBox(height: 16),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Add Expense')),
-        ])),
-      ),
-    );
-    final amount = num.tryParse(amountCtrl.text);
-    if (ok != true || titleCtrl.text.trim().isEmpty || amount == null) return;
     try {
-      await StaffAdminService.addExpense(_employeeId,
-        title: titleCtrl.text.trim(), category: categoryCtrl.text.trim(), amount: amount,
-        date: DateFormat('yyyy-MM-dd').format(DateTime.now()), paidBy: byCtrl.text.trim());
-      if (mounted) showAdminSnack(context, 'Expense added');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to add expense.', isError: true);
+      final ok = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('New Expense', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: categoryCtrl, decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: amountCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: byCtrl, decoration: const InputDecoration(labelText: 'Paid by', border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Add Expense')),
+          ])),
+        ),
+      );
+      final amount = num.tryParse(amountCtrl.text);
+      if (ok != true || titleCtrl.text.trim().isEmpty || amount == null) return;
+      try {
+        await StaffAdminService.addExpense(_employeeId,
+          title: titleCtrl.text.trim(), category: categoryCtrl.text.trim(), amount: amount,
+          date: DateFormat('yyyy-MM-dd').format(DateTime.now()), paidBy: byCtrl.text.trim());
+        if (mounted) showAdminSnack(context, 'Expense added');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to add expense.', isError: true);
+      }
+    } finally {
+      titleCtrl.dispose();
+      categoryCtrl.dispose();
+      amountCtrl.dispose();
+      byCtrl.dispose();
     }
   }
 

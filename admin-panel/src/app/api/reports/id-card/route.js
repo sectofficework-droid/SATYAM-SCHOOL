@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireStaffAdminTier, supabaseServiceClient } from "@/lib/reportsServerAuth";
 import { generateIdCardPdf } from "@/lib/pdfReportsServer";
+import { getStudentsForReportByIds } from "@/lib/studentService";
 
 export async function POST(request) {
   try {
@@ -14,10 +15,13 @@ export async function POST(request) {
 
     const supabase = supabaseServiceClient();
     if (!supabase) return NextResponse.json({ error: "Server configuration error: missing service key" }, { status: 500 });
-    const { data, error } = await supabase.from("students").select("*").in("id", studentIds);
-    if (error) throw error;
+    // REQ-BUG-085: was a raw `students.select("*")` - the generator expects
+    // mapToStudent()'s shape (name/std/fatherName/...), not the real column
+    // names (first_name/last_name/father_name) or class/admission data
+    // (which lives on student_enrollments, never joined here before).
+    const students = await getStudentsForReportByIds(supabase, studentIds);
 
-    const pdfBytes = await generateIdCardPdf(data || []);
+    const pdfBytes = await generateIdCardPdf(students);
     return new NextResponse(pdfBytes, {
       status: 200,
       headers: { "Content-Type": "application/pdf", "Content-Disposition": "attachment; filename=ID_Cards.pdf" },

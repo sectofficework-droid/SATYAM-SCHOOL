@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireStaffAdminTier, supabaseServiceClient } from "@/lib/reportsServerAuth";
 import { generateBonafidePdf } from "@/lib/pdfReportsServer";
+import { getStudentsForReportByIds } from "@/lib/studentService";
 
 export async function POST(request) {
   try {
@@ -14,10 +15,12 @@ export async function POST(request) {
 
     const supabase = supabaseServiceClient();
     if (!supabase) return NextResponse.json({ error: "Server configuration error: missing service key" }, { status: 500 });
-    const { data, error } = await supabase.from("students").select("*").in("id", studentIds);
-    if (error) throw error;
+    // REQ-BUG-085: see id-card/route.js's identical fix - this was a raw
+    // `students.select("*")` that didn't match the generator's expected
+    // field names at all.
+    const students = await getStudentsForReportByIds(supabase, studentIds);
 
-    const pdfBytes = await generateBonafidePdf(data || []);
+    const pdfBytes = await generateBonafidePdf(students);
     return new NextResponse(pdfBytes, {
       status: 200,
       headers: { "Content-Type": "application/pdf", "Content-Disposition": "attachment; filename=Bonafide_Certificates.pdf" },

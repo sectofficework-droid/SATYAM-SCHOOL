@@ -1284,6 +1284,7 @@ function EditEmployeeModal({ emp, onClose, onSave }) {
 
 // ── Attendance Section ─────────────────────────────────────────────────────────
 function AttendanceSection({ employees, setAttendanceSummary }) {
+  const authUser = useStore(s => s.authUser);
   const today = new Date().toISOString().split("T")[0];
   const [periodType, setPeriodType] = useState("fullmonth");
   const [fromDate,   setFromDate]   = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split("T")[0]);
@@ -1399,21 +1400,32 @@ function AttendanceSection({ employees, setAttendanceSummary }) {
     const paid = records.filter(r => r.emp);
     if (!paid.length) { setSavedKey(periodKey); return; }
 
+    // REQ-BUG-086 (2026-11-20 full-system audit): both the existing-row
+    // check below and the insert used to go straight to `salary_payments`,
+    // whose direct table access was revoked from `authenticated` entirely
+    // by SUPABASE_SALARY_PUNCHCODE_ROLE_ENFORCEMENT.sql (REQ-SEC-007,
+    // 2026-09-19) - every real "Generate Salary" run since then has failed
+    // with a permission-denied error, caught by the generic `alert()`
+    // below (which is why this went unnoticed - verified live only 1
+    // salary_payments row exists, dated before that migration). Switched
+    // onto the same admin_get_salary_payments/admin_record_salary_
+    // payments_bulk RPCs super-admin.js's Salary tab already uses.
+    //
     // REQ-BUG-025: salary_payments has UNIQUE(employee_id, month) - a plain
-    // insert() rejects the WHOLE batch if even one employee already has a
-    // row for this month (e.g. a second "15 Days" run in the same month),
-    // silently dropping everyone else's payment too. Check first, skip only
-    // the employees who already have a row, and tell the admin by name.
+    // bulk insert rejects the WHOLE batch if even one employee already has
+    // a row for this month (e.g. a second "15 Days" run in the same
+    // month), silently dropping everyone else's payment too. Check first,
+    // skip only the employees who already have a row, and tell the admin
+    // by name.
+    const nextMonthDate = new Date(new Date(monthDate).setMonth(new Date(monthDate).getMonth() + 1)).toISOString().slice(0, 10);
     const { data: existing, error: existErr } = await supabase
-      .from("salary_payments")
-      .select("employee_id")
-      .eq("month", monthDate)
-      .in("employee_id", paid.map(r => r.emp.id));
+      .rpc("admin_get_salary_payments", { p_from: monthDate, p_to: nextMonthDate });
     if (existErr) {
       alert("Failed to check existing salary payments: " + existErr.message);
       return;
     }
-    const alreadyPaidIds = new Set((existing || []).map(r => r.employee_id));
+    const existingIds = new Set((existing || []).filter(r => r.month === monthDate).map(r => r.employee_id));
+    const alreadyPaidIds = new Set(paid.filter(r => existingIds.has(r.emp.id)).map(r => r.emp.id));
     const toPay   = paid.filter(r => !alreadyPaidIds.has(r.emp.id));
     const skipped = paid.filter(r => alreadyPaidIds.has(r.emp.id));
 
@@ -1426,15 +1438,16 @@ function AttendanceSection({ employees, setAttendanceSummary }) {
       );
     }
 
+    const paidBy = authUser?.name || "Admin";
     const rows = toPay.map(r => ({
       employee_id: r.emp.id,
       month:       monthDate,
       amount:      r.net,
       paid_on:     date,
-      paid_by:     "Sunil Pradhan",
+      paid_by:     paidBy,
     }));
     if (rows.length) {
-      const { error } = await supabase.from("salary_payments").insert(rows);
+      const { error } = await supabase.rpc("admin_record_salary_payments_bulk", { p_rows: rows });
       if (error) {
         alert("Failed to save salary payments: " + error.message);
         return;
@@ -1445,7 +1458,7 @@ function AttendanceSection({ employees, setAttendanceSummary }) {
           category: "Salary",
           amount:   r.net,
           date,
-          paidBy:  "Sunil Pradhan",
+          paidBy,
           note:    (r.emp.designation||"") + " \u00b7 " + r.emp.empId + " \u00b7 Present: " + r.present + "/" + periodDays,
         })
       ));

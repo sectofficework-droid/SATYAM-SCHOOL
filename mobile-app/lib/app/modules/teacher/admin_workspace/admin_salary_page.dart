@@ -39,6 +39,11 @@ class _AdminSalaryPageState extends State<AdminSalaryPage> {
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): _searchCtrl was never
+  // disposed.
+  @override
+  void dispose() { _searchCtrl.dispose(); super.dispose(); }
+
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {

@@ -261,6 +261,7 @@ export function generateMarksheetPageHTML(d) {
     <section class="ms-details">
       <div class="ms-field ms-field-full"><label>Student Name :</label><div class="ms-fill">${esc(d.studentName)}</div></div>
       <div class="ms-field"><label>Class :</label><div class="ms-fill">${esc(d.className)}</div></div>
+      <div class="ms-field"><label>Roll No :</label><div class="ms-fill">${esc(d.rollNo)}</div></div>
       <div class="ms-field"><label>Date :</label><div class="ms-fill">${esc(d.date)}</div></div>
     </section>
 

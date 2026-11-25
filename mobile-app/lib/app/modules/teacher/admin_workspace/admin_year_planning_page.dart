@@ -53,11 +53,15 @@ class _AdminYearPlanningPageState extends State<AdminYearPlanningPage> {
 
   _CategoryDef _catFor(String? key) => _categories.firstWhere((c) => c.key == key, orElse: () => _categories.last);
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): labelCtrl was never
+  // disposed; .text is read after the sheet closes, so wrapped in
+  // try/finally.
   Future<void> _openForm({Map<String, dynamic>? existing}) async {
     DateTime date = existing != null ? DateTime.parse(existing['event_date'] as String) : DateTime.now();
     String category = existing != null ? existing['category'] as String : _categories.first.key;
     final labelCtrl = TextEditingController(text: existing?['title'] as String? ?? '');
 
+    try {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -111,6 +115,9 @@ class _AdminYearPlanningPageState extends State<AdminYearPlanningPage> {
       _load();
     } catch (e) {
       if (mounted) showAdminSnack(context, 'Failed to save.', isError: true);
+    }
+    } finally {
+      labelCtrl.dispose();
     }
   }
 

@@ -1,5 +1,13 @@
 import supabase from "./supabase";
 
+// REQ-HYG (2026-11-20 full-system audit): column list excludes app_password
+// deliberately - it used to be `select("*")`, which put the bcrypt hash on
+// the wire in every employee-list/add response for no functional reason
+// (grepped the whole admin-panel: `appPassword`/`app_password` is never
+// read anywhere downstream of this file). Not exploitable on its own (it's
+// a hash, not plaintext), but needless exposure surface.
+const EMPLOYEE_COLUMNS = "id, emp_code, name, photo_url, type, designation, department, gender, dob, phone, alt_phone, email, address, aadhar, pan, joining_date, employment_type, status, monthly_salary, class_teacher_of_section_id, subject_mappings, documents";
+
 function mapFromDB(row) {
   return {
     id:              row.id,
@@ -21,7 +29,6 @@ function mapFromDB(row) {
     employmentType:  row.employment_type || "Permanent",
     status:          row.status || "Active",
     salary:          Number(row.monthly_salary) || 0,
-    appPassword:     row.app_password || "",
     classTeacherOf:  row.class_teacher_of_section_id || null,
     subjectMappings: row.subject_mappings || [],
     documents:       row.documents || [],
@@ -58,7 +65,7 @@ function mapToDB(emp) {
 export async function getEmployees() {
   const { data, error } = await supabase
     .from("employees")
-    .select("*")
+    .select(EMPLOYEE_COLUMNS)
     .order("emp_code");
   if (error) throw error;
   return (data || []).map(mapFromDB);
@@ -68,7 +75,7 @@ export async function addEmployee(emp) {
   const { data, error } = await supabase
     .from("employees")
     .insert(mapToDB(emp))
-    .select()
+    .select(EMPLOYEE_COLUMNS)
     .single();
   if (error) throw error;
   return mapFromDB(data);

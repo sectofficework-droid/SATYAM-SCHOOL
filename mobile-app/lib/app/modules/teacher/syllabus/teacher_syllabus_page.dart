@@ -64,6 +64,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
   Map<String, List<Map<String, dynamic>>> _subtopicsByChapter = {};
   List<Map<String, dynamic>> _myRequests = [];
   bool _loading = true;
+  String? _error;
   bool _isClassTeacher = false;
   String? _employeeId;
 
@@ -94,44 +95,50 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
   @override
   void dispose() { _refreshTimer?.cancel(); super.dispose(); }
 
+  // REQ-BUG-069 (2026-11-20 full-system audit): no try/catch - any network
+  // blip left this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final profile    = AuthService.to.profile.value ?? {};
-    final employeeId = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    final ownClass    = profile['class_name'] as String?;
-    _employeeId = employeeId;
-    _isClassTeacher = ownClass != null && ownClass.isNotEmpty;
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile    = AuthService.to.profile.value ?? {};
+      final employeeId = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      final ownClass    = profile['class_name'] as String?;
+      _employeeId = employeeId;
+      _isClassTeacher = ownClass != null && ownClass.isNotEmpty;
 
-    final mine = (employeeId != null && sessionToken != null)
-        ? await SupabaseService.fetchSyllabus(employeeId: employeeId, sessionToken: sessionToken, teacherId: employeeId)
-        : <Map<String, dynamic>>[];
-    final classWide = (_isClassTeacher && employeeId != null && sessionToken != null)
-        ? await SupabaseService.fetchSyllabus(employeeId: employeeId, sessionToken: sessionToken, classNames: [ownClass!])
-        : <Map<String, dynamic>>[];
+      final mine = (employeeId != null && sessionToken != null)
+          ? await SupabaseService.fetchSyllabus(employeeId: employeeId, sessionToken: sessionToken, teacherId: employeeId)
+          : <Map<String, dynamic>>[];
+      final classWide = (_isClassTeacher && employeeId != null && sessionToken != null)
+          ? await SupabaseService.fetchSyllabus(employeeId: employeeId, sessionToken: sessionToken, classNames: [ownClass!])
+          : <Map<String, dynamic>>[];
 
-    final allIds = {...mine.map((c) => c['id'] as String), ...classWide.map((c) => c['id'] as String)}.toList();
-    final subtopics = (employeeId != null && sessionToken != null)
-        ? await SupabaseService.fetchSubtopics(employeeId, sessionToken, allIds)
-        : <Map<String, dynamic>>[];
-    final subMap = <String, List<Map<String, dynamic>>>{};
-    for (final s in subtopics) {
-      subMap.putIfAbsent(s['chapter_id'] as String, () => []).add(s);
-    }
+      final allIds = {...mine.map((c) => c['id'] as String), ...classWide.map((c) => c['id'] as String)}.toList();
+      final subtopics = (employeeId != null && sessionToken != null)
+          ? await SupabaseService.fetchSubtopics(employeeId, sessionToken, allIds)
+          : <Map<String, dynamic>>[];
+      final subMap = <String, List<Map<String, dynamic>>>{};
+      for (final s in subtopics) {
+        subMap.putIfAbsent(s['chapter_id'] as String, () => []).add(s);
+      }
 
-    final requests = employeeId != null && sessionToken != null
-        ? await SupabaseService.fetchMySyllabusEditRequests(employeeId, sessionToken)
-        : <Map<String, dynamic>>[];
+      final requests = employeeId != null && sessionToken != null
+          ? await SupabaseService.fetchMySyllabusEditRequests(employeeId, sessionToken)
+          : <Map<String, dynamic>>[];
 
-    if (mounted) {
-      setState(() {
-      _mineChapters  = mine;
-      _classChapters = classWide;
-      _subtopicsByChapter = subMap;
-      _myRequests = requests;
-      if (!_isClassTeacher) _scope = 0;
-      _loading = false;
-    });
+      if (mounted) {
+        setState(() {
+        _mineChapters  = mine;
+        _classChapters = classWide;
+        _subtopicsByChapter = subMap;
+        _myRequests = requests;
+        if (!_isClassTeacher) _scope = 0;
+        _loading = false;
+      });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load syllabus.'; });
     }
   }
 
@@ -280,6 +287,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     }
   }
 
+  // REQ-BUG-083 (2026-11-20 full-system audit): ctrl was never disposed.
   Future<void> _renameChapter(Map<String, dynamic> chapter) async {
     final ctrl = TextEditingController(text: chapter['chapter'] as String? ?? '');
     final newName = await showDialog<String>(
@@ -302,6 +310,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
         ],
       ),
     );
+    ctrl.dispose();
     if (newName == null || newName.isEmpty || newName == chapter['chapter']) return;
     final employeeId = _employeeId;
     final sessionToken = AuthService.to.sessionToken;
@@ -394,9 +403,21 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     }
   }
 
+  // REQ-BUG-083 (2026-11-20 full-system audit): reasonCtrl/changesCtrl were
+  // never disposed - wrapped in try/finally since their text is read AFTER
+  // the sheet call returns, not just inside the builder.
   Future<void> _openRequestEditSheet(String className, String subject) async {
     final reasonCtrl  = TextEditingController();
     final changesCtrl = TextEditingController();
+    try {
+      await _requestEditSheetBody(className, subject, reasonCtrl, changesCtrl);
+    } finally {
+      reasonCtrl.dispose();
+      changesCtrl.dispose();
+    }
+  }
+
+  Future<void> _requestEditSheetBody(String className, String subject, TextEditingController reasonCtrl, TextEditingController changesCtrl) async {
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -468,6 +489,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     _load();
   }
 
+  // REQ-BUG-083 (2026-11-20 full-system audit): ctrl was never disposed.
   void _showAddSubtopicsSheet(Map<String, dynamic> chapter) {
     final ctrl = TextEditingController();
     showModalBottomSheet(
@@ -527,7 +549,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
           ]),
         ),
       ),
-    );
+    ).then((_) => ctrl.dispose());
   }
 
   // Groups chapters by "Class · Subject" (Mine can span multiple classes) or
@@ -543,6 +565,8 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     return map;
   }
 
+  // REQ-BUG-083 (2026-11-20 full-system audit): chapterCtrl was never
+  // disposed.
   Future<void> _showAddChapterSheet() async {
     final chapterCtrl = TextEditingController();
     final profile  = AuthService.to.profile.value ?? {};
@@ -746,7 +770,7 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
           );
         },
       ),
-    );
+    ).then((_) => chapterCtrl.dispose());
   }
 
   // Excel import - Class/Subject picked once (unlike the sheet itself, which
@@ -1050,6 +1074,8 @@ class _TeacherSyllabusPageState extends State<TeacherSyllabusPage> {
     Widget body;
     if (_loading) {
       body = _buildShimmer();
+    } else if (_error != null) {
+      body = Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)));
     } else {
       body = Column(children: [
         if (_isClassTeacher) _buildScopeTabBar(),

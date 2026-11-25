@@ -27,6 +27,7 @@ class _TeacherNotebookReportPageState extends State<TeacherNotebookReportPage> {
   DateTime _to = DateTime.now();
 
   bool _loading = false;
+  String? _error;
   List<Map<String, dynamic>> _students = [];
   List<String> _subjects = [];
   // studentId -> subject -> (done, total)
@@ -42,40 +43,46 @@ class _TeacherNotebookReportPageState extends State<TeacherNotebookReportPage> {
     _load();
   }
 
+  // REQ-BUG-069 (2026-11-20 full-system audit): no try/catch - any network
+  // blip left this spinning forever with no error/retry shown.
   Future<void> _load() async {
     if (_className == null) return;
-    setState(() { _loading = true; _students = []; _subjects = []; _counts.clear(); });
-    final profile = AuthService.to.profile.value ?? {};
-    final employeeId = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
+    setState(() { _loading = true; _error = null; _students = []; _subjects = []; _counts.clear(); });
+    try {
+      final profile = AuthService.to.profile.value ?? {};
+      final employeeId = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
 
-    final students = await SupabaseService.fetchClassStudentsByName(_className!);
-    final subjects = await SupabaseService.fetchClassSubjects(_className!);
-    final rows = (employeeId != null && sessionToken != null)
-        ? await SupabaseService.fetchNotebookReport(
-            employeeId, sessionToken, _className!,
-            DateFormat('yyyy-MM-dd').format(_from),
-            DateFormat('yyyy-MM-dd').format(_to),
-          )
-        : <Map<String, dynamic>>[];
+      final students = await SupabaseService.fetchClassStudentsByName(_className!);
+      final subjects = await SupabaseService.fetchClassSubjects(_className!);
+      final rows = (employeeId != null && sessionToken != null)
+          ? await SupabaseService.fetchNotebookReport(
+              employeeId, sessionToken, _className!,
+              DateFormat('yyyy-MM-dd').format(_from),
+              DateFormat('yyyy-MM-dd').format(_to),
+            )
+          : <Map<String, dynamic>>[];
 
-    final counts = <String, Map<String, ({int done, int total})>>{};
-    for (final r in rows) {
-      final id = r['student_id'] as String?;
-      final subject = r['subject'] as String?;
-      if (id == null || subject == null) continue;
-      final done = (r['checks_done'] as num?)?.toInt() ?? 0;
-      final total = (r['checks_total'] as num?)?.toInt() ?? 0;
-      counts.putIfAbsent(id, () => {})[subject] = (done: done, total: total);
+      final counts = <String, Map<String, ({int done, int total})>>{};
+      for (final r in rows) {
+        final id = r['student_id'] as String?;
+        final subject = r['subject'] as String?;
+        if (id == null || subject == null) continue;
+        final done = (r['checks_done'] as num?)?.toInt() ?? 0;
+        final total = (r['checks_total'] as num?)?.toInt() ?? 0;
+        counts.putIfAbsent(id, () => {})[subject] = (done: done, total: total);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _students = students;
+        _subjects = subjects;
+        _counts.addAll(counts);
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load notebook report.'; });
     }
-
-    if (!mounted) return;
-    setState(() {
-      _students = students;
-      _subjects = subjects;
-      _counts.addAll(counts);
-      _loading = false;
-    });
   }
 
   ({int done, int total}) _overall(String studentId) {
@@ -165,6 +172,9 @@ class _TeacherNotebookReportPageState extends State<TeacherNotebookReportPage> {
           child: Container(height: 72, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14))),
         ),
       );
+    }
+    if (_error != null) {
+      return Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)));
     }
     if (_students.isEmpty || _subjects.isEmpty) {
       return Center(child: Padding(

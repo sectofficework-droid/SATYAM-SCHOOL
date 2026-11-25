@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/services/auth_service.dart';
 import '../../../../core/services/supabase_service.dart';
@@ -140,8 +141,26 @@ class TeacherProfilePage extends StatelessWidget {
               const SizedBox(height: 24),
 
               // Sign out
+              // F9.4 (2026-11-20 full-system audit): this used to sign out
+              // on a single tap with no confirmation - inconsistent with
+              // teacher_home.dart's own sign-out button, same class of gap
+              // just fixed on the Student app side (student_profile_page
+              // vs student_home.dart).
               GestureDetector(
-                onTap: () => AuthService.to.signOut(),
+                onTap: () async {
+                  final confirm = await Get.dialog<bool>(AlertDialog(
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                    title: const Text('Sign Out', style: TextStyle(fontWeight: FontWeight.w700)),
+                    content: const Text('Are you sure you want to sign out?'),
+                    actions: [
+                      TextButton(onPressed: () => Get.back(result: false), child: const Text('Cancel')),
+                      TextButton(
+                        onPressed: () => Get.back(result: true),
+                        child: const Text('Sign Out', style: TextStyle(color: AppColors.red, fontWeight: FontWeight.w700))),
+                    ],
+                  ));
+                  if (confirm == true) AuthService.to.signOut();
+                },
                 child: Container(
                   height: 52,
                   decoration: BoxDecoration(

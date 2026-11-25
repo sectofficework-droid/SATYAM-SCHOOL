@@ -176,6 +176,23 @@ export async function PATCH(request) {
     return NextResponse.json({ error: "Cannot change your own role." }, { status: 400 });
   }
 
+  // REQ-SEC (2026-11-20 full-system audit): nothing stopped a demotion
+  // from leaving zero senior_admin/management accounts - two such accounts
+  // could mutually demote each other down to none, locking the school out
+  // of its own admin-user management with no superuser bypass to recover.
+  const wasElevated = ["senior_admin", "management"].includes(target.role);
+  const staysElevated = ["senior_admin", "management"].includes(role);
+  if (wasElevated && !staysElevated) {
+    const { count } = await supabaseAdmin
+      .from("admin_users")
+      .select("id", { count: "exact", head: true })
+      .in("role", ["senior_admin", "management"])
+      .neq("id", targetId);
+    if (!count) {
+      return NextResponse.json({ error: "Cannot demote the last senior_admin/management account." }, { status: 400 });
+    }
+  }
+
   const { data: row, error: updateErr } = await supabaseAdmin
     .from("admin_users")
     .update({ name, initials, role })
@@ -211,8 +228,22 @@ export async function DELETE(request) {
   if (!targetId) return NextResponse.json({ error: "Missing target user." }, { status: 400 });
   if (targetId === caller.id) return NextResponse.json({ error: "Cannot delete your own account." }, { status: 400 });
 
-  const { data: target } = await supabaseAdmin.from("admin_users").select("id").eq("id", targetId).single();
+  const { data: target } = await supabaseAdmin.from("admin_users").select("id, role").eq("id", targetId).single();
   if (!target) return NextResponse.json({ error: "Target user not found." }, { status: 404 });
+
+  // REQ-SEC (2026-11-20 full-system audit): same last-admin protection as
+  // PATCH's demotion path - deleting the last senior_admin/management
+  // account would leave nobody able to manage admin users at all.
+  if (["senior_admin", "management"].includes(target.role)) {
+    const { count } = await supabaseAdmin
+      .from("admin_users")
+      .select("id", { count: "exact", head: true })
+      .in("role", ["senior_admin", "management"])
+      .neq("id", targetId);
+    if (!count) {
+      return NextResponse.json({ error: "Cannot delete the last senior_admin/management account." }, { status: 400 });
+    }
+  }
 
   const { error: deleteErr } = await supabaseAdmin.from("admin_users").delete().eq("id", targetId);
   if (deleteErr) return NextResponse.json({ error: deleteErr.message }, { status: 400 });

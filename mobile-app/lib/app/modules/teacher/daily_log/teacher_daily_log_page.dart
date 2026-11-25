@@ -37,6 +37,7 @@ class _TeacherDailyLogPageState extends State<TeacherDailyLogPage> {
   final Set<String> _expanded = {};
 
   bool _loadingRoster = false;
+  String? _error;
   bool _saving = false;
   bool _saved = false;
 
@@ -63,37 +64,43 @@ class _TeacherDailyLogPageState extends State<TeacherDailyLogPage> {
     'homework_done': true, 'classwork_done': true, 'attentive': true, 'diary_done': true,
   };
 
+  // REQ-BUG-069 (2026-11-20 full-system audit): no try/catch - any network
+  // blip left this spinning forever with no error/retry shown.
   Future<void> _loadRoster() async {
     if (_className == null || _subject == null) return;
-    setState(() { _loadingRoster = true; _students = []; _state.clear(); _expanded.clear(); });
-    final profile = AuthService.to.profile.value ?? {};
-    final employeeId = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    final dateStr = DateFormat('yyyy-MM-dd').format(_date);
+    setState(() { _loadingRoster = true; _error = null; _students = []; _state.clear(); _expanded.clear(); });
+    try {
+      final profile = AuthService.to.profile.value ?? {};
+      final employeeId = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      final dateStr = DateFormat('yyyy-MM-dd').format(_date);
 
-    final students = await SupabaseService.fetchClassStudentsByName(_className!);
-    final existing = (employeeId != null && sessionToken != null)
-        ? await SupabaseService.fetchStudentDailyLog(employeeId, sessionToken, _className!, _subject!, dateStr)
-        : <Map<String, dynamic>>[];
+      final students = await SupabaseService.fetchClassStudentsByName(_className!);
+      final existing = (employeeId != null && sessionToken != null)
+          ? await SupabaseService.fetchStudentDailyLog(employeeId, sessionToken, _className!, _subject!, dateStr)
+          : <Map<String, dynamic>>[];
 
-    final byStudent = <String, Map<String, dynamic>>{};
-    for (final r in existing) { byStudent[r['student_id'] as String] = r; }
+      final byStudent = <String, Map<String, dynamic>>{};
+      for (final r in existing) { byStudent[r['student_id'] as String] = r; }
 
-    final state = <String, Map<String, bool>>{};
-    for (final s in students) {
-      final id = s['id'] as String;
-      final row = byStudent[id];
-      state[id] = row == null
-          ? _defaultState()
-          : {
-              'homework_done': row['homework_done'] as bool? ?? true,
-              'classwork_done': row['classwork_done'] as bool? ?? true,
-              'attentive': row['attentive'] as bool? ?? true,
-              'diary_done': row['diary_done'] as bool? ?? true,
-            };
+      final state = <String, Map<String, bool>>{};
+      for (final s in students) {
+        final id = s['id'] as String;
+        final row = byStudent[id];
+        state[id] = row == null
+            ? _defaultState()
+            : {
+                'homework_done': row['homework_done'] as bool? ?? true,
+                'classwork_done': row['classwork_done'] as bool? ?? true,
+                'attentive': row['attentive'] as bool? ?? true,
+                'diary_done': row['diary_done'] as bool? ?? true,
+              };
+      }
+      if (!mounted) return;
+      setState(() { _students = students; _state.addAll(state); _loadingRoster = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loadingRoster = false; _error = 'Failed to load students.'; });
     }
-    if (!mounted) return;
-    setState(() { _students = students; _state.addAll(state); _loadingRoster = false; });
   }
 
   Future<void> _save() async {
@@ -258,6 +265,9 @@ class _TeacherDailyLogPageState extends State<TeacherDailyLogPage> {
             textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: AppColors.textLight, height: 1.5)),
         ]),
       ));
+    }
+    if (_error != null) {
+      return Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)));
     }
     if (_loadingRoster) {
       return ListView.separated(

@@ -21,6 +21,7 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
   List<Map<String, dynamic>> _mineList = [];
   List<Map<String, dynamic>> _classList = [];
   bool _loading = true;
+  String? _error;
   bool _isClassTeacher = false;
 
   // Class -> subjects this teacher actually teaches there, from the real
@@ -42,35 +43,41 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-11-20 full-system audit): no try/catch - any network
+  // blip left this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final profile    = AuthService.to.profile.value ?? {};
-    final employeeId = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    final ownClass    = profile['class_name'] as String?;
-    _isClassTeacher = ownClass != null && ownClass.isNotEmpty;
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile    = AuthService.to.profile.value ?? {};
+      final employeeId = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      final ownClass    = profile['class_name'] as String?;
+      _isClassTeacher = ownClass != null && ownClass.isNotEmpty;
 
-    final mine = (employeeId != null && sessionToken != null)
-        ? await SupabaseService.fetchHomework(employeeId: employeeId, sessionToken: sessionToken, createdBy: employeeId)
-        : <Map<String, dynamic>>[];
-    final classWide = (_isClassTeacher && employeeId != null && sessionToken != null)
-        ? await SupabaseService.fetchHomework(employeeId: employeeId, sessionToken: sessionToken, classNames: [ownClass!])
-        : <Map<String, dynamic>>[];
+      final mine = (employeeId != null && sessionToken != null)
+          ? await SupabaseService.fetchHomework(employeeId: employeeId, sessionToken: sessionToken, createdBy: employeeId)
+          : <Map<String, dynamic>>[];
+      final classWide = (_isClassTeacher && employeeId != null && sessionToken != null)
+          ? await SupabaseService.fetchHomework(employeeId: employeeId, sessionToken: sessionToken, classNames: [ownClass!])
+          : <Map<String, dynamic>>[];
 
-    final teacherName = profile['name'] as String?;
-    final academicYear = await SupabaseService.fetchCurrentAcademicYearLabel();
-    final classSubjects = (teacherName != null && academicYear != null)
-        ? await SupabaseService.fetchTeacherSubjectsByClass(academicYear, teacherName)
-        : <String, List<String>>{};
+      final teacherName = profile['name'] as String?;
+      final academicYear = await SupabaseService.fetchCurrentAcademicYearLabel();
+      final classSubjects = (teacherName != null && academicYear != null)
+          ? await SupabaseService.fetchTeacherSubjectsByClass(academicYear, teacherName)
+          : <String, List<String>>{};
 
-    if (mounted) {
-      setState(() {
-      _mineList  = mine;
-      _classList = classWide;
-      _classSubjectsFromTT = classSubjects;
-      if (!_isClassTeacher) _scope = 0;
-      _loading = false;
-    });
+      if (mounted) {
+        setState(() {
+        _mineList  = mine;
+        _classList = classWide;
+        _classSubjectsFromTT = classSubjects;
+        if (!_isClassTeacher) _scope = 0;
+        _loading = false;
+      });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load homework.'; });
     }
   }
 
@@ -89,6 +96,8 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
     return result;
   }
 
+  // REQ-BUG-083 (2026-11-20 full-system audit): descCtrl was never
+  // disposed on any dismissal path.
   void _showAddSheet() {
     final descCtrl    = TextEditingController();
     DateTime? dueDate;
@@ -286,7 +295,7 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
         );
         },
       ),
-    );
+    ).then((_) => descCtrl.dispose());
   }
 
   @override
@@ -296,6 +305,8 @@ class _TeacherHomeworkPageState extends State<TeacherHomeworkPage> {
     Widget listArea;
     if (_loading) {
       listArea = _buildShimmer();
+    } else if (_error != null) {
+      listArea = Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)));
     } else if (shownList.isEmpty) {
       listArea = _emptyState();
     } else {

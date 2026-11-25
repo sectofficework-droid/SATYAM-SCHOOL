@@ -97,6 +97,10 @@ class _AdminKioskSettingsPageState extends State<AdminKioskSettingsPage> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): controller/confirmController
+  // were never disposed - both are only read inside the builder (via
+  // Navigator.pop(ctx, controller.text)), not after the sheet closes, so
+  // .whenComplete() is safe here (unlike _addSpecialDay below).
   Future<void> _setPin() async {
     final controller = TextEditingController();
     final confirmController = TextEditingController();
@@ -127,7 +131,10 @@ class _AdminKioskSettingsPageState extends State<AdminKioskSettingsPage> {
           ),
         ]),
       ),
-    );
+    ).whenComplete(() {
+      controller.dispose();
+      confirmController.dispose();
+    });
     if (pin == null) return;
     try {
       await StaffAdminService.kioskSetPin(_employeeId, pin);
@@ -137,6 +144,9 @@ class _AdminKioskSettingsPageState extends State<AdminKioskSettingsPage> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): reasonCtrl was never
+  // disposed; .text is read after the sheet closes, so wrapped the rest
+  // of this method in try/finally rather than .whenComplete().
   Future<void> _addSpecialDay() async {
     DateTime? date;
     TimeOfDay? startTime;
@@ -144,7 +154,7 @@ class _AdminKioskSettingsPageState extends State<AdminKioskSettingsPage> {
     TimeOfDay? shiftEndTime;
     int? grace;
     final reasonCtrl = TextEditingController();
-
+    try {
     final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -209,6 +219,9 @@ class _AdminKioskSettingsPageState extends State<AdminKioskSettingsPage> {
       _loadSpecialDays();
     } catch (e) {
       if (mounted) showAdminSnack(context, 'Failed to save special day.', isError: true);
+    }
+    } finally {
+      reasonCtrl.dispose();
     }
   }
 

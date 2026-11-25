@@ -58,6 +58,11 @@ class _StudentsFeesTabState extends State<_StudentsFeesTab> {
     return true;
   }).toList();
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): _searchCtrl was never
+  // disposed.
+  @override
+  void dispose() { _searchCtrl.dispose(); super.dispose(); }
+
   @override
   void initState() { super.initState(); _load(); }
 
@@ -71,36 +76,44 @@ class _StudentsFeesTabState extends State<_StudentsFeesTab> {
     }
   }
 
+  // REQ-BUG-093: amountCtrl/byCtrl were never disposed. Their .text is read
+  // AFTER the sheet closes, not just inside the builder, so wrapped the
+  // whole body in try/finally instead of .whenComplete().
   Future<void> _recordPayment(Map<String, dynamic> row) async {
     final amountCtrl = TextEditingController();
     final byCtrl = TextEditingController();
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text('Record Payment — ${row['name']}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: amountCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: byCtrl, decoration: const InputDecoration(labelText: 'Received by', border: OutlineInputBorder())),
-          const SizedBox(height: 16),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Record Payment')),
-        ]),
-      ),
-    );
-    final amount = num.tryParse(amountCtrl.text);
-    if (ok != true || amount == null) return;
     try {
-      await StaffAdminService.recordFeePayment(widget.employeeId,
-        enrollmentId: row['enrollment_id'] as String, studentId: row['student_id'] as String,
-        amount: amount, date: DateFormat('yyyy-MM-dd').format(DateTime.now()), receivedBy: byCtrl.text.trim());
-      if (mounted) showAdminSnack(context, 'Payment recorded');
-      _load(search: _searchCtrl.text);
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to record payment.', isError: true);
+      final ok = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('Record Payment — ${row['name']}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: amountCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Amount', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: byCtrl, decoration: const InputDecoration(labelText: 'Received by', border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Record Payment')),
+          ]),
+        ),
+      );
+      final amount = num.tryParse(amountCtrl.text);
+      if (ok != true || amount == null) return;
+      try {
+        await StaffAdminService.recordFeePayment(widget.employeeId,
+          enrollmentId: row['enrollment_id'] as String, studentId: row['student_id'] as String,
+          amount: amount, date: DateFormat('yyyy-MM-dd').format(DateTime.now()), receivedBy: byCtrl.text.trim());
+        if (mounted) showAdminSnack(context, 'Payment recorded');
+        _load(search: _searchCtrl.text);
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to record payment.', isError: true);
+      }
+    } finally {
+      amountCtrl.dispose();
+      byCtrl.dispose();
     }
   }
 
@@ -185,34 +198,42 @@ class _FeeStructureTabState extends State<_FeeStructureTab> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): tuitionCtrl/uniformCtrl
+  // were never disposed; .text is read after the sheet closes, so wrapped
+  // in try/finally rather than .whenComplete().
   Future<void> _edit(Map<String, dynamic> row) async {
     final tuitionCtrl = TextEditingController(text: '${row['tuition_amount'] ?? 0}');
     final uniformCtrl = TextEditingController(text: '${row['uniform_amount'] ?? 0}');
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text('${row['class_name']} Fee Structure', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: tuitionCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Tuition Amount', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: uniformCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Uniform Amount', border: OutlineInputBorder())),
-          const SizedBox(height: 16),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
-        ]),
-      ),
-    );
-    if (ok != true) return;
     try {
-      await StaffAdminService.upsertFeeStructure(widget.employeeId, row['class_id'] as String,
-        num.tryParse(tuitionCtrl.text) ?? 0, num.tryParse(uniformCtrl.text) ?? 0);
-      if (mounted) showAdminSnack(context, 'Fee structure updated');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to update.', isError: true);
+      final ok = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('${row['class_name']} Fee Structure', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: tuitionCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Tuition Amount', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: uniformCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Uniform Amount', border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          ]),
+        ),
+      );
+      if (ok != true) return;
+      try {
+        await StaffAdminService.upsertFeeStructure(widget.employeeId, row['class_id'] as String,
+          num.tryParse(tuitionCtrl.text) ?? 0, num.tryParse(uniformCtrl.text) ?? 0);
+        if (mounted) showAdminSnack(context, 'Fee structure updated');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to update.', isError: true);
+      }
+    } finally {
+      tuitionCtrl.dispose();
+      uniformCtrl.dispose();
     }
   }
 

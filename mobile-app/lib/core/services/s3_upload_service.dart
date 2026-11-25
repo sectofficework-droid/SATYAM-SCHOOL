@@ -37,15 +37,18 @@ class S3UploadService {
     return key;
   }
 
+  // F10.3 (2026-11-20 full-system audit): employeeId/sessionToken used to
+  // ride in the URL query string, more likely than a header to end up in
+  // server/proxy access logs for a short-lived credential. Moved to
+  // headers (server-side counterpart in admin-panel's view-url route).
   static Future<String?> getS3ViewUrl(String key) async {
     final employeeId = AuthService.to.profile.value?['id'] as String? ?? '';
     final sessionToken = AuthService.to.sessionToken ?? '';
-    final uri = Uri.parse(
-      '$adminPanelUrl/api/s3/view-url?key=${Uri.encodeComponent(key)}'
-      '&employeeId=${Uri.encodeComponent(employeeId)}'
-      '&sessionToken=${Uri.encodeComponent(sessionToken)}',
-    );
-    final response = await http.get(uri);
+    final uri = Uri.parse('$adminPanelUrl/api/s3/view-url?key=${Uri.encodeComponent(key)}');
+    final response = await http.get(uri, headers: {
+      'x-employee-id': employeeId,
+      'x-session-token': sessionToken,
+    });
     if (response.statusCode != 200) return null;
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     return data['viewUrl'] as String?;

@@ -38,6 +38,9 @@ class _AdminTasksPageState extends State<AdminTasksPage> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): titleCtrl/descCtrl/
+  // assigneeCtrl were never disposed; .text is read after the sheet
+  // closes, so wrapped in try/finally.
   Future<void> _createTask() async {
     final titleCtrl = TextEditingController();
     final descCtrl = TextEditingController();
@@ -46,65 +49,71 @@ class _AdminTasksPageState extends State<AdminTasksPage> {
     List<Map<String, dynamic>> results = [];
     String priority = 'Medium';
 
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('New Task', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: descCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          DropdownButtonFormField<String>(
-            initialValue: priority,
-            decoration: const InputDecoration(labelText: 'Priority', border: OutlineInputBorder()),
-            items: const ['Low', 'Medium', 'High'].map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
-            onChanged: (v) => setSheet(() => priority = v ?? priority),
-          ),
-          const SizedBox(height: 10),
-          TextField(
-            controller: assigneeCtrl,
-            decoration: const InputDecoration(labelText: 'Search assignee', border: OutlineInputBorder()),
-            onChanged: (v) async {
-              if (v.trim().length < 2) return;
-              final r = await StaffAdminService.searchEmployees(_employeeId, v.trim());
-              setSheet(() => results = r);
-            },
-          ),
-          const SizedBox(height: 6),
-          if (results.isNotEmpty) SizedBox(height: 120, child: ListView(children: results.map((e) => ListTile(
-            dense: true,
-            title: Text(e['name'] as String? ?? ''),
-            trailing: selected.any((s) => s['id'] == e['id']) ? const Icon(Icons.check, color: AppColors.green) : null,
-            onTap: () => setSheet(() {
-              if (!selected.any((s) => s['id'] == e['id'])) selected.add(e);
-            }),
-          )).toList())),
-          if (selected.isNotEmpty) Wrap(spacing: 6, children: selected.map((e) => Chip(
-            label: Text(e['name'] as String? ?? ''),
-            onDeleted: () => setSheet(() => selected.removeWhere((s) => s['id'] == e['id'])),
-          )).toList()),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy),
-            onPressed: () => Navigator.pop(ctx, true), child: const Text('Create Task')),
-        ])),
-      )),
-    );
-
-    if (saved != true || titleCtrl.text.trim().isEmpty) return;
     try {
-      await StaffAdminService.createTask(_employeeId,
-        title: titleCtrl.text.trim(), description: descCtrl.text.trim(), priority: priority,
-        assigneeIds: selected.map((e) => e['id'] as String).toList());
-      if (mounted) showAdminSnack(context, 'Task created');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to create task.', isError: true);
+      final saved = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('New Task', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: descCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Description', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              initialValue: priority,
+              decoration: const InputDecoration(labelText: 'Priority', border: OutlineInputBorder()),
+              items: const ['Low', 'Medium', 'High'].map((p) => DropdownMenuItem(value: p, child: Text(p))).toList(),
+              onChanged: (v) => setSheet(() => priority = v ?? priority),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: assigneeCtrl,
+              decoration: const InputDecoration(labelText: 'Search assignee', border: OutlineInputBorder()),
+              onChanged: (v) async {
+                if (v.trim().length < 2) return;
+                final r = await StaffAdminService.searchEmployees(_employeeId, v.trim());
+                setSheet(() => results = r);
+              },
+            ),
+            const SizedBox(height: 6),
+            if (results.isNotEmpty) SizedBox(height: 120, child: ListView(children: results.map((e) => ListTile(
+              dense: true,
+              title: Text(e['name'] as String? ?? ''),
+              trailing: selected.any((s) => s['id'] == e['id']) ? const Icon(Icons.check, color: AppColors.green) : null,
+              onTap: () => setSheet(() {
+                if (!selected.any((s) => s['id'] == e['id'])) selected.add(e);
+              }),
+            )).toList())),
+            if (selected.isNotEmpty) Wrap(spacing: 6, children: selected.map((e) => Chip(
+              label: Text(e['name'] as String? ?? ''),
+              onDeleted: () => setSheet(() => selected.removeWhere((s) => s['id'] == e['id'])),
+            )).toList()),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy),
+              onPressed: () => Navigator.pop(ctx, true), child: const Text('Create Task')),
+          ])),
+        )),
+      );
+
+      if (saved != true || titleCtrl.text.trim().isEmpty) return;
+      try {
+        await StaffAdminService.createTask(_employeeId,
+          title: titleCtrl.text.trim(), description: descCtrl.text.trim(), priority: priority,
+          assigneeIds: selected.map((e) => e['id'] as String).toList());
+        if (mounted) showAdminSnack(context, 'Task created');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to create task.', isError: true);
+      }
+    } finally {
+      titleCtrl.dispose();
+      descCtrl.dispose();
+      assigneeCtrl.dispose();
     }
   }
 

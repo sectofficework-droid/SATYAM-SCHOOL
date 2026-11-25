@@ -14,21 +14,28 @@ class TeacherDailyTasksPage extends StatefulWidget {
 class _TeacherDailyTasksPageState extends State<TeacherDailyTasksPage> {
   List<Map<String, dynamic>> _tasks = [];
   bool _loading = true;
+  String? _error;
   String? _employeeId;
   final Set<String> _busyIds = {};
 
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-11-20 full-system audit): no try/catch - any network
+  // blip left this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final profile = AuthService.to.profile.value ?? {};
-    _employeeId = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    final tasks = _employeeId != null && sessionToken != null
-        ? await SupabaseService.fetchDailyTasksForEmployee(_employeeId!, sessionToken)
-        : <Map<String, dynamic>>[];
-    if (mounted) setState(() { _tasks = tasks; _loading = false; });
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile = AuthService.to.profile.value ?? {};
+      _employeeId = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      final tasks = _employeeId != null && sessionToken != null
+          ? await SupabaseService.fetchDailyTasksForEmployee(_employeeId!, sessionToken)
+          : <Map<String, dynamic>>[];
+      if (mounted) setState(() { _tasks = tasks; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load daily tasks.'; });
+    }
   }
 
   Future<void> _toggle(Map<String, dynamic> task) async {
@@ -66,6 +73,8 @@ class _TeacherDailyTasksPageState extends State<TeacherDailyTasksPage> {
     Widget body;
     if (_loading) {
       body = const Center(child: CircularProgressIndicator(color: AppColors.navy));
+    } else if (_error != null) {
+      body = Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)));
     } else if (_tasks.isEmpty) {
       body = _emptyState();
     } else {

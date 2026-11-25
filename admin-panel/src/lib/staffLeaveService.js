@@ -1,4 +1,5 @@
 import supabase from "./supabase";
+import authedFetch from "./authedFetch";
 
 // leave_requests: a staff member's request to take leave, with a from/to
 // date range and a reason, submitted before the date. Same request/approve/
@@ -190,13 +191,13 @@ export async function getEmployeeAttendanceHistory(employeeId, fromDate, toDate)
 // ── Delete staff attendance & shifts ─────────────────────────────────────────
 // Removes records from BOTH employee_shifts and employee_attendance for an
 // employee on a specific date (or across multiple dates) via the admin API.
+// REQ-BUG-088 (2026-11-20 full-system audit): this used to attach no
+// Authorization header at all, so every real call 401'd against the route's
+// own requireAdminSession check - the "Delete" action in the Employee page
+// has been failing for every admin since that auth check was added.
 export async function deleteStaffAttendanceRecord(params) {
-  const res = await fetch("/api/staff-attendance/delete", {
+  return authedFetch("/api/staff-attendance/delete", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(params),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Failed to delete staff attendance");
-  return data;
 }

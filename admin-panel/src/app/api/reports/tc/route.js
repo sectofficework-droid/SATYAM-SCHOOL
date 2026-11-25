@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireStaffAdminTier, supabaseServiceClient } from "@/lib/reportsServerAuth";
 import { generateTcPdf } from "@/lib/pdfReportsServer";
+import { getStudentsForReportByIds } from "@/lib/studentService";
 
-// TC issuance has zero role gating on the admin-panel web side (TODO.md
-// REQ-SEC-008, still open there) — this mobile path doesn't inherit that
-// gap: management/senior_admin only.
+// TC issuance's own role gate (REQ-SEC-030, fixed on web + REQ-SEC-033,
+// matched on mobile's staff_admin_issue_tc RPC) is separate from this
+// route, which only renders a PDF after that RPC already succeeded —
+// management/senior_admin only here too, for consistency.
 export async function POST(request) {
   try {
     const { employeeId, sessionToken, studentId } = await request.json();
@@ -15,15 +17,20 @@ export async function POST(request) {
 
     const supabase = supabaseServiceClient();
     if (!supabase) return NextResponse.json({ error: "Server configuration error: missing service key" }, { status: 500 });
-    const { data: student, error } = await supabase.from("students").select("*").eq("id", studentId).single();
-    if (error) throw error;
+    // REQ-BUG-085: was a raw `students.select("*")` then `student.name`/
+    // `student.std`/`student.fatherName`/`student.admissionDate` — none of
+    // those columns exist on `students`; every field rendered blank on a
+    // legally significant document. Reuse the same mapToStudent()-backed
+    // helper as the id-card/bonafide routes.
+    const [student] = await getStudentsForReportByIds(supabase, [studentId]);
+    if (!student) return NextResponse.json({ error: "Student not found or not enrolled in the current academic year" }, { status: 404 });
 
     const row = {
       "Student Name": student.name,
       "Class": student.std,
       "Father's Name": student.fatherName,
       "Date of Birth": student.dob,
-      "Date of Admission": student.admissionDate || student.doa,
+      "Date of Admission": student.dateOfJoin,
       "Date of Leaving": new Date().toISOString().slice(0, 10),
       "Reason for Leaving": "Transfer",
     };

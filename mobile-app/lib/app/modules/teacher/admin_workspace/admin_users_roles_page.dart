@@ -36,45 +36,53 @@ class _AdminUsersRolesPageState extends State<AdminUsersRolesPage> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): nameCtrl/initialsCtrl were
+  // never disposed; .text is read after the sheet closes, so wrapped in
+  // try/finally.
   Future<void> _editOrCreate({Map<String, dynamic>? existing}) async {
     final nameCtrl = TextEditingController(text: existing?['name'] as String? ?? '');
     final initialsCtrl = TextEditingController(text: existing?['initials'] as String? ?? '');
     String role = existing?['role'] as String? ?? 'normal_admin';
 
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text(existing == null ? 'Add Admin User' : 'Edit Admin User', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Full Name', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: initialsCtrl, maxLength: 3, decoration: const InputDecoration(labelText: 'Initials', border: OutlineInputBorder())),
-          DropdownButtonFormField<String>(
-            initialValue: role,
-            decoration: const InputDecoration(labelText: 'Role', border: OutlineInputBorder()),
-            items: _roleLabels.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
-            onChanged: (v) => setSheet(() => role = v ?? role),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: Text(existing == null ? 'Add User' : 'Save')),
-        ]),
-      )),
-    );
-    if (ok != true || nameCtrl.text.trim().isEmpty) return;
     try {
-      if (existing == null) {
-        await StaffAdminService.createAdminUser(_employeeId, nameCtrl.text.trim(), initialsCtrl.text.trim().toUpperCase(), role);
-      } else {
-        await StaffAdminService.updateAdminUser(_employeeId, existing['id'] as String, nameCtrl.text.trim(), initialsCtrl.text.trim().toUpperCase(), role);
+      final ok = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text(existing == null ? 'Add Admin User' : 'Edit Admin User', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Full Name', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: initialsCtrl, maxLength: 3, decoration: const InputDecoration(labelText: 'Initials', border: OutlineInputBorder())),
+            DropdownButtonFormField<String>(
+              initialValue: role,
+              decoration: const InputDecoration(labelText: 'Role', border: OutlineInputBorder()),
+              items: _roleLabels.entries.map((e) => DropdownMenuItem(value: e.key, child: Text(e.value))).toList(),
+              onChanged: (v) => setSheet(() => role = v ?? role),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: Text(existing == null ? 'Add User' : 'Save')),
+          ]),
+        )),
+      );
+      if (ok != true || nameCtrl.text.trim().isEmpty) return;
+      try {
+        if (existing == null) {
+          await StaffAdminService.createAdminUser(_employeeId, nameCtrl.text.trim(), initialsCtrl.text.trim().toUpperCase(), role);
+        } else {
+          await StaffAdminService.updateAdminUser(_employeeId, existing['id'] as String, nameCtrl.text.trim(), initialsCtrl.text.trim().toUpperCase(), role);
+        }
+        if (mounted) showAdminSnack(context, 'Saved');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, e.toString().contains('Only management') ? 'Only management can do that.' : 'Failed to save.', isError: true);
       }
-      if (mounted) showAdminSnack(context, 'Saved');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, e.toString().contains('Only management') ? 'Only management can do that.' : 'Failed to save.', isError: true);
+    } finally {
+      nameCtrl.dispose();
+      initialsCtrl.dispose();
     }
   }
 

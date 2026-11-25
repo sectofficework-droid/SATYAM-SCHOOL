@@ -19,6 +19,7 @@ class _TeacherCalendarPageState extends State<TeacherCalendarPage> {
   late DateTime _visibleMonth;
   List<Map<String, dynamic>> _events = [];
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() {
@@ -28,12 +29,18 @@ class _TeacherCalendarPageState extends State<TeacherCalendarPage> {
     _loadMonth();
   }
 
+  // REQ-BUG-069 (2026-11-20 full-system audit): no try/catch - any network
+  // blip left this spinning forever with no error/retry shown.
   Future<void> _loadMonth() async {
-    setState(() => _loading = true);
-    final rangeStart = _visibleMonth;
-    final rangeEnd = DateTime(_visibleMonth.year, _visibleMonth.month + 1, 0);
-    final events = await SupabaseService.fetchCalendarEvents(rangeStart, rangeEnd);
-    if (mounted) setState(() { _events = events; _loading = false; });
+    setState(() { _loading = true; _error = null; });
+    try {
+      final rangeStart = _visibleMonth;
+      final rangeEnd = DateTime(_visibleMonth.year, _visibleMonth.month + 1, 0);
+      final events = await SupabaseService.fetchCalendarEvents(rangeStart, rangeEnd);
+      if (mounted) setState(() { _events = events; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load calendar.'; });
+    }
   }
 
   void _changeMonth(int delta) {
@@ -141,6 +148,11 @@ class _TeacherCalendarPageState extends State<TeacherCalendarPage> {
               const SizedBox(height: 6),
               if (_loading)
                 const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Center(child: CircularProgressIndicator()))
+              else if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 40),
+                  child: Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight))),
+                )
               else
                 GridView.count(
                   crossAxisCount: 7,

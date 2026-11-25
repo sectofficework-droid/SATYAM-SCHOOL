@@ -31,8 +31,15 @@ export const GET = withDiagnostics(async function GET(request) {
 
   const supabaseAdmin = getAdminClient();
   if (!supabaseAdmin) return NextResponse.json({ error: "Server configuration error: missing service key" }, { status: 500, headers: CORS });
+  // REQ-SEC (2026-11-20 full-system audit): the mobile caller used to send
+  // employeeId/sessionToken as query-string params, more likely than a
+  // header to end up in server/proxy access logs. Mobile now sends them as
+  // headers instead; query params are kept as a fallback only for any
+  // other caller still using the old shape.
   const { errorResponse } = await requireAdminOrMobileSession(request, supabaseAdmin, {
-    subjectType: "teacher", subjectId: params.get("employeeId"), sessionToken: params.get("sessionToken"),
+    subjectType: "teacher",
+    subjectId: request.headers.get("x-employee-id") || params.get("employeeId"),
+    sessionToken: request.headers.get("x-session-token") || params.get("sessionToken"),
   });
   if (errorResponse) return errorResponse;
 

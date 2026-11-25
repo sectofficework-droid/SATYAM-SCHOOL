@@ -14,8 +14,11 @@ import logger from "@/lib/logger";
 // enabled, so firing after the latest plausible cutoff each day is what keeps
 // this correct with only one run.
 export const GET = withDiagnostics(async function GET(request) {
+  // REQ-SEC-020 (re-confirmed by the 2026-11-20 full-system audit): same
+  // fail-open fix as attendance-reminders' cron route - fail closed if
+  // CRON_SECRET is ever unset, instead of skipping the check entirely.
   const authHeader = request.headers.get("authorization");
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

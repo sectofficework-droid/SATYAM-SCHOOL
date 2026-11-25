@@ -60,67 +60,83 @@ class _ItemsTabState extends State<_ItemsTab> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): nameCtrl/categoryCtrl/
+  // unitCtrl were never disposed; .text is read after the sheet closes,
+  // so wrapped in try/finally.
   Future<void> _addItem() async {
     final nameCtrl = TextEditingController();
     final categoryCtrl = TextEditingController();
     final unitCtrl = TextEditingController(text: 'Pcs');
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('New Item', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Item Name', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: categoryCtrl, decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: unitCtrl, decoration: const InputDecoration(labelText: 'Unit', border: OutlineInputBorder())),
-          const SizedBox(height: 16),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Add Item')),
-        ])),
-      ),
-    );
-    if (ok != true || nameCtrl.text.trim().isEmpty) return;
     try {
-      await StaffAdminService.addInventoryItem(widget.employeeId, name: nameCtrl.text.trim(), category: categoryCtrl.text.trim(), unit: unitCtrl.text.trim());
-      if (mounted) showAdminSnack(context, 'Item added');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to add item.', isError: true);
+      final ok = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('New Item', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Item Name', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: categoryCtrl, decoration: const InputDecoration(labelText: 'Category', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: unitCtrl, decoration: const InputDecoration(labelText: 'Unit', border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Add Item')),
+          ])),
+        ),
+      );
+      if (ok != true || nameCtrl.text.trim().isEmpty) return;
+      try {
+        await StaffAdminService.addInventoryItem(widget.employeeId, name: nameCtrl.text.trim(), category: categoryCtrl.text.trim(), unit: unitCtrl.text.trim());
+        if (mounted) showAdminSnack(context, 'Item added');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to add item.', isError: true);
+      }
+    } finally {
+      nameCtrl.dispose();
+      categoryCtrl.dispose();
+      unitCtrl.dispose();
     }
   }
 
+  // REQ-BUG-093: qtyCtrl/byCtrl were never disposed; same try/finally
+  // treatment as _addItem above.
   Future<void> _addBatch(Map<String, dynamic> item) async {
     final qtyCtrl = TextEditingController();
     final byCtrl = TextEditingController();
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text('Add Stock — ${item['name']}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: qtyCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Quantity Received', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: byCtrl, decoration: const InputDecoration(labelText: 'Received by', border: OutlineInputBorder())),
-          const SizedBox(height: 16),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Add Stock')),
-        ]),
-      ),
-    );
-    final qty = int.tryParse(qtyCtrl.text);
-    if (ok != true || qty == null) return;
     try {
-      await StaffAdminService.addInventoryBatch(widget.employeeId,
-        itemId: item['id'] as String, qty: qty, receivedDate: DateFormat('yyyy-MM-dd').format(DateTime.now()), receivedBy: byCtrl.text.trim());
-      if (mounted) showAdminSnack(context, 'Stock added');
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to add stock.', isError: true);
+      final ok = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('Add Stock — ${item['name']}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: qtyCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Quantity Received', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: byCtrl, decoration: const InputDecoration(labelText: 'Received by', border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Add Stock')),
+          ]),
+        ),
+      );
+      final qty = int.tryParse(qtyCtrl.text);
+      if (ok != true || qty == null) return;
+      try {
+        await StaffAdminService.addInventoryBatch(widget.employeeId,
+          itemId: item['id'] as String, qty: qty, receivedDate: DateFormat('yyyy-MM-dd').format(DateTime.now()), receivedBy: byCtrl.text.trim());
+        if (mounted) showAdminSnack(context, 'Stock added');
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to add stock.', isError: true);
+      }
+    } finally {
+      qtyCtrl.dispose();
+      byCtrl.dispose();
     }
   }
 
@@ -180,6 +196,17 @@ class _UsageTabState extends State<_UsageTab> {
   bool _loading = true;
   bool _saving = false;
   String? _error;
+
+  // REQ-BUG-093 (2026-11-20 full-system audit): this StatefulWidget had no
+  // dispose() override at all - _qtyCtrl/_purposeCtrl/_byCtrl leaked for
+  // the tab's whole lifetime.
+  @override
+  void dispose() {
+    _qtyCtrl.dispose();
+    _purposeCtrl.dispose();
+    _byCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() { super.initState(); _load(); }
@@ -268,37 +295,45 @@ class _AssetsTabState extends State<_AssetsTab> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): takenByCtrl/purposeCtrl
+  // were never disposed; .text is read after the sheet closes, so wrapped
+  // in try/finally.
   Future<void> _checkout(Map<String, dynamic> asset) async {
     final takenByCtrl = TextEditingController();
     final purposeCtrl = TextEditingController();
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      isScrollControlled: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text('Checkout ${asset['name']}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: takenByCtrl, decoration: const InputDecoration(labelText: 'Taken by', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: purposeCtrl, decoration: const InputDecoration(labelText: 'Purpose', border: OutlineInputBorder())),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy),
-            onPressed: () => Navigator.pop(ctx, true), child: const Text('Checkout')),
-        ]),
-      ),
-    );
-    if (ok != true || takenByCtrl.text.trim().isEmpty) return;
     try {
-      await StaffAdminService.checkoutAsset(widget.employeeId,
-        assetId: asset['id'] as String, takenBy: takenByCtrl.text.trim(),
-        purpose: purposeCtrl.text.trim(), takenDate: DateFormat('yyyy-MM-dd').format(DateTime.now()));
-      if (mounted) showAdminSnack(context, 'Asset checked out');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Checkout failed.', isError: true);
+      final ok = await showModalBottomSheet<bool>(
+        context: context,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        isScrollControlled: true,
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text('Checkout ${asset['name']}', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: takenByCtrl, decoration: const InputDecoration(labelText: 'Taken by', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: purposeCtrl, decoration: const InputDecoration(labelText: 'Purpose', border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy),
+              onPressed: () => Navigator.pop(ctx, true), child: const Text('Checkout')),
+          ]),
+        ),
+      );
+      if (ok != true || takenByCtrl.text.trim().isEmpty) return;
+      try {
+        await StaffAdminService.checkoutAsset(widget.employeeId,
+          assetId: asset['id'] as String, takenBy: takenByCtrl.text.trim(),
+          purpose: purposeCtrl.text.trim(), takenDate: DateFormat('yyyy-MM-dd').format(DateTime.now()));
+        if (mounted) showAdminSnack(context, 'Asset checked out');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Checkout failed.', isError: true);
+      }
+    } finally {
+      takenByCtrl.dispose();
+      purposeCtrl.dispose();
     }
   }
 

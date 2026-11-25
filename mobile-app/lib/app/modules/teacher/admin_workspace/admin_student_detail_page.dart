@@ -7,10 +7,13 @@ import '../../../../common/widgets/admin_workspace_common.dart';
 import '../../../../common/widgets/s3_image.dart';
 
 // Full student detail/edit/actions — Staff App phase-2 (2026-09-19: user
-// asked for full admin-web parity). TC issuance here is gated server-side
-// (staff_admin_tier) unlike the admin panel's own saveTransferCertificate
-// (TODO.md REQ-SEC-008, still open there) — this mobile path was built
-// correctly from the start, not a copy of the ungated web version.
+// asked for full admin-web parity). TC issuance (staff_admin_issue_tc) used
+// to only check staff_admin_tier(...) IS NOT NULL - any linked admin tier -
+// which was correct when this comment was first written (the web side's
+// own TC RPC had no gate at all back then, REQ-SEC-008). The web side was
+// fixed to senior_admin/management-only by REQ-SEC-030 (2026-11-18); this
+// mobile RPC was not updated to match until the 2026-11-20 full-system
+// audit (REQ-SEC-033) found the drift and closed it the same way.
 class AdminStudentDetailPage extends StatefulWidget {
   final String studentId;
   const AdminStudentDetailPage({super.key, required this.studentId});
@@ -39,6 +42,9 @@ class _AdminStudentDetailPageState extends State<AdminStudentDetailPage> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): none of these 6 controllers
+  // were ever disposed; .text is read after the sheet closes, so wrapped
+  // in try/finally.
   Future<void> _edit() async {
     final s = _student!;
     final firstCtrl = TextEditingController(text: s['first_name'] as String? ?? '');
@@ -48,78 +54,95 @@ class _AdminStudentDetailPageState extends State<AdminStudentDetailPage> {
     final mobileCtrl = TextEditingController(text: s['mobile1'] as String? ?? '');
     final addressCtrl = TextEditingController(text: s['address'] as String? ?? '');
 
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Edit Student', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: firstCtrl, decoration: const InputDecoration(labelText: 'First Name', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: lastCtrl, decoration: const InputDecoration(labelText: 'Last Name', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: fatherCtrl, decoration: const InputDecoration(labelText: "Father's Name", border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: motherCtrl, decoration: const InputDecoration(labelText: "Mother's Name", border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: mobileCtrl, decoration: const InputDecoration(labelText: 'Mobile', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: addressCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Address', border: OutlineInputBorder())),
-          const SizedBox(height: 16),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
-        ])),
-      ),
-    );
-    if (saved != true) return;
     try {
-      await StaffAdminService.updateStudentBasic(_employeeId, widget.studentId,
-        firstName: firstCtrl.text.trim(), lastName: lastCtrl.text.trim(),
-        fatherName: fatherCtrl.text.trim(), motherName: motherCtrl.text.trim(),
-        dob: s['dob'] as String, mobile1: mobileCtrl.text.trim(), address: addressCtrl.text.trim());
-      if (mounted) showAdminSnack(context, 'Student updated');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to update.', isError: true);
+      final saved = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('Edit Student', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: firstCtrl, decoration: const InputDecoration(labelText: 'First Name', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: lastCtrl, decoration: const InputDecoration(labelText: 'Last Name', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: fatherCtrl, decoration: const InputDecoration(labelText: "Father's Name", border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: motherCtrl, decoration: const InputDecoration(labelText: "Mother's Name", border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: mobileCtrl, decoration: const InputDecoration(labelText: 'Mobile', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: addressCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Address', border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          ])),
+        ),
+      );
+      if (saved != true) return;
+      try {
+        await StaffAdminService.updateStudentBasic(_employeeId, widget.studentId,
+          firstName: firstCtrl.text.trim(), lastName: lastCtrl.text.trim(),
+          fatherName: fatherCtrl.text.trim(), motherName: motherCtrl.text.trim(),
+          dob: s['dob'] as String, mobile1: mobileCtrl.text.trim(), address: addressCtrl.text.trim());
+        if (mounted) showAdminSnack(context, 'Student updated');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to update.', isError: true);
+      }
+    } finally {
+      firstCtrl.dispose();
+      lastCtrl.dispose();
+      fatherCtrl.dispose();
+      motherCtrl.dispose();
+      mobileCtrl.dispose();
+      addressCtrl.dispose();
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): tcNoCtrl/reasonCtrl were
+  // never disposed; .text is read after the sheet closes, so wrapped in
+  // try/finally.
   Future<void> _issueTc() async {
     final tcNoCtrl = TextEditingController();
     final reasonCtrl = TextEditingController();
 
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Issue Transfer Certificate', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 4),
-          const Text('This marks the student as Left. This cannot be easily undone.', style: TextStyle(fontSize: 12, color: AppColors.red)),
-          const SizedBox(height: 12),
-          TextField(controller: tcNoCtrl, decoration: const InputDecoration(labelText: 'TC Number', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: reasonCtrl, decoration: const InputDecoration(labelText: 'Reason for leaving', border: OutlineInputBorder())),
-          const SizedBox(height: 16),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.red), onPressed: () => Navigator.pop(ctx, true), child: const Text('Issue TC')),
-        ]),
-      )),
-    );
-    if (ok != true || tcNoCtrl.text.trim().isEmpty) return;
     try {
-      final today = DateTime.now();
-      final dateStr = '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}';
-      await StaffAdminService.issueTc(_employeeId, studentId: widget.studentId,
-        enrollmentId: (_student!['enrollment'] as Map?)?['id'] as String?,
-        tcNumber: tcNoCtrl.text.trim(), issueDate: dateStr, leavingDate: dateStr, reason: reasonCtrl.text.trim());
-      if (mounted) showAdminSnack(context, 'TC issued');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to issue TC.', isError: true);
+      final ok = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('Issue Transfer Certificate', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 4),
+            const Text('This marks the student as Left. This cannot be easily undone.', style: TextStyle(fontSize: 12, color: AppColors.red)),
+            const SizedBox(height: 12),
+            TextField(controller: tcNoCtrl, decoration: const InputDecoration(labelText: 'TC Number', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: reasonCtrl, decoration: const InputDecoration(labelText: 'Reason for leaving', border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.red), onPressed: () => Navigator.pop(ctx, true), child: const Text('Issue TC')),
+          ]),
+        )),
+      );
+      if (ok != true || tcNoCtrl.text.trim().isEmpty) return;
+      try {
+        final today = DateTime.now();
+        final dateStr = '${today.year}-${today.month.toString().padLeft(2,'0')}-${today.day.toString().padLeft(2,'0')}';
+        await StaffAdminService.issueTc(_employeeId, studentId: widget.studentId,
+          enrollmentId: (_student!['enrollment'] as Map?)?['id'] as String?,
+          tcNumber: tcNoCtrl.text.trim(), issueDate: dateStr, leavingDate: dateStr, reason: reasonCtrl.text.trim());
+        if (mounted) showAdminSnack(context, 'TC issued');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to issue TC.', isError: true);
+      }
+    } finally {
+      tcNoCtrl.dispose();
+      reasonCtrl.dispose();
     }
   }
 
@@ -199,9 +222,11 @@ class _AdminStudentDetailPageState extends State<AdminStudentDetailPage> {
       ElevatedButton.icon(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy, padding: const EdgeInsets.symmetric(vertical: 14)),
         onPressed: _edit, icon: const Icon(Icons.edit_rounded, size: 18), label: const Text('Edit Profile')),
       const SizedBox(height: 10),
-      OutlinedButton.icon(onPressed: _impersonate, icon: const Icon(Icons.login_rounded, size: 18), label: const Text('Generate Admin Access Code')),
-      const SizedBox(height: 10),
-      if (s['status'] == 'Active')
+      if (_isSeniorOrMgmt) ...[
+        OutlinedButton.icon(onPressed: _impersonate, icon: const Icon(Icons.login_rounded, size: 18), label: const Text('Generate Admin Access Code')),
+        const SizedBox(height: 10),
+      ],
+      if (s['status'] == 'Active' && _isSeniorOrMgmt)
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(foregroundColor: AppColors.amber, side: const BorderSide(color: AppColors.amber)),
           onPressed: _issueTc, icon: const Icon(Icons.assignment_return_rounded, size: 18), label: const Text('Issue Transfer Certificate')),

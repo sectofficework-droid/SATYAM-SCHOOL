@@ -41,6 +41,9 @@ class _AdminSyllabusPageState extends State<AdminSyllabusPage> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): classCtrl/subjectCtrl/
+  // chapterCtrl were never disposed; .text is read after the sheet
+  // closes, so wrapped in try/finally.
   Future<void> _addChapter() async {
     final classCtrl = TextEditingController();
     final subjectCtrl = TextEditingController();
@@ -49,40 +52,46 @@ class _AdminSyllabusPageState extends State<AdminSyllabusPage> {
     String? teacherId;
     try { teachers = await StaffAdminService.teachingStaff(_employeeId); } catch (_) {}
 
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('New Chapter', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: classCtrl, decoration: const InputDecoration(labelText: 'Class', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: subjectCtrl, decoration: const InputDecoration(labelText: 'Subject', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: chapterCtrl, decoration: const InputDecoration(labelText: 'Chapter', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          DropdownButtonFormField<String>(
-            initialValue: teacherId,
-            decoration: const InputDecoration(labelText: 'Owning Teacher', border: OutlineInputBorder()),
-            items: teachers.map((t) => DropdownMenuItem(value: t['id'] as String, child: Text(t['name'] as String))).toList(),
-            onChanged: (v) => setSheet(() => teacherId = v),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Add Chapter')),
-        ])),
-      )),
-    );
-    if (ok != true || teacherId == null || chapterCtrl.text.trim().isEmpty) return;
     try {
-      await StaffAdminService.addSyllabusChapter(_employeeId,
-        teacherId: teacherId!, className: classCtrl.text.trim(), subject: subjectCtrl.text.trim(), chapter: chapterCtrl.text.trim());
-      if (mounted) showAdminSnack(context, 'Chapter added');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to add chapter.', isError: true);
+      final ok = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('New Chapter', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: classCtrl, decoration: const InputDecoration(labelText: 'Class', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: subjectCtrl, decoration: const InputDecoration(labelText: 'Subject', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: chapterCtrl, decoration: const InputDecoration(labelText: 'Chapter', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              initialValue: teacherId,
+              decoration: const InputDecoration(labelText: 'Owning Teacher', border: OutlineInputBorder()),
+              items: teachers.map((t) => DropdownMenuItem(value: t['id'] as String, child: Text(t['name'] as String))).toList(),
+              onChanged: (v) => setSheet(() => teacherId = v),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Add Chapter')),
+          ])),
+        )),
+      );
+      if (ok != true || teacherId == null || chapterCtrl.text.trim().isEmpty) return;
+      try {
+        await StaffAdminService.addSyllabusChapter(_employeeId,
+          teacherId: teacherId!, className: classCtrl.text.trim(), subject: subjectCtrl.text.trim(), chapter: chapterCtrl.text.trim());
+        if (mounted) showAdminSnack(context, 'Chapter added');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to add chapter.', isError: true);
+      }
+    } finally {
+      classCtrl.dispose();
+      subjectCtrl.dispose();
+      chapterCtrl.dispose();
     }
   }
 

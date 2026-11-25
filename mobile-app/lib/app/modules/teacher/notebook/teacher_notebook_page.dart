@@ -69,6 +69,7 @@ class _TeacherNotebookPageState extends State<TeacherNotebookPage> {
   final Set<String> _savingCells = {}; // "studentId|subject" currently saving
 
   bool _loading = false;
+  String? _error;
 
   late final _SyncedScroll _vSync = _SyncedScroll();
   late final _SyncedScroll _hSync = _SyncedScroll();
@@ -90,41 +91,47 @@ class _TeacherNotebookPageState extends State<TeacherNotebookPage> {
     super.dispose();
   }
 
+  // REQ-BUG-069 (2026-11-20 full-system audit): no try/catch - any network
+  // blip left this spinning forever with no error/retry shown.
   Future<void> _loadGrid() async {
     if (_className == null) return;
-    setState(() { _loading = true; _students = []; _subjects = []; _state.clear(); });
-    final profile = AuthService.to.profile.value ?? {};
-    final employeeId = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    final dateStr = DateFormat('yyyy-MM-dd').format(_date);
+    setState(() { _loading = true; _error = null; _students = []; _subjects = []; _state.clear(); });
+    try {
+      final profile = AuthService.to.profile.value ?? {};
+      final employeeId = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      final dateStr = DateFormat('yyyy-MM-dd').format(_date);
 
-    final students = await SupabaseService.fetchClassStudentsByName(_className!);
-    final subjects = await SupabaseService.fetchClassSubjects(_className!);
-    final existing = (employeeId != null && sessionToken != null)
-        ? await SupabaseService.fetchNotebookLog(employeeId, sessionToken, _className!, dateStr)
-        : <Map<String, dynamic>>[];
+      final students = await SupabaseService.fetchClassStudentsByName(_className!);
+      final subjects = await SupabaseService.fetchClassSubjects(_className!);
+      final existing = (employeeId != null && sessionToken != null)
+          ? await SupabaseService.fetchNotebookLog(employeeId, sessionToken, _className!, dateStr)
+          : <Map<String, dynamic>>[];
 
-    final state = <String, Map<String, bool>>{};
-    for (final s in students) {
-      final id = s['id'] as String;
-      state[id] = {for (final subj in subjects) subj: true};
+      final state = <String, Map<String, bool>>{};
+      for (final s in students) {
+        final id = s['id'] as String;
+        state[id] = {for (final subj in subjects) subj: true};
+      }
+      for (final r in existing) {
+        final id = r['student_id'] as String?;
+        final subj = r['subject'] as String?;
+        final complete = r['complete'] as bool?;
+        if (id == null || subj == null || complete == null) continue;
+        state.putIfAbsent(id, () => {for (final subj in subjects) subj: true});
+        state[id]![subj] = complete;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _students = students;
+        _subjects = subjects;
+        _state.addAll(state);
+        _loading = false;
+      });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load notebook.'; });
     }
-    for (final r in existing) {
-      final id = r['student_id'] as String?;
-      final subj = r['subject'] as String?;
-      final complete = r['complete'] as bool?;
-      if (id == null || subj == null || complete == null) continue;
-      state.putIfAbsent(id, () => {for (final subj in subjects) subj: true});
-      state[id]![subj] = complete;
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _students = students;
-      _subjects = subjects;
-      _state.addAll(state);
-      _loading = false;
-    });
   }
 
   Future<void> _toggleCell(String studentId, String subject) async {
@@ -258,6 +265,9 @@ class _TeacherNotebookPageState extends State<TeacherNotebookPage> {
           child: Container(height: 48, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14))),
         ),
       );
+    }
+    if (_error != null) {
+      return Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)));
     }
     if (_students.isEmpty) {
       return Center(child: Padding(

@@ -31,6 +31,10 @@ class _AdminEmployeesPageState extends State<AdminEmployeesPage> {
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-093: _searchCtrl was never disposed.
+  @override
+  void dispose() { _searchCtrl.dispose(); super.dispose(); }
+
   Future<void> _load({String? search}) async {
     setState(() { _loading = true; _error = null; });
     try {
@@ -41,6 +45,11 @@ class _AdminEmployeesPageState extends State<AdminEmployeesPage> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): none of these 4 controllers
+  // were ever disposed. Their .text is read AFTER the sheet closes (lines
+  // below), not just inside the builder, so a plain .whenComplete() chained
+  // on the sheet call would dispose them before that read - wrapped the
+  // whole body in try/finally instead.
   Future<void> _addEmployee() async {
     final codeCtrl = TextEditingController();
     final nameCtrl = TextEditingController();
@@ -48,43 +57,50 @@ class _AdminEmployeesPageState extends State<AdminEmployeesPage> {
     final phoneCtrl = TextEditingController();
     String type = 'teaching';
 
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Add Employee', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: codeCtrl, decoration: const InputDecoration(labelText: 'Employee Code', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Full Name', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          DropdownButtonFormField<String>(
-            initialValue: type,
-            decoration: const InputDecoration(labelText: 'Type', border: OutlineInputBorder()),
-            items: const ['teaching', 'non-teaching', 'management', 'media'].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-            onChanged: (v) => setSheet(() => type = v ?? type),
-          ),
-          const SizedBox(height: 10),
-          TextField(controller: designationCtrl, decoration: const InputDecoration(labelText: 'Designation', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Phone', border: OutlineInputBorder())),
-          const SizedBox(height: 16),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Add Employee')),
-        ])),
-      )),
-    );
-    if (saved != true || codeCtrl.text.trim().isEmpty || nameCtrl.text.trim().isEmpty) return;
     try {
-      await StaffAdminService.addEmployee(_employeeId,
-        empCode: codeCtrl.text.trim(), name: nameCtrl.text.trim(), type: type,
-        designation: designationCtrl.text.trim(), phone: phoneCtrl.text.trim());
-      if (mounted) showAdminSnack(context, 'Employee added');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to add employee.', isError: true);
+      final saved = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('Add Employee', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: codeCtrl, decoration: const InputDecoration(labelText: 'Employee Code', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Full Name', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              initialValue: type,
+              decoration: const InputDecoration(labelText: 'Type', border: OutlineInputBorder()),
+              items: const ['teaching', 'non-teaching', 'management', 'media'].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+              onChanged: (v) => setSheet(() => type = v ?? type),
+            ),
+            const SizedBox(height: 10),
+            TextField(controller: designationCtrl, decoration: const InputDecoration(labelText: 'Designation', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Phone', border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Add Employee')),
+          ])),
+        )),
+      );
+      if (saved != true || codeCtrl.text.trim().isEmpty || nameCtrl.text.trim().isEmpty) return;
+      try {
+        await StaffAdminService.addEmployee(_employeeId,
+          empCode: codeCtrl.text.trim(), name: nameCtrl.text.trim(), type: type,
+          designation: designationCtrl.text.trim(), phone: phoneCtrl.text.trim());
+        if (mounted) showAdminSnack(context, 'Employee added');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to add employee.', isError: true);
+      }
+    } finally {
+      codeCtrl.dispose();
+      nameCtrl.dispose();
+      designationCtrl.dispose();
+      phoneCtrl.dispose();
     }
   }
 

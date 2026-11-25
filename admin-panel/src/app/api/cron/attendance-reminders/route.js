@@ -13,8 +13,12 @@ import logger from "@/lib/logger";
 // (in case a teacher was already manually reminded before this ran) stay
 // identical between the automatic and manual paths.
 export const GET = withDiagnostics(async function GET(request) {
+  // REQ-SEC-020 (re-confirmed by the 2026-11-20 full-system audit): this
+  // used to fail OPEN, not closed, if CRON_SECRET was ever unset in Vercel -
+  // `process.env.CRON_SECRET && ...` short-circuits false and skips the
+  // check entirely rather than denying the request.
   const authHeader = request.headers.get("authorization");
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

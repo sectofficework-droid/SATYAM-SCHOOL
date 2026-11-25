@@ -623,7 +623,21 @@ widgets/` (beyond a `TextEditingController` grep) were grep-checked, not read li
 
 ---
 
-## What's next
+## Remediation status (2026-11-20/21/25, same engagement)
 
-Per the user's instruction, this document is the complete note-down; no fixes have been applied
-yet. The next step is executing fixes — prioritized by the severity table above, Critical first.
+Per the user's instruction ("start fixing one by one as soon as possible which is fixable by your
+side without any concern"), every Critical and High finding — and the large majority of Medium/Low
+findings — were fixed, verified, and staged in the same session this audit was written. Specifics
+live in `TODO.md`'s "Full-system audit" section (now marked `[x]` throughout) rather than
+duplicated here. Summary: all 7 Critical and 5 High findings closed (DB changes applied live via
+Supabase MCP and re-verified; code changes verified via `npm run lint`/`flutter analyze`, both
+clean); the PII JSON (`onlineGeneralRegisterData.json`) removed from HEAD once the live DB was
+confirmed fully seeded; the two large mechanical sweeps (missing try/catch across 13 Teacher
+files, controller disposal across 17 Admin Workspace files) completed via parallel forks with zero
+regressions. A handful of items were deliberately left for the user's decision (business-intent
+questions, not bugs) — see TODO.md's "Left for your decision" list. One item remains destructive
+and out of scope for an autonomous fix: purging the ~2 days of git history where the PII JSON was
+public (§J4 — needs explicit user sign-off). No in-browser/on-device click-through verification
+was possible this session (no live login credentials, no physical device) — flagged per-fix where
+relevant; recommend a verification pass next time a browser/device session is available, especially
+for the 4 corrected PDF report routes (REQ-BUG-085) and the mobile TC issuance gate (REQ-SEC-033).

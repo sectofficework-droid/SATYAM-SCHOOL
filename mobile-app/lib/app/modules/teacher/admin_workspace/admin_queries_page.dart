@@ -36,6 +36,10 @@ class _AdminQueriesPageState extends State<AdminQueriesPage> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): replyCtrl was never
+  // disposed. Its .text is only read inside the builder (before
+  // Navigator.pop), not after the sheet closes, so .whenComplete() is
+  // safe here.
   Future<void> _openThread(Map<String, dynamic> q) async {
     final replyCtrl = TextEditingController(text: q['admin_reply'] as String? ?? '');
     final resolved = q['status'] == 'Resolved';
@@ -80,7 +84,7 @@ class _AdminQueriesPageState extends State<AdminQueriesPage> {
           ]),
         ]),
       ),
-    );
+    ).whenComplete(() => replyCtrl.dispose());
   }
 
   @override

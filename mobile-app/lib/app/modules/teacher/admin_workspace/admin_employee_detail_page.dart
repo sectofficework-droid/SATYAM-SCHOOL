@@ -32,6 +32,9 @@ class _AdminEmployeeDetailPageState extends State<AdminEmployeeDetailPage> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): none of these 5 controllers
+  // were ever disposed; .text is read after the sheet closes, so wrapped
+  // in try/finally.
   Future<void> _edit() async {
     final e = _emp!;
     final nameCtrl = TextEditingController(text: e['name'] as String? ?? '');
@@ -40,66 +43,79 @@ class _AdminEmployeeDetailPageState extends State<AdminEmployeeDetailPage> {
     final emailCtrl = TextEditingController(text: e['email'] as String? ?? '');
     final addressCtrl = TextEditingController(text: e['address'] as String? ?? '');
 
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Edit Employee', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: designationCtrl, decoration: const InputDecoration(labelText: 'Designation', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Phone', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: addressCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Address', border: OutlineInputBorder())),
-          const SizedBox(height: 16),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
-        ])),
-      ),
-    );
-    if (saved != true) return;
     try {
-      await StaffAdminService.updateEmployee(_callerId, widget.employeeId,
-        name: nameCtrl.text.trim(), designation: designationCtrl.text.trim(),
-        phone: phoneCtrl.text.trim(), email: emailCtrl.text.trim(), address: addressCtrl.text.trim());
-      if (mounted) showAdminSnack(context, 'Employee updated');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to update.', isError: true);
+      final saved = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('Edit Employee', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: designationCtrl, decoration: const InputDecoration(labelText: 'Designation', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: phoneCtrl, decoration: const InputDecoration(labelText: 'Phone', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: emailCtrl, decoration: const InputDecoration(labelText: 'Email', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: addressCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Address', border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          ])),
+        ),
+      );
+      if (saved != true) return;
+      try {
+        await StaffAdminService.updateEmployee(_callerId, widget.employeeId,
+          name: nameCtrl.text.trim(), designation: designationCtrl.text.trim(),
+          phone: phoneCtrl.text.trim(), email: emailCtrl.text.trim(), address: addressCtrl.text.trim());
+        if (mounted) showAdminSnack(context, 'Employee updated');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to update.', isError: true);
+      }
+    } finally {
+      nameCtrl.dispose();
+      designationCtrl.dispose();
+      phoneCtrl.dispose();
+      emailCtrl.dispose();
+      addressCtrl.dispose();
     }
   }
 
+  // REQ-BUG-093: pwCtrl was never disposed; same try/finally treatment.
   Future<void> _resetPassword() async {
     final pwCtrl = TextEditingController();
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Reset App Password', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: pwCtrl, decoration: const InputDecoration(labelText: 'New password (min 6 chars)', border: OutlineInputBorder())),
-          const SizedBox(height: 16),
-          ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Reset Password')),
-        ]),
-      ),
-    );
-    if (ok != true || pwCtrl.text.trim().length < 6) {
-      if (ok == true) showAdminSnack(context, 'Password must be at least 6 characters.', isError: true);
-      return;
-    }
     try {
-      await StaffAdminService.resetEmployeePassword(_callerId, widget.employeeId, pwCtrl.text.trim());
-      if (mounted) showAdminSnack(context, 'Password reset');
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to reset password.', isError: true);
+      final ok = await showModalBottomSheet<bool>(
+        context: context,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('Reset App Password', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: pwCtrl, decoration: const InputDecoration(labelText: 'New password (min 6 chars)', border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy), onPressed: () => Navigator.pop(ctx, true), child: const Text('Reset Password')),
+          ]),
+        ),
+      );
+      if (ok != true || pwCtrl.text.trim().length < 6) {
+        if (ok == true && mounted) showAdminSnack(context, 'Password must be at least 6 characters.', isError: true);
+        return;
+      }
+      try {
+        await StaffAdminService.resetEmployeePassword(_callerId, widget.employeeId, pwCtrl.text.trim());
+        if (mounted) showAdminSnack(context, 'Password reset');
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to reset password.', isError: true);
+      }
+    } finally {
+      pwCtrl.dispose();
     }
   }
 

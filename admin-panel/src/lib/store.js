@@ -38,34 +38,17 @@ const useStore = create(
       })),
 
       // ── Employees ──────────────────────────────────────────────
-      // Seeded with core staff so Super Admin Salary panel works without visiting Employee module first
-      employees: [
-        { id:1,  empId:"EMP001", name:"Sunil Pradhan",     type:"management",  designation:"Principal",           department:"Administration",        gender:"Male",   phone:"9876543210", email:"sunil@satyamstars.edu.in", status:"Active", joiningDate:"2015-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:2,  empId:"EMP002", name:"Rajesh Biswal",     type:"non-teaching",designation:"Admin",                department:"Administration",        gender:"Male",   phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:3,  empId:"EMP003", name:"BK Debiprasad Das", type:"non-teaching",designation:"Admin",                department:"Administration",        gender:"Male",   phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:4,  empId:"EMP004", name:"Sandeep Pradhan",   type:"non-teaching",designation:"Admin",                department:"Administration",        gender:"Male",   phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:5,  empId:"EMP005", name:"Gaurang Polai",     type:"non-teaching",designation:"Admin",                department:"Administration",        gender:"Male",   phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:6,  empId:"EMP006", name:"Kishan Swain",      type:"media",       designation:"Social Media Manager", department:"Media & Communications",gender:"Male",   phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:7,  empId:"EMP007", name:"Rudra Prasad Muni", type:"non-teaching",designation:"Admin",                department:"Administration",        gender:"Male",   phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:8,  empId:"EMP008", name:"Ayeshkant Rout",    type:"non-teaching",designation:"Admin",                department:"Administration",        gender:"Male",   phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:11, empId:"EMP011", name:"Pami Pradhan",      type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:12, empId:"EMP012", name:"Rashmita Patra",    type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:13, empId:"EMP013", name:"Priti Singh",       type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:14, empId:"EMP014", name:"Janki Das",         type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:15, empId:"EMP015", name:"Shivani Pradhan",   type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:16, empId:"EMP016", name:"Smurti Panda",      type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:17, empId:"EMP017", name:"Manisha Biswal",    type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:18, empId:"EMP018", name:"Parvati Polai",     type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:19, empId:"EMP019", name:"Sita Gouda",        type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:20, empId:"EMP020", name:"Kabita Panigrahi",  type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:21, empId:"EMP021", name:"Barsha Pradhan",    type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:22, empId:"EMP022", name:"Liza Patra",        type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:23, empId:"EMP023", name:"Laxmi Behera",      type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:24, empId:"EMP024", name:"Pragyan Panda",     type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:25, empId:"EMP025", name:"Priyanka Bisoyi",   type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:26, empId:"EMP026", name:"Priyanka Padhi",    type:"teaching",    designation:"Class Teacher",        department:"Primary",               gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-        { id:27, empId:"EMP027", name:"Rina Gouda",        type:"non-teaching",designation:"Care Taker",           department:"Non-Teaching",          gender:"Female", phone:"",          email:"",                         status:"Active", joiningDate:"2026-06-01", documents:[], subjectMappings:[], classTeacherOf:null },
-      ],
+      // REQ-SEC-034 (2026-11-20 full-system audit): this used to seed 15
+      // real employees (names, designations, and one real phone+email)
+      // directly in source, which ships in every client JS bundle - in a
+      // repo with a documented history of being made public. Verified no
+      // reader ever consumes this seed directly (every panel that shows
+      // employees - EmployeePanel/SalaryPanel in super-admin.js,
+      // employee/page.js itself - fetches its own list from the DB via
+      // useState/an API call, not via `useStore(s => s.employees)`); the
+      // seed was always overwritten before being relied on. Empty array is
+      // behavior-identical to the real data for every current caller.
+      employees: [],
       setEmployees: (list) => set({ employees: list }),
 
       // ── Active Classes ─────────────────────────────────────────
@@ -92,18 +75,13 @@ const useStore = create(
         set((s) => ({ salaryPayments: [...s.salaryPayments, ...payments] })),
 
       // ── Expenses ──────────────────────────────────────────────
-      expenses: [
-        { id:101, title:"Staff Salary — June 2026",      category:"Salary",         amount:185000, date:"2026-06-01", paidBy:"Sunil Pradhan",    note:"Monthly salary for all staff" },
-        { id:102, title:"Electricity Bill — May 2026",   category:"Utilities",      amount:12400,  date:"2026-05-28", paidBy:"Gaurang Polai",     note:"" },
-        { id:103, title:"Annual Sports Day Setup",       category:"Events",         amount:28000,  date:"2026-05-15", paidBy:"Sandeep Pradhan",   note:"Stage, decoration & prizes" },
-        { id:104, title:"Classroom Furniture Repair",    category:"Maintenance",    amount:9500,   date:"2026-05-10", paidBy:"Rajesh Biswal",     note:"6 desks repaired" },
-        { id:105, title:"Stationery & Office Supplies",  category:"Supplies",       amount:6200,   date:"2026-05-05", paidBy:"Gaurang Polai",     note:"" },
-        { id:106, title:"Water & Sewage Bill",           category:"Utilities",      amount:3800,   date:"2026-04-30", paidBy:"Gaurang Polai",     note:"" },
-        { id:107, title:"Projector Installation",        category:"Infrastructure", amount:42000,  date:"2026-04-20", paidBy:"Sunil Pradhan",     note:"2 classrooms" },
-        { id:108, title:"School Bus Fuel — April",       category:"Transport",      amount:15600,  date:"2026-04-30", paidBy:"Rudra Prasad Muni", note:"" },
-        { id:109, title:"PTM Refreshments",              category:"Events",         amount:4200,   date:"2026-04-15", paidBy:"BK Debiprasad Das", note:"" },
-        { id:110, title:"Cleaning Material",             category:"Supplies",       amount:2800,   date:"2026-04-10", paidBy:"Ayeshkant Rout",    note:"" },
-      ],
+      // REQ-SEC-034 (2026-11-20 full-system audit): same issue as the
+      // employees seed above - these 10 rows attributed real-looking
+      // salary/expense figures to real named staff via `paidBy`, hardcoded
+      // in a client-bundled file. Confirmed no reader consumes this seed
+      // directly (dashboard/page.js and expenses/page.js both fetch their
+      // own data from the DB). Empty array is behavior-identical.
+      expenses: [],
       setExpenses: (list) => set({ expenses: list }),
 
       // ── Fee Payments (flat list for dashboard totals) ──────────

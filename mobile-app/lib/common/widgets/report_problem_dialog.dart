@@ -21,6 +21,13 @@ Future<void> showReportProblemDialog(
   final controller = TextEditingController();
   var submitting = false;
 
+  // F10.4 (2026-11-20 full-system audit): controller was never disposed on
+  // any dismissal path (Cancel, successful Report, barrier/back-button
+  // dismiss) - same REQ-BUG-083 class already fixed in
+  // teacher_profile_page.dart, missed here since this shared dialog sat
+  // outside that pass's file list. showDialog's Future resolves on every
+  // dismissal path alike (they're all just Navigator.pop), so dispose once
+  // here covers all of them.
   return showDialog(
     context: context,
     builder: (dialogContext) => StatefulBuilder(
@@ -107,5 +114,5 @@ Future<void> showReportProblemDialog(
         );
       },
     ),
-  );
+  ).then((_) => controller.dispose());
 }

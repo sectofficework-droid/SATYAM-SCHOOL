@@ -30,6 +30,15 @@ async function recordTodayExclusions(supabaseAdmin, pairs) {
 // attendance/shift rows for any date range with no login. Confirmed mobile
 // never calls this route (grepped mobile-app/lib) so a real Supabase Auth
 // session check can't break any mobile caller.
+// REQ-BUG-088 (2026-11-20 full-system audit): that fix left no tier
+// restriction on this irreversible, no-confirmation, no-audit-trail bulk
+// delete - any normal_admin could mass-erase attendance history. Restricted
+// to senior_admin/management, matching this project's established pattern
+// for other destructive actions (TC issuance, fee payment edits, user
+// management). The caller (staffLeaveService.js) was also separately fixed
+// the same session to actually attach a session token at all - this route
+// was 401-ing for every real caller before that, so the tier gate was never
+// actually reachable in practice until both fixes landed together.
 export async function POST(request) {
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -46,7 +55,7 @@ export async function POST(request) {
     if (!adminClientForAuth) {
       return NextResponse.json({ error: "Server configuration error: missing service key" }, { status: 500 });
     }
-    const { errorResponse } = await requireAdminSession(request, adminClientForAuth);
+    const { errorResponse } = await requireAdminSession(request, adminClientForAuth, ["senior_admin", "management"]);
     if (errorResponse) return errorResponse;
 
     const body = await request.json();

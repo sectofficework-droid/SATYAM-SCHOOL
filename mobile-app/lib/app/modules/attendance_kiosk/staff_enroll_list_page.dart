@@ -114,8 +114,19 @@ class _StaffList extends StatelessWidget {
       ),
     );
     if (confirmed != true) return;
-    await SupabaseService.deleteFaceEmbedding(kioskToken, id);
-    onDeleted?.call();
+    // F8.2 (2026-11-20 full-system audit): no try/catch - an expired
+    // kiosk-admin session token or network blip left an unhandled
+    // exception with no user-facing message and the list never refreshed.
+    try {
+      await SupabaseService.deleteFaceEmbedding(kioskToken, id);
+      onDeleted?.call();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to remove. Please try again.'), backgroundColor: AppColors.red),
+        );
+      }
+    }
   }
 
   @override

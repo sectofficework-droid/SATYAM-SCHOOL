@@ -1750,6 +1750,7 @@ function InventoryPanel({ students }) {
 
 // -- Salary Panel (Management Head only) -------------------------------------------
 function SalaryPanel({ employees: propEmployees }) {
+  const authUser = useStore(s => s.authUser);
   const [employees, setEmployees] = useState(propEmployees || []);
   useEffect(() => { setEmployees(propEmployees || []); }, [propEmployees]);
 
@@ -1819,9 +1820,10 @@ function SalaryPanel({ employees: propEmployees }) {
     const date    = new Date().toISOString().split("T")[0];
     const monthDate = month + "-01";
     try {
-      const { error } = await supabase.rpc("admin_record_salary_payment", { p_employee_id: emp.id, p_month: monthDate, p_amount: amount, p_paid_on: date, p_paid_by: "Sunil Pradhan" });
+      const paidBy = authUser?.name || "Admin";
+      const { error } = await supabase.rpc("admin_record_salary_payment", { p_employee_id: emp.id, p_month: monthDate, p_amount: amount, p_paid_on: date, p_paid_by: paidBy });
       if (error) throw error;
-      await addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount, date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId })
+      await addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount, date, paidBy, note: (emp.designation||"") + " \u00b7 " + emp.empId })
         .catch(err => console.error("payOne: expense record failed for " + emp.name, err));
       await loadPayments(month);
       await loadAllPayments();
@@ -1837,12 +1839,13 @@ function SalaryPanel({ employees: propEmployees }) {
     setPaying(true);
     const date      = new Date().toISOString().split("T")[0];
     const monthDate = month + "-01";
-    const rows = unpaidThisMonth.map(emp => ({ employee_id: emp.id, month: monthDate, amount: getSal(emp), paid_on: date, paid_by: "Sunil Pradhan" }));
+    const paidBy = authUser?.name || "Admin";
+    const rows = unpaidThisMonth.map(emp => ({ employee_id: emp.id, month: monthDate, amount: getSal(emp), paid_on: date, paid_by: paidBy }));
     try {
       const { error } = await supabase.rpc("admin_record_salary_payments_bulk", { p_rows: rows });
       if (error) throw error;
       const expenseResults = await Promise.allSettled(unpaidThisMonth.map(emp =>
-        addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount: getSal(emp), date, paidBy: "Sunil Pradhan", note: (emp.designation||"") + " \u00b7 " + emp.empId })
+        addExpense({ title: "Salary \u2014 " + monthLabel(month) + " \u2014 " + emp.name, category: "Salary", amount: getSal(emp), date, paidBy, note: (emp.designation||"") + " \u00b7 " + emp.empId })
       ));
       const failedExpenses = expenseResults
         .map((r, i) => r.status === "rejected" ? unpaidThisMonth[i].name : null)

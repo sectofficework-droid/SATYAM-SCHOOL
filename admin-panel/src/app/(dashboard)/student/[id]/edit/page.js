@@ -231,7 +231,10 @@ function EditForm({ existing, router }) {
   const [standards, setStandards] = useState([]);
 
   useEffect(() => {
-    getActiveClasses().then(cls => setStandards(cls.map(c => c.name))).catch(() => {});
+    // F2.3 (2026-11-20 full-system audit): used to swallow the failure
+    // with zero logging/UI - a transient network blip left the Standards
+    // dropdown empty with nothing telling the admin why.
+    getActiveClasses().then(cls => setStandards(cls.map(c => c.name))).catch(err => console.error("Failed to load active classes:", err));
   }, []);
 
   const [hasPrevSchool, setHasPrevSchool] = useState(!!(existing.lastSchoolName));
@@ -249,7 +252,7 @@ function EditForm({ existing, router }) {
     siblings.forEach(sib => {
       if (sib.cls) searchStudentsForSibling(sib.cls).then(opts => {
         setSiblingOptionsByRow(p => ({ ...p, [sib.id]: opts }));
-      }).catch(() => {});
+      }).catch(err => console.error("Failed to load sibling options:", err));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -265,7 +268,7 @@ function EditForm({ existing, router }) {
     if (cls) {
       searchStudentsForSibling(cls).then((opts) => {
         setSiblingOptionsByRow((p) => ({ ...p, [id]: opts }));
-      }).catch(() => {});
+      }).catch(err => console.error("Failed to load sibling options:", err));
     }
   };
   const selectSiblingStudent = (id, studentId) => {

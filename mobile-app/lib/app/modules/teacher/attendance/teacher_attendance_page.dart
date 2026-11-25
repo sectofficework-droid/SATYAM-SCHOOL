@@ -19,6 +19,7 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
   final Map<String, String> _status = {};
   bool _loading = true;
   bool _attLoading = false; // reloading existing marks when the date changes
+  String? _error;
   bool _saving  = false;
   bool _saved   = false;
   DateTime _date = DateTime.now();
@@ -47,73 +48,86 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
   @override
   void dispose() { _countdownTimer?.cancel(); super.dispose(); }
 
+  // F9.2 (2026-11-20 full-system audit): no try/catch - any network blip
+  // left this spinning forever with no error/retry shown (REQ-BUG-069
+  // class, same as several other pages already fixed).
   Future<void> _loadStudents() async {
-    setState(() => _loading = true);
-    final profile    = AuthService.to.profile.value ?? {};
-    final sectionId  = profile['class_teacher_of_section_id']?.toString() ?? '';
-    if (sectionId.isEmpty) { setState(() => _loading = false); return; }
-    final students = await SupabaseService.fetchClassStudents(sectionId);
-    if (!mounted) return;
-    setState(() { _students = students; _loading = false; });
-    await _loadAttendanceForDate();
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile    = AuthService.to.profile.value ?? {};
+      final sectionId  = profile['class_teacher_of_section_id']?.toString() ?? '';
+      if (sectionId.isEmpty) { setState(() => _loading = false); return; }
+      final students = await SupabaseService.fetchClassStudents(sectionId);
+      if (!mounted) return;
+      setState(() { _students = students; _loading = false; });
+      await _loadAttendanceForDate();
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load attendance.'; });
+    }
   }
 
   // Loads whatever's already been submitted for the selected class+date (if
   // anything) instead of always starting from a blank all-Present form, and
   // resolves whether this teacher currently has an edit request pending or
   // an approved 10-minute unlock window still running for this exact date.
+  // F9.2 (2026-11-20 full-system audit): no try/catch - any network blip
+  // left this spinning forever with no error/retry shown.
   Future<void> _loadAttendanceForDate() async {
     _countdownTimer?.cancel();
-    setState(() => _attLoading = true);
-    final profile     = AuthService.to.profile.value ?? {};
-    final teacherId   = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    final className = profile['class_name'] as String? ?? '';
-    final dateStr   = DateFormat('yyyy-MM-dd').format(_date);
+    setState(() { _attLoading = true; _error = null; });
+    try {
+      final profile     = AuthService.to.profile.value ?? {};
+      final teacherId   = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      final className = profile['class_name'] as String? ?? '';
+      final dateStr   = DateFormat('yyyy-MM-dd').format(_date);
 
-    final rows = (teacherId != null && sessionToken != null)
-        ? await SupabaseService.fetchAttendanceForClassDate(teacherId, sessionToken, className, dateStr)
-        : <Map<String, dynamic>>[];
-    _status.clear();
-    for (final r in rows) {
-      _status[r['student_id'] as String] = r['status'] as String;
-    }
-    for (final s in _students) {
-      _status[s['id'] as String] ??= 'P';
-    }
-    final wasMarked = rows.isNotEmpty;
+      final rows = (teacherId != null && sessionToken != null)
+          ? await SupabaseService.fetchAttendanceForClassDate(teacherId, sessionToken, className, dateStr)
+          : <Map<String, dynamic>>[];
+      _status.clear();
+      for (final r in rows) {
+        _status[r['student_id'] as String] = r['status'] as String;
+      }
+      for (final s in _students) {
+        _status[s['id'] as String] ??= 'P';
+      }
+      final wasMarked = rows.isNotEmpty;
 
-    // Same calendar Year Planning manages - a month range covers whichever
-    // date is selected without needing a fetch per single day.
-    final monthStart = DateTime(_date.year, _date.month, 1);
-    final monthEnd   = DateTime(_date.year, _date.month + 1, 0);
-    final calendarEvents = await SupabaseService.fetchCalendarEvents(monthStart, monthEnd);
+      // Same calendar Year Planning manages - a month range covers whichever
+      // date is selected without needing a fetch per single day.
+      final monthStart = DateTime(_date.year, _date.month, 1);
+      final monthEnd   = DateTime(_date.year, _date.month + 1, 0);
+      final calendarEvents = await SupabaseService.fetchCalendarEvents(monthStart, monthEnd);
 
-    Map<String, dynamic>? pending;
-    Map<String, dynamic>? approved;
-    if (teacherId != null && sessionToken != null) {
-      final requests = await SupabaseService.fetchMyEditRequests(teacherId, sessionToken);
-      for (final r in requests) {
-        if (r['class_name'] != className || r['date'] != dateStr) continue;
-        if (r['status'] == 'Pending' && pending == null) pending = r;
-        if (r['status'] == 'Approved') {
-          final approvedAt = DateTime.tryParse(r['approved_at']?.toString() ?? '');
-          if (approvedAt != null && DateTime.now().difference(approvedAt).inMinutes < 10) {
-            approved = r;
+      Map<String, dynamic>? pending;
+      Map<String, dynamic>? approved;
+      if (teacherId != null && sessionToken != null) {
+        final requests = await SupabaseService.fetchMyEditRequests(teacherId, sessionToken);
+        for (final r in requests) {
+          if (r['class_name'] != className || r['date'] != dateStr) continue;
+          if (r['status'] == 'Pending' && pending == null) pending = r;
+          if (r['status'] == 'Approved') {
+            final approvedAt = DateTime.tryParse(r['approved_at']?.toString() ?? '');
+            if (approvedAt != null && DateTime.now().difference(approvedAt).inMinutes < 10) {
+              approved = r;
+            }
           }
         }
       }
-    }
 
-    if (!mounted) return;
-    setState(() {
-      _wasMarked = wasMarked;
-      _pendingRequest = pending;
-      _approvedWindow = approved;
-      _calendarEvents = calendarEvents;
-      _attLoading = false;
-    });
-    if (approved != null) _startCountdown(DateTime.parse(approved['approved_at'].toString()));
+      if (!mounted) return;
+      setState(() {
+        _wasMarked = wasMarked;
+        _pendingRequest = pending;
+        _approvedWindow = approved;
+        _calendarEvents = calendarEvents;
+        _attLoading = false;
+      });
+      if (approved != null) _startCountdown(DateTime.parse(approved['approved_at'].toString()));
+    } catch (e) {
+      if (mounted) setState(() { _attLoading = false; _error = 'Failed to load attendance.'; });
+    }
   }
 
   void _startCountdown(DateTime approvedAt) {
@@ -193,8 +207,20 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
     }
   }
 
+  // F9.3 (2026-11-20 full-system audit): reasonController created here was
+  // never disposed on any path - wrapped the whole body in try/finally so
+  // every return point (early "not confirmed" exit, success, and the
+  // catch block below) disposes it exactly once.
   Future<void> _openRequestEditSheet() async {
     final reasonController = TextEditingController();
+    try {
+      await _requestEditSheetBody(reasonController);
+    } finally {
+      reasonController.dispose();
+    }
+  }
+
+  Future<void> _requestEditSheetBody(TextEditingController reasonController) async {
     final result = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -237,23 +263,36 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
     if (result != true) return;
     if (!mounted) return;
     setState(() => _requesting = true);
-    final profile     = AuthService.to.profile.value ?? {};
-    final teacherId   = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    final className   = profile['class_name'] as String? ?? '';
-    final sectionName = profile['section_name'] as String?;
-    if (teacherId != null && sessionToken != null) {
-      await SupabaseService.submitAttendanceEditRequest(
-        teacherId: teacherId,
-        sessionToken: sessionToken,
-        className: className,
-        sectionName: sectionName,
-        date: DateFormat('yyyy-MM-dd').format(_date),
-        reason: reasonController.text.trim().isEmpty ? null : reasonController.text.trim(),
-      );
+    // REQ-BUG-095 (2026-11-20 full-system audit): no try/catch - if the
+    // RPC threw, the exception propagated uncaught and `_requesting` was
+    // never reset, leaving the "Request Edit" button permanently disabled
+    // (stuck spinner) with no error shown.
+    try {
+      final profile     = AuthService.to.profile.value ?? {};
+      final teacherId   = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      final className   = profile['class_name'] as String? ?? '';
+      final sectionName = profile['section_name'] as String?;
+      if (teacherId != null && sessionToken != null) {
+        await SupabaseService.submitAttendanceEditRequest(
+          teacherId: teacherId,
+          sessionToken: sessionToken,
+          className: className,
+          sectionName: sectionName,
+          date: DateFormat('yyyy-MM-dd').format(_date),
+          reason: reasonController.text.trim().isEmpty ? null : reasonController.text.trim(),
+        );
+      }
+      if (mounted) setState(() => _requesting = false);
+      await _loadAttendanceForDate();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _requesting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to submit edit request. Please try again.'), backgroundColor: AppColors.red),
+        );
+      }
     }
-    if (mounted) setState(() => _requesting = false);
-    await _loadAttendanceForDate();
   }
 
   int get _presentCount => _status.values.where((v) => v == 'P').length;
@@ -265,6 +304,8 @@ class _TeacherAttendancePageState extends State<TeacherAttendancePage> {
 
     if (_loading || _attLoading) {
       body = _buildShimmer();
+    } else if (_error != null) {
+      body = Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)));
     } else if (_students.isEmpty) {
       body = _emptyState();
     } else if (!_isWorkingDayForDate) {

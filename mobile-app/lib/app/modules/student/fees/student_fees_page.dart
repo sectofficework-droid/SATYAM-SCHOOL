@@ -23,11 +23,12 @@ class _StudentFeesPageState extends State<StudentFeesPage> {
     try {
       final profile   = AuthService.to.profile.value ?? {};
       final studentId = profile['id'] as String? ?? '';
-      if (studentId.isEmpty) {
+      final sessionToken = AuthService.to.sessionToken;
+      if (studentId.isEmpty || sessionToken == null) {
         setState(() { _loading = false; _error = 'Student ID not found.'; });
         return;
       }
-      final data = await SupabaseService.fetchFees(studentId);
+      final data = await SupabaseService.fetchFees(studentId, sessionToken);
       if (mounted) setState(() { _data = data; _loading = false; });
     } catch (e) {
       if (mounted) setState(() { _loading = false; _error = 'Failed to load fees.'; });

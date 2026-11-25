@@ -16,17 +16,24 @@ class _TeacherStudentsPageState extends State<TeacherStudentsPage> {
   List<Map<String, dynamic>> _students = [];
   String _query = '';
   bool _loading = true;
+  String? _error;
 
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-11-20 full-system audit): no try/catch - any network
+  // blip left this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final profile   = AuthService.to.profile.value ?? {};
-    final sectionId = profile['class_teacher_of_section_id']?.toString() ?? '';
-    if (sectionId.isEmpty) { if (mounted) setState(() => _loading = false); return; }
-    final students = await SupabaseService.fetchClassStudentDetails(sectionId);
-    if (mounted) setState(() { _students = students; _loading = false; });
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile   = AuthService.to.profile.value ?? {};
+      final sectionId = profile['class_teacher_of_section_id']?.toString() ?? '';
+      if (sectionId.isEmpty) { if (mounted) setState(() => _loading = false); return; }
+      final students = await SupabaseService.fetchClassStudentDetails(sectionId);
+      if (mounted) setState(() { _students = students; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load students.'; });
+    }
   }
 
   List<Map<String, dynamic>> get _filtered {
@@ -50,6 +57,8 @@ class _TeacherStudentsPageState extends State<TeacherStudentsPage> {
     Widget body;
     if (_loading) {
       body = _buildShimmer();
+    } else if (_error != null) {
+      body = Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)));
     } else if (_students.isEmpty) {
       body = _emptyState();
     } else {

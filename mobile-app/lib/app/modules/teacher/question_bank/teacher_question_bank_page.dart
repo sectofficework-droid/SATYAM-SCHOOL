@@ -41,6 +41,7 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
   int _sectionIndex = 0;
   List<Map<String, dynamic>> _documents = [];
   bool _loading = true;
+  String? _error;
 
   String? get _employeeId => (AuthService.to.profile.value ?? {})['id'] as String?;
   String? get _sessionToken => AuthService.to.sessionToken;
@@ -48,14 +49,20 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-11-20 full-system audit): no try/catch - any network
+  // blip left this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final employeeId = _employeeId;
-    final sessionToken = _sessionToken;
-    final docs = employeeId != null && sessionToken != null
-        ? await SupabaseService.fetchTeacherDocuments(teacherId: employeeId, sessionToken: sessionToken, section: _sections[_sectionIndex].key)
-        : <Map<String, dynamic>>[];
-    if (mounted) setState(() { _documents = docs; _loading = false; });
+    setState(() { _loading = true; _error = null; });
+    try {
+      final employeeId = _employeeId;
+      final sessionToken = _sessionToken;
+      final docs = employeeId != null && sessionToken != null
+          ? await SupabaseService.fetchTeacherDocuments(teacherId: employeeId, sessionToken: sessionToken, section: _sections[_sectionIndex].key)
+          : <Map<String, dynamic>>[];
+      if (mounted) setState(() { _documents = docs; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load documents.'; });
+    }
   }
 
   Future<void> _openDocument(Map<String, dynamic> doc) async {
@@ -140,6 +147,8 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
         Expanded(
           child: _loading
               ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)))
               : _documents.isEmpty
                   ? _emptyState(section)
                   : RefreshIndicator(
@@ -208,6 +217,8 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
     ),
   );
 
+  // REQ-BUG-083 (2026-11-20 full-system audit): titleCtrl was never
+  // disposed on any dismissal path.
   Future<void> _showUploadSheet() async {
     final section = _sections[_sectionIndex];
     final profile = AuthService.to.profile.value ?? {};
@@ -392,6 +403,6 @@ class _TeacherQuestionBankPageState extends State<TeacherQuestionBankPage> {
           );
         },
       ),
-    );
+    ).then((_) => titleCtrl.dispose());
   }
 }

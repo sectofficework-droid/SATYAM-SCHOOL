@@ -1,5 +1,6 @@
 import supabase from "./supabase";
 import { DEFAULT_DOCS } from "./constants";
+import authedFetch from "./authedFetch";
 
 // ── Class name normalisation (DB stores "JR KG", app uses "JR.KG") ───────────
 const CLASS_NAME_MAP = {
@@ -370,6 +371,47 @@ export async function getStudents(yearId = null) {
     .eq("academic_year_id", resolvedYearId)
     .order("enrollment_no", { ascending: true });
 
+  if (error) throw error;
+  return (data || []).map(mapToStudent).filter(Boolean);
+}
+
+// REQ-BUG-085 (2026-11-20 full-system audit): the mobile Admin Workspace's
+// ID card/Bonafide/Marksheet/TC report routes used to do a plain
+// `supabase.from("students").select("*")` and hand the raw row straight to
+// the PDF generators, which all expect mapToStudent()'s shape (`name`,
+// `std`, `fatherName`, ...) - none of those keys exist on the raw `students`
+// table (real columns are `first_name`/`last_name`/`father_name`, and class/
+// admission data lives on `student_enrollments`, never joined). Every
+// generated document rendered blank/placeholder text. This helper takes an
+// already-constructed Supabase client (the API routes use a service-role
+// client, not the browser singleton this file's other functions import) so
+// it can be called from server routes, and reuses the same select shape +
+// mapToStudent() as getStudents()/getStudentByEnrollment() instead of a
+// third, divergent field list.
+export async function getStudentsForReportByIds(supabaseClient, studentIds) {
+  const { data: year, error: yearErr } = await supabaseClient
+    .from("academic_years").select("id").eq("is_current", true).single();
+  if (yearErr) throw yearErr;
+
+  const { data, error } = await supabaseClient
+    .from("student_enrollments")
+    .select(`
+      id, enrollment_no, roll_no, date_of_join,
+      fee_total, fee_discount, discount_reason,
+      deactivate_reason, deactivate_date,
+      student:students(
+        id, first_name, last_name, photo_url, grno,
+        dob, gender, mobile1, mobile2, status, data_status,
+        father_name, mother_name,
+        room_plot_no, society, landmark, area, pincode, address
+      ),
+      class:classes!student_enrollments_class_id_fkey(id, name),
+      section:sections(id, name),
+      academic_year:academic_years(id, label),
+      admission_class:classes!student_enrollments_admission_class_id_fkey(name)
+    `)
+    .in("student_id", studentIds)
+    .eq("academic_year_id", year.id);
   if (error) throw error;
   return (data || []).map(mapToStudent).filter(Boolean);
 }
@@ -926,29 +968,34 @@ export async function updateStudentGovId(studentId, { grNo, udise, pen, apaar, r
 }
 
 // ── Update Student GR Number ──────────────────────────────────────────────────
+// REQ-SEC-041 (2026-11-20 full-system audit): this used to fall back to a
+// direct client update on ANY failure from the API route - a non-ok HTTP
+// response (401/403/500) never throws from a plain `fetch()`, so a real
+// auth rejection from the route silently fell through to the unguarded
+// direct-table path with no error surfaced at all. Not exploitable today
+// (both paths currently allow the same population), but a silent
+// regression waiting to happen if the route is ever tightened without this
+// fallback being updated to match. Switched to authedFetch (throws a real
+// Error on any non-ok response) and now only falls back on an actual
+// network-level failure (TypeError from fetch itself), re-throwing
+// everything else instead of silently bypassing the route's own check.
 export async function updateStudentGrNo(studentId, grNo) {
   if (!studentId) throw new Error("Student ID is required");
   const cleanGr = grNo ? String(grNo).trim().toUpperCase() : null;
 
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch("/api/student/update-gr", {
+    const data = await authedFetch("/api/student/update-gr", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + (session?.access_token || ""),
-      },
       body: JSON.stringify({ studentId, grNo: cleanGr }),
     });
-    if (res.ok) {
-      const data = await res.json();
-      if (data.success) return cleanGr;
-    }
+    if (data.success) return cleanGr;
+    throw new Error(data.error || "Unexpected response from update-gr");
   } catch (apiErr) {
-    console.warn("API update-gr error, falling back to direct client update:", apiErr);
+    if (!(apiErr instanceof TypeError)) throw apiErr;
+    console.warn("API update-gr unreachable, falling back to direct client update:", apiErr);
   }
 
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from("students")
     .update({ grno: cleanGr, updated_at: new Date().toISOString() })
     .eq("id", studentId);

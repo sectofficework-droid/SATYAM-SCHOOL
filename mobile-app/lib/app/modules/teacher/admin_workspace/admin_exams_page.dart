@@ -97,110 +97,125 @@ class _OfficialExamsTabState extends State<_OfficialExamsTab> {
     return today.compareTo(end) >= 0;
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): nameCtrl/marksCtrl were
+  // never disposed (this file's existing dispose() override only disposes
+  // _tabs); .text is read after the sheet closes, so wrapped in
+  // try/finally.
   Future<void> _openAddForm() async {
     final nameCtrl = TextEditingController();
     final marksCtrl = TextEditingController(text: '50'); // REQ-BUG-075: matches ExamsTab.js's web "Add Exam" default
     DateTime? start;
     DateTime? end;
 
-    final saved = await showModalBottomSheet<bool>(
-      context: context, isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Add Exam', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 14),
-          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'e.g. First Unit Test', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          OutlinedButton(
-            onPressed: () async { final p = await showDatePicker(context: ctx, initialDate: DateTime.now(), firstDate: DateTime(2024), lastDate: DateTime(2035)); if (p != null) setSheet(() => start = p); },
-            child: Text(start == null ? 'Start date' : DateFormat('yyyy-MM-dd').format(start!))),
-          const SizedBox(height: 10),
-          OutlinedButton(
-            onPressed: () async { final p = await showDatePicker(context: ctx, initialDate: start ?? DateTime.now(), firstDate: DateTime(2024), lastDate: DateTime(2035)); if (p != null) setSheet(() => end = p); },
-            child: Text(end == null ? 'End date' : DateFormat('yyyy-MM-dd').format(end!))),
-          const SizedBox(height: 10),
-          TextField(controller: marksCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Full Marks', border: OutlineInputBorder())),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy),
-            onPressed: () {
-              if (nameCtrl.text.trim().isEmpty) { showAdminSnack(ctx, 'Enter an exam name.', isError: true); return; }
-              if (start == null || end == null) { showAdminSnack(ctx, 'Pick a start and end date.', isError: true); return; }
-              if (DateFormat('yyyy-MM-dd').format(end!).compareTo(DateFormat('yyyy-MM-dd').format(start!)) < 0) {
-                showAdminSnack(ctx, "End date can't be before start date.", isError: true); return;
-              }
-              Navigator.pop(ctx, true);
-            },
-            child: const Text('Add Exam'),
-          ),
-        ])),
-      )),
-    );
-
-    if (saved != true) return;
-    final fullMarks = int.tryParse(marksCtrl.text) ?? 50;
     try {
-      final exam = await StaffAdminService.createOfficialExam(widget.employeeId,
-        name: nameCtrl.text.trim(), startDate: DateFormat('yyyy-MM-dd').format(start!), endDate: DateFormat('yyyy-MM-dd').format(end!),
-        academicYearId: _academicYearId, sortOrder: _exams.length);
-      final rows = <Map<String, dynamic>>[];
-      _classSubjects.forEach((className, subjects) {
-        for (final s in subjects) { rows.add({'className': className, 'subjectName': s, 'maxMarks': fullMarks}); }
-      });
-      await StaffAdminService.saveExamSubjectMaxMarksBulk(widget.employeeId, exam['id'] as String, rows);
-      if (mounted) showAdminSnack(context, 'Exam added');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to add exam.', isError: true);
+      final saved = await showModalBottomSheet<bool>(
+        context: context, isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('Add Exam', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 14),
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'e.g. First Unit Test', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: () async { final p = await showDatePicker(context: ctx, initialDate: DateTime.now(), firstDate: DateTime(2024), lastDate: DateTime(2035)); if (p != null) setSheet(() => start = p); },
+              child: Text(start == null ? 'Start date' : DateFormat('yyyy-MM-dd').format(start!))),
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: () async { final p = await showDatePicker(context: ctx, initialDate: start ?? DateTime.now(), firstDate: DateTime(2024), lastDate: DateTime(2035)); if (p != null) setSheet(() => end = p); },
+              child: Text(end == null ? 'End date' : DateFormat('yyyy-MM-dd').format(end!))),
+            const SizedBox(height: 10),
+            TextField(controller: marksCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Full Marks', border: OutlineInputBorder())),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy),
+              onPressed: () {
+                if (nameCtrl.text.trim().isEmpty) { showAdminSnack(ctx, 'Enter an exam name.', isError: true); return; }
+                if (start == null || end == null) { showAdminSnack(ctx, 'Pick a start and end date.', isError: true); return; }
+                if (DateFormat('yyyy-MM-dd').format(end!).compareTo(DateFormat('yyyy-MM-dd').format(start!)) < 0) {
+                  showAdminSnack(ctx, "End date can't be before start date.", isError: true); return;
+                }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Add Exam'),
+            ),
+          ])),
+        )),
+      );
+
+      if (saved != true) return;
+      final fullMarks = int.tryParse(marksCtrl.text) ?? 50;
+      try {
+        final exam = await StaffAdminService.createOfficialExam(widget.employeeId,
+          name: nameCtrl.text.trim(), startDate: DateFormat('yyyy-MM-dd').format(start!), endDate: DateFormat('yyyy-MM-dd').format(end!),
+          academicYearId: _academicYearId, sortOrder: _exams.length);
+        final rows = <Map<String, dynamic>>[];
+        _classSubjects.forEach((className, subjects) {
+          for (final s in subjects) { rows.add({'className': className, 'subjectName': s, 'maxMarks': fullMarks}); }
+        });
+        await StaffAdminService.saveExamSubjectMaxMarksBulk(widget.employeeId, exam['id'] as String, rows);
+        if (mounted) showAdminSnack(context, 'Exam added');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to add exam.', isError: true);
+      }
+    } finally {
+      nameCtrl.dispose();
+      marksCtrl.dispose();
     }
   }
 
+  // REQ-BUG-093: nameCtrl was never disposed; same try/finally treatment
+  // as _openAddForm above.
   Future<void> _editExam(Map<String, dynamic> exam) async {
     final nameCtrl = TextEditingController(text: exam['name'] as String? ?? '');
     DateTime? start = exam['start_date'] != null ? DateTime.tryParse(exam['start_date'] as String) : null;
     DateTime? end = exam['end_date'] != null ? DateTime.tryParse(exam['end_date'] as String) : null;
 
-    final saved = await showModalBottomSheet<bool>(
-      context: context, isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Edit Exam', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 14),
-          TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          OutlinedButton(
-            onPressed: () async { final p = await showDatePicker(context: ctx, initialDate: start ?? DateTime.now(), firstDate: DateTime(2024), lastDate: DateTime(2035)); if (p != null) setSheet(() => start = p); },
-            child: Text(start == null ? 'Start date' : DateFormat('yyyy-MM-dd').format(start!))),
-          const SizedBox(height: 10),
-          OutlinedButton(
-            onPressed: () async { final p = await showDatePicker(context: ctx, initialDate: end ?? DateTime.now(), firstDate: DateTime(2024), lastDate: DateTime(2035)); if (p != null) setSheet(() => end = p); },
-            child: Text(end == null ? 'End date' : DateFormat('yyyy-MM-dd').format(end!))),
-          const SizedBox(height: 16),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy),
-            onPressed: () {
-              if (nameCtrl.text.trim().isEmpty || start == null || end == null) { showAdminSnack(ctx, 'Fill every field.', isError: true); return; }
-              Navigator.pop(ctx, true);
-            },
-            child: const Text('Save'),
-          ),
-        ])),
-      )),
-    );
-
-    if (saved != true) return;
     try {
-      await StaffAdminService.updateOfficialExam(widget.employeeId, exam['id'] as String,
-        name: nameCtrl.text.trim(), startDate: DateFormat('yyyy-MM-dd').format(start!), endDate: DateFormat('yyyy-MM-dd').format(end!),
-        sortOrder: (exam['sort_order'] as num?)?.toInt() ?? 0);
-      if (mounted) showAdminSnack(context, 'Exam updated');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to save.', isError: true);
+      final saved = await showModalBottomSheet<bool>(
+        context: context, isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            const Text('Edit Exam', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 14),
+            TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: () async { final p = await showDatePicker(context: ctx, initialDate: start ?? DateTime.now(), firstDate: DateTime(2024), lastDate: DateTime(2035)); if (p != null) setSheet(() => start = p); },
+              child: Text(start == null ? 'Start date' : DateFormat('yyyy-MM-dd').format(start!))),
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: () async { final p = await showDatePicker(context: ctx, initialDate: end ?? DateTime.now(), firstDate: DateTime(2024), lastDate: DateTime(2035)); if (p != null) setSheet(() => end = p); },
+              child: Text(end == null ? 'End date' : DateFormat('yyyy-MM-dd').format(end!))),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy),
+              onPressed: () {
+                if (nameCtrl.text.trim().isEmpty || start == null || end == null) { showAdminSnack(ctx, 'Fill every field.', isError: true); return; }
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Save'),
+            ),
+          ])),
+        )),
+      );
+
+      if (saved != true) return;
+      try {
+        await StaffAdminService.updateOfficialExam(widget.employeeId, exam['id'] as String,
+          name: nameCtrl.text.trim(), startDate: DateFormat('yyyy-MM-dd').format(start!), endDate: DateFormat('yyyy-MM-dd').format(end!),
+          sortOrder: (exam['sort_order'] as num?)?.toInt() ?? 0);
+        if (mounted) showAdminSnack(context, 'Exam updated');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to save.', isError: true);
+      }
+    } finally {
+      nameCtrl.dispose();
     }
   }
 

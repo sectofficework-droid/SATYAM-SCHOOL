@@ -65,67 +65,76 @@ class _TeacherHomeState extends State<TeacherHome> with SingleTickerProviderStat
     });
   }
 
+  // REQ-BUG-069 (2026-11-20 full-system audit): no try/catch - a network
+  // blip here just silently failed (unhandled Future rejection, no
+  // user-visible impact since nothing else depends on it completing), but
+  // wrapped for consistency with the rest of the codebase's load methods.
   Future<void> _loadNotifications() async {
-    final profile     = AuthService.to.profile.value ?? {};
-    final employeeId  = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    if (employeeId == null || sessionToken == null) return;
-    _userKey = 'teacher_$employeeId';
-    final ownClass = profile['class_name'] as String?;
+    try {
+      final profile     = AuthService.to.profile.value ?? {};
+      final employeeId  = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      if (employeeId == null || sessionToken == null) return;
+      _userKey = 'teacher_$employeeId';
+      final ownClass = profile['class_name'] as String?;
 
-    // Merge Notices with newly assigned Tasks, targeted admin Alerts
-    // (attendance reminders, edit-request approvals), and upcoming-exam
-    // reminders into one feed - each is "something new for this teacher"
-    // the same way a notice is.
-    final notices = await SupabaseService.fetchNotices(
-      audiences: const ['Everyone', 'All Staff', 'Management'],
-    );
-    final taskAssignments = await SupabaseService.fetchTeacherTasks(employeeId, sessionToken);
-    final alerts = await SupabaseService.fetchTeacherAlerts(employeeId, sessionToken);
+      // Merge Notices with newly assigned Tasks, targeted admin Alerts
+      // (attendance reminders, edit-request approvals), and upcoming-exam
+      // reminders into one feed - each is "something new for this teacher"
+      // the same way a notice is.
+      final notices = await SupabaseService.fetchNotices(
+        audiences: const ['Everyone', 'All Staff', 'Management'],
+      );
+      final taskAssignments = await SupabaseService.fetchTeacherTasks(employeeId, sessionToken);
+      final alerts = await SupabaseService.fetchTeacherAlerts(employeeId, sessionToken);
 
-    // Same exam sets the Monthly Test tab itself shows for this teacher -
-    // mine plus (if a class teacher) whatever's been set for their own
-    // class, de-duplicated since a teacher can appear in both.
-    final mineExams = await SupabaseService.fetchExams(employeeId: employeeId, sessionToken: sessionToken, createdBy: employeeId);
-    final classExams = (ownClass != null && ownClass.isNotEmpty)
-        ? await SupabaseService.fetchExams(employeeId: employeeId, sessionToken: sessionToken, classNames: [ownClass])
-        : <Map<String, dynamic>>[];
-    final examsById = <String, Map<String, dynamic>>{};
-    for (final e in [...mineExams, ...classExams]) { examsById[e['id'] as String] = e; }
-    final officialExams = await SupabaseService.fetchOfficialExams();
+      // Same exam sets the Monthly Test tab itself shows for this teacher -
+      // mine plus (if a class teacher) whatever's been set for their own
+      // class, de-duplicated since a teacher can appear in both.
+      final mineExams = await SupabaseService.fetchExams(employeeId: employeeId, sessionToken: sessionToken, createdBy: employeeId);
+      final classExams = (ownClass != null && ownClass.isNotEmpty)
+          ? await SupabaseService.fetchExams(employeeId: employeeId, sessionToken: sessionToken, classNames: [ownClass])
+          : <Map<String, dynamic>>[];
+      final examsById = <String, Map<String, dynamic>>{};
+      for (final e in [...mineExams, ...classExams]) { examsById[e['id'] as String] = e; }
+      final officialExams = await SupabaseService.fetchOfficialExams();
 
-    final birthday = birthdayNoticeItem(profile['dob'] as String?);
+      final birthday = birthdayNoticeItem(profile['dob'] as String?);
 
-    final combined = [
-      ...notices,
-      ...taskAssignments.map(taskAsNoticeItem),
-      ...alerts.map(alertAsNoticeItem),
-      ...monthlyTestReminders(examsById.values.toList()),
-      ...officialExamReminders(officialExams),
-      if (birthday != null) birthday,
-    ];
+      final combined = [
+        ...notices,
+        ...taskAssignments.map(taskAsNoticeItem),
+        ...alerts.map(alertAsNoticeItem),
+        ...monthlyTestReminders(examsById.values.toList()),
+        ...officialExamReminders(officialExams),
+        if (birthday != null) birthday,
+      ];
 
-    final visible = await visibleRecentNotices(combined, _userKey!);
-    if (!mounted) return;
-    setState(() => _recent = visible);
+      final visible = await visibleRecentNotices(combined, _userKey!);
+      if (!mounted) return;
+      setState(() => _recent = visible);
 
-    // Full-screen confetti + photo celebration, separate from (and shown
-    // before) the regular notice popup below - once per day, same idiom as
-    // shouldShowNoticePopupToday, just its own storage key.
-    if (birthday != null) {
-      final shouldCelebrate = await shouldShowNoticePopupToday('birthday_celebration_shown_teacher_$employeeId');
-      if (shouldCelebrate && mounted) {
-        final name = profile['name'] as String? ?? '';
-        await showBirthdayCelebration(context,
-          name: name.isEmpty ? 'Teacher' : name.split(' ').first,
-          photoKey: profile['photo_url'] as String?,
-        );
+      // Full-screen confetti + photo celebration, separate from (and shown
+      // before) the regular notice popup below - once per day, same idiom as
+      // shouldShowNoticePopupToday, just its own storage key.
+      if (birthday != null) {
+        final shouldCelebrate = await shouldShowNoticePopupToday('birthday_celebration_shown_teacher_$employeeId');
+        if (shouldCelebrate && mounted) {
+          final name = profile['name'] as String? ?? '';
+          await showBirthdayCelebration(context,
+            name: name.isEmpty ? 'Teacher' : name.split(' ').first,
+            photoKey: profile['photo_url'] as String?,
+          );
+        }
       }
-    }
-    if (!mounted || visible.isEmpty) return;
+      if (!mounted || visible.isEmpty) return;
 
-    final shouldShow = await shouldShowNoticePopupToday('notif_popup_shown_teacher_$employeeId');
-    if (shouldShow && mounted) _showNotifications();
+      final shouldShow = await shouldShowNoticePopupToday('notif_popup_shown_teacher_$employeeId');
+      if (shouldShow && mounted) _showNotifications();
+    } catch (e) {
+      // Background enrichment only (notification bell) - no user-visible
+      // loading/error state to update, just stop silently.
+    }
   }
 
   void _showNotifications() {

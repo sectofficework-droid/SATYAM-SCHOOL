@@ -39,53 +39,61 @@ class _AdminNoticesPageState extends State<AdminNoticesPage> {
     }
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): titleCtrl/contentCtrl were
+  // never disposed; .text is read after the sheet closes, so wrapped in
+  // try/finally.
   Future<void> _compose({Map<String, dynamic>? existing}) async {
     final titleCtrl = TextEditingController(text: existing?['title'] as String? ?? '');
     final contentCtrl = TextEditingController(text: existing?['content'] as String? ?? '');
     String audience = existing?['audience'] as String? ?? 'Everyone';
-    final saved = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
-        padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text(existing == null ? 'New Notice' : 'Edit Notice', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 12),
-          TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder())),
-          const SizedBox(height: 10),
-          TextField(controller: contentCtrl, maxLines: 4, decoration: const InputDecoration(labelText: 'Content', border: OutlineInputBorder())),
-          if (existing == null) ...[
-            const SizedBox(height: 10),
-            DropdownButtonFormField<String>(
-              initialValue: audience,
-              decoration: const InputDecoration(labelText: 'Audience', border: OutlineInputBorder()),
-              items: const ['Everyone', 'All Students', 'All Staff', 'Parents', 'Management']
-                  .map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
-              onChanged: (v) => setSheet(() => audience = v ?? audience),
-            ),
-          ],
-          const SizedBox(height: 16),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy),
-            onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
-        ]),
-      )),
-    );
-    if (saved != true || titleCtrl.text.trim().isEmpty) return;
     try {
-      if (existing == null) {
-        await StaffAdminService.createNotice(_employeeId,
-          title: titleCtrl.text.trim(), content: contentCtrl.text.trim(), audience: audience,
-          postedDate: DateFormat('yyyy-MM-dd').format(DateTime.now()), postedBy: _employeeName);
-      } else {
-        await StaffAdminService.updateNotice(_employeeId, existing['id'] as String,
-          title: titleCtrl.text.trim(), content: contentCtrl.text.trim());
+      final saved = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (ctx) => StatefulBuilder(builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(ctx).viewInsets.bottom + 20),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            Text(existing == null ? 'New Notice' : 'Edit Notice', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            const SizedBox(height: 12),
+            TextField(controller: titleCtrl, decoration: const InputDecoration(labelText: 'Title', border: OutlineInputBorder())),
+            const SizedBox(height: 10),
+            TextField(controller: contentCtrl, maxLines: 4, decoration: const InputDecoration(labelText: 'Content', border: OutlineInputBorder())),
+            if (existing == null) ...[
+              const SizedBox(height: 10),
+              DropdownButtonFormField<String>(
+                initialValue: audience,
+                decoration: const InputDecoration(labelText: 'Audience', border: OutlineInputBorder()),
+                items: const ['Everyone', 'All Students', 'All Staff', 'Parents', 'Management']
+                    .map((a) => DropdownMenuItem(value: a, child: Text(a))).toList(),
+                onChanged: (v) => setSheet(() => audience = v ?? audience),
+              ),
+            ],
+            const SizedBox(height: 16),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.navy),
+              onPressed: () => Navigator.pop(ctx, true), child: const Text('Save')),
+          ]),
+        )),
+      );
+      if (saved != true || titleCtrl.text.trim().isEmpty) return;
+      try {
+        if (existing == null) {
+          await StaffAdminService.createNotice(_employeeId,
+            title: titleCtrl.text.trim(), content: contentCtrl.text.trim(), audience: audience,
+            postedDate: DateFormat('yyyy-MM-dd').format(DateTime.now()), postedBy: _employeeName);
+        } else {
+          await StaffAdminService.updateNotice(_employeeId, existing['id'] as String,
+            title: titleCtrl.text.trim(), content: contentCtrl.text.trim());
+        }
+        if (mounted) showAdminSnack(context, 'Notice saved');
+        _load();
+      } catch (e) {
+        if (mounted) showAdminSnack(context, 'Failed to save notice.', isError: true);
       }
-      if (mounted) showAdminSnack(context, 'Notice saved');
-      _load();
-    } catch (e) {
-      if (mounted) showAdminSnack(context, 'Failed to save notice.', isError: true);
+    } finally {
+      titleCtrl.dispose();
+      contentCtrl.dispose();
     }
   }
 

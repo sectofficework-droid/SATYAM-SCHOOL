@@ -1,4 +1,5 @@
 import supabase from "./supabase";
+import authedFetch from "./authedFetch";
 
 // kiosk_settings: single-row config for the Attendance Kiosk - admin PIN
 // (hashed, never read back), expected staff start time + late grace period,
@@ -20,14 +21,18 @@ export async function getKioskSettings() {
 }
 
 // absentCutoffTime: "" disables the auto-absent job (stored as NULL).
+// REQ-SEC-041 (2026-11-20 full-system audit): tightened to only fall back
+// to the direct RPC on a genuine network-level failure (TypeError from
+// fetch itself, via authedFetch) - previously guarded by a string match on
+// the error message ("fetch"), which worked but was fragile; this is the
+// same intent made explicit and consolidated onto the shared authedFetch
+// helper instead of a local copy of the auth-header logic.
 export async function saveKioskSettings({ expectedStartTime, lateGraceMinutes, absentCutoffTime, shiftEndTime }) {
   // First attempt via internal server API (uses service key and WHERE id IS NOT NULL
   // to avoid PostgreSQL safeupdate constraint errors)
   try {
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch("/api/kiosk-settings", {
+    const json = await authedFetch("/api/kiosk-settings", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + (session?.access_token || "") },
       body: JSON.stringify({
         expectedStartTime,
         lateGraceMinutes: Number(lateGraceMinutes) || 0,
@@ -35,17 +40,10 @@ export async function saveKioskSettings({ expectedStartTime, lateGraceMinutes, a
         shiftEndTime: shiftEndTime || null,
       }),
     });
-    const json = await res.json().catch(() => ({}));
-    if (res.ok && json.success) {
-      return json.data;
-    }
-    if (json.error) {
-      throw new Error(json.error);
-    }
+    if (json.success) return json.data;
+    throw new Error(json.error || "Unexpected response from kiosk-settings");
   } catch (apiErr) {
-    if (apiErr.message && !apiErr.message.includes("fetch")) {
-      throw apiErr;
-    }
+    if (!(apiErr instanceof TypeError)) throw apiErr;
   }
 
   // Fallback to direct RPC

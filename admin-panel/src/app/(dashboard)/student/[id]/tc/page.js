@@ -208,8 +208,14 @@ export default function TcPage() {
     if (form.remarks && !isValidLength(form.remarks, 300)) {
       alert("Remarks must be 300 characters or fewer."); return;
     }
-    if (!isDateOnOrAfter(form.leavingDate, form.tcDate)) {
-      alert("Date of Leaving cannot be before the TC Issue Date."); return;
+    // REQ-BUG-087 (2026-11-20 full-system audit): this was backwards -
+    // enforced leavingDate >= tcDate, which blocks the single most common
+    // real workflow (catching up on paperwork for a student who already
+    // left, backdating Date of Leaving to before today's issue date) and
+    // silently accepted the nonsensical case. The correct rule: you issue
+    // a TC on/after the date someone actually left, not before.
+    if (!isDateOnOrAfter(form.tcDate, form.leavingDate)) {
+      alert("TC Issue Date cannot be before the Date of Leaving."); return;
     }
     setSubmitting(true);
     try {

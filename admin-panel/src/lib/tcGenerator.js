@@ -9,9 +9,13 @@ import { TC_LOGO_BASE64, TC_SARASWATI_BASE64 } from "./tcAssets.js";
 // be bulk-imported from an uploaded spreadsheet or typed by any admin with
 // student-write access, so a payload like <img src=x onerror=...> in
 // "Remarks"/"Reason for Leaving" would execute JS in whichever admin's
-// browser later opens that student's TC. Every other PDF in this codebase
-// goes through pdf-lib primitives instead of HTML injection - this file is
-// the one exception that needs escaping at the point of interpolation.
+// browser later opens that student's TC. Most other PDFs in this codebase
+// go through pdf-lib primitives instead of HTML injection, but
+// marksheetGenerator.js uses this exact same raw-HTML-string +
+// dangerouslySetInnerHTML pattern and needs the identical discipline
+// (correction 2026-11-20: this comment used to call this file "the one
+// exception," which was wrong and risked a third HTML-templated generator
+// getting built without escaping on the strength of that claim).
 const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
@@ -104,13 +108,18 @@ export function dobParts(dobVal) {
   } else if (dmyMatch) {
     [, d, mo, y] = dmyMatch;
   } else {
-    return { words: "", dmy: String(dobVal) };
+    // REQ-BUG-079 (re-confirmed by the 2026-11-20 full-system audit): this
+    // fallback was the one unescaped interpolation point left in a file
+    // whose own header comment documents escaping-at-interpolation as the
+    // required discipline - a malformed dob (e.g. from a bulk import) with
+    // HTML-like content would execute in the next admin's browser.
+    return { words: "", dmy: esc(dobVal) };
   }
   const dayNum = parseInt(d, 10);
   const monthNum = parseInt(mo, 10);
   const yearNum = parseInt(y, 10);
   if (isNaN(dayNum) || isNaN(monthNum) || isNaN(yearNum) || monthNum < 1 || monthNum > 12) {
-    return { words: "", dmy: String(dobVal) };
+    return { words: "", dmy: esc(dobVal) };
   }
   const dd = String(dayNum).padStart(2, "0");
   const mm = String(monthNum).padStart(2, "0");
@@ -124,7 +133,8 @@ export function fmtTcDate(d) {
   const dmyMatch = String(d).match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
   if (isoMatch) return `${isoMatch[3].padStart(2, "0")}/${isoMatch[2].padStart(2, "0")}/${isoMatch[1]}`;
   if (dmyMatch) return `${dmyMatch[1].padStart(2, "0")}/${dmyMatch[2].padStart(2, "0")}/${dmyMatch[3]}`;
-  return String(d);
+  // REQ-BUG-079: same unescaped-fallback fix as dobParts() above.
+  return esc(d);
 }
 
 const CLASS_PROMOTION_MAP = {

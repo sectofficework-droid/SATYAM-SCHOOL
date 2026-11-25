@@ -23,33 +23,42 @@ class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
   List<Map<String, dynamic>> _records = [];
   List<Map<String, dynamic>> _todayShifts = [];
   bool _loading = true;
+  String? _error;
   bool _checkingOut = false;
 
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG (2026-11-20 full-system audit): no try/catch at all - any
+  // network blip left this spinning forever with no error/retry shown
+  // (REQ-BUG-069 class, same as several other pages already fixed).
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final profile    = AuthService.to.profile.value ?? {};
-    final employeeId = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final records = employeeId != null && sessionToken != null
-        ? await SupabaseService.fetchEmployeeAttendance(employeeId, sessionToken)
-        : <Map<String, dynamic>>[];
-    final shifts = employeeId != null
-        ? await SupabaseService.fetchEmployeeShiftsForDate(employeeId, today)
-        : <Map<String, dynamic>>[];
-    if (mounted) setState(() { _records = records; _todayShifts = shifts; _loading = false; });
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile    = AuthService.to.profile.value ?? {};
+      final employeeId = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final records = employeeId != null && sessionToken != null
+          ? await SupabaseService.fetchEmployeeAttendance(employeeId, sessionToken)
+          : <Map<String, dynamic>>[];
+      final shifts = employeeId != null && sessionToken != null
+          ? await SupabaseService.fetchEmployeeShiftsForDate(employeeId, sessionToken, today)
+          : <Map<String, dynamic>>[];
+      if (mounted) setState(() { _records = records; _todayShifts = shifts; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load attendance.'; });
+    }
   }
 
   Future<void> _checkOut() async {
     final profile    = AuthService.to.profile.value ?? {};
     final employeeId = profile['id'] as String?;
-    if (employeeId == null || _checkingOut) return;
+    final sessionToken = AuthService.to.sessionToken;
+    if (employeeId == null || sessionToken == null || _checkingOut) return;
     setState(() => _checkingOut = true);
     try {
-      final result = await SupabaseService.recordCheckOut(employeeId);
+      final result = await SupabaseService.recordCheckOut(employeeId, sessionToken);
       if (result['status'] == 'no_open_shift' && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('No open shift to check out of.')),
@@ -75,6 +84,8 @@ class _TeacherMyAttendancePageState extends State<TeacherMyAttendancePage> {
     ),
     body: _loading
         ? const Center(child: CircularProgressIndicator(color: AppColors.navy))
+        : _error != null
+            ? Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)))
         : Column(children: [
             _buildTodayPunchBanner(),
             _buildScanQrButton(),

@@ -271,16 +271,25 @@ export async function getFeesForReport() {
 // and in devtools). Matches the management-only rule already established
 // for Settings -> Users & Roles' Salary tab (REQ-SEC-007).
 export async function getEmployeesForReport(includeSalary = false) {
+  // REQ-BUG-089 (2026-11-20 full-system audit): salRes used to be a raw
+  // `salary_payments.select(...)`, whose direct table access was revoked
+  // from `authenticated` entirely (REQ-SEC-007, 2026-09-19) - every real
+  // call with includeSalary=true silently got a permission-denied error
+  // that was never checked (only empRes.error was), so the salary column
+  // just read 0/blank with no error shown. Switched to the same
+  // admin_get_salary_payments RPC super-admin.js's Salary tab uses, and
+  // salRes.error is now actually checked.
   const [empRes, salRes] = await Promise.all([
     supabase
       .from("employees")
       .select("id, name, type, designation, department, phone, email, joining_date, status, subject_mappings")
       .order("name"),
     includeSalary
-      ? supabase.from("salary_payments").select("employee_id, amount, month").order("month", { ascending: false })
+      ? supabase.rpc("admin_get_salary_payments", {})
       : Promise.resolve({ data: [] }),
   ]);
   if (empRes.error) throw empRes.error;
+  if (salRes.error) throw salRes.error;
 
   // Latest salary amount per employee
   const salMap = {};

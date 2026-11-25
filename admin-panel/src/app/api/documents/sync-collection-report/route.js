@@ -50,10 +50,14 @@ export async function POST(req) {
 
     if (!csvContent) {
       // Try reading local project CSV file
+      // REQ-HYG (2026-11-20 full-system audit): the third path was a
+      // leftover from before this project folder's rename to
+      // D:\Project\SECT SYSTEM\... - harmless on Vercel (never exists
+      // there either way) but stale/misleading for local dev too.
       const possiblePaths = [
         path.resolve(process.cwd(), "../Document Collection Report - Classwise - ALL CLASSES.csv"),
         path.resolve(process.cwd(), "Document Collection Report - Classwise - ALL CLASSES.csv"),
-        "D:\\Project\\SSIS SCHOOL\\Document Collection Report - Classwise - ALL CLASSES.csv",
+        "D:\\Project\\SECT SYSTEM\\SATYAM-SCHOOL\\Document Collection Report - Classwise - ALL CLASSES.csv",
       ];
       for (const p of possiblePaths) {
         if (fs.existsSync(p)) {

@@ -19,15 +19,23 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
   @override
   void initState() { super.initState(); _load(); }
 
+  String? _error;
+
+  // F9.2 (2026-11-20 full-system audit): no try/catch - any network blip
+  // left this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final profile      = AuthService.to.profile.value ?? {};
-    final employeeId   = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    final requests = employeeId != null && sessionToken != null
-        ? await SupabaseService.fetchMyLeaveRequests(employeeId, sessionToken)
-        : <Map<String, dynamic>>[];
-    if (mounted) setState(() { _requests = requests; _loading = false; });
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile      = AuthService.to.profile.value ?? {};
+      final employeeId   = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      final requests = employeeId != null && sessionToken != null
+          ? await SupabaseService.fetchMyLeaveRequests(employeeId, sessionToken)
+          : <Map<String, dynamic>>[];
+      if (mounted) setState(() { _requests = requests; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load leave requests.'; });
+    }
   }
 
   Future<void> _showRequestSheet() async {
@@ -72,8 +80,12 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
     // before Submit unlocks - unless no number is on file, in which case
     // there's nothing to gate on and the normal flow applies.
     bool informedViaCall = false;
+    bool submitting = false;
 
     if (!mounted) return;
+    // F9.3 (2026-11-20 full-system audit): reasonCtrl was never disposed -
+    // the sheet's Future resolves on every dismissal path alike, so
+    // dispose once here covers all of them.
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -262,7 +274,12 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
                 ],
                 const SizedBox(height: 14),
                 GestureDetector(
-                  onTap: () async {
+                  // REQ-BUG-096 (2026-11-20 full-system audit): this had no
+                  // try/catch at all (zero error feedback on failure,
+                  // worse than most of the app's missing-error-handling
+                  // gaps) and no guard against a double-tap submitting two
+                  // identical leave requests on a slow network.
+                  onTap: submitting ? null : () async {
                     if (fromDate == null || toDate == null) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                         content: Text('Please pick from and to dates'), behavior: SnackBarBehavior.floating));
@@ -283,28 +300,39 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
                         content: Text('Session error - please sign in again.'), behavior: SnackBarBehavior.floating));
                       return;
                     }
-                    await SupabaseService.submitLeaveRequest(
-                      employeeId: employeeId,
-                      sessionToken: sessionToken,
-                      fromDate: DateFormat('yyyy-MM-dd').format(fromDate!),
-                      toDate: DateFormat('yyyy-MM-dd').format(toDate!),
-                      reason: reasonCtrl.text.trim(),
-                    );
-                    if (ctx.mounted) Navigator.pop(ctx);
-                    _load();
+                    setS(() => submitting = true);
+                    try {
+                      await SupabaseService.submitLeaveRequest(
+                        employeeId: employeeId,
+                        sessionToken: sessionToken,
+                        fromDate: DateFormat('yyyy-MM-dd').format(fromDate!),
+                        toDate: DateFormat('yyyy-MM-dd').format(toDate!),
+                        reason: reasonCtrl.text.trim(),
+                      );
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      _load();
+                    } catch (e) {
+                      setS(() => submitting = false);
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                          content: Text('Failed to submit leave request. Please try again.'), behavior: SnackBarBehavior.floating));
+                      }
+                    }
                   },
                   child: Container(
                     height: 52,
                     decoration: BoxDecoration(
                       gradient: AppColors.navyGradient,
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: .35), blurRadius: 16, offset: const Offset(0, 6))],
+                      boxShadow: [BoxShadow(color: AppColors.navy.withValues(alpha: submitting ? .15 : .35), blurRadius: 16, offset: const Offset(0, 6))],
                     ),
-                    child: const Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.send_rounded, color: Colors.white, size: 20),
-                      SizedBox(width: 8),
-                      Text('Submit Request', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
-                    ])),
+                    child: Center(child: submitting
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                            SizedBox(width: 8),
+                            Text('Submit Request', style: TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w700, fontFamily: 'Poppins')),
+                          ])),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -339,7 +367,7 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
           ),
         ),
       ),
-    );
+    ).then((_) => reasonCtrl.dispose());
   }
 
   // Composes the leave details (+ whoever's covering, if picked) into one
@@ -488,6 +516,8 @@ class _TeacherLeavePageState extends State<TeacherLeavePage> {
     Widget body;
     if (_loading) {
       body = const Center(child: CircularProgressIndicator(color: AppColors.navy));
+    } else if (_error != null) {
+      body = Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)));
     } else if (_requests.isEmpty) {
       body = _emptyState();
     } else {

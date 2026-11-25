@@ -495,10 +495,17 @@ class SupabaseService {
   // whichever shift is currently open for them via the record_check_out
   // RPC (not date-scoped - handles a shift that started before midnight).
   // status comes back 'checked_out' or 'no_open_shift'.
-  static Future<Map<String, dynamic>> recordCheckOut(String employeeId) async {
+  // REQ-SEC-036 (2026-11-20 full-system audit): this RPC used to take only
+  // p_employee_id + a timestamp with no identity check at all - unlike
+  // every sibling check-in RPC (record_face_punch, redeem_qr_session,
+  // redeem_punch_code), anyone holding the public anon key and an employee
+  // UUID could force-close their shift at an arbitrary timestamp. Now
+  // requires a session token, same verify_mobile_session pattern.
+  static Future<Map<String, dynamic>> recordCheckOut(String employeeId, String sessionToken) async {
     final now = DateTime.now();
     final res = await client.rpc('record_check_out', params: {
       'p_employee_id': employeeId,
+      'p_session_token': sessionToken,
       'p_check_out_at': now.toUtc().toIso8601String(),
     }) as List;
     final row = _firstRow(res, 'record_check_out');
@@ -512,15 +519,18 @@ class SupabaseService {
   // Every shift for one employee on one day, oldest first - the teacher
   // app's My Attendance banner lists all of them (not just one in/out
   // pair), and the checkout button always targets whichever one has no
-  // check_out_at yet. Direct SELECT, not an RPC: authenticated already has
-  // a read grant on employee_shifts, no need for a bespoke fetch function.
-  static Future<List<Map<String, dynamic>>> fetchEmployeeShiftsForDate(String employeeId, String date) async {
-    final res = await client
-        .from('employee_shifts')
-        .select()
-        .eq('employee_id', employeeId)
-        .eq('date', date)
-        .order('check_in_at');
+  // check_out_at yet.
+  // REQ-SEC-035 (2026-11-20 full-system audit): this used to be a direct
+  // `.from('employee_shifts')` SELECT - the comment claiming "authenticated
+  // already has a read grant" was also factually wrong about which role
+  // mobile runs as (always `anon`, never `authenticated` - see
+  // CLAUDE.md), and the live policy turned out to grant `anon` unconditional
+  // read too. Moved behind a session-gated RPC, same Category 3 pattern as
+  // fetch_my_homework and friends.
+  static Future<List<Map<String, dynamic>>> fetchEmployeeShiftsForDate(String employeeId, String sessionToken, String date) async {
+    final res = await client.rpc('fetch_my_employee_shifts', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_date': date,
+    }) as List;
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -1354,15 +1364,18 @@ class SupabaseService {
   // daily_task_targets has a row for this employee. Completion is a per
   // (task, employee, calendar date) row so it resets automatically each day.
 
+  // REQ-SEC-037 (2026-11-20 full-system audit): this used to join
+  // daily_tasks with daily_task_targets(employee_id) directly as anon and
+  // filter client-side - shipping the full task x employee targeting map
+  // to every caller, letting anyone with the anon key de-anonymize which
+  // staff member is targeted by which checklist item. fetch_my_daily_tasks
+  // now does the applicability filter server-side; only the caller's own
+  // tasks come back, no raw targeting list.
   static Future<List<Map<String, dynamic>>> fetchDailyTasksForEmployee(String employeeId, String sessionToken) async {
     final today = DateTime.now().toIso8601String().substring(0, 10);
-    // daily_tasks itself is already anon-readable (REQ-SEC-002 Category 2,
-    // fixed earlier) - only daily_task_completions needed the session gate.
-    final tasksRes = await client
-        .from('daily_tasks')
-        .select('id, title, description, target_type, daily_task_targets(employee_id)')
-        .eq('active', true)
-        .order('created_at', ascending: true);
+    final tasksRes = await client.rpc('fetch_my_daily_tasks', params: {
+      'p_employee_id': employeeId, 'p_session_token': sessionToken,
+    }) as List;
     final completionsRes = await client.rpc('fetch_my_daily_task_completions', params: {
       'p_employee_id': employeeId, 'p_session_token': sessionToken, 'p_date': today,
     }) as List;
@@ -1372,21 +1385,12 @@ class SupabaseService {
       completedAt[c['daily_task_id'] as String] = c['completed_at'] as String;
     }
 
-    final applicable = <Map<String, dynamic>>[];
-    for (final t in List<Map<String, dynamic>>.from(tasksRes)) {
-      final targetType = t['target_type'] as String;
-      final targets = List<Map<String, dynamic>>.from(t['daily_task_targets'] as List? ?? []);
-      final isTargeted = targets.any((x) => x['employee_id'] == employeeId);
-      if (targetType == 'all' || isTargeted) {
-        applicable.add({
-          'id': t['id'],
-          'title': t['title'],
-          'description': t['description'],
-          'completedAt': completedAt[t['id']],
-        });
-      }
-    }
-    return applicable;
+    return List<Map<String, dynamic>>.from(tasksRes).map((t) => {
+      'id': t['id'],
+      'title': t['title'],
+      'description': t['description'],
+      'completedAt': completedAt[t['id']],
+    }).toList();
   }
 
   static Future<void> markDailyTaskDone(String dailyTaskId, String employeeId, String sessionToken) async {
@@ -1416,8 +1420,13 @@ class SupabaseService {
 
   // Fees ──────────────────────────────────────────────────────────────────────
 
-  static Future<Map<String, dynamic>> fetchFees(String studentId) async {
-    final res = await client.rpc('get_student_fees', params: {'p_student_id': studentId});
+  // REQ-SEC-032 (2026-11-20 full-system audit): this RPC used to take only
+  // p_student_id with no identity check at all - any caller holding the
+  // public anon key could read any student's complete financial record by
+  // UUID, no login. Now requires a session token, same Category 3 pattern
+  // as fetch_my_exam_mark and friends.
+  static Future<Map<String, dynamic>> fetchFees(String studentId, String sessionToken) async {
+    final res = await client.rpc('get_student_fees', params: {'p_student_id': studentId, 'p_session_token': sessionToken});
     if (res == null) return {};
     return Map<String, dynamic>.from(res as Map);
   }

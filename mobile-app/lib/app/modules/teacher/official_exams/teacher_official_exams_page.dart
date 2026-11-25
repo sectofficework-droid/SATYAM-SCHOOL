@@ -33,6 +33,7 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
 
   List<Map<String, dynamic>> _exams = [];
   bool _loading = true;
+  String? _error;
   bool _isClassTeacher = false;
   String? _ownClassName;
 
@@ -106,14 +107,20 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-11-20 full-system audit): no try/catch - any network
+  // blip left this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() => _loading = true);
-    final profile = AuthService.to.profile.value ?? {};
-    _ownClassName = profile['class_name'] as String?;
-    _isClassTeacher = _ownClassName != null && _ownClassName!.isNotEmpty;
+    setState(() { _loading = true; _error = null; });
+    try {
+      final profile = AuthService.to.profile.value ?? {};
+      _ownClassName = profile['class_name'] as String?;
+      _isClassTeacher = _ownClassName != null && _ownClassName!.isNotEmpty;
 
-    final exams = await SupabaseService.fetchOfficialExams();
-    if (mounted) setState(() { _exams = exams; _loading = false; });
+      final exams = await SupabaseService.fetchOfficialExams();
+      if (mounted) setState(() { _exams = exams; _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load exams.'; });
+    }
   }
 
   // Locked while today is before the exam's end date - unlocks the day of.
@@ -148,10 +155,20 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
     }
   }
 
+  // REQ-BUG-069 (2026-11-20 full-system audit): bare .then() with no
+  // .catchError() - a network blip left `_loadingSubjects` stuck true
+  // forever with no error shown.
   void _selectClass(String className) {
     setState(() { _selectedClass = className; _step = 'subject'; _loadingSubjects = true; _subjects = []; });
     SupabaseService.fetchClassSubjects(className).then((subs) {
       if (mounted) setState(() { _subjects = subs; _loadingSubjects = false; });
+    }).catchError((e) {
+      if (mounted) {
+        setState(() => _loadingSubjects = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to load subjects. Please try again.'), backgroundColor: AppColors.red),
+        );
+      }
     });
   }
 
@@ -353,6 +370,8 @@ class TeacherOfficialExamsPageState extends State<TeacherOfficialExamsPage> {
     Widget body;
     if (_loading) {
       body = _buildShimmer();
+    } else if (_error != null) {
+      body = Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)));
     } else {
       switch (_step) {
         case 'class':    body = _buildClassPicker(); break;

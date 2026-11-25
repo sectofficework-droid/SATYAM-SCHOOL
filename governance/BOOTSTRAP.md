@@ -450,34 +450,58 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-11-20 (continued) — restarted the full-system audit
-from scratch per the user's explicit request ("check each and every single
-feature... note down in detail"), fixes NOT yet applied.** Earlier the same
-day's tech-debt backlog (duplicated service-key chain, N+1s, sign-out UX,
-52 missing indexes, auth_rls_initplan, multiple_permissive_policies, Teacher/
-Student Flutter duplication) was coded, verified, committed, and pushed
-(`3eaf25a`) — see TODO.md's now-closed entries for that batch. This fresh
-audit is a separate, much larger pass: 10 parallel read-only review forks
-covering ~74,000 lines across the admin panel, all 3 mobile flavors, and
-shared services (several forks hit this session's rate limit mid-run and
-were resumed via `SendMessage` — all 10 completed). Full findings, trigger
-scenarios, and fix directions: `planning\FULL-AUDIT-2026-11-20.md`; the
-Critical/High items also got checklist entries in `planning\TODO.md` (new
-header, REQ-SEC-032..036/REQ-BUG-085..089). **Headline findings**: 3 new
-unauthenticated-RPC exposures (`get_student_fees`, `record_check_out`,
-`employee_shifts` direct read) following the same bug-class as the already-
-fixed REQ-SEC-002 Category 3 work but missed on these specific tables/RPCs;
-a mobile TC-issuance role-gate regression (web got REQ-SEC-030, mobile never
-did, and a stale comment claims the opposite); real employee PII/salary data
-hardcoded in `store.js` (client-bundled, repo has a public-visibility
-history); 2 independently-broken "Generate Salary" call sites from the same
-Sept-19 migration, both silently swallowed by generic error handlers; a
-backwards TC date-validation rule; and a Staff-Attendance-Delete feature
-that currently 401s for every real caller (missing auth header) while also
-lacking the tier restriction it'll need once that's fixed. **Next session:
-fix these, Critical first**, per the user's explicit sequencing instruction
-("after audit notedown in detail then execute fix after the note and log") —
-this checkpoint marks the "note and log" step as done, fixing not started.
+**Current — Session 2026-11-20/21/25 (one continued engagement) —
+full-system audit restarted from scratch per the user's request ("check
+each and every single feature... note down in detail"), then every
+Critical/High finding (and most Medium/Low) fixed, verified, and staged
+("start fixing one by one as soon as possible which is fixable by your
+side without any concern").** Earlier the same engagement's tech-debt
+backlog (duplicated service-key chain, N+1s, sign-out UX, 52 missing
+indexes, auth_rls_initplan, multiple_permissive_policies, Teacher/Student
+Flutter duplication) was coded, verified, committed, and pushed (`3eaf25a`)
+— see TODO.md's now-closed entries for that batch, separate from this audit.
+
+**Audit pass**: 10 parallel read-only review forks covering ~74,000 lines
+across the admin panel, all 3 mobile flavors, and shared services (several
+forks hit this session's rate limit mid-run, some across a multi-day gap —
+all were resumed via `SendMessage` and completed). Full findings, trigger
+scenarios, and fix directions: `planning\FULL-AUDIT-2026-11-20.md`.
+
+**Remediation pass**: all 7 Critical + 5 High findings fixed — 3 new
+unauthenticated-RPC exposures closed (`get_student_fees`, `record_check_out`,
+`employee_shifts` direct read, plus `daily_task_targets`'s anon-readable
+join, same Category-3-missed-these bug class); mobile TC-issuance role-gate
+regression closed (`staff_admin_issue_tc` now matches the web's REQ-SEC-030
+gate); real employee PII/salary data removed from `store.js`; the 416-
+student PII JSON (`onlineGeneralRegisterData.json`) removed from HEAD
+(live-verified the DB table is fully seeded — 461 rows — and already
+preferred by the route, closing REQ-SEC-021/BUG-077); 2 independently-broken
+"Generate Salary" paths fixed (switched onto the `admin_get_salary_payments`/
+`admin_record_salary_payments_bulk` RPCs); 4 PDF report routes fixed (were
+reading non-existent `students` columns, producing blank documents incl. a
+legally significant TC — new `getStudentsForReportByIds()` helper reuses the
+proven `mapToStudent()` mapper); backwards TC date-validation rule fixed;
+Staff-Attendance-Delete fixed (was 401-ing for everyone, missing
+Authorization header) and tiered to senior_admin/management; both cron
+routes' fail-open bug fixed. Plus a long tail of Medium/Low fixes and 2
+large mechanical sweeps (missing try/catch across 13 Teacher files,
+controller disposal across 17 Admin Workspace files, both via parallel
+forks) — full list in TODO.md. **Verified**: `npm run lint` (admin-panel)
+clean throughout; `flutter analyze` (mobile-app) at 28 issues, one *fewer*
+than the 29 pre-existing baseline; dev-server smoke tests on every touched
+API route (401/400, never 500, confirming clean compiles); every DB change
+applied live via Supabase MCP and re-queried to confirm the new state.
+**NOT verified**: no in-browser/on-device click-through this session (no
+live login credentials, no physical device) — flag for next session,
+especially the 4 corrected PDF routes and the mobile TC gate. **Left for
+the user's decision** (business-intent questions, not bugs — see TODO.md):
+whether most Settings tabs' client-only "normal_admin blocked" rule should
+also be enforced at the DB layer; whether `expenses` should get the same
+role-gating `fee_payments` has; the real deployed origin needed to narrow
+`view-url`'s wildcard CORS. **Left as explicitly destructive, needs sign-
+off**: purging the ~2 days of git history where the PII JSON was public
+(§J4). Everything is staged, not committed — awaiting the user's own
+commit trigger per this file's standing rule.
 
 **Prior — Session 2026-11-20 — SEF removed from the SATYAM-SCHOOL repo
 (MAJOR per J12B), committed + pushed.** Session opened on a prior,

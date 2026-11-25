@@ -28,6 +28,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
   Map<String, dynamic>?      _selExam;
   final Map<String, TextEditingController> _markCtrl = {};
   bool _loading       = true;
+  String? _error;
   bool _loadingRoster = false;
   bool _saving        = false;
   bool _isClassTeacher = false;
@@ -105,37 +106,43 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
   @override
   void initState() { super.initState(); _load(); }
 
+  // REQ-BUG-069 (2026-11-20 full-system audit): no try/catch - any network
+  // blip left this spinning forever with no error/retry shown.
   Future<void> _load() async {
-    setState(() { _loading = true; _selExam = null; _students = []; });
-    final profile    = AuthService.to.profile.value ?? {};
-    final employeeId = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    final ownClass    = profile['class_name'] as String?;
-    _isClassTeacher = ownClass != null && ownClass.isNotEmpty;
+    setState(() { _loading = true; _error = null; _selExam = null; _students = []; });
+    try {
+      final profile    = AuthService.to.profile.value ?? {};
+      final employeeId = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      final ownClass    = profile['class_name'] as String?;
+      _isClassTeacher = ownClass != null && ownClass.isNotEmpty;
 
-    final mine = (employeeId != null && sessionToken != null)
-        ? await SupabaseService.fetchExams(employeeId: employeeId, sessionToken: sessionToken, createdBy: employeeId)
-        : <Map<String, dynamic>>[];
-    final classWide = (_isClassTeacher && employeeId != null && sessionToken != null)
-        ? await SupabaseService.fetchExams(employeeId: employeeId, sessionToken: sessionToken, classNames: [ownClass!])
-        : <Map<String, dynamic>>[];
-    final maxMarks = await SupabaseService.fetchMonthlyTestMaxMarks();
+      final mine = (employeeId != null && sessionToken != null)
+          ? await SupabaseService.fetchExams(employeeId: employeeId, sessionToken: sessionToken, createdBy: employeeId)
+          : <Map<String, dynamic>>[];
+      final classWide = (_isClassTeacher && employeeId != null && sessionToken != null)
+          ? await SupabaseService.fetchExams(employeeId: employeeId, sessionToken: sessionToken, classNames: [ownClass!])
+          : <Map<String, dynamic>>[];
+      final maxMarks = await SupabaseService.fetchMonthlyTestMaxMarks();
 
-    final teacherName = profile['name'] as String?;
-    final academicYear = await SupabaseService.fetchCurrentAcademicYearLabel();
-    final classSubjects = (teacherName != null && academicYear != null)
-        ? await SupabaseService.fetchTeacherSubjectsByClass(academicYear, teacherName)
-        : <String, List<String>>{};
+      final teacherName = profile['name'] as String?;
+      final academicYear = await SupabaseService.fetchCurrentAcademicYearLabel();
+      final classSubjects = (teacherName != null && academicYear != null)
+          ? await SupabaseService.fetchTeacherSubjectsByClass(academicYear, teacherName)
+          : <String, List<String>>{};
 
-    if (mounted) {
-      setState(() {
-      _monthlyTestMaxMarks = maxMarks;
-      _mineExams  = mine;
-      _classExams = classWide;
-      _classSubjectsFromTT = classSubjects;
-      if (!_isClassTeacher) _scope = 0;
-      _loading = false;
-    });
+      if (mounted) {
+        setState(() {
+        _monthlyTestMaxMarks = maxMarks;
+        _mineExams  = mine;
+        _classExams = classWide;
+        _classSubjectsFromTT = classSubjects;
+        if (!_isClassTeacher) _scope = 0;
+        _loading = false;
+      });
+      }
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _error = 'Failed to load exams.'; });
     }
   }
 
@@ -168,34 +175,48 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
     _clearMarkControllers();
     setState(() { _selExam = exam; _invalidIds.clear(); _students = []; _loadingRoster = true; });
 
-    final profile     = AuthService.to.profile.value ?? {};
-    final employeeId  = profile['id'] as String?;
-    final sessionToken = AuthService.to.sessionToken;
-    final sectionId   = profile['class_teacher_of_section_id']?.toString();
-    final myClassName = profile['class_name'] as String?;
-    final examClass   = exam['class'] as String?;
+    // REQ-BUG-069 (2026-11-20 full-system audit): no try/catch - any
+    // network blip left `_loadingRoster` stuck true forever with no error
+    // shown.
+    try {
+      final profile     = AuthService.to.profile.value ?? {};
+      final employeeId  = profile['id'] as String?;
+      final sessionToken = AuthService.to.sessionToken;
+      final sectionId   = profile['class_teacher_of_section_id']?.toString();
+      final myClassName = profile['class_name'] as String?;
+      final examClass   = exam['class'] as String?;
 
-    // Use the section-accurate roster when it's the exam for the teacher's
-    // own class-teacher section; otherwise (a class they teach as subject
-    // teacher, or a class they created this exam for) look the class up by
-    // name, since subject teachers don't have a section_id for it.
-    final students = (sectionId != null && sectionId.isNotEmpty && examClass == myClassName)
-        ? await SupabaseService.fetchClassStudents(sectionId)
-        : (examClass != null ? await SupabaseService.fetchClassStudentsByName(examClass) : <Map<String, dynamic>>[]);
+      // Use the section-accurate roster when it's the exam for the teacher's
+      // own class-teacher section; otherwise (a class they teach as subject
+      // teacher, or a class they created this exam for) look the class up by
+      // name, since subject teachers don't have a section_id for it.
+      final students = (sectionId != null && sectionId.isNotEmpty && examClass == myClassName)
+          ? await SupabaseService.fetchClassStudents(sectionId)
+          : (examClass != null ? await SupabaseService.fetchClassStudentsByName(examClass) : <Map<String, dynamic>>[]);
 
-    final marks = (employeeId != null && sessionToken != null)
-        ? await SupabaseService.fetchExamMarks(employeeId, sessionToken, exam['id'] as String)
-        : <Map<String, dynamic>>[];
-    for (final m in marks) {
-      final sid = m['student_id'] as String;
-      _markCtrl[sid] = TextEditingController(text: '${m['marks_obtained'] ?? ''}');
+      final marks = (employeeId != null && sessionToken != null)
+          ? await SupabaseService.fetchExamMarks(employeeId, sessionToken, exam['id'] as String)
+          : <Map<String, dynamic>>[];
+      for (final m in marks) {
+        final sid = m['student_id'] as String;
+        _markCtrl[sid] = TextEditingController(text: '${m['marks_obtained'] ?? ''}');
+      }
+      for (final s in students) {
+        _markCtrl.putIfAbsent(s['id'] as String, () => TextEditingController());
+      }
+      if (mounted) setState(() { _students = students; _loadingRoster = false; });
+    } catch (e) {
+      if (mounted) {
+        setState(() => _loadingRoster = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to load students. Please try again.'), backgroundColor: AppColors.red),
+        );
+      }
     }
-    for (final s in students) {
-      _markCtrl.putIfAbsent(s['id'] as String, () => TextEditingController());
-    }
-    if (mounted) setState(() { _students = students; _loadingRoster = false; });
   }
 
+  // REQ-BUG-083 (2026-11-20 full-system audit): nameCtrl/marksCtrl were
+  // never disposed on any dismissal path.
   void _showCreateExamSheet() {
     final nameCtrl = TextEditingController();
     final marksCtrl = TextEditingController(text: '$_monthlyTestMaxMarks');
@@ -363,7 +384,7 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
           );
         },
       ),
-    );
+    ).then((_) { nameCtrl.dispose(); marksCtrl.dispose(); });
   }
 
   Future<void> _saveMarks() async {
@@ -459,6 +480,8 @@ class _TeacherMarksPageState extends State<TeacherMarksPage> {
     Widget body;
     if (_loading) {
       body = _buildShimmer();
+    } else if (_error != null) {
+      body = Center(child: Text(_error!, style: const TextStyle(color: AppColors.textLight)));
     } else if (_selExam == null) {
       body = _buildExamList();
     } else {

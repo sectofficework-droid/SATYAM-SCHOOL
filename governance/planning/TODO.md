@@ -16,58 +16,115 @@ just the Critical/High items as trackable checklist entries; Medium/Low
 findings (hygiene, UX inconsistencies, dead code, systemic-but-non-critical
 disposal/error-handling gaps) are fully written up in that file only.
 
-**Nothing below has been fixed yet** — audit-only pass, fixes come next.
+**Status: fixed and verified same session** (user: "start fixing one by one
+as soon as possible which is fixable by your side without any concern") —
+every item below is closed unless marked otherwise. `npm run lint`/
+`flutter analyze` clean after every change; DB changes applied live via
+Supabase MCP and re-verified; see each item for its specific verification.
 
-- [ ] **REQ-SEC-032 (Critical) — `get_student_fees` RPC has zero caller-identity
-      check and is granted to `anon`.** Any caller with just the public anon
-      key can fetch any student's complete financial record (fee total,
-      discount + reason, full payment history) by UUID, no login. Same bug
-      class as REQ-SEC-002 Category 3, missed on this RPC. See audit §8 F8.1.
-- [ ] **REQ-SEC-033 (Critical) — Mobile Transfer Certificate issuance has no
-      role gate.** `staff_admin_issue_tc` only checks the caller is *some*
-      linked admin — any `normal_admin` can issue a TC and mark a student
-      "Left" via the Teacher app. The web-side fix (REQ-SEC-030) never
-      propagated to mobile; a stale code comment claims the opposite. See
-      audit §7 F7.1.
-- [ ] **REQ-SEC-034 (Critical) — Real employee PII + salary/expense figures
-      hardcoded in `admin-panel/src/lib/store.js`.** 15 real names/codes/
-      designations (one with phone+email) plus real-looking salary
-      attributions ship in every client JS bundle, in a repo with a
-      documented history of being made public. See audit §6 F6.1.
-- [ ] **REQ-BUG-085 (Critical) — 4 of 6 PDF report routes read non-existent
-      `students` columns, producing blank/placeholder documents** (ID card,
-      Bonafide, Marksheet, TC) via the mobile Admin Workspace's report
-      feature — includes a legally significant document. See audit §5 F5.1.
-- [ ] **REQ-BUG-086 (Critical) — "Generate Salary" (`employee/page.js`) is
-      completely broken** — queries `salary_payments` directly, whose access
-      was revoked from `authenticated` 2026-09-19; fails silently via a
-      generic alert. Confirmed live: only 1 salary row ever recorded, dated
-      before the lockdown. See audit §3 F3.1.
-- [ ] **REQ-SEC-035 (High) — `employee_shifts`: `anon` role can read any
-      employee's full attendance/shift history, unauthenticated.** See audit
-      §10 F10.1.
-- [ ] **REQ-SEC-036 (High) — `record_check_out` RPC has no session-token
-      check at all.** Anyone with the anon key + an employee UUID can
-      force-close their shift at an arbitrary timestamp. See audit §9 F9.1.
-- [ ] **REQ-BUG-087 (High) — TC date-order validation is backwards** on
-      `student/[id]/tc/page.js` — blocks the normal "backdate the leaving
-      date" workflow, silently accepts the nonsensical case. See audit §2
-      F2.1.
-- [ ] **REQ-BUG-088 (High) — Staff Attendance "Delete" is broken for every
-      real admin** — `deleteStaffAttendanceRecord` never attaches the
-      session token its own API route requires (401s every time); that same
-      route also has no tier restriction on an irreversible bulk-delete
-      action — fix needs to restore working auth *with* the tier
-      restriction, not just re-add a header. See audit §5 F5.4 + §6 F6.2.
-- [ ] **REQ-BUG-089 (High) — Admin-panel's own Salary *report*
-      (`reportService.js`) has the identical broken-direct-query bug as
-      REQ-BUG-086, independently** — plus silently swallows the resulting
-      permission error (never checks `salRes.error`). See audit §4 F4.1.
-- [ ] **(Re-confirmed still open, no new ID) REQ-SEC-021/REQ-BUG-077** — the
-      416-student PII JSON (incl. Aadhaar) is still bundled into the server
-      build. See audit §5 F5.2.
-- [ ] **(Re-confirmed still open, no new ID) REQ-SEC-020** — both Vercel cron
-      routes still fail *open* if `CRON_SECRET` is unset. See audit §5 F5.3.
+- [x] **REQ-SEC-032 (Critical) — `get_student_fees` RPC had zero caller-
+      identity check, granted to `anon`.** Fixed: added `p_session_token`,
+      verified via `verify_mobile_session` (same Category 3 pattern as
+      `fetch_my_exam_mark`). Old 1-arg overload dropped. Dart caller
+      (`student_fees_page.dart`) updated to pass the session token.
+      `flutter analyze` clean. See audit §8 F8.1.
+- [x] **REQ-SEC-033 (Critical) — Mobile TC issuance had no role gate.**
+      Fixed: `staff_admin_issue_tc` now requires `senior_admin`/`management`,
+      matching the web's `admin_issue_tc`. UI button in
+      `admin_student_detail_page.dart` also gated behind `_isSeniorOrMgmt`
+      (same pass closed REQ-BUG-092 — the "Generate Admin Access Code"
+      button was shown to every tier, now gated too); stale comment that
+      claimed the opposite corrected. See audit §7 F7.1.
+- [x] **REQ-SEC-034 (Critical) — real employee PII hardcoded in `store.js`.**
+      Fixed: confirmed via grep that no reader consumes `store.employees`/
+      `store.expenses` directly (every panel fetches its own data from the
+      DB) — replaced both seed arrays with `[]`. `npm run lint` clean. See
+      audit §6 F6.1.
+- [x] **REQ-BUG-085 (Critical) — 4 PDF report routes read non-existent
+      `students` columns.** Fixed: new `getStudentsForReportByIds()` helper
+      in `studentService.js` reuses the proven `mapToStudent()` join/mapper;
+      all 4 routes (id-card, bonafide, marksheet, tc) switched onto it.
+      Dev-server smoke test: all 4 return 401 (not 500) with no auth,
+      confirming clean compile. See audit §5 F5.1.
+- [x] **REQ-BUG-086 (Critical) — "Generate Salary" was broken.** Fixed:
+      `employee/page.js`'s `AttendanceSection` switched onto
+      `admin_get_salary_payments`/`admin_record_salary_payments_bulk` RPCs
+      (same ones `super-admin.js` already used correctly). Also fixed the
+      hardcoded `"Sunil Pradhan"` `paid_by` here and in `super-admin.js`'s
+      `SalaryPanel` (REQ-BUG-090 — both now use `authUser.name`). See audit
+      §3 F3.1, §2 F2.2.
+- [x] **REQ-SEC-035 (High) — `employee_shifts` was anon-readable.** Fixed:
+      new session-gated `fetch_my_employee_shifts` RPC; dropped the
+      `anon`-inclusive policy, replaced with an `authenticated`+
+      `is_admin_user()` one (web caller unaffected). Dart caller updated;
+      also added the missing try/catch this page's `_load()` lacked
+      (bonus fix, same file). See audit §10 F10.1.
+- [x] **REQ-SEC-036 (High) — `record_check_out` had no session-token
+      check.** Fixed: added `p_session_token` + `verify_mobile_session`,
+      matching every sibling punch RPC. Dart caller updated. See audit §9
+      F9.1.
+- [x] **REQ-BUG-087 (High) — TC date-order validation was backwards.**
+      Fixed: swapped to `isDateOnOrAfter(form.tcDate, form.leavingDate)`,
+      reworded the error message. See audit §2 F2.1.
+- [x] **REQ-BUG-088 (High) — Staff Attendance "Delete" was broken +
+      untiered.** Fixed: `deleteStaffAttendanceRecord` now uses
+      `authedFetch` (was sending no Authorization header at all); the route
+      now also requires `senior_admin`/`management` (previously any admin
+      tier, once the auth bug was fixed). See audit §5 F5.4 + §6 F6.2.
+- [x] **REQ-BUG-089 (High) — admin-panel's own Salary report had the same
+      broken-query bug.** Fixed: `reportService.js`'s `getEmployeesForReport`
+      switched to `admin_get_salary_payments`; `salRes.error` is now actually
+      checked (previously only `empRes.error` was). See audit §4 F4.1.
+- [x] **REQ-SEC-021/REQ-BUG-077 (Critical) — PII JSON bundled in the server
+      build.** Fixed: live-verified `online_general_register` is fully
+      seeded (461 rows: 138 primary + 323 general) and the route already
+      preferred it — the exact "seed confirmed" condition this item was
+      waiting on. Removed the JSON import, `maybeSeed()`, and the stale-
+      snapshot fallback (DB errors now surface as a real 500 instead of
+      masking with stale data); deleted
+      `admin-panel/src/data/onlineGeneralRegisterData.json`. Dev-server
+      smoke test: route still returns 401 (not 500) with no auth. **Not
+      done, separate destructive decision**: purging the ~2 days of git
+      history where this file was public — left to the user (§J4).
+- [x] **REQ-SEC-020 (High) — both cron routes failed open if `CRON_SECRET`
+      was unset.** Fixed: both now check `!process.env.CRON_SECRET || ...`
+      instead of `process.env.CRON_SECRET && ...`.
+
+**Also fixed in the same pass (Medium/Low findings from the audit body,
+not separately tracked above):** REQ-SEC-037 (`daily_task_targets`
+anon-readable via join — new server-filtered `fetch_my_daily_tasks` RPC),
+REQ-SEC-038 (`student_remarks` RLS bypassed `is_admin_user()`), REQ-SEC-041
+(2 silent-fallback-on-any-failure patterns in `kioskSettingsService.js`/
+`studentService.js`, now only fall back on a genuine network error),
+REQ-BUG-079 (TC generator's unescaped date fallback — finally closed,
+re-confirmed open by 3 separate audit passes), F1.3/F5.6/F5.7/F6.4 (hygiene:
+hardcoded UUID fallback, 2 stale comments, 1 stale dev path),
+F5.10 (no last-senior-admin/management protection on demote/delete),
+F6.5 (employee list response no longer ships the password hash),
+F6.7 (marksheet now prints Roll No.), F2.3 (3 silently-swallowed loads on
+the student edit page now logged), F8.2/F9.4/F9.5/F9.6/F10.3/F10.4 (mobile:
+missing try/catch + double-submit guards on 2 pages, missing sign-out
+confirmation on the Teacher profile page mirroring the Student fix, a
+session token moved from a URL query string to a header, an undisposed
+controller in the shared Report-a-Problem dialog) — plus the missing-
+try/catch (REQ-BUG-069 class, 13 files total across this session) and
+controller-disposal (REQ-BUG-083 class, 17 files across the Teacher Admin
+Workspace, 2 bonus finds beyond the original list) sweeps, now complete.
+Final `flutter analyze` (whole project): 28 issues, down from the 29
+pre-existing baseline (one more fixed along the way — a missing `mounted`
+check in `admin_employee_detail_page.dart` surfaced by the disposal fix);
+`npm run lint` on admin-panel clean throughout.
+
+**Left for your decision, not touched (full reasoning in the audit file):**
+REQ-SEC-039 (most Settings tabs enforce "normal_admin blocked" client-side
+only — is that the real bar, or should the DB match?), REQ-SEC-040
+(expenses have no role gating unlike `fee_payments` — oversight or
+accepted?), F5.5 (view-url's wildcard CORS — needs the real deployed
+origin, which might be a Flutter Web build I can't confirm), F7.4/F8.4
+(dead `deleteInventoryItem` / tab-refetch-on-switch — product calls, not
+bugs), F3.4/F4.4/F4.5/F6.6/F6.9/F5.9/F10.5 (already-downgraded-to-low or
+explicitly-accepted-tradeoff items from the audit body — see there for
+each).
 
 **Cross-cutting pattern flagged by the audit itself:** the "RPC with no
 session-token param" bug recurred independently 4 times (REQ-SEC-032/035/036

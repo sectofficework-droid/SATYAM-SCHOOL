@@ -36,6 +36,14 @@ class _AdminStudentsPageState extends State<AdminStudentsPage> {
     StaffAdminService.classListWithIds(_employeeId).then((c) { if (mounted) setState(() => _classes = c); }).catchError((_) {});
   }
 
+  // REQ-BUG-093 (2026-11-20 full-system audit): _searchCtrl was never
+  // disposed anywhere in this file.
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _load({String? search}) async {
     setState(() { _loading = true; _error = null; });
     try {

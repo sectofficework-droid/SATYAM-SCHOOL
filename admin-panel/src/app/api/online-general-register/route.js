@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getAdminClient, requireAdminSession } from "@/lib/apiAuth";
-import initialData from "@/data/onlineGeneralRegisterData.json";
 
 // REQ-BUG-077 (2026-10-25): Online General Register storage moved from the
 // in-memory cache + runtime rewrite of a git-tracked JSON file (silent
@@ -12,18 +11,21 @@ import initialData from "@/data/onlineGeneralRegisterData.json";
 // api/kiosk-settings), RLS+policy on the table is defense-in-depth since
 // service role bypasses it.
 //
-// AUTO-SEED: on the first successful read, if the table has zero rows and
-// online_general_register_meta shows no prior seed, this route upserts
-// the bundled JSON snapshot (idempotent, onConflict ignoreDuplicates).
-// This keeps the seed data out of any PII-bearing tracked SQL file.
-//
-// DEGRADATION CONTRACT (deliberate, no fake success): if the table is
-// unavailable (migration not applied yet, DB offline, transient
-// PostgREST error), GET still answers success with the bundled snapshot
-// plus a top-level `warning` string explaining the fallback — so the
-// page keeps working ahead of the migration — but ALL writes return an
-// explicit 500 telling the caller to apply the migration. Never
-// falls back to a fake write.
+// REQ-SEC-021 (2026-11-20 full-system audit, re-confirmed): the bundled
+// JSON snapshot this route used to import (`src/data/
+// onlineGeneralRegisterData.json`) held 416+ real students' PII including
+// Aadhaar numbers, shipped in the server bundle, in a repo with a
+// documented history of being toggled public. Live-verified the table is
+// fully seeded (461 rows, 138 primary + 323 general) and this GET handler
+// already prefers it over any fallback — the "seed confirmed" condition
+// TODO.md's own REQ-BUG-077 follow-up was waiting for. Removed the import
+// and the file itself; the auto-seed-on-first-read and stale-snapshot-on-
+// DB-outage fallback this used to provide are both gone as a result (DB
+// errors now surface as a real error instead of masking with stale data -
+// a deliberate tradeoff, correct now that the DB is confirmed the live
+// source of truth). The optional git-history purge (the PII was public for
+// ~2 days before, per TODO.md) is a separate, destructive decision left to
+// the user.
 //
 // REQ-SEC-022 guard kept identical: getAdminClient() +
 // requireAdminSession() on all 3 handlers. Zero mobile callers
@@ -110,61 +112,6 @@ function sortRegisterRows(rows) {
   });
 }
 
-function bundledDataset() {
-  const primary = initialData.primary.map((r) => ({ ...r }));
-  const general = initialData.general.map((r) => ({ ...r }));
-  sortRegisterRows(primary);
-  sortRegisterRows(general);
-  return { primary, general };
-}
-
-function isTableMissing(error) {
-  // PostgREST reports a missing relation as code 42P01 or a schema-cache
-  // "Could not find the table ... in the schema cache" message.
-  return (
-    error?.code === "42P01" ||
-    (typeof error?.message === "string" &&
-      /could not find the table .* in the schema cache/i.test(error.message))
-  );
-}
-
-function migrationHint() {
-  return "online_general_register table unavailable — apply mobile-app/SUPABASE_ONLINE_GENERAL_REGISTER.sql (Supabase Dashboard → SQL Editor) once; reads currently serve the bundled snapshot instead";
-}
-
-// First-read seeding (best effort): zero rows + no prior seed marker ->
-// upsert the bundled snapshot then mark seeded. Upserts are idempotent so
-// a concurrent request racing this one can't duplicate rows or double-mark.
-async function maybeSeed(supabaseAdmin) {
-  try {
-    const { count, error } = await supabaseAdmin
-      .from(TABLE)
-      .select("id", { count: "exact", head: true });
-    if (error || (count || 0) > 0) return;
-    const { data: meta } = await supabaseAdmin
-      .from(META_TABLE)
-      .select("seeded_at")
-      .eq("id", "default")
-      .maybeSingle();
-    if (meta?.seeded_at) return;
-    const rows = [
-      ...initialData.primary.map((r) => toDbRow(r, "primary")),
-      ...initialData.general.map((r) => toDbRow(r, "general")),
-    ];
-    if (rows.length) {
-      const { error: seedErr } = await supabaseAdmin
-        .from(TABLE)
-        .upsert(rows, { onConflict: "id", ignoreDuplicates: true });
-      if (seedErr) return; // marker stays unwritten -> next read retries
-    }
-    await supabaseAdmin
-      .from(META_TABLE)
-      .upsert({ id: "default" }, { onConflict: "id", ignoreDuplicates: true });
-  } catch (err) {
-    console.warn("online-general-register seed attempt failed:", err?.message);
-  }
-}
-
 async function readDataset(supabaseAdmin) {
   const { data, error } = await supabaseAdmin.from(TABLE).select("*");
   if (error) return { dbError: error };
@@ -199,18 +146,10 @@ export async function GET(request) {
   const { errorResponse, supabaseAdmin } = await authorizeAdmin(request);
   if (errorResponse) return errorResponse;
 
-  await maybeSeed(supabaseAdmin);
   const result = await readDataset(supabaseAdmin);
   if (result.dbError) {
-    console.warn(
-      "online-general-register read fell back to bundled snapshot:",
-      result.dbError.message
-    );
-    return NextResponse.json({
-      success: true,
-      data: bundledDataset(),
-      warning: migrationHint(),
-    });
+    console.error("online-general-register read failed:", result.dbError.message);
+    return NextResponse.json({ error: result.dbError.message }, { status: 500 });
   }
 
   return NextResponse.json({
