@@ -11,12 +11,33 @@ import {
 import * as XLSX from "xlsx";
 import supabase from "@/lib/supabase";
 import { getStudentsForReport, getAcademicYearLabels } from "@/lib/reportService";
-import { getPhases, getAllPhaseEntryEnrollments } from "@/lib/studentPhaseService";
-import { updateStudentGovId, getStudentAdminNotes } from "@/lib/studentService";
+import {
+  getPhases, getAllPhaseEntryEnrollments,
+  getCurrentBatchForEnrollment, moveEntryToBatch, createEmptyBatch,
+} from "@/lib/studentPhaseService";
+import {
+  updateStudentGovId, getStudentAdminNotes,
+  getStudentByEnrollment, updateBirthCertDetails, updateAadharDetails,
+} from "@/lib/studentService";
 import StudentNoteBadge from "@/components/StudentNoteBadge";
 import { getOnlineGrData, updateOnlineGrRow, deleteOnlineGrRow } from "@/lib/onlineGrService";
 import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, fileExt } from "@/lib/s3Upload";
 import { compressFile } from "@/lib/fileCompression";
+import useStore from "@/lib/store";
+// Government Entry pre-entry gate (2026-11-26) reuses the exact "full
+// detail like master admin" form from the Student Edit route instead of
+// rebuilding one - see EditForm's own onDone prop (added for this).
+import { EditForm, mapToEditForm } from "@/app/(dashboard)/student/[id]/edit/page";
+import {
+  OTHER_SCHOOL_TAG_REGEX,
+  parseOtherSchoolRemarks,
+  getUdiseStatus,
+  getPenStatus,
+  hasRequiredCertificate,
+  isAadharAvailable,
+  getUdiseEligibility,
+  getPenEligibility,
+} from "@/lib/governmentEligibility";
 
 // Government Entry — Complete center for government portal filing and state registers:
 // 1. Online General Register (State Online GR / Primary & General — kept in separate records)
@@ -119,8 +140,6 @@ function dobParts(dateStr) {
 function nameWithSurname(name, surname) {
   return [name, surname].filter(Boolean).join(" ").trim();
 }
-
-const OTHER_SCHOOL_TAG_REGEX = /<!--OTHER_SCHOOL:({[\s\S]*?})-->/;
 
 function serializeOtherSchoolData(data) {
   if (!data) return "";
@@ -270,17 +289,6 @@ function parsePortalAlertText(text) {
   return res;
 }
 
-function parseOtherSchoolRemarks(remarksStr) {
-  if (!remarksStr || typeof remarksStr !== "string") return null;
-  const match = remarksStr.match(OTHER_SCHOOL_TAG_REGEX);
-  if (!match) return null;
-  try {
-    return JSON.parse(match[1]);
-  } catch {
-    return null;
-  }
-}
-
 function stripOtherSchoolTag(remarksStr) {
   if (!remarksStr || typeof remarksStr !== "string") return "";
   return remarksStr.replace(OTHER_SCHOOL_TAG_REGEX, "").trim();
@@ -320,32 +328,21 @@ function decorate(st) {
   const effectiveDob = st.dob || (st.dobSlash && st.dobSlash !== "-" ? slashToIso(st.dobSlash) : "") || (st.dob_slash && st.dob_slash !== "-" ? slashToIso(st.dob_slash) : "");
   const dobP = dobParts(effectiveDob || st.dob || st.dobSlash || st.dob_slash);
 
+  // Status derivation itself now lives in governmentEligibility.js (shared
+  // with Documents page) - otherSchoolData/isUdiseOtherSchool/
+  // isPenOtherSchool stay local since the Import-field display below still
+  // needs them, unchanged from before.
   const otherSchoolData = parseOtherSchoolRemarks(st.remarks);
   const isUdiseOtherSchool = Boolean(
     (st.udise && String(st.udise).trim().toLowerCase().includes("active in other school")) ||
     (otherSchoolData && (otherSchoolData.portal === "udise" || otherSchoolData.portal === "both" || otherSchoolData.udiseActive))
   );
-
-  let udiseStatus = "Pending";
-  if (isUdiseOtherSchool) {
-    udiseStatus = "Active in other school";
-  } else if (st.udise && String(st.udise).trim() && String(st.udise).trim() !== "-") {
-    udiseStatus = "Done";
-  }
-
   const isPenOtherSchool = Boolean(
     (st.pen && String(st.pen).trim().toLowerCase().includes("active in other school")) ||
     (otherSchoolData && (otherSchoolData.portal === "pen" || otherSchoolData.portal === "both" || otherSchoolData.penActive || (!otherSchoolData.portal && (!st.pen || st.pen === "-"))))
   );
-
-  let penStatus = "Pending";
-  if (isPenOtherSchool) {
-    penStatus = "Active in other school";
-  } else if (st.pen && String(st.pen).trim() && String(st.pen).trim() !== "Not Defined") {
-    penStatus = "Done";
-  } else if (st.pen && String(st.pen).trim() === "Not Defined") {
-    penStatus = "Not Defined";
-  }
+  const udiseStatus = getUdiseStatus(st.udise, st.remarks);
+  const penStatus = getPenStatus(st.pen, st.remarks);
 
   const tcDoc = (st.studentDocuments || st.student_documents || []).find(
     d => (d.document_types?.name === "Leaving Certificate" || d.document_types?.name === "Transfer Certificate") &&
@@ -787,6 +784,7 @@ function StatusPill({ status }) {
 function GovernmentEntryPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { authUser } = useStore();
   const [mainTab, setMainTab] = useState("onlineGr"); // "onlineGr" | "udise" | "pen" | "import" | "mismatch"
   const [grSubTab, setGrSubTab] = useState("primary"); // "primary" | "general"
   const [importSubTab, setImportSubTab] = useState("udise"); // "udise" | "pen" | "all"
@@ -932,6 +930,18 @@ function GovernmentEntryPageInner() {
   // UDISE/PEN eligibility rules, shared between the rows table and the
   // "Add New Student" picker (REQ: Online GR additions draw from the same pool).
   // REQ-FEAT-022: Accepts either Birth Certificate Reg No OR Transfer Certificate (TC/LC).
+  // Decision rule itself (getUdiseEligibility/getPenEligibility) now lives
+  // in governmentEligibility.js, shared with Documents page's "Incomplete"
+  // tag - only the "how do I compute hasBirthCertDoc/hasTc/hasAadharDoc from
+  // THIS page's document shape" adapter stays local (Documents page has a
+  // different documents array shape and matches by substring instead of
+  // an exact document_types.name, see StudentDocumentsSection.jsx).
+  //
+  // 2026-11-26: eligibility itself is now document-only (see
+  // governmentEligibility.js); inAnyBatch/hasCert/aadharAvailable are kept
+  // here (and exposed below) because the pre-entry gate (startGovEntry)
+  // still needs them to decide what to prompt the admin for once they
+  // start an entry - they're no longer inputs to eligibility itself.
   const eligibilityFns = useMemo(() => {
     const inAnyBatch = x => !!enrollToBatches.get(x.enrollNo)?.size;
     const hasTc = x => Boolean(
@@ -948,35 +958,234 @@ function GovernmentEntryPageInner() {
              (d.status === "Uploaded" || Boolean(d.file_url))
       )
     );
-    const hasCert = x => Boolean(String(x.birthCertRegNo || "").trim()) || hasBirthCertDoc(x) || hasTc(x);
-    const aadharAvailable = x => !!String(x.aadharNo || "").trim();
+    const hasAadharDoc = x => Boolean(
+      (x.studentDocuments || x.student_documents || []).some(
+        d => d.document_types?.name === "Student Aadhar Card" &&
+             (d.status === "Uploaded" || Boolean(d.file_url))
+      )
+    );
+    const hasCert = x => hasRequiredCertificate({
+      birthCertRegNo: x.birthCertRegNo,
+      hasBirthCertDoc: hasBirthCertDoc(x),
+      hasTcDoc: hasTc(x),
+      lastSchoolName: x.lastSchoolName,
+      lastSchoolGrNo: x.lastSchoolGrNo,
+    });
+    const aadharAvailable = x => isAadharAvailable(x.aadharNo);
 
-    const getUdiseEligibility = x => {
+    const getUdiseEligibilityFor = x => {
       if (!x) return { eligible: false, reason: "No student record" };
-      if (x.udiseStatus === "Done" || x.udiseStatus === "Active in other school") return { eligible: true, reason: "" };
-      if (!inAnyBatch(x)) return { eligible: false, reason: "Not in any Entry Batch" };
-      const missing = [];
-      if (!hasCert(x)) missing.push("Birth Certificate (Reg No / Uploaded) or Transfer Certificate");
-      if (missing.length > 0) return { eligible: false, reason: `Missing ${missing.join(", ")}` };
-      return { eligible: true, reason: "" };
+      return getUdiseEligibility({ udiseStatus: x.udiseStatus, hasBirthCertDoc: hasBirthCertDoc(x), hasTcDoc: hasTc(x) });
     };
 
-    const getPenEligibility = x => {
+    const getPenEligibilityFor = x => {
       if (!x) return { eligible: false, reason: "No student record" };
-      if (x.penStatus === "Done" || x.penStatus === "Not Defined" || x.penStatus === "Active in other school") return { eligible: true, reason: "" };
-      if (!inAnyBatch(x)) return { eligible: false, reason: "Not in any Entry Batch" };
-      const missing = [];
-      if (!hasCert(x)) missing.push("Birth Certificate (Reg No / Uploaded) or Transfer Certificate");
-      if (!aadharAvailable(x)) missing.push("Aadhar Card No");
-      if (missing.length > 0) return { eligible: false, reason: `Missing ${missing.join(", ")}` };
-      return { eligible: true, reason: "" };
+      return getPenEligibility({ penStatus: x.penStatus, hasBirthCertDoc: hasBirthCertDoc(x), hasTcDoc: hasTc(x), hasAadharDoc: hasAadharDoc(x) });
     };
 
-    const udiseEligible = x => getUdiseEligibility(x).eligible;
-    const penEligible = x => getPenEligibility(x).eligible;
+    const udiseEligible = x => getUdiseEligibilityFor(x).eligible;
+    const penEligible = x => getPenEligibilityFor(x).eligible;
 
-    return { udiseEligible, penEligible, getUdiseEligibility, getPenEligibility, hasTc, hasCert };
+    return {
+      udiseEligible, penEligible,
+      getUdiseEligibility: getUdiseEligibilityFor, getPenEligibility: getPenEligibilityFor,
+      hasTc, hasCert, inAnyBatch, hasBirthCertDoc, hasAadharDoc, aadharAvailable,
+    };
   }, [enrollToBatches]);
+
+  // ── UDISE/PEN pre-entry gate (2026-11-26) ───────────────────────────────
+  // Runs whenever the admin starts a UDISE or PEN entry (both the main
+  // table's per-row Edit/Done button and the "Add New Student" wizard's
+  // Step 1 -> Step 2/3 transition call startGovEntry instead of jumping
+  // straight to the number-entry modal). Eligibility itself is now
+  // document-only (governmentEligibility.js) - this gate is what actually
+  // walks the admin through whatever's still missing before letting them
+  // into that modal: Birth Certificate reg details, Entry Batch
+  // assignment, and (PEN only) Aadhar name/number.
+  // gateState: { row, portal: "udise"|"pen", onPass, stage } | null
+  // stage: "bc" | "batch" | "aadhar" | "edit"
+  const [gateState, setGateState] = useState(null);
+  const [gateBcRegNo, setGateBcRegNo] = useState("");
+  const [gateBcRegDate, setGateBcRegDate] = useState("");
+  const [gateAadharName, setGateAadharName] = useState("");
+  const [gateAadharNo, setGateAadharNo] = useState("");
+  // undefined = still loading, null = no batch-entry record found, object = found
+  const [gateCurrentBatch, setGateCurrentBatch] = useState(undefined);
+  const [gateChanging, setGateChanging] = useState(false);
+  const [gateChangeBatchId, setGateChangeBatchId] = useState(""); // "" = start new batch, else an existing phase id
+  const [gateSaving, setGateSaving] = useState(false);
+  const [gateEditExisting, setGateEditExisting] = useState(null); // mapped student for the "edit" stage's EditForm
+
+  function startGovEntry(row, portal, onPass) {
+    runGate(row, portal, onPass || (() => openEntryModal(row)));
+  }
+
+  function runGate(row, portal, onPass) {
+    if (eligibilityFns.hasBirthCertDoc(row) && !String(row.birthCertRegNo || "").trim()) {
+      setGateBcRegNo(row.birthCertRegNo || "");
+      setGateBcRegDate(row.birthCertRegDate || "");
+      setGateState({ row, portal, onPass, stage: "bc" });
+      return;
+    }
+    continueAfterBc(row, portal, onPass);
+  }
+
+  function continueAfterBc(row, portal, onPass) {
+    if (!eligibilityFns.inAnyBatch(row)) {
+      setGateEditExisting(null);
+      setGateState({ row, portal, onPass, stage: "edit" });
+      getStudentByEnrollment(row.enrollNo)
+        .then(s => setGateEditExisting(mapToEditForm(s)))
+        .catch(err => { alert("Failed to load student for editing: " + err.message); setGateState(null); });
+      return;
+    }
+    setGateChanging(false);
+    setGateCurrentBatch(undefined);
+    setGateState({ row, portal, onPass, stage: "batch" });
+    getCurrentBatchForEnrollment(row.enrollNo)
+      .then(info => {
+        if (!info) { setGateCurrentBatch(null); return; }
+        const phase = dbPhases.find(p => p.id === info.phaseId);
+        setGateCurrentBatch({
+          ...info,
+          phaseType: phase?.phase_type || "Added",
+          label: phase ? `${phase.label ? phase.label + " — " : ""}Batch ${phase.phase_number}` : "Batch",
+        });
+      })
+      .catch(() => setGateCurrentBatch(null));
+  }
+
+  function continueAfterBatch(row, portal, onPass) {
+    if (portal === "pen" && eligibilityFns.hasAadharDoc(row) &&
+        (!String(row.aadharName || "").trim() || !String(row.aadharNo || "").trim())) {
+      setGateAadharName(row.aadharName || "");
+      setGateAadharNo(row.aadharNo || "");
+      setGateState({ row, portal, onPass, stage: "aadhar" });
+      return;
+    }
+    setGateState(null);
+    onPass();
+  }
+
+  async function handleGateSaveBc() {
+    if (!gateState) return;
+    setGateSaving(true);
+    try {
+      await updateBirthCertDetails(gateState.row.studentId || gateState.row.id, {
+        birthCertRegNo: gateBcRegNo.trim(),
+        birthCertRegDate: gateBcRegDate || null,
+      });
+      const { row, portal, onPass } = gateState;
+      await loadAll();
+      continueAfterBc({ ...row, birthCertRegNo: gateBcRegNo.trim(), birthCertRegDate: gateBcRegDate || "" }, portal, onPass);
+    } catch (err) {
+      alert("Failed to save Birth Certificate details: " + err.message);
+    } finally {
+      setGateSaving(false);
+    }
+  }
+
+  async function handleGateSaveAadhar() {
+    if (!gateState) return;
+    setGateSaving(true);
+    try {
+      await updateAadharDetails(gateState.row.studentId || gateState.row.id, {
+        aadharName: gateAadharName.trim(),
+        aadharNo: gateAadharNo.trim(),
+      });
+      const { onPass } = gateState;
+      await loadAll();
+      setGateState(null);
+      onPass();
+    } catch (err) {
+      alert("Failed to save Aadhar details: " + err.message);
+    } finally {
+      setGateSaving(false);
+    }
+  }
+
+  function handleGateContinueFromBatch() {
+    if (!gateState) return;
+    continueAfterBatch(gateState.row, gateState.portal, gateState.onPass);
+  }
+
+  async function handleGateChangeBatchConfirm() {
+    if (!gateState) return;
+    setGateSaving(true);
+    try {
+      let toPhaseId = gateChangeBatchId;
+      if (!toPhaseId) {
+        const created = await createEmptyBatch({ type: gateCurrentBatch?.phaseType || "Added", label: null, createdBy: authUser?.id });
+        toPhaseId = created.id;
+      }
+      if (gateCurrentBatch?.entryId) {
+        await moveEntryToBatch({ entryId: gateCurrentBatch.entryId, fromPhaseId: gateCurrentBatch.phaseId, toPhaseId });
+      }
+      const { row, portal, onPass } = gateState;
+      await loadAll();
+      setGateChanging(false);
+      setGateChangeBatchId("");
+      continueAfterBatch(row, portal, onPass);
+    } catch (err) {
+      alert("Failed to change batch: " + err.message);
+    } finally {
+      setGateSaving(false);
+    }
+  }
+
+  function handleGateEditDone() {
+    const onPass = gateState?.onPass;
+    setGateEditExisting(null);
+    setGateState(null);
+    loadAll().finally(() => { if (onPass) onPass(); });
+  }
+
+  async function handleDownloadAadharDoc(st) {
+    if (!st) return;
+    try {
+      const studentId = st.studentId || st.id;
+      const docs = st.studentDocuments || st.student_documents || [];
+      let fileKey = docs.find(
+        d => d.document_types?.name === "Student Aadhar Card" && (d.status === "Uploaded" || Boolean(d.file_url))
+      )?.file_url;
+
+      if (!fileKey && studentId) {
+        const { data } = await supabase
+          .from("student_documents")
+          .select("file_url, status, document_types!inner(name)")
+          .eq("student_id", studentId)
+          .eq("document_types.name", "Student Aadhar Card")
+          .maybeSingle();
+        if (data?.status === "Uploaded" && data?.file_url) fileKey = data.file_url;
+      }
+
+      if (!fileKey) { alert("No Student Aadhar Card file found to view. Please upload it in Documents."); return; }
+
+      const win = typeof window !== "undefined" ? window.open("", "_blank") : null;
+      const downloadName = buildDocDownloadName(st.enrollNo, st.name, "Aadhar_Card", fileKey);
+      const url = await getS3ViewUrl(fileKey, downloadName);
+
+      if (url) {
+        if (win) {
+          win.location.href = url;
+        } else {
+          const a = document.createElement("a");
+          a.href = url;
+          a.target = "_blank";
+          a.download = downloadName || "Aadhar_Card";
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+      } else {
+        if (win) win.close();
+        alert("Failed to generate view URL for the Aadhar Card.");
+      }
+    } catch (err) {
+      console.error("View Aadhar Card error:", err);
+      alert(err.message || "Failed to view Aadhar Card.");
+    }
+  }
 
   const classOptions = useMemo(() => {
     if (mainTab === "onlineGr") {
@@ -2200,14 +2409,18 @@ function GovernmentEntryPageInner() {
   // different) GR No from their DB record, which risked a mismatch between
   // what was just registered and what got saved to the student.
   function proceedToUdiseEntryForm() {
-    setAddSubPhase("entry");
-    openEntryModal(addSelectedStudent);
-    setFormGrNo(addGrNo);
+    startGovEntry(addSelectedStudent, "udise", () => {
+      setAddSubPhase("entry");
+      openEntryModal(addSelectedStudent);
+      setFormGrNo(addGrNo);
+    });
   }
   function proceedToPenEntryForm() {
-    setAddSubPhase("entry");
-    openEntryModal(addSelectedStudent);
-    setFormGrNo(addGrNo);
+    startGovEntry(addSelectedStudent, "pen", () => {
+      setAddSubPhase("entry");
+      openEntryModal(addSelectedStudent);
+      setFormGrNo(addGrNo);
+    });
   }
 
   // ── Birth Certificate Upload / Download (UDISE Entry Flow) ─────────────
@@ -4887,7 +5100,7 @@ function GovernmentEntryPageInner() {
                                 </button>
                               ) : isDone ? (
                                 <button
-                                  onClick={() => isElig && openEntryModal(row)}
+                                  onClick={() => isElig && (isOnlineGr ? openEntryModal(row) : startGovEntry(row, isUdise ? "udise" : "pen"))}
                                   disabled={!isElig}
                                   title={
                                     !isElig
@@ -4903,7 +5116,7 @@ function GovernmentEntryPageInner() {
                                 </button>
                               ) : (
                                 <button
-                                  onClick={() => isElig && openEntryModal(row)}
+                                  onClick={() => isElig && (isOnlineGr ? openEntryModal(row) : startGovEntry(row, isUdise ? "udise" : "pen"))}
                                   disabled={!isElig}
                                   title={!isElig ? `Not eligible for ${isUdise ? "UDISE" : "PEN"} Entry: ${eligInfo.reason}` : "Entry Done"}
                                   className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold transition-colors cursor-pointer ${
@@ -5151,6 +5364,202 @@ function GovernmentEntryPageInner() {
             </div>
           )}
         </>
+      )}
+
+      {/* UDISE/PEN pre-entry gate modal (2026-11-26) - runs before the Entry
+          Done modal below whenever something's still missing. */}
+      {gateState && (
+        <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg my-4 sm:my-8">
+            {gateState.stage === "bc" && (
+              <div className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-gray-800">Birth Certificate Details Needed</h3>
+                  <button onClick={() => setGateState(null)} className="p-1 rounded hover:bg-gray-100">
+                    <X className="w-4 h-4 text-gray-400" />
+                  </button>
+                </div>
+                <p className="text-sm text-gray-500">
+                  A Birth Certificate is uploaded for <b>{gateState.row.name}</b> but the Reg No / Date haven&apos;t
+                  been filled in yet. View the document to copy the details, then save.
+                </p>
+                <button
+                  type="button" onClick={() => handleDownloadBirthCert(gateState.row)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100"
+                >
+                  <Download className="w-3.5 h-3.5" /> View Birth Certificate
+                </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Reg No</label>
+                    <input
+                      value={gateBcRegNo} onChange={e => setGateBcRegNo(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Reg Date</label>
+                    <input
+                      type="date" value={gateBcRegDate || ""} onChange={e => setGateBcRegDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button type="button" onClick={() => setGateState(null)}
+                    className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button
+                    type="button" disabled={gateSaving || !gateBcRegNo.trim()} onClick={handleGateSaveBc}
+                    className="px-5 py-2 rounded-lg bg-school-navy text-white text-sm font-semibold hover:bg-school-navy/90 disabled:opacity-60"
+                  >
+                    {gateSaving ? "Saving..." : "Save & Continue"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {gateState.stage === "batch" && (
+              <div className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-gray-800">Entry Batch</h3>
+                  <button onClick={() => setGateState(null)} className="p-1 rounded hover:bg-gray-100">
+                    <X className="w-4 h-4 text-gray-400" />
+                  </button>
+                </div>
+                {!gateChanging ? (
+                  <>
+                    <p className="text-sm text-gray-500"><b>{gateState.row.name}</b> is currently in:</p>
+                    <div className="px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-sm font-semibold text-school-navy">
+                      {gateCurrentBatch === undefined
+                        ? "Loading…"
+                        : gateCurrentBatch
+                        ? gateCurrentBatch.label
+                        : "No batch record found — use Change Batch below"}
+                    </div>
+                    <div className="flex items-center justify-between gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => { setGateChangeBatchId(""); setGateChanging(true); }}
+                        className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+                      >
+                        Change Batch
+                      </button>
+                      <button
+                        type="button" onClick={handleGateContinueFromBatch}
+                        className="px-5 py-2 rounded-lg bg-school-navy text-white text-sm font-semibold hover:bg-school-navy/90"
+                      >
+                        Continue
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Move to Batch</label>
+                    <select
+                      value={gateChangeBatchId} onChange={e => setGateChangeBatchId(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
+                    >
+                      <option value="">+ Start New Batch</option>
+                      {dbPhases
+                        .filter(p => p.id !== gateCurrentBatch?.phaseId && p.phase_type === (gateCurrentBatch?.phaseType || "Added"))
+                        .map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.label ? `${p.label} — ` : ""}Batch {p.phase_number} - {p.student_count} student{p.student_count !== 1 ? "s" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button type="button" onClick={() => setGateChanging(false)}
+                        className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">
+                        Back
+                      </button>
+                      <button
+                        type="button" disabled={gateSaving} onClick={handleGateChangeBatchConfirm}
+                        className="px-5 py-2 rounded-lg bg-school-navy text-white text-sm font-semibold hover:bg-school-navy/90 disabled:opacity-60"
+                      >
+                        {gateSaving ? "Moving..." : "Move & Continue"}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {gateState.stage === "aadhar" && (
+              <div className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-gray-800">Aadhar Details Needed</h3>
+                  <button onClick={() => setGateState(null)} className="p-1 rounded hover:bg-gray-100">
+                    <X className="w-4 h-4 text-gray-400" />
+                  </button>
+                </div>
+                <p className="text-sm text-gray-500">
+                  A Student Aadhar Card is uploaded for <b>{gateState.row.name}</b> but the Name / Number
+                  haven&apos;t been filled in yet. View the document to copy the details, then save.
+                </p>
+                <button
+                  type="button" onClick={() => handleDownloadAadharDoc(gateState.row)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100"
+                >
+                  <Download className="w-3.5 h-3.5" /> View Aadhar Card
+                </button>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Name as per Aadhar</label>
+                    <input
+                      value={gateAadharName} onChange={e => setGateAadharName(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-600 mb-1">Aadhar Number</label>
+                    <input
+                      value={gateAadharNo} onChange={e => setGateAadharNo(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button type="button" onClick={() => setGateState(null)}
+                    className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">
+                    Cancel
+                  </button>
+                  <button
+                    type="button" disabled={gateSaving || !gateAadharName.trim() || !gateAadharNo.trim()} onClick={handleGateSaveAadhar}
+                    className="px-5 py-2 rounded-lg bg-school-navy text-white text-sm font-semibold hover:bg-school-navy/90 disabled:opacity-60"
+                  >
+                    {gateSaving ? "Saving..." : "Save & Continue"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {gateState.stage === "edit" && (
+              <div className="p-5 max-h-[85vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-base font-bold text-gray-800">Complete Student Details</h3>
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {gateState.row.name} isn&apos;t in any Entry Batch yet — save full details below, then pick a batch.
+                    </p>
+                  </div>
+                  <button onClick={() => setGateState(null)} className="p-1 rounded hover:bg-gray-100">
+                    <X className="w-4 h-4 text-gray-400" />
+                  </button>
+                </div>
+                {gateEditExisting ? (
+                  <EditForm existing={gateEditExisting} router={router} onDone={handleGateEditDone} />
+                ) : (
+                  <div className="flex items-center justify-center py-10">
+                    <Loader2 className="w-6 h-6 text-school-navy animate-spin" />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Entry Done modal */}

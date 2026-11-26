@@ -356,6 +356,26 @@ export async function getAllPhaseEntryEnrollments() {
   return (data || []).map(r => ({ enrollmentNo: r.enrollment_no, phaseNumber: r.phase.phase_number }));
 }
 
+// 2026-11-26 (Government Entry pre-entry gate) - looks up ONE student's most
+// recent batch entry, giving back exactly the { entryId, phaseId } pair
+// moveEntryToBatch() needs to move them to a different batch. None of the
+// other lookups in this file return this (getAllPhaseEntryEnrollments has
+// no entry id; getPhaseEntries needs the phaseId already known;
+// getReplacedStudentPhases only covers "Replaced"-type phases) - a direct
+// query by enrollment_no, newest first, is the simplest correct way to get it.
+export async function getCurrentBatchForEnrollment(enrollmentNo) {
+  if (!enrollmentNo) return null;
+  const { data, error } = await supabase
+    .from("student_import_phase_entries")
+    .select("id, phase_id, created_at")
+    .eq("enrollment_no", enrollmentNo)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  const row = data?.[0];
+  return row ? { entryId: row.id, phaseId: row.phase_id } : null;
+}
+
 // Returns every student_id and enrollment_no already present in ANY batch entry.
 // Used by the Entry Batches student picker to only offer students not in any batch.
 export async function getAllAssignedPhaseStudents() {

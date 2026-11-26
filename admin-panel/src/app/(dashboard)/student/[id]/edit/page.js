@@ -54,7 +54,10 @@ function findOptionCaseInsensitive(options, value, fallback = "") {
 }
 
 // ── Map DB student to EditForm format ─────────────────────────
-function mapToEditForm(student) {
+// Exported (2026-11-26) so government-entry/page.js's pre-entry gate can
+// load the same shape into the same EditForm without duplicating this
+// mapping.
+export function mapToEditForm(student) {
   const uploadedDocs = {};
   const verifiedDocNames = [];
   (student.documents || []).filter(d => d.uploaded).forEach(d => {
@@ -225,7 +228,13 @@ function ReadOnlyField({ label, value }) {
 }
 
 // ── Edit Form — receives pre-loaded student ────────────────────
-function EditForm({ existing, router }) {
+// Exported + given an optional onDone (2026-11-26, government-entry
+// pre-entry gate) so this exact form can be hosted inside an overlay on
+// another page instead of only this full-page route - when onDone is
+// passed, it's called instead of router.back() on Cancel/successful save;
+// when it's not (the standalone /student/[id]/edit route below never
+// passes it), behavior is unchanged.
+export function EditForm({ existing, router, onDone }) {
   const { authUser } = useStore();
   const [batchId, setBatchId] = useState("none"); // default "no batch" - matches Add Student
   const [standards, setStandards] = useState([]);
@@ -659,7 +668,7 @@ function EditForm({ existing, router }) {
       }
 
       alert("Student profile updated successfully!");
-      router.back();
+      if (onDone) onDone(); else router.back();
     } catch (err) {
       alert("Failed to update: " + err.message);
     } finally {
@@ -1305,7 +1314,7 @@ function EditForm({ existing, router }) {
       <BatchSelector phaseType="Added" value={batchId} onChange={setBatchId} className="max-w-xs" />
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
-          type="button" onClick={() => router.back()}
+          type="button" onClick={() => (onDone ? onDone() : router.back())}
           className="px-6 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
         >
           Cancel

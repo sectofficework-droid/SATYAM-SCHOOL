@@ -27,6 +27,12 @@ import {
 import { getAllAssignedPhaseStudents } from "@/lib/studentPhaseService";
 import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, slugify, fileExt } from "@/lib/s3Upload";
 import { compressFile } from "@/lib/fileCompression";
+import {
+  getUdiseStatus,
+  getPenStatus,
+  getUdiseEligibility,
+  getPenEligibility,
+} from "@/lib/governmentEligibility";
 import useStore from "@/lib/store";
 import authedFetch from "@/lib/authedFetch";
 import StudentNoteBadge from "@/components/StudentNoteBadge";
@@ -167,22 +173,40 @@ export default function StudentDocumentsSection({ students = [], onRefresh }) {
   const [assignedEnrollmentNos, setAssignedEnrollmentNos] = useState(new Set());
   const [incompletePopoverStudentId, setIncompletePopoverStudentId] = useState(null);
 
+  // REQ (2026-11-26, "we need to rewire the rules"): this used to hand-copy
+  // a simplified, WRONG mirror of government-entry/page.js's real UDISE/PEN
+  // eligibility rule - it flagged "GR No not set" (never actually part of
+  // UDISE/PEN eligibility) and had no notion of the "Done"/"Active in other
+  // school"/"Not Defined" terminal states, so a student government-entry
+  // already treats as fully resolved could still show "Incomplete" here.
+  // Now calls the exact same governmentEligibility.js functions
+  // government-entry/page.js uses, so the two pages' verdicts can't drift
+  // apart again - only the "how do I read THIS page's documents array"
+  // adapter (hasBirthCertDoc/hasTcDoc below) stays local, since Documents
+  // page's `documents` shape differs from government-entry's.
   const getIncompleteReasons = (student) => {
     const reasons = [];
     const inBatch = assignedStudentIds.has(student._studentId) || assignedEnrollmentNos.has(student.enrollment);
     if (!inBatch) reasons.push("Not in any Entry Batch");
 
-    // Government Entry eligibility rules (mirrors government-entry page)
-    const hasBirthCertDoc = (student.documents || []).some(d => (d.name || d.document_types?.name || "").toLowerCase().includes("birth") && (d.uploaded || d.status === "Uploaded" || d.file));
-    const hasTcDoc = (student.documents || []).some(d => ((d.name || d.document_types?.name || "").toLowerCase().includes("transfer") || (d.name || d.document_types?.name || "").toLowerCase().includes("leaving")) && (d.uploaded || d.status === "Uploaded" || d.file));
-    const hasCert = Boolean((student.birthCertRegNo || "").trim()) || hasBirthCertDoc || hasTcDoc || Boolean((student.lastSchoolName || "").trim()) || Boolean((student.lastSchoolGrNo || "").trim());
-    const aadharAvailable = Boolean((student.aadhar || "").trim());
+    const hasBirthCertDoc = (student.documents || []).some(d => (d.name || "").toLowerCase().includes("birth") && (d.uploaded || d.status === "Uploaded" || d.file));
+    const hasTcDoc = (student.documents || []).some(d => ((d.name || "").toLowerCase().includes("transfer") || (d.name || "").toLowerCase().includes("leaving")) && (d.uploaded || d.status === "Uploaded" || d.file));
+    // 2026-11-26: eligibility is now document-only (see governmentEligibility.js) -
+    // hasAadharDoc (Student Aadhar Card upload) replaces the old aadharNo-text
+    // check as a PEN input. Matched via this page's own matchDocByCategory,
+    // same as the rest of this file (government-entry matches by exact
+    // document_types.name instead - both are allowed to differ, see that
+    // module's own header comment).
+    const aadharDoc = matchDocByCategory("student_aadhar", student.documents);
+    const hasAadharDoc = Boolean(aadharDoc && (aadharDoc.uploaded || aadharDoc.status === "Uploaded" || aadharDoc.file));
+    const udiseStatus = getUdiseStatus(student.udise, student.deactivateReason);
+    const penStatus = getPenStatus(student.pen, student.deactivateReason);
 
-    if (!(student.grNo || "").trim()) reasons.push("GR No not set");
-    if (!(student.udise || "").trim()) reasons.push("UID not set (UDISE pending)");
-    if (!(student.pen || "").trim()) reasons.push("PEN not set");
-    if (!hasCert) reasons.push("Missing Birth Certificate (Reg No/Uploaded) or Transfer Certificate (UDISE/PEN eligibility)");
-    if (!aadharAvailable) reasons.push("Missing Aadhar Card No (PEN eligibility)");
+    const udiseInfo = getUdiseEligibility({ udiseStatus, hasBirthCertDoc, hasTcDoc });
+    const penInfo = getPenEligibility({ penStatus, hasBirthCertDoc, hasTcDoc, hasAadharDoc });
+    if (!udiseInfo.eligible) reasons.push(`UDISE: ${udiseInfo.reason}`);
+    if (!penInfo.eligible) reasons.push(`PEN: ${penInfo.reason}`);
+
     const hasPendingDoc = PRIMARY_COLUMNS.some(col => {
       const doc = matchDocByCategory(col.matchKey, student.documents);
       const isUploaded = Boolean(doc && (doc.uploaded || doc.status === "Uploaded"));

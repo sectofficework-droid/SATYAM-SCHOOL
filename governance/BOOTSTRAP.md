@@ -450,16 +450,62 @@ stale — `git status`/`find` are the source of truth, not memory of where
 things used to be.
 
 ## Last checkpoint
-**Current — Session 2026-11-20/21/25 (one continued engagement) —
-full-system audit restarted from scratch per the user's request ("check
-each and every single feature... note down in detail"), then every
-Critical/High finding (and most Medium/Low) fixed, verified, and staged
-("start fixing one by one as soon as possible which is fixable by your
-side without any concern").** Earlier the same engagement's tech-debt
-backlog (duplicated service-key chain, N+1s, sign-out UX, 52 missing
-indexes, auth_rls_initplan, multiple_permissive_policies, Teacher/Student
-Flutter duplication) was coded, verified, committed, and pushed (`3eaf25a`)
-— see TODO.md's now-closed entries for that batch, separate from this audit.
+**Current — Session 2026-11-26 — Government Entry UDISE/PEN pre-entry
+gate (MAJOR, §J12B), staged not committed.** Same session continued from
+a user bug report ("between government entry documents there are lot sync
+issue... check why") → fixed as a Documents↔Government-Entry "Incomplete"
+tag disagreement (root cause: the Documents page's Nov-23 "Incomplete"
+logic hand-copied a simplified, wrong mirror of the real UDISE/PEN
+eligibility rule instead of calling it; fixed by extracting the real rule
+into a new shared module, `admin-panel/src/lib/governmentEligibility.js`,
+now called by both pages) → user then asked to go further and actually
+change the rule/flow itself ("lets make it simple udise eligible when
+either BC or TC is uploaded..."). Planned via `EnterPlanMode` (plan
+approved before coding) given the scope — a new multi-step workflow inside
+a live, 6500+ line production file I can't click-test this session.
+**What changed**: eligibility is now document-only — UDISE needs a Birth
+Certificate or Transfer/Leaving Certificate uploaded; PEN needs that plus a
+Student Aadhar Card uploaded. Batch membership and the old aadharNo-text
+check moved out of eligibility and into a new interactive gate
+(`government-entry/page.js`'s `startGovEntry`/`runGate`/`continueAfterBc`/
+`continueAfterBatch`) that fires from both the main table's Edit/Done
+button and the "Add New Student" wizard: fills in BC reg details inline
+(with a "View Birth Certificate" button) if missing; if the student isn't
+in any Entry Batch, opens the exact full Student Edit form
+(`student/[id]/edit/page.js`'s `EditForm`, now exported with an optional
+`onDone` prop, fully backward-compatible) so admin saves details then picks
+a batch (that form already had its own batch picker built in); if already
+in a batch, shows which one with a "Change Batch" action
+(new `getCurrentBatchForEnrollment` in `studentPhaseService.js` +
+`moveEntryToBatch`/`createEmptyBatch`); for PEN, also fills in Aadhar
+Name/Number inline if missing. Once resolved, proceeds into the existing
+number-entry modal unchanged. Full detail: `planning/TODO.md`'s "UDISE/PEN
+pre-entry gate" and "Documents ↔ Government Entry sync fix" entries.
+**Verified**: `npm run lint` clean; dev-server smoke test on
+`/government-entry` + `/student/[id]/edit` (200, clean compile — confirms
+the new cross-route `EditForm`/`mapToEditForm` import resolves). **NOT
+verified**: no in-browser click-through of the gate itself or the earlier
+sync fix (no login credentials this session) — do a full manual run-through
+of all four gate paths (BC-only eligible, TC-only eligible, not-in-batch,
+already-in-batch + Change) next session. Staged, not committed, per this
+file's standing rule.
+
+**Prior — Session 2026-11-20/21/25 (one continued engagement) —
+full-system audit restarted from scratch, every Critical/High finding (and
+most Medium/Low) fixed, verified, staged, then committed + pushed
+(`11c5fa6`, plus the earlier tech-debt batch `3eaf25a`).** 10 parallel
+read-only review forks covering ~74,000 lines; 7 Critical + 5 High findings
+fixed (3 new unauthenticated-RPC exposures, mobile TC-issuance role-gate
+regression, real employee PII/salary removed from `store.js`, a 416-student
+PII JSON removed from HEAD, 2 broken "Generate Salary" paths, 4 blank PDF
+report routes, backwards TC date-validation, Staff-Attendance-Delete 401
+bug, both cron routes' fail-open bug) plus a long Medium/Low tail and 2
+mechanical sweeps (try/catch, controller disposal) via parallel forks. Full
+detail: `planning\FULL-AUDIT-2026-11-20.md`. **Left for the user's
+decision**: Settings tabs' client-only role gating at the DB layer,
+`expenses` role-gating, `view-url`'s wildcard CORS origin. **Left as
+explicitly destructive, needs sign-off**: purging the ~2 days of git
+history where the PII JSON was public (§J4).
 
 **Audit pass**: 10 parallel read-only review forks covering ~74,000 lines
 across the admin panel, all 3 mobile flavors, and shared services (several

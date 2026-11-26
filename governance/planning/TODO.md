@@ -5,6 +5,112 @@
 > expand scope") from the governance audit run earlier this session. None of
 > these have been actioned — all await your explicit decision.
 
+## UDISE/PEN pre-entry gate (MAJOR, §J12B) — 2026-11-26 (user: "lets make it
+## simple udise eligible when either BC or TC is uploaded...")
+
+Follow-up to the sync fix directly below — the user then asked to actually
+change Government Entry's eligibility rule and entry flow, not just unify
+it with Documents. Implemented via a planning-mode session (plan approved
+before coding): full plan at the time is recoverable from this session's
+transcript if needed, but the summary below is the authoritative record.
+
+**Eligibility rule simplified to document-only** (`governmentEligibility.js`'s
+`getUdiseEligibility`/`getPenEligibility`, shared with Documents page's
+"Incomplete" tag — see the sync-fix entry below): UDISE now just needs a
+Birth Certificate or Transfer/Leaving Certificate **uploaded**; PEN needs
+that same certificate **and** a Student Aadhar Card uploaded. Batch
+membership and the old aadharNo-text-field check are no longer eligibility
+inputs — they're handled by the new entry-flow gate below instead of
+blocking the button outright.
+
+**New pre-entry gate** (`government-entry/page.js`: `startGovEntry` +
+`runGate`/`continueAfterBc`/`continueAfterBatch` + a new modal), triggered
+from both the main table's per-row Edit/Done UDISE/PEN button and the "Add
+New Student" wizard's Step 1 → Step 2/3 transition:
+1. BC uploaded but Reg No not filled in → inline prompt (Reg No/Date +
+   "View Birth Certificate", reusing the existing `handleDownloadBirthCert`)
+   saved via new `updateBirthCertDetails()` (`studentService.js`, writes
+   `students.birth_cert_reg_no`/`birth_cert_reg_date` by `id`).
+2. Not in any Entry Batch → full Student Edit form opens in an overlay —
+   reuses the EXACT `EditForm`/`mapToEditForm` from
+   `student/[id]/edit/page.js` (now exported + given an optional `onDone`
+   prop, backward-compatible — the standalone route never passes it, so its
+   own behavior is unchanged). That form already has its own batch
+   picker + `recordPhase` call built in, so "save then pick a batch" needed
+   no new code there.
+3. Already in a batch → shows which one (new `getCurrentBatchForEnrollment`
+   in `studentPhaseService.js` — no existing helper returned entry id +
+   phase id for one student) with a "Change Batch" action
+   (`moveEntryToBatch`/`createEmptyBatch`), not a blank re-pick.
+4. PEN only: Aadhar Card uploaded but Name/Number not filled in → same
+   inline-prompt pattern as step 1, via new `updateAadharDetails()` and a
+   new `handleDownloadAadharDoc` (mirrors the existing BC/TC download
+   handlers, document_types.name === "Student Aadhar Card").
+5. Once resolved, proceeds into the existing number-entry modal exactly as
+   before — that modal itself was not touched.
+
+Also updated `StudentDocumentsSection.jsx`'s `getIncompleteReasons` to pass
+the new `hasBirthCertDoc`/`hasTcDoc`/`hasAadharDoc` shape instead of the old
+`inAnyBatch`/`certAvailable`/`aadharAvailable` — this is intentional: the
+whole point of the shared `governmentEligibility.js` module is that both
+pages' verdicts move together, so the simplified rule now applies to the
+Documents "Incomplete" tag too.
+
+**Verified**: `npm run lint` clean; dev-server smoke test — `/government-entry`
+and `/student/[id]/edit` both compile and return 200 (confirms the new
+cross-route import of `EditForm`/`mapToEditForm` resolves correctly). **Not
+verified**: no in-browser click-through of the actual gate (BC-details
+prompt → batch check → edit overlay → Aadhar prompt → entry modal) — no
+login credentials this session. Worth a full manual run-through (all four
+gate paths: BC-only eligible, TC-only eligible, not-in-batch, already-in-
+batch with a Change) next time a browser session with login is available.
+
+## Documents ↔ Government Entry "Incomplete" sync fix — 2026-11-26 (user:
+## "there are lot sync issue... check why" → "we need to rewire the rules")
+
+User reported the Documents page's "Incomplete" tag (added 2026-11-23,
+commit `ddd5c9b`) disagreeing with Government Entry's own Eligible/
+Ineligible classification for the same students. Root cause: the Nov 23
+commit "Align incomplete reasons with government entry eligibility rules"
+(`9686a0c`) hand-copied a *simplified, wrong* mirror of the real rule
+instead of calling it — it flagged "GR No not set" (GR number is never
+part of UDISE/PEN eligibility in the real rule at all) and had no notion
+of the `"Done"`/`"Active in other school"`/`"Not Defined"` terminal
+states government-entry/page.js's `eligibilityFns` uses, so a student
+already resolved there could still show "Incomplete" on Documents.
+
+**Fixed by extracting the real rule into one shared module**
+(`admin-panel/src/lib/governmentEligibility.js`) that both pages now call:
+`parseOtherSchoolRemarks`, `getUdiseStatus`/`getPenStatus` (the "Done"/
+"Active in other school"/"Not Defined"/"Pending" derivation), `hasRequiredCertificate`,
+`isAadharAvailable`, `getUdiseEligibility`/`getPenEligibility` (the actual
+decision tree). `government-entry/page.js`'s `decorate()` and
+`eligibilityFns` now delegate to it (byte-identical behavior - verified
+the extracted functions are the exact original logic, just relocated);
+`StudentDocumentsSection.jsx`'s `getIncompleteReasons` now calls the same
+functions instead of its hand-copied version — "GR No not set" is gone as
+an incompleteness trigger, and the Done/Active-in-other-school/Not-Defined
+states are now correctly recognized (sourced from `student.deactivateReason`,
+which `mapToStudent()` already provides — same underlying
+`student_enrollments.deactivate_reason` column government-entry's own
+`remarks` field reads, just a different key name; confirmed via the write
+path in `studentService.js:updateStudentGovId`).
+
+**Not touched, flagged for awareness**: the two pages still fetch students
+via two independent queries/mappers (`studentService.js`'s `getStudents()`/
+`mapToStudent()` vs `reportService.js`'s `getStudentsForReport()`) with
+different field names for the same columns (`remarks` vs `deactivateReason`,
+`cls` vs `std`, `roll` vs `rollNo`, etc.) — this data-fetching duplication
+is the same pattern that caused this bug in the first place and could
+cause a similar drift again for some other field; unifying it is a bigger,
+separate refactor not attempted here.
+
+**Verified**: `npm run lint` clean; dev-server smoke test — both
+`/documents` and `/government-entry` compile and return 200. **Not
+verified**: no in-browser click-through comparing the two pages' tags
+side-by-side on real data (no login credentials this session) — worth a
+quick visual check next time a browser session is available.
+
 ## Full-system audit — found 2026-11-20 (user: "restart the audit from scratch
 ## and check each and every single feature")
 

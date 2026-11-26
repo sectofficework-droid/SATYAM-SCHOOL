@@ -1232,6 +1232,28 @@ export async function fillStudentProfileFieldIfEmpty(studentId, field, value) {
   if (error) throw error;
 }
 
+// 2026-11-26 (Government Entry pre-entry gate) - the admin fills these in
+// on the spot after viewing the uploaded Birth Certificate/Aadhar Card, so
+// (unlike fillStudentProfileFieldIfEmpty above) these always write the
+// given value rather than only filling a blank - the admin is intentionally
+// correcting/entering real data, not backfilling a gap. Same `students`
+// table + `id` as every other profile field (see updateStudent above).
+export async function updateBirthCertDetails(studentId, { birthCertRegNo, birthCertRegDate }) {
+  const { error } = await supabase
+    .from("students")
+    .update({ birth_cert_reg_no: birthCertRegNo || null, birth_cert_reg_date: birthCertRegDate || null })
+    .eq("id", studentId);
+  if (error) throw error;
+}
+
+export async function updateAadharDetails(studentId, { aadharName, aadharNo }) {
+  const { error } = await supabase
+    .from("students")
+    .update({ aadhar_name: aadharName || null, aadhar: aadharNo || null })
+    .eq("id", studentId);
+  if (error) throw error;
+}
+
 export async function markDocumentDone(studentId, documentTypeId, reason = "Marked as Done") {
   const { error } = await supabase
     .from("student_documents")
