@@ -944,13 +944,19 @@ function GovernmentEntryPageInner() {
   // start an entry - they're no longer inputs to eligibility itself.
   const eligibilityFns = useMemo(() => {
     const inAnyBatch = x => !!enrollToBatches.get(x.enrollNo)?.size;
+    // 2026-11-26 fix: this used to ALSO count as "TC uploaded" whenever
+    // lastSchoolName/lastSchoolGrNo text fields were filled in, with no
+    // actual document behind it - so a student could show as eligible
+    // ("BC or TC uploaded") with no uploaded file anywhere to view/
+    // download (the admin had no way to tell where it was "uploaded"
+    // because nothing was). Eligibility is now strictly "is there a real
+    // uploaded document" - same check getTcDoc() already uses for the
+    // View/Download buttons, so eligible always means a real file exists.
     const hasTc = x => Boolean(
       (x.studentDocuments || x.student_documents || []).some(
         d => (d.document_types?.name === "Leaving Certificate" || d.document_types?.name === "Transfer Certificate") &&
              (d.status === "Uploaded" || Boolean(d.file_url))
-      ) ||
-      String(x.lastSchoolName || "").trim() ||
-      String(x.lastSchoolGrNo || "").trim()
+      )
     );
     const hasBirthCertDoc = x => Boolean(
       (x.studentDocuments || x.student_documents || []).some(
@@ -1159,7 +1165,7 @@ function GovernmentEntryPageInner() {
         if (data?.status === "Uploaded" && data?.file_url) fileKey = data.file_url;
       }
 
-      if (!fileKey) { alert("No Student Aadhar Card file found to view. Please upload it in Documents."); return; }
+      if (!fileKey) { alert("No Student Aadhar Card file found to view. Please upload one first."); return; }
 
       const win = typeof window !== "undefined" ? window.open("", "_blank") : null;
       const downloadName = buildDocDownloadName(st.enrollNo, st.name, "Aadhar_Card", fileKey);
@@ -2445,6 +2451,130 @@ function GovernmentEntryPageInner() {
       d => (d.document_types?.name === "Leaving Certificate" || d.document_types?.name === "Transfer Certificate") &&
            (d.status === "Uploaded" || Boolean(d.file_url))
     ) || null;
+  }
+
+  // ── Student Aadhar Card Upload / Download (PEN Entry Flow) ─────────────
+  // 2026-11-26: mirrors the Birth Certificate upload above - until now this
+  // page could only VIEW the Aadhar Card document (uploaded from Documents
+  // page), not upload one itself; added so both documents work the same
+  // way from either page.
+  const [aadharUploading, setAadharUploading] = useState(false);
+  const [aadharMessage, setAadharMessage] = useState(null);
+  const aadharFileInputRef = useRef(null);
+  const [aadharUploadTarget, setAadharUploadTarget] = useState(null);
+
+  function getAadharDoc(st) {
+    if (!st) return null;
+    const docs = st.studentDocuments || st.student_documents || [];
+    return docs.find(
+      d => d.document_types?.name === "Student Aadhar Card" && (d.status === "Uploaded" || Boolean(d.file_url))
+    ) || null;
+  }
+
+  function triggerAadharUpload(st) {
+    setAadharUploadTarget(st);
+    setAadharMessage(null);
+    if (aadharFileInputRef.current) {
+      aadharFileInputRef.current.value = "";
+      aadharFileInputRef.current.click();
+    }
+  }
+
+  async function handleAadharFileSelected(e) {
+    const file = e.target?.files?.[0];
+    const target = aadharUploadTarget;
+    if (!file || !target) return;
+
+    e.target.value = "";
+
+    const allowed = [".pdf", ".jpg", ".jpeg", ".png"];
+    const ext = "." + (file.name.split(".").pop() || "").toLowerCase();
+    if (!allowed.includes(ext) || file.size > 5 * 1024 * 1024) {
+      setAadharMessage({ type: "error", text: "Invalid file. Only JPG, PNG, or PDF up to 5MB allowed." });
+      return;
+    }
+
+    const studentId = target.studentId || target.id;
+    if (!studentId) {
+      setAadharMessage({ type: "error", text: "Could not find student ID to associate document." });
+      return;
+    }
+
+    setAadharUploading(true);
+    setAadharMessage(null);
+
+    try {
+      const { data: dt } = await supabase
+        .from("document_types")
+        .select("id")
+        .eq("name", "Student Aadhar Card")
+        .maybeSingle();
+      if (!dt?.id) {
+        setAadharMessage({ type: "error", text: "Could not find the 'Student Aadhar Card' document type." });
+        return;
+      }
+      const typeId = dt.id;
+
+      const compressed = await compressFile(file);
+      const key = `students/${studentId}/documents/aadhar-card.${fileExt(compressed)}`;
+      await uploadFileToS3(compressed, key);
+
+      const { data: upsertedDoc, error: docErr } = await supabase
+        .from("student_documents")
+        .upsert({
+          student_id: studentId,
+          document_type_id: typeId,
+          status: "Uploaded",
+          file_url: key,
+          uploaded_at: new Date().toISOString(),
+          reason: null,
+        }, { onConflict: "student_id,document_type_id" })
+        .select("id, status, file_url, uploaded_at")
+        .single();
+
+      if (docErr) throw docErr;
+
+      const updatedDocItem = {
+        id: upsertedDoc?.id || Date.now().toString(),
+        status: "Uploaded",
+        file_url: key,
+        document_types: { id: typeId, name: "Student Aadhar Card" },
+      };
+
+      const updateStudentDocs = (prevStudent) => {
+        if (!prevStudent) return prevStudent;
+        const existingDocs = prevStudent.studentDocuments || [];
+        const hasIdx = existingDocs.findIndex(d => d.document_types?.name === "Student Aadhar Card");
+        let nextDocs;
+        if (hasIdx >= 0) {
+          nextDocs = existingDocs.map((d, i) => i === hasIdx ? { ...d, ...updatedDocItem } : d);
+        } else {
+          nextDocs = [...existingDocs, updatedDocItem];
+        }
+        return { ...prevStudent, studentDocuments: nextDocs };
+      };
+
+      setDbStudents(prev => prev.map(s => (s.studentId === studentId || s.enrollNo === target.enrollNo) ? updateStudentDocs(s) : s));
+
+      if (addSelectedStudent && (addSelectedStudent.studentId === studentId || addSelectedStudent.enrollNo === target.enrollNo)) {
+        setAddSelectedStudent(prev => updateStudentDocs(prev));
+      }
+
+      if (modalRow && (modalRow.studentId === studentId || modalRow.enrollNo === target.enrollNo)) {
+        setModalRow(prev => updateStudentDocs(prev));
+      }
+
+      if (gateState?.row && (gateState.row.studentId === studentId || gateState.row.enrollNo === target.enrollNo)) {
+        setGateState(prev => prev ? { ...prev, row: updateStudentDocs(prev.row) } : prev);
+      }
+
+      setAadharMessage({ type: "success", text: "Student Aadhar Card uploaded successfully!" });
+    } catch (err) {
+      console.error("Upload Aadhar Card error:", err);
+      setAadharMessage({ type: "error", text: err.message || "Failed to upload Aadhar Card." });
+    } finally {
+      setAadharUploading(false);
+    }
   }
 
   async function handleDownloadTcDoc(st) {
@@ -5161,6 +5291,29 @@ function GovernmentEntryPageInner() {
                                   )}
                                 </div>
                               )}
+                              {!isUdise && !isOnlineGr && (
+                                <div className="inline-flex items-center gap-1">
+                                  {getAadharDoc(row) ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDownloadAadharDoc(row)}
+                                      title="Download / View Student Aadhar Card"
+                                      className="inline-flex items-center justify-center p-1 rounded border transition-colors cursor-pointer text-emerald-700 bg-emerald-50 border-emerald-200 hover:bg-emerald-100"
+                                    >
+                                      <Download className="w-2.5 h-2.5" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => triggerAadharUpload(row)}
+                                      title="Upload Student Aadhar Card (Missing)"
+                                      className="inline-flex items-center justify-center p-1 rounded border transition-colors cursor-pointer text-amber-700 bg-amber-50 border-amber-300 hover:bg-amber-100"
+                                    >
+                                      <Upload className="w-2.5 h-2.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                               {isOnlineGr && status === "Pending" && (
                                 <button
                                   type="button"
@@ -6301,6 +6454,61 @@ function GovernmentEntryPageInner() {
                         <span>{bcMessage.text}</span>
                       </div>
                     )}
+                    <div>
+                      <span className="text-gray-400">AADHAR CARD</span>
+                      <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                        {getAadharDoc(addSelectedStudent) ? (
+                          <>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
+                              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> Uploaded
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadAadharDoc(addSelectedStudent)}
+                              title="Download / View Student Aadhar Card"
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition-colors cursor-pointer"
+                            >
+                              <Download className="w-2.5 h-2.5" />
+                              <span>View</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => triggerAadharUpload(addSelectedStudent)}
+                              disabled={aadharUploading}
+                              title="Re-upload Student Aadhar Card"
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors cursor-pointer"
+                            >
+                              <Upload className="w-2.5 h-2.5" />
+                              <span>Re-upload</span>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                              <AlertTriangle className="w-2.5 h-2.5 text-amber-600" /> Not Uploaded
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => triggerAadharUpload(addSelectedStudent)}
+                              disabled={aadharUploading}
+                              title="Upload Student Aadhar Card for this student"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-600 hover:bg-blue-700 text-white transition-colors cursor-pointer shadow-2xs"
+                            >
+                              {aadharUploading ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Upload className="w-2.5 h-2.5" />}
+                              <span>{aadharUploading ? "Uploading..." : "Upload"}</span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {aadharMessage && aadharUploadTarget?.enrollNo === addSelectedStudent.enrollNo && (
+                      <div className={`col-span-2 sm:col-span-3 p-2 rounded-lg text-xs flex items-center gap-2 ${
+                        aadharMessage.type === "success" ? "bg-emerald-50 text-emerald-800 border border-emerald-200" : "bg-rose-50 text-rose-800 border border-rose-200"
+                      }`}>
+                        {aadharMessage.type === "success" ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />}
+                        <span>{aadharMessage.text}</span>
+                      </div>
+                    )}
                     <div className="col-span-2 sm:col-span-3 pt-1">{eligibilityBadge(addReview)}</div>
                   </div>
 
@@ -6914,6 +7122,15 @@ function GovernmentEntryPageInner() {
         type="file"
         ref={bcFileInputRef}
         onChange={handleBcFileSelected}
+        accept=".pdf,.jpg,.jpeg,.png"
+        className="hidden"
+      />
+
+      {/* Hidden file input for Student Aadhar Card upload / re-upload */}
+      <input
+        type="file"
+        ref={aadharFileInputRef}
+        onChange={handleAadharFileSelected}
         accept=".pdf,.jpg,.jpeg,.png"
         className="hidden"
       />

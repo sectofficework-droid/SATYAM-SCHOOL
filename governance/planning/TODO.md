@@ -5,6 +5,51 @@
 > expand scope") from the governance audit run earlier this session. None of
 > these have been actioned — all await your explicit decision.
 
+## Government Entry: Aadhar Card upload capability — 2026-11-26 (user:
+## "make sure government entry is connected with document section...")
+
+Follow-up to the gate below: user asked to confirm Government Entry and
+Documents stay in sync both ways. Audited every write path for the 4
+shared field groups (document uploads, BC reg details, Aadhar details,
+UDISE/PEN numbers) across both pages - confirmed both already write to the
+exact same `students`/`student_documents` tables/columns/id, so any change
+made on one page is visible on the other after a normal page load (not
+live cross-tab push, which wasn't asked for). The one real gap:
+`government-entry/page.js` could only VIEW the Student Aadhar Card
+document (`handleDownloadAadharDoc`), not upload one - only Documents page
+could. User confirmed wanting it added for symmetry with the existing
+Birth Certificate upload.
+
+**Added**: `triggerAadharUpload`/`handleAadharFileSelected`/`getAadharDoc`
+in `government-entry/page.js`, mirroring the existing
+`triggerBcUpload`/`handleBcFileSelected`/`getBcDoc` pattern exactly (same
+`student_documents` upsert shape, `onConflict: "student_id,document_type_id"`,
+S3 key `students/<id>/documents/aadhar-card.<ext>`, 5MB/jpg-png-pdf limit) -
+except the Aadhar document_type_id lookup has no hardcoded fallback UUID
+(unlike BC's) since it wasn't known; it just surfaces an error if
+`document_types` has no "Student Aadhar Card" row. Wired into: a new
+Upload/View icon pair in the main table (next to the existing BC/TC icons,
+gated on the PEN tab instead of UDISE), and a new "AADHAR CARD" row in the
+"Add New Student" wizard's Selected Student panel (mirroring the existing
+"CERTIFICATE (BC/TC)" row).
+
+**Verified**: `npm run lint` clean; dev-server smoke test on
+`/government-entry` (200, clean compile). **Not verified**: no in-browser
+click-through of the new upload buttons (no login credentials this
+session).
+
+**Also fixed in the same pass (user: "in that it asks for either bc or tc
+but where it is uploaded we don't know fix that")**: `eligibilityFns`'s
+`hasTc` (`government-entry/page.js`) used to ALSO count as "TC uploaded"
+whenever a student's `lastSchoolName`/`lastSchoolGrNo` text fields were
+filled in, even with no actual document uploaded anywhere - so a student
+could show as UDISE/PEN-eligible ("BC or TC uploaded") with no real file
+to view/download, exactly contradicting the new document-only rule.
+Removed that text-field fallback from the eligibility check (the
+View/Download buttons already used the stricter `getTcDoc()`, unaffected -
+only the eligibility decision had the gap) - eligible now always means a
+real uploaded document exists.
+
 ## UDISE/PEN pre-entry gate (MAJOR, §J12B) — 2026-11-26 (user: "lets make it
 ## simple udise eligible when either BC or TC is uploaded...")
 
