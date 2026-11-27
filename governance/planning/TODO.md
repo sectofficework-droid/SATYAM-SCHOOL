@@ -1,5 +1,46 @@
 # TODO.md — SATYAM-SCHOOL
 
+## Government Entry: gate moved before Step 1 — 2026-11-26 (user: "batch
+## check will appear before going to step 1")
+
+Follow-up to the pre-entry gate below: the gate was originally wired to
+fire at the wizard's Step 2/3 "Next: Enter UDISE/PEN No →" button
+(`proceedToUdiseEntryForm`/`proceedToPenEntryForm`) - meaning the Step 2
+"UDISE Entry" review banner (pre-existing wizard UI, unrelated to this
+feature) was already visible before the gate ran, which read to the user
+as "it goes to UDISE entry first, then checks the batch." User confirmed
+the gate should run as soon as a student is picked, before Step 1's GR/PR
+No screen shows at all.
+
+**Moved**: `selectAddStudent` (`government-entry/page.js`) now runs
+`startGovEntry` immediately on pick (portal "pen", since PEN's gate is a
+superset of UDISE's) instead of deferring to the old per-button call; the
+original selection logic moved unchanged into a new `finishSelectAddStudent`,
+run as the gate's `onPass` callback. `proceedToUdiseEntryForm`/
+`proceedToPenEntryForm` no longer re-run the gate (it already resolved
+before Step 1, nothing relevant changes between Step 1 and Step 2's "Next"
+click). Skipped entirely for a student not yet cert-eligible for either
+portal (no BC/TC uploaded) - nothing for the gate to usefully resolve, and
+Step 1's own "Mark Ineligible" path still needs to stay reachable for them.
+
+**Also fixed a staleness bug found while doing this**: `onPass` previously
+took no arguments, so after the gate's "edit" stage (full Student Edit
+form) or "aadhar" stage saved new data, the callback used whatever
+pre-edit row object was captured in its original closure - the Step 1
+panel could show stale (pre-save) Birth Cert/Aadhar values until some
+unrelated re-render. `onPass` now always receives the freshest row
+available (re-decorated from `loadAll()`'s own return value after an edit,
+or the gate-updated row after a BC/Aadhar detail save); `loadAll` now
+returns its freshly fetched student list instead of only setting state, so
+callers awaiting it aren't stuck reading a stale closure over React state.
+
+**Verified**: `npm run lint` clean; dev-server smoke test on
+`/government-entry` (200, clean compile). **Not verified**: no in-browser
+click-through of the reordered gate (no login credentials this session) -
+please confirm next time you're in the app that picking a student now
+shows the batch-check (and BC/Aadhar prompts, if applicable) immediately,
+before Step 1's GR/PR No screen.
+
 > Phased checklist + backlog. Items below the line are recorded per §J14
 > ("found a bug/security concern → record it, don't silently fix, don't
 > expand scope") from the governance audit run earlier this session. None of

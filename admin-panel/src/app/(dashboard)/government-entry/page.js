@@ -849,7 +849,8 @@ function GovernmentEntryPageInner() {
       ];
       const results = await Promise.allSettled(namedLoads.map(([, p]) => p));
       const [students, sessions, phases, entries, grData] = results;
-      if (students.status === "fulfilled") setDbStudents((students.value || []).filter(Boolean));
+      const freshStudents = students.status === "fulfilled" ? (students.value || []).filter(Boolean) : null;
+      if (freshStudents) setDbStudents(freshStudents);
       if (sessions.status === "fulfilled" && sessions.value?.length) setDbSessions(sessions.value);
       if (phases.status === "fulfilled") setDbPhases(phases.value || []);
       if (entries.status === "fulfilled") setDbPhaseEntryEnrollments(entries.value || []);
@@ -879,9 +880,11 @@ function GovernmentEntryPageInner() {
       } else {
         setLoadError(null);
       }
+      return { students: freshStudents };
     } catch (e) {
       console.error("Government Entry loadAll error:", e);
       setLoadError(e?.message || "Failed to load government entry data");
+      return { students: null };
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -1022,8 +1025,10 @@ function GovernmentEntryPageInner() {
   const [gateSaving, setGateSaving] = useState(false);
   const [gateEditExisting, setGateEditExisting] = useState(null); // mapped student for the "edit" stage's EditForm
 
+  // onPass is called with the (possibly updated) row once the gate clears -
+  // callers that don't care about the fresher row can just ignore the arg.
   function startGovEntry(row, portal, onPass) {
-    runGate(row, portal, onPass || (() => openEntryModal(row)));
+    runGate(row, portal, onPass || (freshRow => openEntryModal(freshRow || row)));
   }
 
   function runGate(row, portal, onPass) {
@@ -1070,7 +1075,7 @@ function GovernmentEntryPageInner() {
       return;
     }
     setGateState(null);
-    onPass();
+    onPass(row);
   }
 
   async function handleGateSaveBc() {
@@ -1099,10 +1104,10 @@ function GovernmentEntryPageInner() {
         aadharName: gateAadharName.trim(),
         aadharNo: gateAadharNo.trim(),
       });
-      const { onPass } = gateState;
+      const { row, onPass } = gateState;
       await loadAll();
       setGateState(null);
-      onPass();
+      onPass({ ...row, aadharName: gateAadharName.trim(), aadharNo: gateAadharNo.trim() });
     } catch (err) {
       alert("Failed to save Aadhar details: " + err.message);
     } finally {
@@ -1140,10 +1145,15 @@ function GovernmentEntryPageInner() {
   }
 
   function handleGateEditDone() {
-    const onPass = gateState?.onPass;
+    const { onPass, row } = gateState || {};
+    const enrollNo = row?.enrollNo;
     setGateEditExisting(null);
     setGateState(null);
-    loadAll().finally(() => { if (onPass) onPass(); });
+    loadAll().then(({ students } = {}) => {
+      if (!onPass) return;
+      const freshRaw = enrollNo ? students?.find(s => s.enrollNo === enrollNo) : null;
+      onPass(freshRaw ? decorate(freshRaw) : row);
+    });
   }
 
   async function handleDownloadAadharDoc(st) {
@@ -2414,19 +2424,18 @@ function GovernmentEntryPageInner() {
   // UDISE and PEN steps instead of pulling the student's old (possibly
   // different) GR No from their DB record, which risked a mismatch between
   // what was just registered and what got saved to the student.
+  // The pre-entry gate already ran once, in selectAddStudent, before Step 1
+  // ever showed - nothing relevant changes between Step 1 and here, so
+  // these just open the real entry modal directly (no second gate pass).
   function proceedToUdiseEntryForm() {
-    startGovEntry(addSelectedStudent, "udise", () => {
-      setAddSubPhase("entry");
-      openEntryModal(addSelectedStudent);
-      setFormGrNo(addGrNo);
-    });
+    setAddSubPhase("entry");
+    openEntryModal(addSelectedStudent);
+    setFormGrNo(addGrNo);
   }
   function proceedToPenEntryForm() {
-    startGovEntry(addSelectedStudent, "pen", () => {
-      setAddSubPhase("entry");
-      openEntryModal(addSelectedStudent);
-      setFormGrNo(addGrNo);
-    });
+    setAddSubPhase("entry");
+    openEntryModal(addSelectedStudent);
+    setFormGrNo(addGrNo);
   }
 
   // ── Birth Certificate Upload / Download (UDISE Entry Flow) ─────────────
@@ -3405,7 +3414,26 @@ function GovernmentEntryPageInner() {
     return "";
   }
 
+  // 2026-11-26: runs the pre-entry gate (BC reg details -> Entry Batch ->
+  // Aadhar details) as soon as a student is picked, BEFORE Step 1's GR/PR
+  // No screen ever shows - not after Step 1, not at the Step 2 "Next"
+  // click (that's what it used to do; the user explicitly asked for the
+  // batch check to happen before Step 1, not after it). Portal is always
+  // "pen" here since PEN's gate is a superset of UDISE's (adds the Aadhar
+  // check) - whichever portal the student actually ends up eligible for,
+  // their profile is already fully prepped by the time Step 1 shows.
   function selectAddStudent(st) {
+    // Skip the gate for a student who isn't cert-eligible for either
+    // portal yet (no BC/TC uploaded at all) - there's nothing for the gate
+    // to usefully resolve (they can't register without a certificate
+    // regardless of batch), and Step 1's own "Mark Ineligible" flow still
+    // needs to be reachable for them.
+    const canGate = eligibilityFns.udiseEligible(st) || eligibilityFns.penEligible(st);
+    if (!canGate) { finishSelectAddStudent(st); return; }
+    startGovEntry(st, "pen", freshSt => finishSelectAddStudent(freshSt || st));
+  }
+
+  function finishSelectAddStudent(st) {
     const sec = classSection(st.cls);
     const existingRow = findExistingOnlineGrRow(st, sec);
     const existingGr = existingRow?.grNo && existingRow.grNo !== "-"
