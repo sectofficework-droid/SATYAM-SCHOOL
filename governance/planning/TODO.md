@@ -1,5 +1,94 @@
 # TODO.md — SATYAM-SCHOOL
 
+## Government Entry: replaced EditForm with a compact "Complete Student
+## Details" form — 2026-11-28 (user: "but the edit open proper edit to
+## all fields not locked in proper view format in minimum spaces to
+## update complete details along with docs")
+
+The gate's "not in any batch" step reused the full 11-section `EditForm`
+from `/student/[id]/edit`. Two problems: (1) Birth State/District/City/
+Village are `ReadOnlyField` (locked) on that page - only Super Admin's
+separate "Update Student" tool could edit them; (2) the full form is a lot
+of scrolling for what this step actually needs. Confirmed via
+AskUserQuestion: unlock those fields **only inside this gate** (the
+standalone Student Edit page stays locked for everyone else), and replace
+the reused form with a new, compact, purpose-built one.
+
+**Built**: a new inline form in the "edit" gate stage covering exactly
+what gates UDISE/PEN registration - Birth Place (State/District/City/
+Village, now editable here), Birth Certificate (Reg No/Date), Aadhar Card
+(Name/Number), a compact Documents status row (Birth Certificate/Transfer
+Certificate/Student Aadhar Card - reusing this file's own existing
+upload/view handlers, no new upload logic), and the existing
+`BatchSelector`. Deliberately excludes name/parent/mobile/address/photo/
+previous-school fields - not part of what blocks UDISE/PEN, keeps it
+"minimum" per the user's own wording.
+
+**New targeted update** `updateStudentBirthPlaceDetails` in
+`studentService.js`, matching the `updateBirthCertDetails`/
+`updateAadharDetails` pattern from earlier this session - `updateStudent()`
+is a full-replace update (every column written unconditionally, missing
+ones become `null`), so it can never be used for a partial-field form like
+this without silently wiping the rest of the student's profile. Batch
+assignment uses the same `recordPhase`/`buildPhaseSnapshot` call
+`EditForm` itself used to make, built from the **full** mapped student
+merged with this form's edits (not just this form's own fields), so the
+recorded snapshot isn't missing name/parents/etc.
+
+**Reverted**: `EditForm` (`student/[id]/edit/page.js`) back to private/
+non-exported with no `onDone`/`onCancel` props - the gate no longer uses
+it and nothing else did either, so those additions from earlier this
+session were unused plumbing on a live file. `mapToEditForm` stays
+exported - the gate's fetch still reuses it for the compact form's initial
+values.
+
+**Verified**: `npm run lint` clean; dev-server smoke test on both routes;
+**live in-browser click-through** (logged in via the browser's own saved
+session) - confirmed the new form renders with real pre-filled data, all
+fields genuinely editable, document status accurate, batch dropdown
+populated from real batches; confirmed via direct Supabase queries that
+Cancel leaves the database completely unchanged; confirmed the standalone
+`/student/[id]/edit` route still shows Birth State/District/City/Village
+as locked labels (not inputs), unaffected by this change. **Not
+verified**: an actual Save with a real batch selection (would create a
+real batch-entry row for a real student - held off without the user's
+explicit go-ahead, per the no-real-test-data rule this session has
+followed throughout).
+
+## Government Entry: Cancel in the "Complete Student Details" gate step
+## silently advanced instead of aborting — 2026-11-28 (found via live
+## in-browser testing, user: "can you check it live in the browser now")
+
+Live-tested the whole gate end to end, logged in as the real admin account
+(browser's own saved session), against real students, cancelling before
+any save so no production data was touched (verified via direct DB
+queries before/after). Confirmed working: the already-fully-resolved
+pass-through (no interruption), the BC-details prompt (real document_type
+lookup, real S3 view), and the "not in any batch" full Edit Student
+overlay (correct pre-filled data, Add New Student modal properly hidden
+behind it per the fix two entries below).
+
+**Found**: in that "Complete Student Details" overlay, clicking **Cancel**
+didn't actually cancel — `EditForm`'s Cancel button and its successful-
+save path both called the same `onDone` callback (fine on the standalone
+`/student/[id]/edit` page, where both just mean "leave this page"), so the
+gate treated a Cancel click exactly like a completed save and advanced to
+Step 1 with the student selected - even though nothing was saved and the
+student still wasn't in any batch.
+
+**Fixed**: `EditForm` (`student/[id]/edit/page.js`) now takes a separate
+`onCancel` prop, used only by its Cancel button; `onDone` is reserved for
+the actual successful-save path. Falls back to `onDone`/`router.back()` if
+not passed, so the standalone route's own behavior is unchanged.
+`government-entry/page.js`'s gate passes a new `handleGateCancelEdit` that
+just closes the gate without calling `onPass` - since `addSelectedStudent`
+is only ever set via `onPass`/`finishSelectAddStudent`, Cancel now
+correctly lands back on the student picker, not Step 1.
+
+**Verified**: `npm run lint` clean; **and** live in-browser click-through
+this time (not just dev-server smoke test) - confirmed Cancel now returns
+to the picker instead of advancing, with no DB writes either way.
+
 ## Government Entry: gate modal was stacking behind the Add New Student
 ## modal — 2026-11-28 (user: "picking a student... opens background of
 ## the add new student form... first close the form then open next")

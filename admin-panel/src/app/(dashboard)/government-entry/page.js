@@ -11,19 +11,24 @@ import {
 import * as XLSX from "xlsx";
 import supabase from "@/lib/supabase";
 import { getStudentsForReport, getAcademicYearLabels } from "@/lib/reportService";
-import { getPhases, getAllPhaseEntryEnrollments } from "@/lib/studentPhaseService";
+import { getPhases, getAllPhaseEntryEnrollments, recordPhase, buildPhaseSnapshot } from "@/lib/studentPhaseService";
 import {
   updateStudentGovId, getStudentAdminNotes,
   getStudentByEnrollment, updateBirthCertDetails, updateAadharDetails,
+  updateStudentBirthPlaceDetails,
 } from "@/lib/studentService";
 import StudentNoteBadge from "@/components/StudentNoteBadge";
+import BatchSelector from "@/components/BatchSelector";
 import { getOnlineGrData, updateOnlineGrRow, deleteOnlineGrRow } from "@/lib/onlineGrService";
 import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, fileExt } from "@/lib/s3Upload";
 import { compressFile } from "@/lib/fileCompression";
-// Government Entry pre-entry gate (2026-11-26) reuses the exact "full
-// detail like master admin" form from the Student Edit route instead of
-// rebuilding one - see EditForm's own onDone prop (added for this).
-import { EditForm, mapToEditForm } from "@/app/(dashboard)/student/[id]/edit/page";
+import useStore from "@/lib/store";
+// Government Entry pre-entry gate (2026-11-26) - the "not in any batch"
+// step uses its own compact "Complete Student Details" form (2026-11-28),
+// not the full Student Edit page's EditForm - only its data mapper is
+// reused, so the fetch shape (birth place, Aadhar, birth-cert, document
+// status) doesn't need duplicating.
+import { mapToEditForm } from "@/app/(dashboard)/student/[id]/edit/page";
 import {
   OTHER_SCHOOL_TAG_REGEX,
   parseOtherSchoolRemarks,
@@ -780,6 +785,7 @@ function StatusPill({ status }) {
 function GovernmentEntryPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { authUser } = useStore();
   const [mainTab, setMainTab] = useState("onlineGr"); // "onlineGr" | "udise" | "pen" | "import" | "mismatch"
   const [grSubTab, setGrSubTab] = useState("primary"); // "primary" | "general"
   const [importSubTab, setImportSubTab] = useState("udise"); // "udise" | "pen" | "all"
@@ -1005,8 +1011,8 @@ function GovernmentEntryPageInner() {
   // straight to the number-entry modal/Step 1. Eligibility itself is now
   // document-only (governmentEligibility.js) - this gate is what actually
   // walks the admin through whatever's still missing: Birth Certificate
-  // reg details, Entry Batch assignment (not in any batch -> the full Edit
-  // Student form, which already has its own batch picker; already in a
+  // reg details, Entry Batch assignment (not in any batch -> a compact
+  // "Complete Student Details" form, §2026-11-28 below; already in a
   // batch -> nothing to resolve, continues straight through with no
   // interruption), and (PEN only) Aadhar name/number.
   // gateState: { row, portal: "udise"|"pen", onPass, stage } | null
@@ -1017,7 +1023,21 @@ function GovernmentEntryPageInner() {
   const [gateAadharName, setGateAadharName] = useState("");
   const [gateAadharNo, setGateAadharNo] = useState("");
   const [gateSaving, setGateSaving] = useState(false);
-  const [gateEditExisting, setGateEditExisting] = useState(null); // mapped student for the "edit" stage's EditForm
+  const [gateEditExisting, setGateEditExisting] = useState(null); // mapped student for the "edit" stage's compact form
+
+  // 2026-11-28 - the "edit" stage's own compact "Complete Student Details"
+  // form fields (Birth State/District/City/Village are locked everywhere
+  // else - see updateStudentBirthPlaceDetails in studentService.js - this
+  // is the one place they're editable, by this gate's own design decision).
+  const [gateBirthState, setGateBirthState] = useState("");
+  const [gateBirthDistrict, setGateBirthDistrict] = useState("");
+  const [gateBirthCity, setGateBirthCity] = useState("");
+  const [gateBirthVillage, setGateBirthVillage] = useState("");
+  const [gateEditBcRegNo, setGateEditBcRegNo] = useState("");
+  const [gateEditBcRegDate, setGateEditBcRegDate] = useState("");
+  const [gateEditAadharName, setGateEditAadharName] = useState("");
+  const [gateEditAadharNo, setGateEditAadharNo] = useState("");
+  const [gateEditBatchId, setGateEditBatchId] = useState("none");
 
   // onPass is called with the (possibly updated) row once the gate clears -
   // callers that don't care about the fresher row can just ignore the arg.
@@ -1035,15 +1055,31 @@ function GovernmentEntryPageInner() {
     continueAfterBc(row, portal, onPass);
   }
 
-  // Not in any batch -> stop and send them to the full Edit Student form
-  // (where they fill in details and pick a batch). Already in a batch ->
-  // nothing to resolve, continue straight through with no interruption.
+  // Not in any batch -> stop and send them to the compact "Complete
+  // Student Details" form (fill in details and pick a batch). Already in a
+  // batch -> nothing to resolve, continue straight through with no
+  // interruption.
   function continueAfterBc(row, portal, onPass) {
     if (!eligibilityFns.inAnyBatch(row)) {
       setGateEditExisting(null);
+      setGateBirthState(""); setGateBirthDistrict(""); setGateBirthCity(""); setGateBirthVillage("");
+      setGateEditBcRegNo(""); setGateEditBcRegDate("");
+      setGateEditAadharName(""); setGateEditAadharNo("");
+      setGateEditBatchId("none");
       setGateState({ row, portal, onPass, stage: "edit" });
       getStudentByEnrollment(row.enrollNo)
-        .then(s => setGateEditExisting(mapToEditForm(s)))
+        .then(s => {
+          const mapped = mapToEditForm(s);
+          setGateEditExisting(mapped);
+          setGateBirthState(mapped.birthState || "");
+          setGateBirthDistrict(mapped.birthDistrict || "");
+          setGateBirthCity(mapped.birthCity || "");
+          setGateBirthVillage(mapped.birthVillage || "");
+          setGateEditBcRegNo(mapped.birthCertRegNo || "");
+          setGateEditBcRegDate(mapped.birthCertRegDate || "");
+          setGateEditAadharName(mapped.aadharName || "");
+          setGateEditAadharNo(mapped.aadhar || "");
+        })
         .catch(err => { alert("Failed to load student for editing: " + err.message); setGateState(null); });
       return;
     }
@@ -1099,6 +1135,65 @@ function GovernmentEntryPageInner() {
     }
   }
 
+  // Compact "Complete Student Details" form's own save (2026-11-28) -
+  // targeted partial updates only (never updateStudent(), which would wipe
+  // every other field not in this form's payload - see
+  // updateStudentBirthPlaceDetails's own comment in studentService.js),
+  // plus an optional batch assignment via the same recordPhase() call
+  // EditForm's own save used to make. The phase snapshot is built from the
+  // FULL mapped student (gateEditExisting) merged with this form's edits,
+  // not just this form's own fields, so a later batch export isn't missing
+  // the student's name/parents/etc. just because this compact form didn't
+  // re-collect them.
+  async function handleGateSaveEditDetails() {
+    if (!gateState || !gateEditExisting) return;
+    setGateSaving(true);
+    try {
+      const studentId = gateEditExisting._studentId;
+      const enrollNo = gateState.row.enrollNo;
+      await Promise.all([
+        updateStudentBirthPlaceDetails(studentId, {
+          birthState: gateBirthState.trim(),
+          birthDistrict: gateBirthDistrict.trim(),
+          birthCity: gateBirthCity.trim(),
+          birthVillage: gateBirthVillage.trim(),
+        }),
+        (gateEditBcRegNo.trim() || gateEditBcRegDate)
+          ? updateBirthCertDetails(studentId, { birthCertRegNo: gateEditBcRegNo.trim(), birthCertRegDate: gateEditBcRegDate || null })
+          : Promise.resolve(),
+        (gateEditAadharName.trim() || gateEditAadharNo.trim())
+          ? updateAadharDetails(studentId, { aadharName: gateEditAadharName.trim(), aadharNo: gateEditAadharNo.trim() })
+          : Promise.resolve(),
+      ]);
+
+      if (gateEditBatchId !== "none") {
+        try {
+          const mergedForSnapshot = {
+            ...gateEditExisting,
+            birthState: gateBirthState.trim(), birthDistrict: gateBirthDistrict.trim(),
+            birthCity: gateBirthCity.trim(), birthVillage: gateBirthVillage.trim(),
+            birthCertRegNo: gateEditBcRegNo.trim(), birthCertRegDate: gateEditBcRegDate || "",
+            aadharName: gateEditAadharName.trim(), aadhar: gateEditAadharNo.trim(),
+            std: gateEditExisting.std,
+          };
+          await recordPhase({
+            type: "Added", source: "gov_entry_gate", createdBy: authUser?.id,
+            existingBatchId: gateEditBatchId || null,
+            entries: [{ studentId, enrollmentNo: enrollNo, snapshot: buildPhaseSnapshot(mergedForSnapshot, enrollNo) }],
+          });
+        } catch (err) {
+          console.warn("Could not record batch entry:", err);
+        }
+      }
+
+      setGateSaving(false);
+      handleGateEditDone();
+    } catch (err) {
+      alert("Failed to save student details: " + err.message);
+      setGateSaving(false);
+    }
+  }
+
   function handleGateEditDone() {
     const { onPass, row } = gateState || {};
     const enrollNo = row?.enrollNo;
@@ -1109,6 +1204,16 @@ function GovernmentEntryPageInner() {
       const freshRaw = enrollNo ? students?.find(s => s.enrollNo === enrollNo) : null;
       onPass(freshRaw ? decorate(freshRaw) : row);
     });
+  }
+
+  // Cancel must actually abort, not advance - nothing was saved (the
+  // student is still not in any batch), so don't call onPass at all. Just
+  // close the gate; since addSelectedStudent was never set (that only
+  // happens via onPass/finishSelectAddStudent), Step 1 reappears showing
+  // the picker, not a "selected" student - i.e. back to square one.
+  function handleGateCancelEdit() {
+    setGateEditExisting(null);
+    setGateState(null);
   }
 
   async function handleDownloadAadharDoc(st) {
@@ -5611,18 +5716,122 @@ function GovernmentEntryPageInner() {
                   <div>
                     <h3 className="text-base font-bold text-gray-800">Complete Student Details</h3>
                     <p className="text-xs text-gray-500 mt-0.5">
-                      {gateState.row.name} isn&apos;t in any Entry Batch yet — save full details below, then pick a batch.
+                      {gateState.row.name} isn&apos;t in any Entry Batch yet — complete the details below, then pick a batch.
                     </p>
                   </div>
-                  <button onClick={() => setGateState(null)} className="p-1 rounded hover:bg-gray-100">
+                  <button onClick={handleGateCancelEdit} className="p-1 rounded hover:bg-gray-100">
                     <X className="w-4 h-4 text-gray-400" />
                   </button>
                 </div>
-                {gateEditExisting ? (
-                  <EditForm existing={gateEditExisting} router={router} onDone={handleGateEditDone} />
-                ) : (
+                {!gateEditExisting ? (
                   <div className="flex items-center justify-center py-10">
                     <Loader2 className="w-6 h-6 text-school-navy animate-spin" />
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Birth Place</p>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">State</label>
+                          <input value={gateBirthState} onChange={e => setGateBirthState(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">District</label>
+                          <input value={gateBirthDistrict} onChange={e => setGateBirthDistrict(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">City</label>
+                          <input value={gateBirthCity} onChange={e => setGateBirthCity(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Village</label>
+                          <input value={gateBirthVillage} onChange={e => setGateBirthVillage(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Birth Certificate</p>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Reg No</label>
+                          <input value={gateEditBcRegNo} onChange={e => setGateEditBcRegNo(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Reg Date</label>
+                          <input type="date" value={gateEditBcRegDate || ""} onChange={e => setGateEditBcRegDate(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Aadhar Card</p>
+                      <div className="grid grid-cols-2 gap-2.5">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Name as per Aadhar</label>
+                          <input value={gateEditAadharName} onChange={e => setGateEditAadharName(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Aadhar Number</label>
+                          <input value={gateEditAadharNo} onChange={e => setGateEditAadharNo(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Documents</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        {[
+                          { label: "Birth Certificate", doc: getBcDoc(gateState.row), onUpload: () => triggerBcUpload(gateState.row), onView: () => handleDownloadBirthCert(gateState.row), uploading: bcUploading },
+                          { label: "Transfer Certificate", doc: getTcDoc(gateState.row), onView: () => handleDownloadTcDoc(gateState.row) },
+                          { label: "Aadhar Card", doc: getAadharDoc(gateState.row), onUpload: () => triggerAadharUpload(gateState.row), onView: () => handleDownloadAadharDoc(gateState.row), uploading: aadharUploading },
+                        ].map(({ label, doc, onUpload, onView, uploading }) => (
+                          <div key={label} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50/50 text-xs">
+                            <span className="font-medium text-gray-600">{label}</span>
+                            {doc ? (
+                              <button type="button" onClick={onView} className="inline-flex items-center gap-1 text-emerald-700 font-semibold hover:underline">
+                                <CheckCircle2 className="w-3 h-3" /> View
+                              </button>
+                            ) : onUpload ? (
+                              <button type="button" onClick={onUpload} disabled={uploading} className="inline-flex items-center gap-1 text-amber-700 font-semibold hover:underline disabled:opacity-60">
+                                <Upload className="w-3 h-3" /> {uploading ? "Uploading…" : "Upload"}
+                              </button>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-gray-400">
+                                <AlertTriangle className="w-3 h-3" /> Not Uploaded
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      {(bcMessage || aadharMessage) && (
+                        <p className="text-[11px] text-gray-500 mt-1">{bcMessage?.text || aadharMessage?.text}</p>
+                      )}
+                    </div>
+
+                    <BatchSelector phaseType="Added" value={gateEditBatchId} onChange={setGateEditBatchId} className="max-w-xs" />
+
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button type="button" onClick={handleGateCancelEdit}
+                        className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">
+                        Cancel
+                      </button>
+                      <button
+                        type="button" disabled={gateSaving} onClick={handleGateSaveEditDetails}
+                        className="px-5 py-2 rounded-lg bg-school-navy text-white text-sm font-semibold hover:bg-school-navy/90 disabled:opacity-60"
+                      >
+                        {gateSaving ? "Saving..." : "Save & Continue"}
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

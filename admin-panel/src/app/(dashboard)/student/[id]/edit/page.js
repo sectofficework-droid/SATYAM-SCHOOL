@@ -55,8 +55,9 @@ function findOptionCaseInsensitive(options, value, fallback = "") {
 
 // ── Map DB student to EditForm format ─────────────────────────
 // Exported (2026-11-26) so government-entry/page.js's pre-entry gate can
-// load the same shape into the same EditForm without duplicating this
-// mapping.
+// reuse this same mapping (birth place, Aadhar, birth-cert, document
+// status fields) for its own compact "Complete Student Details" form,
+// without duplicating it.
 export function mapToEditForm(student) {
   const uploadedDocs = {};
   const verifiedDocNames = [];
@@ -228,13 +229,7 @@ function ReadOnlyField({ label, value }) {
 }
 
 // ── Edit Form — receives pre-loaded student ────────────────────
-// Exported + given an optional onDone (2026-11-26, government-entry
-// pre-entry gate) so this exact form can be hosted inside an overlay on
-// another page instead of only this full-page route - when onDone is
-// passed, it's called instead of router.back() on Cancel/successful save;
-// when it's not (the standalone /student/[id]/edit route below never
-// passes it), behavior is unchanged.
-export function EditForm({ existing, router, onDone }) {
+function EditForm({ existing, router }) {
   const { authUser } = useStore();
   const [batchId, setBatchId] = useState("none"); // default "no batch" - matches Add Student
   const [standards, setStandards] = useState([]);
@@ -668,7 +663,7 @@ export function EditForm({ existing, router, onDone }) {
       }
 
       alert("Student profile updated successfully!");
-      if (onDone) onDone(); else router.back();
+      router.back();
     } catch (err) {
       alert("Failed to update: " + err.message);
     } finally {
@@ -1314,7 +1309,7 @@ export function EditForm({ existing, router, onDone }) {
       <BatchSelector phaseType="Added" value={batchId} onChange={setBatchId} className="max-w-xs" />
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
-          type="button" onClick={() => (onDone ? onDone() : router.back())}
+          type="button" onClick={() => router.back()}
           className="px-6 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
         >
           Cancel

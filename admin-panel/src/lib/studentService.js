@@ -1254,6 +1254,29 @@ export async function updateAadharDetails(studentId, { aadharName, aadharNo }) {
   if (error) throw error;
 }
 
+// 2026-11-28 (Government Entry pre-entry gate's compact "Complete Student
+// Details" form) - Birth State/District/City/Village are ReadOnlyField
+// (locked) on this page's own EditForm above; the gate unlocks them in its
+// own compact form instead, so it needs a narrow update like
+// updateBirthCertDetails/updateAadharDetails rather than the full-replace
+// updateStudent() (which would null out every other field not in this
+// form's payload). place_of_birth is re-derived the same way
+// composePlaceOfBirth() does in super-admin/page.js.
+export async function updateStudentBirthPlaceDetails(studentId, { birthState, birthDistrict, birthCity, birthVillage }) {
+  const placeOfBirth = [birthCity, birthDistrict, birthState].map(v => (v || "").trim()).filter(Boolean).join(", ");
+  const { error } = await supabase
+    .from("students")
+    .update({
+      birth_state: birthState || null,
+      birth_district: birthDistrict || null,
+      birth_city: birthCity || null,
+      birth_village: birthVillage || null,
+      place_of_birth: placeOfBirth || null,
+    })
+    .eq("id", studentId);
+  if (error) throw error;
+}
+
 export async function markDocumentDone(studentId, documentTypeId, reason = "Marked as Done") {
   const { error } = await supabase
     .from("student_documents")
