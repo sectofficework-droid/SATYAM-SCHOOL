@@ -1,5 +1,30 @@
 # TODO.md — SATYAM-SCHOOL
 
+## Government Entry: gate modal was stacking behind the Add New Student
+## modal — 2026-11-28 (user: "picking a student... opens background of
+## the add new student form... first close the form then open next")
+
+Both the "Add New Student" picker and the pre-entry gate are separate
+`fixed inset-0 z-50` overlays. Since `selectAddStudent` never closed
+`addModalOpen`, picking a student that needed the gate (BC details / Entry
+Batch edit / Aadhar details) opened the gate's overlay ON TOP of the
+still-mounted Add New Student modal instead of replacing it - looked like
+the gate opened "in the background" of a form that should have closed
+first.
+
+**Fixed**: the Add New Student modal's render condition is now
+`addModalOpen && !gateState` instead of just `addModalOpen` - it hides
+itself whenever the gate has something to show, and reappears on its own
+once the gate clears (nothing else needed - `addModalOpen` itself was
+never toggled, so Step 1 is right there with the now-selected student once
+the gate resolves). No flicker for the common case (student already fully
+prepped) since the gate never sets `gateState` at all when there's nothing
+to resolve.
+
+**Verified**: `npm run lint` clean; dev-server smoke test on
+`/government-entry` (200, clean compile). **Not verified**: no in-browser
+click-through (no login credentials this session).
+
 ## Government Entry: drop the "already in batch" confirmation screen —
 ## 2026-11-28 (user: "if the student already in a batch then it goes to
 ## step 1")

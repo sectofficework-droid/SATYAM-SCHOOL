@@ -6029,8 +6029,17 @@ function GovernmentEntryPageInner() {
         </div>
       )}
 
-      {/* Add New Student modal (Online GR only) — 4-step wizard */}
-      {addModalOpen && (
+      {/* Add New Student modal (Online GR only) — 4-step wizard.
+          !gateState: 2026-11-28 - picking a student can open the pre-entry
+          gate (BC details / Entry Batch edit / Aadhar details) on top of
+          this same modal, since both are fixed inset-0 overlays, making
+          it look like the gate opened "in the background" of a still-open
+          Add New Student form instead of replacing it. Hide this modal
+          while the gate has something to show; it reappears on its own
+          once the gate clears (addModalOpen itself is never toggled by
+          the gate - selectAddStudent doesn't close it, so Step 1 is right
+          there showing the selected student once the gate is done). */}
+      {addModalOpen && !gateState && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl h-[85vh] max-h-[850px] min-h-[550px] flex flex-col">
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
