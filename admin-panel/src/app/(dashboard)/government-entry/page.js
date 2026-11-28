@@ -14,20 +14,22 @@ import { getStudentsForReport, getAcademicYearLabels } from "@/lib/reportService
 import { getPhases, getAllPhaseEntryEnrollments, recordPhase, buildPhaseSnapshot } from "@/lib/studentPhaseService";
 import {
   updateStudentGovId, getStudentAdminNotes,
-  getStudentByEnrollment, updateBirthCertDetails, updateAadharDetails,
-  updateStudentBirthPlaceDetails,
+  getStudentByEnrollment, updateStudent, updateBirthCertDetails, updateAadharDetails,
 } from "@/lib/studentService";
 import StudentNoteBadge from "@/components/StudentNoteBadge";
 import BatchSelector from "@/components/BatchSelector";
 import { getOnlineGrData, updateOnlineGrRow, deleteOnlineGrRow } from "@/lib/onlineGrService";
-import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, fileExt } from "@/lib/s3Upload";
+import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, fileExt, slugify } from "@/lib/s3Upload";
 import { compressFile } from "@/lib/fileCompression";
+import { isValidUploadFile } from "@/lib/validators";
+import { DEFAULT_DOCS } from "@/lib/constants";
 import useStore from "@/lib/store";
 // Government Entry pre-entry gate (2026-11-26) - the "not in any batch"
-// step uses its own compact "Complete Student Details" form (2026-11-28),
-// not the full Student Edit page's EditForm - only its data mapper is
-// reused, so the fetch shape (birth place, Aadhar, birth-cert, document
-// status) doesn't need duplicating.
+// step uses a full-detail "Complete Student Details" form (2026-11-28,
+// matching EditForm's/Super Admin's own field breadth + document upload)
+// not the full Student Edit page's EditForm component itself - only its
+// data mapper is reused, so the fetch shape (birth place, Aadhar,
+// birth-cert, document status) doesn't need duplicating.
 import { mapToEditForm } from "@/app/(dashboard)/student/[id]/edit/page";
 import {
   OTHER_SCHOOL_TAG_REGEX,
@@ -1023,20 +1025,32 @@ function GovernmentEntryPageInner() {
   const [gateAadharName, setGateAadharName] = useState("");
   const [gateAadharNo, setGateAadharNo] = useState("");
   const [gateSaving, setGateSaving] = useState(false);
-  const [gateEditExisting, setGateEditExisting] = useState(null); // mapped student for the "edit" stage's compact form
+  const [gateEditExisting, setGateEditExisting] = useState(null); // mapped student (mapToEditForm shape) for the "edit" stage
 
-  // 2026-11-28 - the "edit" stage's own compact "Complete Student Details"
-  // form fields (Birth State/District/City/Village are locked everywhere
-  // else - see updateStudentBirthPlaceDetails in studentService.js - this
-  // is the one place they're editable, by this gate's own design decision).
-  const [gateBirthState, setGateBirthState] = useState("");
-  const [gateBirthDistrict, setGateBirthDistrict] = useState("");
-  const [gateBirthCity, setGateBirthCity] = useState("");
-  const [gateBirthVillage, setGateBirthVillage] = useState("");
-  const [gateEditBcRegNo, setGateEditBcRegNo] = useState("");
-  const [gateEditBcRegDate, setGateEditBcRegDate] = useState("");
-  const [gateEditAadharName, setGateEditAadharName] = useState("");
-  const [gateEditAadharNo, setGateEditAadharNo] = useState("");
+  // 2026-11-28 - the "edit" stage's own full-detail "Complete Student
+  // Details" form, matching EditForm's (student/[id]/edit/page.js) own
+  // field breadth - Birth State/District/City/Village are the one
+  // deliberate difference (locked everywhere else, editable here only, by
+  // this gate's own design decision). Govt IDs (UDISE/PEN/APAAR) and
+  // Admission info (Class/Section/Roll/GR No/Fee) stay excluded, matching
+  // EditForm's own precedent - see this session's plan notes. Mirrors
+  // EditForm's own state shape (single `form` object + separate Aadhar
+  // display/raw state + photo/document state) field-for-field so the save
+  // payload can reuse its exact proven shape.
+  const [gateEditForm, setGateEditForm] = useState(null);
+  const [gateEditHasPrevSchool, setGateEditHasPrevSchool] = useState(false);
+  const [gateEditLastExamGiven, setGateEditLastExamGiven] = useState(false);
+  const [gateEditAadharDisplay, setGateEditAadharDisplay] = useState("");
+  const [gateEditFatherAadharDisplay, setGateEditFatherAadharDisplay] = useState("");
+  const [gateEditMotherAadharDisplay, setGateEditMotherAadharDisplay] = useState("");
+  const [gateEditPhoto, setGateEditPhoto] = useState(null);
+  const [gateEditPhotoPreview, setGateEditPhotoPreview] = useState(null);
+  const [gateEditPhotoKey, setGateEditPhotoKey] = useState(null);
+  const [gateEditPhotoUploading, setGateEditPhotoUploading] = useState(false);
+  const [gateEditPhotoError, setGateEditPhotoError] = useState("");
+  const [gateEditCheckedDocs, setGateEditCheckedDocs] = useState({});
+  const [gateEditUploadedFiles, setGateEditUploadedFiles] = useState({});
+  const [gateEditDocErrors, setGateEditDocErrors] = useState({});
   const [gateEditBatchId, setGateEditBatchId] = useState("none");
 
   // onPass is called with the (possibly updated) row once the gate clears -
@@ -1055,30 +1069,50 @@ function GovernmentEntryPageInner() {
     continueAfterBc(row, portal, onPass);
   }
 
-  // Not in any batch -> stop and send them to the compact "Complete
-  // Student Details" form (fill in details and pick a batch). Already in a
-  // batch -> nothing to resolve, continue straight through with no
-  // interruption.
+  // Not in any batch -> stop and send them to the full "Complete Student
+  // Details" form (fill in details and pick a batch). Already in a batch
+  // -> nothing to resolve, continue straight through with no interruption.
   function continueAfterBc(row, portal, onPass) {
     if (!eligibilityFns.inAnyBatch(row)) {
       setGateEditExisting(null);
-      setGateBirthState(""); setGateBirthDistrict(""); setGateBirthCity(""); setGateBirthVillage("");
-      setGateEditBcRegNo(""); setGateEditBcRegDate("");
-      setGateEditAadharName(""); setGateEditAadharNo("");
+      setGateEditForm(null);
       setGateEditBatchId("none");
       setGateState({ row, portal, onPass, stage: "edit" });
       getStudentByEnrollment(row.enrollNo)
         .then(s => {
           const mapped = mapToEditForm(s);
           setGateEditExisting(mapped);
-          setGateBirthState(mapped.birthState || "");
-          setGateBirthDistrict(mapped.birthDistrict || "");
-          setGateBirthCity(mapped.birthCity || "");
-          setGateBirthVillage(mapped.birthVillage || "");
-          setGateEditBcRegNo(mapped.birthCertRegNo || "");
-          setGateEditBcRegDate(mapped.birthCertRegDate || "");
-          setGateEditAadharName(mapped.aadharName || "");
-          setGateEditAadharNo(mapped.aadhar || "");
+          setGateEditForm({
+            firstName: mapped.firstName || "", lastName: mapped.lastName || "",
+            fatherName: mapped.fatherName || "", motherName: mapped.motherName || "",
+            dob: mapped.dob || "", gender: mapped.gender || "",
+            religion: mapped.religion || "", caste: mapped.caste || "", subCaste: mapped.subCaste || "",
+            motherTongue: mapped.motherTongue || "", height: mapped.height || "", weight: mapped.weight || "",
+            roomPlotNo: mapped.roomPlotNo || "", society: mapped.society || "", landmark: mapped.landmark || "",
+            area: mapped.area || "", pinCode: mapped.pinCode || "", address: mapped.address || "",
+            mobile1: mapped.mobile1 || "", mobile2: mapped.mobile2 || "",
+            placeOfBirth: mapped.placeOfBirth || "",
+            birthState: mapped.birthState || "", birthDistrict: mapped.birthDistrict || "",
+            birthCity: mapped.birthCity || "", birthVillage: mapped.birthVillage || "",
+            birthCertRegNo: mapped.birthCertRegNo || "", birthCertRegDate: mapped.birthCertRegDate || "",
+            lastSchoolName: mapped.lastSchoolName || "", lastSchoolClass: mapped.lastSchoolClass || "",
+            lastSchoolMedium: mapped.lastSchoolMedium || "", lastSchoolPlace: mapped.lastSchoolPlace || "",
+            lastSchoolGrNo: mapped.lastSchoolGrNo || "", prevPercentage: mapped.prevPercentage || "",
+            prevAttendanceDays: mapped.prevAttendanceDays || "",
+            aadharName: mapped.aadharName || "", fatherAadharName: mapped.fatherAadharName || "",
+            motherAadharName: mapped.motherAadharName || "",
+          });
+          setGateEditHasPrevSchool(!!mapped.lastSchoolName);
+          setGateEditLastExamGiven(mapped.lastExamGiven === "Yes");
+          setGateEditAadharDisplay(mapped.aadhar || "");
+          setGateEditFatherAadharDisplay(mapped.fatherAadhar || "");
+          setGateEditMotherAadharDisplay(mapped.motherAadhar || "");
+          setGateEditPhoto(null); setGateEditPhotoKey(null); setGateEditPhotoUploading(false); setGateEditPhotoError("");
+          setGateEditPhotoPreview(null);
+          if (mapped.photo) getS3ViewUrl(mapped.photo).then(url => { if (url) setGateEditPhotoPreview(url); }).catch(() => {});
+          setGateEditCheckedDocs(Object.fromEntries((mapped.verifiedDocNames || []).map(k => [k, true])));
+          setGateEditUploadedFiles({ ...mapped.uploadedDocs });
+          setGateEditDocErrors({});
         })
         .catch(err => { alert("Failed to load student for editing: " + err.message); setGateState(null); });
       return;
@@ -1135,51 +1169,158 @@ function GovernmentEntryPageInner() {
     }
   }
 
-  // Compact "Complete Student Details" form's own save (2026-11-28) -
-  // targeted partial updates only (never updateStudent(), which would wipe
-  // every other field not in this form's payload - see
-  // updateStudentBirthPlaceDetails's own comment in studentService.js),
-  // plus an optional batch assignment via the same recordPhase() call
-  // EditForm's own save used to make. The phase snapshot is built from the
-  // FULL mapped student (gateEditExisting) merged with this form's edits,
-  // not just this form's own fields, so a later batch export isn't missing
-  // the student's name/parents/etc. just because this compact form didn't
-  // re-collect them.
+  function gateEditSet(key) {
+    return e => setGateEditForm(p => ({ ...p, [key]: e.target.value }));
+  }
+
+  function handleGateEditAadharInput(e) {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 12);
+    setGateEditAadharDisplay(digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim());
+  }
+  function handleGateEditFatherAadharInput(e) {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 12);
+    setGateEditFatherAadharDisplay(digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim());
+  }
+  function handleGateEditMotherAadharInput(e) {
+    const digits = e.target.value.replace(/\D/g, "").slice(0, 12);
+    setGateEditMotherAadharDisplay(digits.replace(/(\d{4})(?=\d)/g, "$1 ").trim());
+  }
+
+  function handleGateEditPhoto(e) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!isValidUploadFile(f)) {
+      setGateEditPhotoError("Invalid file - only JPG/PNG/PDF up to 5MB allowed.");
+      e.target.value = "";
+      return;
+    }
+    setGateEditPhotoError("");
+    setGateEditPhoto(f);
+    setGateEditPhotoPreview(URL.createObjectURL(f));
+    setGateEditPhotoKey(null);
+    setGateEditPhotoUploading(true);
+    compressFile(f)
+      .then(compressed => {
+        const key = `students/${gateEditExisting._studentId}/photo.${fileExt(compressed)}`;
+        return uploadFileToS3(compressed, key).then(() => setGateEditPhotoKey(key));
+      })
+      .catch(err => setGateEditPhotoError("Upload failed: " + (err?.message || "Unknown error")))
+      .finally(() => setGateEditPhotoUploading(false));
+  }
+
+  function toggleGateEditDoc(name) {
+    const was = gateEditCheckedDocs[name];
+    setGateEditCheckedDocs(p => ({ ...p, [name]: !p[name] }));
+    if (was) setGateEditUploadedFiles(p => { const n = { ...p }; delete n[name]; return n; });
+  }
+  function handleGateEditDocFile(name, e) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!isValidUploadFile(f)) {
+      setGateEditDocErrors(p => ({ ...p, [name]: "Invalid file - only JPG/PNG/PDF up to 5MB allowed." }));
+      e.target.value = "";
+      return;
+    }
+    setGateEditDocErrors(p => { const n = { ...p }; delete n[name]; return n; });
+    setGateEditUploadedFiles(p => ({ ...p, [name]: { fileName: f.name, key: null, size: 0, uploading: true } }));
+    compressFile(f)
+      .then(compressed => {
+        const key = `students/${gateEditExisting._studentId}/documents/${slugify(name)}.${fileExt(compressed)}`;
+        return uploadFileToS3(compressed, key).then(() =>
+          setGateEditUploadedFiles(p => ({ ...p, [name]: { ...p[name], key, size: compressed.size, uploading: false } }))
+        );
+      })
+      .catch(() => {
+        setGateEditDocErrors(p => ({ ...p, [name]: "Upload failed - please try again." }));
+        setGateEditUploadedFiles(p => ({ ...p, [name]: { ...p[name], uploading: false } }));
+      });
+  }
+
+  function gateVisibleDocs() {
+    return DEFAULT_DOCS.filter(name => gateEditHasPrevSchool || (name !== "Leaving Certificate" && name !== "Marksheet"));
+  }
+
+  // Full-detail "Complete Student Details" form's own save (2026-11-28) -
+  // matches EditForm's (student/[id]/edit/page.js) own save shape field-
+  // for-field, via the same updateStudent() this whole app already uses
+  // for full-profile saves. Safe to use the full-replace updateStudent()
+  // here (unlike the narrower "bc"/"aadhar" stages' own saves) because
+  // gateEditExisting + this form's edits together already cover every
+  // field - nothing not touched here gets wiped.
   async function handleGateSaveEditDetails() {
-    if (!gateState || !gateEditExisting) return;
+    if (!gateState || !gateEditExisting || !gateEditForm) return;
+    const anyDocUploading = Object.values(gateEditUploadedFiles).some(d => d?.uploading);
+    if (gateEditPhotoUploading || anyDocUploading) {
+      alert("Please wait for file uploads to finish before saving.");
+      return;
+    }
     setGateSaving(true);
     try {
       const studentId = gateEditExisting._studentId;
       const enrollNo = gateState.row.enrollNo;
-      await Promise.all([
-        updateStudentBirthPlaceDetails(studentId, {
-          birthState: gateBirthState.trim(),
-          birthDistrict: gateBirthDistrict.trim(),
-          birthCity: gateBirthCity.trim(),
-          birthVillage: gateBirthVillage.trim(),
-        }),
-        (gateEditBcRegNo.trim() || gateEditBcRegDate)
-          ? updateBirthCertDetails(studentId, { birthCertRegNo: gateEditBcRegNo.trim(), birthCertRegDate: gateEditBcRegDate || null })
-          : Promise.resolve(),
-        (gateEditAadharName.trim() || gateEditAadharNo.trim())
-          ? updateAadharDetails(studentId, { aadharName: gateEditAadharName.trim(), aadharNo: gateEditAadharNo.trim() })
-          : Promise.resolve(),
-      ]);
+      const f = gateEditForm;
+      const placeOfBirth = [f.birthCity, f.birthDistrict, f.birthState].map(v => (v || "").trim()).filter(Boolean).join(", ") || f.placeOfBirth;
+      const updatePayload = {
+        enrollmentId: gateEditExisting._enrollmentId,
+        joinDate: gateEditExisting.joinDate || undefined,
+        grNo: gateEditExisting.grNo || "",
+        firstName: f.firstName, lastName: f.lastName,
+        dob: f.dob, gender: f.gender,
+        placeOfBirth,
+        birthState: f.birthState, birthDistrict: f.birthDistrict, birthCity: f.birthCity, birthVillage: f.birthVillage,
+        photo: gateEditPhotoKey || gateEditExisting.photo || null,
+        fatherName: f.fatherName, motherName: f.motherName,
+        mobile: f.mobile1, mobile2: f.mobile2,
+        religion: f.religion, caste: f.caste || "General", subCaste: f.subCaste,
+        motherTongue: f.motherTongue, height: f.height, weight: f.weight,
+        roomPlotNo: f.roomPlotNo, society: f.society, landmark: f.landmark, area: f.area, pinCode: f.pinCode,
+        address: f.address,
+        aadhar: gateEditAadharDisplay.replace(/\s/g, "") || null,
+        aadharName: f.aadharName,
+        fatherAadhar: gateEditFatherAadharDisplay.replace(/\s/g, "") || null,
+        fatherAadharName: f.fatherAadharName,
+        motherAadhar: gateEditMotherAadharDisplay.replace(/\s/g, "") || null,
+        motherAadharName: f.motherAadharName,
+        udise: gateEditExisting.udise, pen: gateEditExisting.pen, apaar: gateEditExisting.apaar,
+        birthCertRegNo: f.birthCertRegNo, birthCertRegDate: f.birthCertRegDate,
+        hasPrevSchool: gateEditHasPrevSchool,
+        lastSchoolName: gateEditHasPrevSchool ? f.lastSchoolName : "",
+        lastSchoolGrNo: f.lastSchoolGrNo, lastSchoolClass: f.lastSchoolClass,
+        lastSchoolMedium: f.lastSchoolMedium, lastSchoolPlace: f.lastSchoolPlace,
+        prevAttendanceDays: f.prevAttendanceDays,
+        lastExamGiven: gateEditLastExamGiven ? "Yes" : "No",
+        prevPercentage: f.prevPercentage,
+      };
+      await updateStudent(studentId, updatePayload);
+
+      const { data: docTypes } = await supabase.from("document_types").select("id, name");
+      if (docTypes?.length) {
+        const docTypeMap = Object.fromEntries(docTypes.map(d => [d.name, d.id]));
+        const upserts = gateVisibleDocs()
+          .filter(name => docTypeMap[name])
+          .map(name => {
+            const existingVal = gateEditUploadedFiles[name];
+            const fileUrl = existingVal && typeof existingVal === "object" ? (existingVal.key || null) : (existingVal || null);
+            return {
+              student_id: studentId,
+              document_type_id: docTypeMap[name],
+              status: gateEditCheckedDocs[name] ? "Uploaded" : "Pending",
+              uploaded_at: gateEditCheckedDocs[name] ? new Date().toISOString() : null,
+              file_url: fileUrl,
+            };
+          });
+        if (upserts.length) {
+          const { error: docErr } = await supabase.from("student_documents").upsert(upserts, { onConflict: "student_id,document_type_id" });
+          if (docErr) throw docErr;
+        }
+      }
 
       if (gateEditBatchId !== "none") {
         try {
-          const mergedForSnapshot = {
-            ...gateEditExisting,
-            birthState: gateBirthState.trim(), birthDistrict: gateBirthDistrict.trim(),
-            birthCity: gateBirthCity.trim(), birthVillage: gateBirthVillage.trim(),
-            birthCertRegNo: gateEditBcRegNo.trim(), birthCertRegDate: gateEditBcRegDate || "",
-            aadharName: gateEditAadharName.trim(), aadhar: gateEditAadharNo.trim(),
-            std: gateEditExisting.std,
-          };
           await recordPhase({
             type: "Added", source: "gov_entry_gate", createdBy: authUser?.id,
             existingBatchId: gateEditBatchId || null,
-            entries: [{ studentId, enrollmentNo: enrollNo, snapshot: buildPhaseSnapshot(mergedForSnapshot, enrollNo) }],
+            entries: [{ studentId, enrollmentNo: enrollNo, snapshot: buildPhaseSnapshot({ ...updatePayload, std: gateEditExisting.std }, enrollNo) }],
           });
         } catch (err) {
           console.warn("Could not record batch entry:", err);
@@ -5611,7 +5752,7 @@ function GovernmentEntryPageInner() {
           Done modal below whenever something's still missing. */}
       {gateState && (
         <div className="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 p-4 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg my-4 sm:my-8">
+          <div className={`bg-white rounded-2xl shadow-2xl w-full my-4 sm:my-8 ${gateState.stage === "edit" ? "max-w-3xl" : "max-w-lg"}`}>
             {gateState.stage === "bc" && (
               <div className="p-5 space-y-4">
                 <div className="flex items-center justify-between">
@@ -5723,99 +5864,229 @@ function GovernmentEntryPageInner() {
                     <X className="w-4 h-4 text-gray-400" />
                   </button>
                 </div>
-                {!gateEditExisting ? (
+                {!gateEditExisting || !gateEditForm ? (
                   <div className="flex items-center justify-center py-10">
                     <Loader2 className="w-6 h-6 text-school-navy animate-spin" />
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-5">
+                    {[
+                      { group: "Personal", fields: [
+                        ["First Name", "firstName"], ["Last Name", "lastName"],
+                        ["Father's Name", "fatherName"], ["Mother's Name", "motherName"],
+                        ["Gender", "gender"], ["Religion", "religion"], ["Category/Caste", "caste"],
+                        ["Sub Caste", "subCaste"], ["Mother Tongue", "motherTongue"],
+                        ["Height (cm)", "height"], ["Weight (kg)", "weight"],
+                      ] },
+                      { group: "Contact", fields: [
+                        ["Mobile 1", "mobile1"], ["Mobile 2", "mobile2"],
+                        ["Room/Plot No", "roomPlotNo"], ["Society", "society"],
+                        ["Landmark", "landmark"], ["Area", "area"], ["Pin Code", "pinCode"],
+                      ] },
+                    ].map(({ group, fields }) => (
+                      <div key={group}>
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">{group}</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                          {fields.map(([label, key]) => (
+                            <div key={key}>
+                              <label className="block text-[11px] font-semibold text-gray-500 mb-1">{label}</label>
+                              <input value={gateEditForm[key] || ""} onChange={gateEditSet(key)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                            </div>
+                          ))}
+                          {group === "Personal" && (
+                            <div>
+                              <label className="block text-[11px] font-semibold text-gray-500 mb-1">Date of Birth</label>
+                              <input type="date" value={gateEditForm.dob || ""} onChange={gateEditSet("dob")}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+
                     <div>
-                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Birth Place</p>
-                      <div className="grid grid-cols-2 gap-2.5">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Birth Details</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                         <div>
                           <label className="block text-[11px] font-semibold text-gray-500 mb-1">State</label>
-                          <input value={gateBirthState} onChange={e => setGateBirthState(e.target.value)}
+                          <input value={gateEditForm.birthState || ""} onChange={gateEditSet("birthState")}
                             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                         </div>
                         <div>
                           <label className="block text-[11px] font-semibold text-gray-500 mb-1">District</label>
-                          <input value={gateBirthDistrict} onChange={e => setGateBirthDistrict(e.target.value)}
+                          <input value={gateEditForm.birthDistrict || ""} onChange={gateEditSet("birthDistrict")}
                             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                         </div>
                         <div>
                           <label className="block text-[11px] font-semibold text-gray-500 mb-1">City</label>
-                          <input value={gateBirthCity} onChange={e => setGateBirthCity(e.target.value)}
+                          <input value={gateEditForm.birthCity || ""} onChange={gateEditSet("birthCity")}
                             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                         </div>
                         <div>
                           <label className="block text-[11px] font-semibold text-gray-500 mb-1">Village</label>
-                          <input value={gateBirthVillage} onChange={e => setGateBirthVillage(e.target.value)}
+                          <input value={gateEditForm.birthVillage || ""} onChange={gateEditSet("birthVillage")}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Birth Cert. Reg No</label>
+                          <input value={gateEditForm.birthCertRegNo || ""} onChange={gateEditSet("birthCertRegNo")}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Birth Cert. Reg Date</label>
+                          <input type="date" value={gateEditForm.birthCertRegDate || ""} onChange={gateEditSet("birthCertRegDate")}
                             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                         </div>
                       </div>
                     </div>
 
                     <div>
-                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Birth Certificate</p>
-                      <div className="grid grid-cols-2 gap-2.5">
-                        <div>
-                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Reg No</label>
-                          <input value={gateEditBcRegNo} onChange={e => setGateEditBcRegNo(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Reg Date</label>
-                          <input type="date" value={gateEditBcRegDate || ""} onChange={e => setGateEditBcRegDate(e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Previous School</p>
+                        <div className="flex gap-1.5">
+                          {["Yes", "No"].map(opt => (
+                            <button key={opt} type="button"
+                              onClick={() => setGateEditHasPrevSchool(opt === "Yes")}
+                              className={`px-3 py-1 rounded-lg text-xs font-semibold border ${
+                                (opt === "Yes") === gateEditHasPrevSchool
+                                  ? "bg-school-navy text-white border-school-navy"
+                                  : "bg-white text-gray-500 border-gray-200"
+                              }`}
+                            >
+                              {opt}
+                            </button>
+                          ))}
                         </div>
                       </div>
+                      {gateEditHasPrevSchool && (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                          {[
+                            ["School Name", "lastSchoolName"], ["Last School GR No", "lastSchoolGrNo"],
+                            ["Last Class", "lastSchoolClass"], ["Medium", "lastSchoolMedium"],
+                            ["School Location", "lastSchoolPlace"], ["Previous Attendance Days", "prevAttendanceDays"],
+                            ["Previous Percentage", "prevPercentage"],
+                          ].map(([label, key]) => (
+                            <div key={key}>
+                              <label className="block text-[11px] font-semibold text-gray-500 mb-1">{label}</label>
+                              <input value={gateEditForm[key] || ""} onChange={gateEditSet(key)}
+                                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                            </div>
+                          ))}
+                          <div>
+                            <label className="block text-[11px] font-semibold text-gray-500 mb-1">Last Exam Given</label>
+                            <div className="flex gap-1.5">
+                              {["Yes", "No"].map(opt => (
+                                <button key={opt} type="button"
+                                  onClick={() => setGateEditLastExamGiven(opt === "Yes")}
+                                  className={`flex-1 px-3 py-2 rounded-lg text-xs font-semibold border ${
+                                    (opt === "Yes") === gateEditLastExamGiven
+                                      ? "bg-school-navy text-white border-school-navy"
+                                      : "bg-white text-gray-500 border-gray-200"
+                                  }`}
+                                >
+                                  {opt}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     <div>
-                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Aadhar Card</p>
-                      <div className="grid grid-cols-2 gap-2.5">
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Aadhar</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Student Aadhar No</label>
+                          <input value={gateEditAadharDisplay} onChange={handleGateEditAadharInput}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
                         <div>
                           <label className="block text-[11px] font-semibold text-gray-500 mb-1">Name as per Aadhar</label>
-                          <input value={gateEditAadharName} onChange={e => setGateEditAadharName(e.target.value)}
+                          <input value={gateEditForm.aadharName || ""} onChange={gateEditSet("aadharName")}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                        <div />
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Father's Aadhar No</label>
+                          <input value={gateEditFatherAadharDisplay} onChange={handleGateEditFatherAadharInput}
                             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Aadhar Number</label>
-                          <input value={gateEditAadharNo} onChange={e => setGateEditAadharNo(e.target.value)}
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Father's Name (Aadhar)</label>
+                          <input value={gateEditForm.fatherAadharName || ""} onChange={gateEditSet("fatherAadharName")}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                        <div />
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Mother's Aadhar No</label>
+                          <input value={gateEditMotherAadharDisplay} onChange={handleGateEditMotherAadharInput}
+                            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Mother's Name (Aadhar)</label>
+                          <input value={gateEditForm.motherAadharName || ""} onChange={gateEditSet("motherAadharName")}
                             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                         </div>
                       </div>
                     </div>
 
                     <div>
-                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1.5">Documents</p>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        {[
-                          { label: "Birth Certificate", doc: getBcDoc(gateState.row), onUpload: () => triggerBcUpload(gateState.row), onView: () => handleDownloadBirthCert(gateState.row), uploading: bcUploading },
-                          { label: "Transfer Certificate", doc: getTcDoc(gateState.row), onView: () => handleDownloadTcDoc(gateState.row) },
-                          { label: "Aadhar Card", doc: getAadharDoc(gateState.row), onUpload: () => triggerAadharUpload(gateState.row), onView: () => handleDownloadAadharDoc(gateState.row), uploading: aadharUploading },
-                        ].map(({ label, doc, onUpload, onView, uploading }) => (
-                          <div key={label} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50/50 text-xs">
-                            <span className="font-medium text-gray-600">{label}</span>
-                            {doc ? (
-                              <button type="button" onClick={onView} className="inline-flex items-center gap-1 text-emerald-700 font-semibold hover:underline">
-                                <CheckCircle2 className="w-3 h-3" /> View
-                              </button>
-                            ) : onUpload ? (
-                              <button type="button" onClick={onUpload} disabled={uploading} className="inline-flex items-center gap-1 text-amber-700 font-semibold hover:underline disabled:opacity-60">
-                                <Upload className="w-3 h-3" /> {uploading ? "Uploading…" : "Upload"}
-                              </button>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-gray-400">
-                                <AlertTriangle className="w-3 h-3" /> Not Uploaded
-                              </span>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Student Photo</p>
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 rounded-xl bg-gray-100 border border-gray-200 overflow-hidden flex items-center justify-center flex-shrink-0">
+                          {gateEditPhotoPreview
+                            ? <img src={gateEditPhotoPreview} alt="Preview" className="w-full h-full object-cover" />
+                            : <IdCard className="w-6 h-6 text-gray-300" />}
+                        </div>
+                        <div>
+                          <input id="gate-edit-photo" type="file" accept="image/jpg,image/jpeg,image/png" className="hidden" onChange={handleGateEditPhoto} />
+                          <label htmlFor="gate-edit-photo"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 border border-gray-200 rounded-lg text-xs font-semibold text-gray-600 hover:bg-gray-50 cursor-pointer">
+                            <Upload className="w-3.5 h-3.5" /> {gateEditPhotoUploading ? "Uploading…" : "Upload Photo"}
+                          </label>
+                          {gateEditPhotoError && <p className="text-[11px] text-red-500 mt-1">{gateEditPhotoError}</p>}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Documents</p>
+                      <div className="space-y-1.5">
+                        {gateVisibleDocs().map(docName => (
+                          <div key={docName} className="border border-gray-100 rounded-lg overflow-hidden">
+                            <div
+                              className={`flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-gray-50 ${gateEditCheckedDocs[docName] ? "bg-blue-50" : "bg-white"}`}
+                              onClick={() => toggleGateEditDoc(docName)}
+                            >
+                              <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 ${gateEditCheckedDocs[docName] ? "bg-school-navy border-school-navy" : "border-gray-300"}`}>
+                                {gateEditCheckedDocs[docName] && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
+                              </div>
+                              <FileText className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                              <span className="text-xs text-gray-700">{docName}</span>
+                              {gateEditUploadedFiles[docName] && (
+                                <span className="ml-auto text-[11px] text-green-600 font-medium truncate max-w-[160px]">
+                                  {typeof gateEditUploadedFiles[docName] !== "object"
+                                    ? "✓ Already on file"
+                                    : gateEditUploadedFiles[docName].uploading
+                                    ? "Uploading…"
+                                    : `✓ ${gateEditUploadedFiles[docName].fileName}`}
+                                </span>
+                              )}
+                            </div>
+                            {gateEditCheckedDocs[docName] && (
+                              <div className="px-3 py-2 bg-blue-50 border-t border-blue-100">
+                                <label className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-blue-200 rounded-lg text-[11px] font-medium text-school-navy cursor-pointer hover:bg-blue-50">
+                                  <Upload className="w-2.5 h-2.5" /> {gateEditUploadedFiles[docName] ? "Change File" : "Upload File"}
+                                  <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={e => handleGateEditDocFile(docName, e)} />
+                                </label>
+                                {gateEditDocErrors[docName] && <p className="text-[11px] text-red-500 mt-1">{gateEditDocErrors[docName]}</p>}
+                              </div>
                             )}
                           </div>
                         ))}
                       </div>
-                      {(bcMessage || aadharMessage) && (
-                        <p className="text-[11px] text-gray-500 mt-1">{bcMessage?.text || aadharMessage?.text}</p>
-                      )}
                     </div>
 
                     <BatchSelector phaseType="Added" value={gateEditBatchId} onChange={setGateEditBatchId} className="max-w-xs" />

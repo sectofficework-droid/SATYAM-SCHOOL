@@ -1,5 +1,63 @@
 # TODO.md — SATYAM-SCHOOL
 
+## Government Entry: "Complete Student Details" gate step expanded to full
+## detail + real document upload — 2026-11-28 (user: "the edit section
+## should open full details like it gives to super admin edit and
+## document upload as well")
+
+The compact 4-section form built earlier the same day (Birth Place/Birth
+Certificate/Aadhar Card/3-doc status row) wasn't enough - user wanted the
+same breadth Super Admin's own "Update Student" tool (`super-admin/
+page.js`) has, plus real document upload (not just a status badge).
+
+Read Super Admin's tool in full as the reference. Two scope questions
+settled **without asking**, because the original spec's own reference
+point - `EditForm` (`student/[id]/edit/page.js`, "full detail like master
+admin") - already answers them more conservatively than Super Admin's
+tool does:
+- **Govt IDs (UDISE/PEN/APAAR)**: Super Admin's tool allows editing these
+  directly; `EditForm` keeps them locked ("Government IDs must be updated
+  through the dedicated Government ID update section"). Followed
+  `EditForm`'s precedent - kept locked/excluded here too, passed through
+  unchanged on save. This module's real UDISE/PEN entry modal, downstream
+  of this gate, already *is* that dedicated section.
+- **Admission info (Class/Section/Roll No/GR No/Fee)**: Super Admin's tool
+  includes these; `EditForm` doesn't. Excluded here too - a class/section
+  change has reach elsewhere (timetables, attendance, marks) that has
+  nothing to do with completing UDISE/PEN registration details.
+- **Siblings**: both references have sibling-link management, a separate
+  feature with its own moving parts - excluded to keep this bounded;
+  flagged in case it's wanted too.
+
+**Built**: full field breadth matching `EditForm`'s own groups - Personal,
+Contact, Birth (State/District/City/Village still the one deliberately
+unlocked exception), Previous School, all three Aadhar sections (student/
+father/mother), a Photo upload, and a **full document checklist with real
+per-document upload** (`DEFAULT_DOCS` from `@/lib/constants`: Birth
+Certificate, Student/Father's/Mother's Aadhar Card, Leaving Certificate/
+Marksheet when the student has a previous school) - not just the 3-item
+status row from before.
+
+**Save switched to `updateStudent()`** (the same full-profile save every
+other edit surface in this app already uses) instead of the three narrow
+partial-update calls built for the compact version. Safe here specifically
+because the fetched `mapToEditForm` result + this form's edits together
+already cover every field, so nothing untouched gets wiped by the
+full-replace write - this is the same reasoning `EditForm`'s own save and
+Super Admin's own save already rely on. The now-unused
+`updateStudentBirthPlaceDetails` (added earlier the same day, only ever
+used by the compact version) was removed from `studentService.js` as
+dead code; `updateBirthCertDetails`/`updateAadharDetails` stay - still
+used by the gate's separate, smaller "bc"/"aadhar" stages.
+
+**Verified**: `npm run lint` clean; dev-server smoke test on
+`/government-entry` (200, clean compile). **Not verified this time**: no
+live in-browser click-through - the Chrome extension connection dropped
+and didn't reconnect on retry. Please do a live pass next time it's
+available: confirm every group renders with real data, the document
+checklist reflects real upload status and lets you actually upload, and a
+Cancel still aborts without saving.
+
 ## updateAadharDetails: fixed a real "value too long for type character(12)"
 ## save failure — 2026-11-28 (found via a real, user-requested live save
 ## test: "test save with a real batch selection")
