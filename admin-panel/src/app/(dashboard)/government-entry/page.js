@@ -11,10 +11,7 @@ import {
 import * as XLSX from "xlsx";
 import supabase from "@/lib/supabase";
 import { getStudentsForReport, getAcademicYearLabels } from "@/lib/reportService";
-import {
-  getPhases, getAllPhaseEntryEnrollments,
-  getCurrentBatchForEnrollment, moveEntryToBatch, createEmptyBatch,
-} from "@/lib/studentPhaseService";
+import { getPhases, getAllPhaseEntryEnrollments } from "@/lib/studentPhaseService";
 import {
   updateStudentGovId, getStudentAdminNotes,
   getStudentByEnrollment, updateBirthCertDetails, updateAadharDetails,
@@ -23,7 +20,6 @@ import StudentNoteBadge from "@/components/StudentNoteBadge";
 import { getOnlineGrData, updateOnlineGrRow, deleteOnlineGrRow } from "@/lib/onlineGrService";
 import { uploadFileToS3, getS3ViewUrl, buildDocDownloadName, fileExt } from "@/lib/s3Upload";
 import { compressFile } from "@/lib/fileCompression";
-import useStore from "@/lib/store";
 // Government Entry pre-entry gate (2026-11-26) reuses the exact "full
 // detail like master admin" form from the Student Edit route instead of
 // rebuilding one - see EditForm's own onDone prop (added for this).
@@ -784,7 +780,6 @@ function StatusPill({ status }) {
 function GovernmentEntryPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { authUser } = useStore();
   const [mainTab, setMainTab] = useState("onlineGr"); // "onlineGr" | "udise" | "pen" | "import" | "mismatch"
   const [grSubTab, setGrSubTab] = useState("primary"); // "primary" | "general"
   const [importSubTab, setImportSubTab] = useState("udise"); // "udise" | "pen" | "all"
@@ -1003,25 +998,24 @@ function GovernmentEntryPageInner() {
   }, [enrollToBatches]);
 
   // ── UDISE/PEN pre-entry gate (2026-11-26) ───────────────────────────────
-  // Runs whenever the admin starts a UDISE or PEN entry (both the main
-  // table's per-row Edit/Done button and the "Add New Student" wizard's
-  // Step 1 -> Step 2/3 transition call startGovEntry instead of jumping
-  // straight to the number-entry modal). Eligibility itself is now
+  // Runs whenever the admin starts a UDISE or PEN entry: the main table's
+  // per-row Edit/Done button, and (as soon as a student is picked, before
+  // Step 1's GR/PR No screen even shows) the "Add New Student" wizard's
+  // own student picker - both call startGovEntry instead of jumping
+  // straight to the number-entry modal/Step 1. Eligibility itself is now
   // document-only (governmentEligibility.js) - this gate is what actually
-  // walks the admin through whatever's still missing before letting them
-  // into that modal: Birth Certificate reg details, Entry Batch
-  // assignment, and (PEN only) Aadhar name/number.
+  // walks the admin through whatever's still missing: Birth Certificate
+  // reg details, Entry Batch assignment (not in any batch -> the full Edit
+  // Student form, which already has its own batch picker; already in a
+  // batch -> nothing to resolve, continues straight through with no
+  // interruption), and (PEN only) Aadhar name/number.
   // gateState: { row, portal: "udise"|"pen", onPass, stage } | null
-  // stage: "bc" | "batch" | "aadhar" | "edit"
+  // stage: "bc" | "aadhar" | "edit"
   const [gateState, setGateState] = useState(null);
   const [gateBcRegNo, setGateBcRegNo] = useState("");
   const [gateBcRegDate, setGateBcRegDate] = useState("");
   const [gateAadharName, setGateAadharName] = useState("");
   const [gateAadharNo, setGateAadharNo] = useState("");
-  // undefined = still loading, null = no batch-entry record found, object = found
-  const [gateCurrentBatch, setGateCurrentBatch] = useState(undefined);
-  const [gateChanging, setGateChanging] = useState(false);
-  const [gateChangeBatchId, setGateChangeBatchId] = useState(""); // "" = start new batch, else an existing phase id
   const [gateSaving, setGateSaving] = useState(false);
   const [gateEditExisting, setGateEditExisting] = useState(null); // mapped student for the "edit" stage's EditForm
 
@@ -1041,6 +1035,9 @@ function GovernmentEntryPageInner() {
     continueAfterBc(row, portal, onPass);
   }
 
+  // Not in any batch -> stop and send them to the full Edit Student form
+  // (where they fill in details and pick a batch). Already in a batch ->
+  // nothing to resolve, continue straight through with no interruption.
   function continueAfterBc(row, portal, onPass) {
     if (!eligibilityFns.inAnyBatch(row)) {
       setGateEditExisting(null);
@@ -1050,20 +1047,7 @@ function GovernmentEntryPageInner() {
         .catch(err => { alert("Failed to load student for editing: " + err.message); setGateState(null); });
       return;
     }
-    setGateChanging(false);
-    setGateCurrentBatch(undefined);
-    setGateState({ row, portal, onPass, stage: "batch" });
-    getCurrentBatchForEnrollment(row.enrollNo)
-      .then(info => {
-        if (!info) { setGateCurrentBatch(null); return; }
-        const phase = dbPhases.find(p => p.id === info.phaseId);
-        setGateCurrentBatch({
-          ...info,
-          phaseType: phase?.phase_type || "Added",
-          label: phase ? `${phase.label ? phase.label + " — " : ""}Batch ${phase.phase_number}` : "Batch",
-        });
-      })
-      .catch(() => setGateCurrentBatch(null));
+    continueAfterBatch(row, portal, onPass);
   }
 
   function continueAfterBatch(row, portal, onPass) {
@@ -1110,35 +1094,6 @@ function GovernmentEntryPageInner() {
       onPass({ ...row, aadharName: gateAadharName.trim(), aadharNo: gateAadharNo.trim() });
     } catch (err) {
       alert("Failed to save Aadhar details: " + err.message);
-    } finally {
-      setGateSaving(false);
-    }
-  }
-
-  function handleGateContinueFromBatch() {
-    if (!gateState) return;
-    continueAfterBatch(gateState.row, gateState.portal, gateState.onPass);
-  }
-
-  async function handleGateChangeBatchConfirm() {
-    if (!gateState) return;
-    setGateSaving(true);
-    try {
-      let toPhaseId = gateChangeBatchId;
-      if (!toPhaseId) {
-        const created = await createEmptyBatch({ type: gateCurrentBatch?.phaseType || "Added", label: null, createdBy: authUser?.id });
-        toPhaseId = created.id;
-      }
-      if (gateCurrentBatch?.entryId) {
-        await moveEntryToBatch({ entryId: gateCurrentBatch.entryId, fromPhaseId: gateCurrentBatch.phaseId, toPhaseId });
-      }
-      const { row, portal, onPass } = gateState;
-      await loadAll();
-      setGateChanging(false);
-      setGateChangeBatchId("");
-      continueAfterBatch(row, portal, onPass);
-    } catch (err) {
-      alert("Failed to change batch: " + err.message);
     } finally {
       setGateSaving(false);
     }
@@ -5598,73 +5553,6 @@ function GovernmentEntryPageInner() {
                     {gateSaving ? "Saving..." : "Save & Continue"}
                   </button>
                 </div>
-              </div>
-            )}
-
-            {gateState.stage === "batch" && (
-              <div className="p-5 space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-base font-bold text-gray-800">Entry Batch</h3>
-                  <button onClick={() => setGateState(null)} className="p-1 rounded hover:bg-gray-100">
-                    <X className="w-4 h-4 text-gray-400" />
-                  </button>
-                </div>
-                {!gateChanging ? (
-                  <>
-                    <p className="text-sm text-gray-500"><b>{gateState.row.name}</b> is currently in:</p>
-                    <div className="px-3 py-2 rounded-lg bg-blue-50 border border-blue-200 text-sm font-semibold text-school-navy">
-                      {gateCurrentBatch === undefined
-                        ? "Loading…"
-                        : gateCurrentBatch
-                        ? gateCurrentBatch.label
-                        : "No batch record found — use Change Batch below"}
-                    </div>
-                    <div className="flex items-center justify-between gap-2 pt-1">
-                      <button
-                        type="button"
-                        onClick={() => { setGateChangeBatchId(""); setGateChanging(true); }}
-                        className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
-                      >
-                        Change Batch
-                      </button>
-                      <button
-                        type="button" onClick={handleGateContinueFromBatch}
-                        className="px-5 py-2 rounded-lg bg-school-navy text-white text-sm font-semibold hover:bg-school-navy/90"
-                      >
-                        Continue
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <label className="block text-xs font-semibold text-gray-600 mb-1">Move to Batch</label>
-                    <select
-                      value={gateChangeBatchId} onChange={e => setGateChangeBatchId(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white"
-                    >
-                      <option value="">+ Start New Batch</option>
-                      {dbPhases
-                        .filter(p => p.id !== gateCurrentBatch?.phaseId && p.phase_type === (gateCurrentBatch?.phaseType || "Added"))
-                        .map(p => (
-                        <option key={p.id} value={p.id}>
-                          {p.label ? `${p.label} — ` : ""}Batch {p.phase_number} - {p.student_count} student{p.student_count !== 1 ? "s" : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="flex items-center justify-end gap-2 pt-1">
-                      <button type="button" onClick={() => setGateChanging(false)}
-                        className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50">
-                        Back
-                      </button>
-                      <button
-                        type="button" disabled={gateSaving} onClick={handleGateChangeBatchConfirm}
-                        className="px-5 py-2 rounded-lg bg-school-navy text-white text-sm font-semibold hover:bg-school-navy/90 disabled:opacity-60"
-                      >
-                        {gateSaving ? "Moving..." : "Move & Continue"}
-                      </button>
-                    </div>
-                  </>
-                )}
               </div>
             )}
 

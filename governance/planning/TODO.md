@@ -1,5 +1,33 @@
 # TODO.md — SATYAM-SCHOOL
 
+## Government Entry: drop the "already in batch" confirmation screen —
+## 2026-11-28 (user: "if the student already in a batch then it goes to
+## step 1")
+
+Follow-up correction to the gate-timing entry directly below. The gate's
+timing (run at student selection, before Step 1) was correct - what the
+user actually wanted changed was what happens when the student IS already
+in a batch: previously this showed a blocking "Entry Batch: currently in
+Batch X [Change Batch] [Continue]" confirmation screen requiring an extra
+click; the user wants no interruption at all in that case - just continue
+straight to Step 1.
+
+**Changed**: `continueAfterBc` (`government-entry/page.js`) now calls
+`continueAfterBatch` directly when `inAnyBatch(row)` is true, instead of
+setting a "batch" gate stage. Removed the now-dead "Change Batch" feature
+entirely (it was the only way to reach it) - `handleGateContinueFromBatch`/
+`handleGateChangeBatchConfirm`, the `gateChanging`/`gateChangeBatchId`/
+`gateCurrentBatch` state, the "batch" stage's JSX, and the now-fully-
+orphaned `getCurrentBatchForEnrollment` helper in `studentPhaseService.js`
+(added for this exact feature, had no other caller). The gate now only
+ever interrupts for something that actually needs the admin's input: BC
+reg details, the full Edit Student form when not in any batch, and (PEN)
+Aadhar details.
+
+**Verified**: `npm run lint` clean; dev-server smoke test on
+`/government-entry` (200, clean compile). **Not verified**: no in-browser
+click-through (no login credentials this session).
+
 ## Government Entry: gate moved before Step 1 — 2026-11-26 (user: "batch
 ## check will appear before going to step 1")
 
