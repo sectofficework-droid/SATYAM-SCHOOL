@@ -1246,10 +1246,17 @@ export async function updateBirthCertDetails(studentId, { birthCertRegNo, birthC
   if (error) throw error;
 }
 
+// 2026-11-28 bugfix: `aadhar` is a fixed-length `character(12)` column -
+// callers can pass a display-formatted value with spaces (e.g. this
+// page's own mapToStudent() inserts a space every 4 digits for display,
+// "2536 1210 5223"), which overflows 12 chars and fails with "value too
+// long for type character(12)". Strip whitespace before saving, same as
+// updateStudent()'s own `.replace(/\s/g, "")` handling of this column.
 export async function updateAadharDetails(studentId, { aadharName, aadharNo }) {
+  const cleanAadharNo = aadharNo ? aadharNo.replace(/\s/g, "") : "";
   const { error } = await supabase
     .from("students")
-    .update({ aadhar_name: aadharName || null, aadhar: aadharNo || null })
+    .update({ aadhar_name: aadharName || null, aadhar: cleanAadharNo || null })
     .eq("id", studentId);
   if (error) throw error;
 }

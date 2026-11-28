@@ -1,5 +1,29 @@
 # TODO.md — SATYAM-SCHOOL
 
+## updateAadharDetails: fixed a real "value too long for type character(12)"
+## save failure — 2026-11-28 (found via a real, user-requested live save
+## test: "test save with a real batch selection")
+
+The compact "Complete Student Details" form (previous entry below)
+pre-fills its Aadhar Number field from `mapToStudent()`'s own display-
+formatted value (a space inserted every 4 digits, e.g. "2536 1210 5223" -
+14 characters), and `updateAadharDetails` saved that string as-is. The
+`students.aadhar` column is a fixed-length `character(12)`, so the save
+failed outright with a Postgres error, surfaced via the form's own error
+alert.
+
+**Fixed**: `updateAadharDetails` (`studentService.js`) now strips
+whitespace from `aadharNo` before saving, matching `updateStudent()`'s own
+`.replace(/\s/g, "")` handling of this exact column.
+
+**Verified with a real, user-authorized live save** (enrollment 0426,
+not a Cancel-only test like every other live check this session): Aadhar
+saved clean (`253612105223`), `place_of_birth` correctly recomputed, and a
+real batch assignment was created and confirmed via direct Supabase
+queries (batch student_count incremented 65 -> 66 as expected). This
+student is now genuinely in that batch - a real, intended production
+change, not a test artifact needing cleanup.
+
 ## Government Entry: replaced EditForm with a compact "Complete Student
 ## Details" form — 2026-11-28 (user: "but the edit open proper edit to
 ## all fields not locked in proper view format in minimum spaces to
